@@ -1,24 +1,26 @@
-import { useEffect } from 'react';
-import { TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, {
-  useAnimatedProps,
-  useReducedMotion,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import { useEffect, useRef, useState } from 'react';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 
 import { Icon, type IconName } from './icon';
 import { Text } from './text';
 import { useTheme } from '@/theme';
 
-const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
+const COUNT_UP_MS = 550;
 
 /**
- * A number that counts up when it appears.
+ * A number that counts up when it changes.
  *
- * Driven through an uneditable TextInput because its `text` prop can be
- * set from the UI thread — a plain <Text> would need a JS round-trip per
- * frame and would stutter.
+ * Plain <Text> driven from JS, deliberately. The obvious "fast" version
+ * drives an uneditable TextInput's `text` from the UI thread, but that
+ * path also carries `defaultValue`, which React re-applies on the next
+ * re-render and silently reverts the displayed number — a stat tile can
+ * end up disagreeing with the data it was given.
+ *
+ * That trade is only worth making for values that change every frame.
+ * These change when a photo session is saved, so a handful of setState
+ * calls over half a second costs nothing, and the number is always
+ * guaranteed to land on exactly `value`.
  */
 export function AnimatedNumber({
   value,
@@ -31,42 +33,49 @@ export function AnimatedNumber({
   variant?: 'stat' | 'display' | 'title2';
   color?: 'text' | 'accent' | 'textOnAccent';
 }) {
-  const theme = useTheme();
-  const progress = useSharedValue(0);
   const reduceMotion = useReducedMotion();
+  const frame = useRef<number | null>(null);
+  const from = useRef(value);
+
+  // `null` means "not animating", and the real prop is displayed. Keeping
+  // the truth in the prop rather than mirroring it into state is what
+  // makes it impossible for the tile to drift from its data: the worst a
+  // broken animation can do is skip, never show a stale number.
+  const [tween, setTween] = useState<number | null>(null);
+  const shown = tween ?? value;
 
   useEffect(() => {
-    if (reduceMotion) {
-      progress.set(value);
-      return;
-    }
-    progress.set(withTiming(value, { duration: 700 }));
-  }, [value, progress, reduceMotion]);
+    const origin = from.current;
+    from.current = value;
 
-  const animatedProps = useAnimatedProps(() => ({
-    text: `${Math.round(progress.get())}${suffix}`,
-    defaultValue: `${Math.round(progress.get())}${suffix}`,
-  }));
+    if (reduceMotion || origin === value) return;
+
+    const start = Date.now();
+    const tick = () => {
+      const t = Math.min(1, (Date.now() - start) / COUNT_UP_MS);
+      // Ease out, so the number decelerates into its final value.
+      const eased = 1 - (1 - t) ** 3;
+
+      if (t < 1) {
+        setTween(Math.round(origin + (value - origin) * eased));
+        frame.current = requestAnimationFrame(tick);
+      } else {
+        // Hand display back to the prop rather than setting a final number.
+        setTween(null);
+      }
+    };
+
+    frame.current = requestAnimationFrame(tick);
+    return () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    };
+  }, [value, reduceMotion]);
 
   return (
-    <AnimatedTextInput
-      editable={false}
-      // The value is decorative; the parent supplies the real label.
-      accessible={false}
-      importantForAccessibility="no"
-      underlineColorAndroid="transparent"
-      animatedProps={animatedProps as never}
-      style={[
-        theme.typography[variant],
-        {
-          color: theme.colors[color],
-          padding: 0,
-          margin: 0,
-          // TextInput reserves descender space that <Text> does not.
-          includeFontPadding: false,
-        },
-      ]}
-    />
+    <Text variant={variant} color={color} numberOfLines={1}>
+      {shown}
+      {suffix}
+    </Text>
   );
 }
 

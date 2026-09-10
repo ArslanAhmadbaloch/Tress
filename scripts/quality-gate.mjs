@@ -311,6 +311,28 @@ record(
   '',
 );
 
+/* 3c. A displayed value must never be able to drift from its data */
+
+// Animating a TextInput's `text` through useAnimatedProps also carries
+// `defaultValue`, which React re-applies on the next re-render and reverts
+// the shown text. A stat tile then disagrees with the data it was given.
+const animatedTextOffenders = FILES.filter(
+  (f) =>
+    f.text.includes('useAnimatedProps') &&
+    /defaultValue|text:\s*`/.test(f.text) &&
+    f.text.includes('TextInput'),
+).map((f) => f.rel);
+
+record(
+  'Design system',
+  2,
+  'No stat renders through an animated TextInput, which can revert to a stale value',
+  animatedTextOffenders.length === 0,
+  animatedTextOffenders.length
+    ? `Fragile animated text in: ${animatedTextOffenders.join(', ')}`
+    : '',
+);
+
 /* 4. Robustness — empty states, permissions, failure paths */
 
 const listScreens = screenFiles.filter(
