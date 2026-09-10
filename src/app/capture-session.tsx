@@ -92,12 +92,10 @@ export default function CaptureSessionScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
 
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.9,
-        // Orientation is handled downstream by the manipulator; skipping
-        // it here keeps the shutter responsive.
-        skipProcessing: true,
-      });
+      // `skipProcessing` is deliberately off: it shaves a little latency
+      // but on Android it can hand back an unrotated or empty frame, and a
+      // black progress photo is worse than a slightly slower shutter.
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.9 });
       if (photo) setPending(photo);
     } catch {
       Alert.alert(
@@ -392,6 +390,7 @@ export default function CaptureSessionScreen() {
           <GlassSurface
             borderRadius={20}
             variant="clear"
+            over="dark"
             style={{
               width: 40,
               height: 40,
@@ -429,6 +428,7 @@ export default function CaptureSessionScreen() {
             <GlassSurface
               borderRadius={20}
               variant="clear"
+              over="dark"
               style={{
                 width: 40,
                 height: 40,
@@ -456,7 +456,7 @@ export default function CaptureSessionScreen() {
             left: spacing.lg,
             right: spacing.lg,
           }}>
-          <GlassSurface variant="regular" style={{ padding: spacing.lg }}>
+          <GlassSurface variant="regular" over="dark" style={{ padding: spacing.lg }}>
             <Text variant="overline" style={{ color: '#fff', opacity: 0.7 }}>
               {`ANGLE ${index + 1} OF ${ANGLES.length}`}
             </Text>

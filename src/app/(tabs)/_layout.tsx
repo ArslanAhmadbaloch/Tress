@@ -19,7 +19,7 @@ export default function TabsLayout() {
 
   // Anyone without a journey belongs in onboarding, not the tab bar.
   if (!hasJourney(data)) {
-    return <Redirect href="/(onboarding)" />;
+    return <Redirect href="/onboarding" />;
   }
 
   return (

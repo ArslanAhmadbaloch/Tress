@@ -37,7 +37,20 @@ export type GlassSurfaceProps = {
   bordered?: boolean;
   /** Reacts to touch on iOS 26+. Only for genuinely tappable surfaces. */
   interactive?: boolean;
+  /**
+   * Force the material's light/dark treatment regardless of app theme.
+   * Chrome floating over a camera feed or a photo is always on a dark
+   * backdrop, so it must stay dark even in light mode — otherwise white
+   * label text lands on a near-white surface.
+   */
+  over?: 'theme' | 'dark';
 };
+
+/** Dark-context material values, independent of the app theme. */
+const DARK_OVER = {
+  tint: 'rgba(22, 24, 28, 0.62)',
+  border: 'rgba(255, 255, 255, 0.16)',
+} as const;
 
 export function GlassSurface({
   children,
@@ -46,12 +59,18 @@ export function GlassSurface({
   borderRadius,
   bordered = true,
   interactive = false,
+  over = 'theme',
 }: GlassSurfaceProps) {
   const { colors, radius, scheme } = useTheme();
   const cornerRadius = borderRadius ?? radius.card;
 
+  const forcedDark = over === 'dark';
+  const effectiveScheme = forcedDark ? 'dark' : scheme;
+  const tint = forcedDark ? DARK_OVER.tint : colors.glassTint;
+  const borderColor = forcedDark ? DARK_OVER.border : colors.glassBorder;
+
   const edge: ViewStyle = bordered
-    ? { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.glassBorder }
+    ? { borderWidth: StyleSheet.hairlineWidth, borderColor }
     : {};
 
   if (LIQUID_GLASS) {
@@ -59,7 +78,7 @@ export function GlassSurface({
       <GlassView
         glassEffectStyle={variant}
         isInteractive={interactive}
-        colorScheme={scheme}
+        colorScheme={effectiveScheme}
         style={[{ borderRadius: cornerRadius, overflow: 'hidden' }, edge, style]}>
         {children}
       </GlassView>
@@ -70,15 +89,17 @@ export function GlassSurface({
     <BlurView
       // `intensity` is a 0-100 scale; clear reads lighter than regular.
       intensity={variant === 'clear' ? 34 : 58}
-      tint={scheme === 'dark' ? 'dark' : 'light'}
+      tint={effectiveScheme === 'dark' ? 'dark' : 'light'}
       style={[{ borderRadius: cornerRadius, overflow: 'hidden' }, edge, style]}>
       {/*
-        BlurView alone is too transparent for text contrast on busy photo
-        backgrounds, so a token-driven tint sits on top of it.
+        The tint is what carries contrast, and on Android it is the whole
+        effect: SDK 57's Android blur needs an explicit `blurTarget` view,
+        which floating chrome over a camera feed cannot supply. iOS blurs
+        natively behind this, so the tint only deepens it there.
       */}
       <View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: colors.glassTint }]}
+        style={[StyleSheet.absoluteFill, { backgroundColor: tint }]}
       />
       {children}
     </BlurView>

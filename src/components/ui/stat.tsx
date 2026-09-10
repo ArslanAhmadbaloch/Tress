@@ -118,7 +118,14 @@ export function StatTile({
             color={isAccent ? 'accent' : 'text'}
           />
         ) : (
-          <Text variant="stat" color={isAccent ? 'accent' : 'text'}>
+          <Text
+            variant="stat"
+            color={isAccent ? 'accent' : 'text'}
+            // Tiles are a third of the screen; a long string must shrink
+            // rather than wrap mid-word.
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}>
             {value}
             {suffix}
           </Text>

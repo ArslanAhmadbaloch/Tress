@@ -4,26 +4,68 @@
  * Two kinds, both scheduled on-device: a daily routine nudge and a
  * photo-update reminder on the user's chosen interval. Nothing is
  * scheduled until the user turns it on and the OS grants permission.
+ *
+ * Loading is deliberately lazy. `expo-notifications` throws from its own
+ * module body on Android inside Expo Go — remote-notification support was
+ * pulled from Expo Go in SDK 53 — so a top-level import would crash any
+ * route that touches this file. Requiring it behind a guard keeps the app
+ * usable in Expo Go and gives the UI something honest to display.
  */
 
-import * as Notifications from 'expo-notifications';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Platform } from 'react-native';
 
 const ROUTINE_HOUR = 20;
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
-});
+/** Expo Go on Android cannot load the notifications module at all. */
+const IS_EXPO_GO =
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+export const remindersSupported = !(IS_EXPO_GO && Platform.OS === 'android');
+
+export const remindersUnavailableReason = remindersSupported
+  ? null
+  : 'Reminders need a development build. They will work in the installed app.';
+
+type NotificationsModule = typeof import('expo-notifications');
+
+let cached: NotificationsModule | null | undefined;
+
+/** Returns the module, or null if it cannot be loaded in this runtime. */
+function getNotifications(): NotificationsModule | null {
+  if (cached !== undefined) return cached;
+
+  if (!remindersSupported) {
+    cached = null;
+    return cached;
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('expo-notifications') as NotificationsModule;
+    mod.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      }),
+    });
+    cached = mod;
+  } catch {
+    cached = null;
+  }
+
+  return cached;
+}
 
 export async function requestNotificationPermission(): Promise<boolean> {
+  const Notifications = getNotifications();
+  if (!Notifications) return false;
+
   try {
     if (Platform.OS === 'android') {
-      // Android 8+ requires a channel before anything will surface.
+      // Android 8+ needs a channel before anything will surface.
       await Notifications.setNotificationChannelAsync('reminders', {
         name: 'Reminders',
         importance: Notifications.AndroidImportance.DEFAULT,
@@ -41,7 +83,10 @@ export async function requestNotificationPermission(): Promise<boolean> {
   }
 }
 
-export async function scheduleRoutineReminder(): Promise<void> {
+export async function scheduleRoutineReminder(): Promise<boolean> {
+  const Notifications = getNotifications();
+  if (!Notifications) return false;
+
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -54,12 +99,18 @@ export async function scheduleRoutineReminder(): Promise<void> {
         minute: 0,
       },
     });
+    return true;
   } catch {
-    // A failed schedule should never break the settings toggle.
+    return false;
   }
 }
 
-export async function scheduleUpdateReminder(intervalDays: number): Promise<void> {
+export async function scheduleUpdateReminder(
+  intervalDays: number,
+): Promise<boolean> {
+  const Notifications = getNotifications();
+  if (!Notifications) return false;
+
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -72,15 +123,19 @@ export async function scheduleUpdateReminder(intervalDays: number): Promise<void
         repeats: true,
       },
     });
+    return true;
   } catch {
-    // As above — best effort.
+    return false;
   }
 }
 
 export async function cancelAllReminders(): Promise<void> {
+  const Notifications = getNotifications();
+  if (!Notifications) return;
+
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
   } catch {
-    // Nothing to do.
+    // Nothing scheduled, or the module is unavailable — either is fine.
   }
 }

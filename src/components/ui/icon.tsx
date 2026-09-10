@@ -8,7 +8,7 @@
 
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Platform, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
 /** Every icon the app uses, named by meaning rather than by glyph. */
 export type IconName =
@@ -100,7 +100,8 @@ export type IconProps = {
   name: IconName;
   size?: number;
   color: string;
-  style?: StyleProp<ViewStyle>;
+  /** SymbolView takes a view style, the Material font takes a text style. */
+  style?: StyleProp<ViewStyle & TextStyle>;
 };
 
 export function Icon({ name, size = 20, color, style }: IconProps) {
@@ -125,7 +126,7 @@ export function Icon({ name, size = 20, color, style }: IconProps) {
       name={spec.md}
       size={size}
       color={color}
-      style={style}
+      style={style as StyleProp<TextStyle>}
     />
   );
 }

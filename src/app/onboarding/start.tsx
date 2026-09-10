@@ -12,12 +12,16 @@ import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
 
 import { useOnboardingDraft } from './_layout';
 
-/** Offsets in days from today, for "when did this start?". */
+/**
+ * Offsets in calendar months, not days. A fixed 90-day offset lands a day
+ * or two short of three calendar months, and the journey duration would
+ * then read "2 months" straight after the user picked "3 months ago".
+ */
 const START_OPTIONS = [
-  { label: 'Today', description: 'Start fresh from your baseline photos', days: 0 },
-  { label: '1 month ago', description: 'You already started a routine', days: 30 },
-  { label: '3 months ago', days: 90 },
-  { label: '6 months ago', days: 180 },
+  { label: 'Today', description: 'Start fresh from your baseline photos', months: 0 },
+  { label: '1 month ago', description: 'You already started a routine', months: 1 },
+  { label: '3 months ago', months: 3 },
+  { label: '6 months ago', months: 6 },
 ];
 
 export default function StartStep() {
@@ -30,7 +34,14 @@ export default function StartStep() {
   const chooseStart = (index: number) => {
     setSelected(index);
     const date = new Date();
-    date.setDate(date.getDate() - START_OPTIONS[index].days);
+    const months = START_OPTIONS[index].months;
+    if (months > 0) {
+      const day = date.getDate();
+      date.setMonth(date.getMonth() - months);
+      // Going back from the 31st into a 30-day month rolls forward a day;
+      // clamp to the last day of the target month instead.
+      if (date.getDate() !== day) date.setDate(0);
+    }
     update({ startedAt: date.toISOString() });
   };
 

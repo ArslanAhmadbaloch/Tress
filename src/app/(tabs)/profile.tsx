@@ -13,7 +13,7 @@ import {
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { StatTile } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
-import { formatDate, formatDuration } from '@/lib/date';
+import { formatDate, formatDurationCompact } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import { adherencePercent } from '@/store/selectors';
 import { useTheme } from '@/theme';
@@ -110,7 +110,11 @@ export default function ProfileScreen() {
         </Card>
 
         <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
-          <StatTile icon="clock" label="Duration" value={formatDuration(journey.startedAt)} />
+          <StatTile
+            icon="clock"
+            label="Duration"
+            value={formatDurationCompact(journey.startedAt)}
+          />
           <StatTile icon="photo" label="Sessions" value={data.sessions.length} />
           <StatTile
             icon="chart"

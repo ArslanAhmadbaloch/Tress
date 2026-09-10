@@ -59,6 +59,28 @@ export function formatDuration(startISO: string, atISO: string = new Date().toIS
   return `${yearPart} ${rem} ${rem === 1 ? 'month' : 'months'}`;
 }
 
+/**
+ * Duration abbreviated to fit a narrow stat tile: "2 mo", "3 wk", "1y 2mo".
+ * The long form wraps mid-word in a one-third-width tile.
+ */
+export function formatDurationCompact(
+  startISO: string,
+  atISO: string = new Date().toISOString(),
+): string {
+  const days = daysBetween(startISO, atISO);
+
+  if (days <= 0) return 'Day 1';
+  if (days < 7) return `${days + 1}d`;
+  if (days < 31) return `${Math.floor(days / 7)}wk`;
+
+  const months = monthsBetween(startISO, atISO);
+  if (months < 12) return `${months}mo`;
+
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  return rem === 0 ? `${years}y` : `${years}y ${rem}mo`;
+}
+
 /** Short timeline marker: "Baseline", "Month 3", "Year 1". */
 export function formatMilestone(startISO: string, atISO: string): string {
   const days = daysBetween(startISO, atISO);

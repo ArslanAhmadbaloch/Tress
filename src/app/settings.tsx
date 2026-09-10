@@ -13,6 +13,8 @@ import { Text } from '@/components/ui/text';
 import { clearAllPhotos, formatBytes, photoStorageBytes } from '@/lib/photo-storage';
 import {
   cancelAllReminders,
+  remindersSupported,
+  remindersUnavailableReason,
   requestNotificationPermission,
   scheduleRoutineReminder,
   scheduleUpdateReminder,
@@ -150,16 +152,23 @@ export default function SettingsScreen() {
           <ToggleRow
             icon="checkCircle"
             label="Daily routine reminder"
-            detail="A nudge each evening at 8pm"
+            detail={
+              remindersUnavailableReason ?? 'A nudge each evening at 8pm'
+            }
             value={routineReminder}
+            disabled={!remindersSupported}
             onChange={toggleRoutineReminder}
           />
           <Separator inset={56} />
           <ToggleRow
             icon="camera"
             label="Photo update reminder"
-            detail={`Every ${journey.updateIntervalDays} days`}
+            detail={
+              remindersUnavailableReason ??
+              `Every ${journey.updateIntervalDays} days`
+            }
             value={updateReminder}
+            disabled={!remindersSupported}
             onChange={toggleUpdateReminder}
           />
         </Card>
@@ -255,12 +264,14 @@ function ToggleRow({
   label,
   detail,
   value,
+  disabled,
   onChange,
 }: {
   icon: 'checkCircle' | 'camera';
   label: string;
   detail: string;
   value: boolean;
+  disabled?: boolean;
   onChange: (next: boolean) => void;
 }) {
   const { colors, spacing } = useTheme();
@@ -272,6 +283,7 @@ function ToggleRow({
         alignItems: 'center',
         gap: spacing.md,
         padding: spacing.lg,
+        opacity: disabled ? 0.55 : 1,
       }}>
       <Icon name={icon} size={19} color={colors.textSecondary} />
       <View style={{ flex: 1 }}>
@@ -282,9 +294,11 @@ function ToggleRow({
       </View>
       <Switch
         value={value}
+        disabled={disabled}
         onValueChange={onChange}
         trackColor={{ true: colors.accent, false: colors.fill }}
         accessibilityLabel={label}
+        accessibilityState={{ disabled: Boolean(disabled), checked: value }}
       />
     </View>
   );

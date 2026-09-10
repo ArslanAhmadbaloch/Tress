@@ -44,7 +44,12 @@ export default function CommunityScreen() {
 
   return (
     <Screen>
-      <ScreenScroll>
+      {/*
+        Header and filters are fixed; only the feed scrolls. Nesting two
+        vertical ScrollViews here made the first one flex and open a large
+        dead gap above the filters.
+      */}
+      <View style={{ paddingHorizontal: spacing.lg }}>
         <ScreenTitle
           title="Community"
           subtitle="Real journeys, organised by where people are in them."
@@ -67,18 +72,17 @@ export default function CommunityScreen() {
             own journey is never shared without you choosing to.
           </Text>
         </View>
-      </ScreenScroll>
+      </View>
 
-      {/* Filters sit outside the scroll body so they stay reachable. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: spacing.lg,
           gap: spacing.sm,
-          paddingVertical: spacing.sm,
+          paddingVertical: spacing.md,
         }}
-        style={{ flexGrow: 0 }}>
+        style={{ flexGrow: 0, flexShrink: 0 }}>
         {FILTERS.map((option) => {
           const active = filter === option.value;
           return (
@@ -94,6 +98,7 @@ export default function CommunityScreen() {
                 paddingVertical: spacing.sm,
                 borderRadius: radius.pill,
                 backgroundColor: active ? colors.accent : colors.fill,
+                justifyContent: 'center',
               }}>
               <Text variant="subhead" color={active ? 'textOnAccent' : 'textSecondary'}>
                 {option.label}
@@ -103,7 +108,7 @@ export default function CommunityScreen() {
         })}
       </ScrollView>
 
-      <ScreenScroll style={{ flex: 1 }}>
+      <ScreenScroll style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 0 }}>
         {posts.length === 0 ? (
           <EmptyState
             icon="community"
@@ -111,7 +116,7 @@ export default function CommunityScreen() {
             body="No sample journeys match this stage. Try another filter."
           />
         ) : (
-          <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
+          <View style={{ gap: spacing.lg }}>
             {posts.map((post) => (
               <PostCard
                 key={post.id}
