@@ -1,0 +1,230 @@
+/**
+ * Hair Journey domain model.
+ *
+ * Shaped so it can move to Supabase without a rewrite: every entity has
+ * a string id and ISO-8601 timestamps, and relationships are by id
+ * rather than by nesting. Photo files stay on disk; only their URIs and
+ * metadata live in the record.
+ */
+
+/** The five standardised capture angles, in the order they're shot. */
+export const ANGLES = [
+  'front',
+  'leftTemple',
+  'rightTemple',
+  'crown',
+  'top',
+] as const;
+
+export type Angle = (typeof ANGLES)[number];
+
+export const ANGLE_LABELS: Record<Angle, string> = {
+  front: 'Front',
+  leftTemple: 'Left Temple',
+  rightTemple: 'Right Temple',
+  crown: 'Crown',
+  top: 'Top',
+};
+
+/** Shown during guided capture, one per angle. */
+export const ANGLE_GUIDANCE: Record<
+  Angle,
+  { instruction: string; tips: string[] }
+> = {
+  front: {
+    instruction: 'Face the camera straight on.',
+    tips: [
+      'Head level, eyes forward',
+      'Hair in its normal position',
+      'Keep the same distance each time',
+    ],
+  },
+  leftTemple: {
+    instruction: 'Turn your head to show your left temple.',
+    tips: ['Rotate about 45°', 'Keep your chin level', 'Same side every session'],
+  },
+  rightTemple: {
+    instruction: 'Turn your head to show your right temple.',
+    tips: ['Rotate about 45°', 'Keep your chin level', 'Mirror your left angle'],
+  },
+  crown: {
+    instruction: 'Tilt your head forward to show the crown.',
+    tips: ['Chin toward your chest', 'Camera above your head', 'Hold steady'],
+  },
+  top: {
+    instruction: 'Show the top of your head.',
+    tips: ['Camera directly overhead', 'Part your hair as usual', 'Even lighting'],
+  },
+};
+
+/* ------------------------------------------------------------------ */
+
+export type TrackingArea =
+  | 'hairline'
+  | 'crown'
+  | 'overallThinning'
+  | 'diffuseThinning'
+  | 'shedding'
+  | 'density'
+  | 'transplantRecovery'
+  | 'generalChanges';
+
+export type JourneyGoal =
+  | 'trackChanges'
+  | 'monitorProgress'
+  | 'stayConsistent'
+  | 'documentTreatment'
+  | 'documentTransplant'
+  | 'understandLongTerm';
+
+export type Visibility = 'private' | 'followers' | 'public';
+
+/* ------------------------------------------------------------------ */
+
+export type Profile = {
+  id: string;
+  displayName: string;
+  /** Local file URI or remote URL; undefined renders initials. */
+  avatarUri?: string;
+  bio?: string;
+  createdAt: string;
+};
+
+export type Journey = {
+  id: string;
+  profileId: string;
+  /** The day the user considers their journey to have begun. */
+  startedAt: string;
+  trackingAreas: TrackingArea[];
+  goals: JourneyGoal[];
+  visibility: Visibility;
+  /** Days between photo-session reminders. */
+  updateIntervalDays: number;
+  createdAt: string;
+};
+
+export type Photo = {
+  id: string;
+  sessionId: string;
+  angle: Angle;
+  /** Full-resolution file on disk. */
+  uri: string;
+  /** Small pre-scaled file used by lists and grids. */
+  thumbnailUri?: string;
+  width: number;
+  height: number;
+  capturedAt: string;
+};
+
+export type PhotoSession = {
+  id: string;
+  journeyId: string;
+  capturedAt: string;
+  /** True for the very first session, which anchors every comparison. */
+  isBaseline: boolean;
+  photos: Photo[];
+  note?: string;
+};
+
+export type RoutineCadence = 'daily' | 'weekly';
+
+export type RoutineItem = {
+  id: string;
+  journeyId: string;
+  label: string;
+  /** Free text; the app never suggests or validates treatments. */
+  detail?: string;
+  cadence: RoutineCadence;
+  timeOfDay?: 'morning' | 'evening' | 'anytime';
+  createdAt: string;
+  archivedAt?: string;
+};
+
+/** One completion tick. Keyed by item + calendar day. */
+export type RoutineLog = {
+  id: string;
+  routineItemId: string;
+  /** YYYY-MM-DD in the device's local time. */
+  date: string;
+  completed: boolean;
+  loggedAt: string;
+};
+
+export type JournalEntry = {
+  id: string;
+  journeyId: string;
+  /** Optional link to the session this note describes. */
+  sessionId?: string;
+  body: string;
+  createdAt: string;
+};
+
+/* ---------------------------- community --------------------------- */
+
+export type CommunityAuthor = {
+  id: string;
+  displayName: string;
+  avatarUri?: string;
+  /** Months elapsed in that author's journey at time of posting. */
+  journeyMonths: number;
+};
+
+export type CommunityPost = {
+  id: string;
+  author: CommunityAuthor;
+  createdAt: string;
+  caption: string;
+  /** Structured progress: what the before and after actually are. */
+  beforeLabel: string;
+  afterLabel: string;
+  beforeUri?: string;
+  afterUri?: string;
+  angle: Angle;
+  trackingAreas: TrackingArea[];
+  /** Voluntarily shared, free text. Never interpreted by the app. */
+  routineSummary?: string;
+  likeCount: number;
+  commentCount: number;
+  likedByMe: boolean;
+  savedByMe: boolean;
+};
+
+export type CommunityFilter =
+  | 'all'
+  | 'justStarting'
+  | 'month1to3'
+  | 'month3to6'
+  | 'month6to12'
+  | 'yearPlus'
+  | 'transplants'
+  | 'hairline'
+  | 'crown'
+  | 'diffuse'
+  | 'womens';
+
+/* ------------------------------------------------------------------ */
+
+/** Everything the app persists locally, versioned for future migration. */
+export type AppData = {
+  schemaVersion: number;
+  profile: Profile | null;
+  journey: Journey | null;
+  sessions: PhotoSession[];
+  routineItems: RoutineItem[];
+  routineLogs: RoutineLog[];
+  journal: JournalEntry[];
+  onboardingCompletedAt: string | null;
+};
+
+export const SCHEMA_VERSION = 1;
+
+export const EMPTY_DATA: AppData = {
+  schemaVersion: SCHEMA_VERSION,
+  profile: null,
+  journey: null,
+  sessions: [],
+  routineItems: [],
+  routineLogs: [],
+  journal: [],
+  onboardingCompletedAt: null,
+};

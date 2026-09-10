@@ -1,12 +1,13 @@
 {
   "expo": {
-    "name": "hair-journey",
+    "name": "My Hair Journey",
     "slug": "hair-journey",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hairjourney",
     "userInterfaceStyle": "automatic",
+    "backgroundColor": "#F7F6F3",
     "ios": {
       "icon": "./assets/expo.icon"
     },
