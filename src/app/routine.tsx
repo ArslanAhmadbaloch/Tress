@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, TextInput, View } from 'react-native';
+import { Alert, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,6 @@ import { EmptyState, SectionHeader, Separator } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { ProgressBar, StatTile } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
-import { ScrollView } from 'react-native';
 import { toDateKey } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import {

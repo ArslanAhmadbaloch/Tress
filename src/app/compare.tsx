@@ -277,22 +277,22 @@ function SliderCompare({
 
   const pan = Gesture.Pan()
     .onBegin(() => {
-      start.value = offset.value;
+      start.set(offset.get());
     })
     .onUpdate((event) => {
-      offset.value = clamp(start.value + event.translationX, 0, width);
+      offset.set(clamp(start.get() + event.translationX, 0, width));
     });
 
   // Tapping anywhere on the image jumps the handle there.
   const tap = Gesture.Tap().onEnd((event) => {
-    offset.value = clamp(event.x, 0, width);
+    offset.set(clamp(event.x, 0, width));
   });
 
   const composed = Gesture.Race(pan, tap);
 
-  const clipStyle = useAnimatedStyle(() => ({ width: offset.value }));
+  const clipStyle = useAnimatedStyle(() => ({ width: offset.get() }));
   const handleStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: offset.value - 16 }],
+    transform: [{ translateX: offset.get() - 16 }],
   }));
 
   return (

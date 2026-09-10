@@ -70,9 +70,9 @@ export default function CaptureSessionScreen() {
   const shutterScale = useSharedValue(1);
   const reduceMotion = useReducedMotion();
 
-  const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
+  const flashStyle = useAnimatedStyle(() => ({ opacity: flash.get() }));
   const shutterStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: shutterScale.value }],
+    transform: [{ scale: shutterScale.get() }],
   }));
 
   const capture = useCallback(async () => {
@@ -80,13 +80,17 @@ export default function CaptureSessionScreen() {
     setIsCapturing(true);
 
     if (!reduceMotion) {
-      shutterScale.value = withSequence(
-        withTiming(0.88, { duration: 90 }),
-        withSpring(1, motion.spring.bouncy),
+      shutterScale.set(
+        withSequence(
+          withTiming(0.88, { duration: 90 }),
+          withSpring(1, motion.spring.bouncy),
+        ),
       );
-      flash.value = withSequence(
-        withTiming(0.85, { duration: 60 }),
-        withTiming(0, { duration: 220 }),
+      flash.set(
+        withSequence(
+          withTiming(0.85, { duration: 60 }),
+          withTiming(0, { duration: 220 }),
+        ),
       );
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);

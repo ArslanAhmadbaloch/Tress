@@ -1,12 +1,11 @@
 import { useEffect } from 'react';
-import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedProps,
   useReducedMotion,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { TextInput } from 'react-native';
 
 import { Icon, type IconName } from './icon';
 import { Text } from './text';
@@ -38,15 +37,15 @@ export function AnimatedNumber({
 
   useEffect(() => {
     if (reduceMotion) {
-      progress.value = value;
+      progress.set(value);
       return;
     }
-    progress.value = withTiming(value, { duration: 700 });
+    progress.set(withTiming(value, { duration: 700 }));
   }, [value, progress, reduceMotion]);
 
   const animatedProps = useAnimatedProps(() => ({
-    text: `${Math.round(progress.value)}${suffix}`,
-    defaultValue: `${Math.round(progress.value)}${suffix}`,
+    text: `${Math.round(progress.get())}${suffix}`,
+    defaultValue: `${Math.round(progress.get())}${suffix}`,
   }));
 
   return (

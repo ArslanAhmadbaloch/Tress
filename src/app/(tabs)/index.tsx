@@ -15,7 +15,12 @@ import {
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { ProgressBar, StatTile } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
-import { formatDuration, formatMilestone, formatRelative } from '@/lib/date';
+import {
+  formatDuration,
+  formatMilestone,
+  formatRelative,
+  toDateKey,
+} from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import {
   activeRoutineItems,
@@ -26,7 +31,6 @@ import {
   nextUpdate,
   todayProgress,
 } from '@/store/selectors';
-import { toDateKey } from '@/lib/date';
 import { useTheme } from '@/theme';
 import { ANGLE_LABELS } from '@/types/domain';
 

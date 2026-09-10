@@ -47,17 +47,17 @@ export function PressableScale({
   const reduceMotion = useReducedMotion();
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    transform: [{ scale: scale.get() }],
   }));
 
   const handlePressIn = useCallback(() => {
     if (reduceMotion) return;
-    scale.value = withSpring(scaleTo, motion.spring.snappy);
+    scale.set(withSpring(scaleTo, motion.spring.snappy));
   }, [reduceMotion, scale, scaleTo]);
 
   const handlePressOut = useCallback(() => {
     if (reduceMotion) return;
-    scale.value = withSpring(1, motion.spring.snappy);
+    scale.set(withSpring(1, motion.spring.snappy));
   }, [reduceMotion, scale]);
 
   const handlePress = useCallback<NonNullable<PressableProps['onPress']>>(

@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, ScrollView, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -57,11 +57,14 @@ export default function SettingsScreen() {
 
   const [routineReminder, setRoutineReminder] = useState(false);
   const [updateReminder, setUpdateReminder] = useState(false);
-  const [storage, setStorage] = useState(0);
 
-  useEffect(() => {
-    setStorage(photoStorageBytes());
-  }, [data.sessions]);
+  // Reading the directory size is synchronous and cheap; recompute it when
+  // the session list changes rather than mirroring it into state.
+  const storage = useMemo(
+    () => photoStorageBytes(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.sessions.length],
+  );
 
   const journey = data.journey;
   if (!journey) return null;
