@@ -1,22 +1,39 @@
 /**
- * GlassSurface — the app's translucent material.
+ * The Liquid Glass layer.
  *
- * Three tiers, picked at runtime so every platform gets the best real
- * effect available rather than a faked one:
+ * Apple's model, which this follows: Liquid Glass is a *functional layer*
+ * that sits above the content layer. Navigation and controls float in it;
+ * content never does. Three rules follow from that, and they are enforced
+ * here rather than left to each screen:
  *
- *   1. iOS 26+          native Liquid Glass via expo-glass-effect
- *   2. iOS < 26, Android  expo-blur, which is a genuine backdrop blur
- *   3. anything else    an opaque tinted surface
+ *   1. Glass is for chrome only. Cards, rows and photos stay opaque so the
+ *      content stays the thing you look at.
+ *   2. Glass is never stacked on glass. Related controls join a shared
+ *      `GlassGroup` so their shapes merge into one element instead of
+ *      layering two materials.
+ *   3. Glass yields to accessibility. With Reduce Transparency on, every
+ *      surface here becomes opaque — the layer still reads as chrome
+ *      through its shape and elevation, not its translucency.
  *
- * Content stays the visual priority: this is for chrome (nav bars,
- * floating controls, sheets), not for wrapping whole screens.
+ * Three tiers of implementation, so each platform gets the best real
+ * effect rather than a faked one:
+ *
+ *   iOS 26+          native Liquid Glass (refraction, specular edge, motion)
+ *   iOS < 26         expo-blur, a genuine backdrop blur
+ *   Android / other  a tinted scrim, because SDK 57's Android blur needs an
+ *                    explicit blurTarget that floating chrome cannot supply
  */
 
 import { BlurView } from 'expo-blur';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  GlassContainer,
+  GlassView,
+  isLiquidGlassAvailable,
+} from 'expo-glass-effect';
 import type { ReactNode } from 'react';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { useDisplayPreferences } from '@/hooks/use-accessibility-display';
 import { useTheme } from '@/theme';
 
 /**
@@ -25,31 +42,42 @@ import { useTheme } from '@/theme';
  */
 const LIQUID_GLASS = isLiquidGlassAvailable();
 
+/**
+ * Values for chrome floating over a dark backdrop — a camera feed or a
+ * photo. Independent of the app theme, because "dark" there is the
+ * absence of a themed surface, not a theme choice.
+ */
+const OVER_DARK = {
+  tint: 'rgba(22, 24, 28, 0.62)',
+  border: 'rgba(255, 255, 255, 0.16)',
+  opaque: 'rgba(28, 31, 36, 0.97)',
+} as const;
+
+export type GlassVariant = 'regular' | 'clear';
+
 export type GlassSurfaceProps = {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
-  /** `clear` is lighter and lets more colour through than `regular`. */
-  variant?: 'regular' | 'clear';
-  /** Corner radius; also clips the blur so the edges stay crisp. */
-  borderRadius?: number;
-  /** Draw the lit hairline edge. Off for full-bleed bars. */
-  bordered?: boolean;
-  /** Reacts to touch on iOS 26+. Only for genuinely tappable surfaces. */
-  interactive?: boolean;
   /**
-   * Force the material's light/dark treatment regardless of app theme.
-   * Chrome floating over a camera feed or a photo is always on a dark
-   * backdrop, so it must stay dark even in light mode — otherwise white
-   * label text lands on a near-white surface.
+   * `regular` is the default and carries the most contrast — use it for
+   * anything containing text. `clear` is thinner and lets more of the
+   * content through; reserve it for small controls over busy backdrops,
+   * where the material should not compete with the content.
    */
+  variant?: GlassVariant;
+  borderRadius?: number;
+  /** The lit hairline edge. Off for surfaces that bleed off-screen. */
+  bordered?: boolean;
+  /**
+   * Reacts to touch on iOS 26+ with the same fluid response as system
+   * controls. Only for surfaces that are themselves tappable.
+   */
+  interactive?: boolean;
+  /** Force the dark treatment for chrome over photos or the camera. */
   over?: 'theme' | 'dark';
+  /** Tints the material to suggest prominence. Use sparingly. */
+  tint?: string;
 };
-
-/** Dark-context material values, independent of the app theme. */
-const DARK_OVER = {
-  tint: 'rgba(22, 24, 28, 0.62)',
-  border: 'rgba(255, 255, 255, 0.16)',
-} as const;
 
 export function GlassSurface({
   children,
@@ -59,18 +87,40 @@ export function GlassSurface({
   bordered = true,
   interactive = false,
   over = 'theme',
+  tint,
 }: GlassSurfaceProps) {
   const { colors, radius, scheme } = useTheme();
-  const cornerRadius = borderRadius ?? radius.card;
+  const { reduceTransparency, increaseContrast } = useDisplayPreferences();
 
+  const cornerRadius = borderRadius ?? radius.card;
   const forcedDark = over === 'dark';
   const effectiveScheme = forcedDark ? 'dark' : scheme;
-  const tint = forcedDark ? DARK_OVER.tint : colors.glassTint;
-  const borderColor = forcedDark ? DARK_OVER.border : colors.glassBorder;
 
+  const borderColor = forcedDark ? OVER_DARK.border : colors.glassBorder;
   const edge: ViewStyle = bordered
-    ? { borderWidth: StyleSheet.hairlineWidth, borderColor }
+    ? {
+        borderWidth: increaseContrast ? 1 : StyleSheet.hairlineWidth,
+        borderColor: increaseContrast ? colors.text : borderColor,
+      }
     : {};
+
+  const shape: ViewStyle = { borderRadius: cornerRadius, overflow: 'hidden' };
+
+  // Reduce Transparency: drop the material, keep the layer. Shape, border
+  // and elevation still say "this floats above the content".
+  if (reduceTransparency) {
+    return (
+      <View
+        style={[
+          shape,
+          edge,
+          { backgroundColor: forcedDark ? OVER_DARK.opaque : colors.surface },
+          style,
+        ]}>
+        {children}
+      </View>
+    );
+  }
 
   if (LIQUID_GLASS) {
     return (
@@ -78,7 +128,8 @@ export function GlassSurface({
         glassEffectStyle={variant}
         isInteractive={interactive}
         colorScheme={effectiveScheme}
-        style={[{ borderRadius: cornerRadius, overflow: 'hidden' }, edge, style]}>
+        tintColor={tint}
+        style={[shape, edge, style]}>
         {children}
       </GlassView>
     );
@@ -86,22 +137,58 @@ export function GlassSurface({
 
   return (
     <BlurView
-      // `intensity` is a 0-100 scale; clear reads lighter than regular.
+      // 0-100; clear reads noticeably thinner than regular.
       intensity={variant === 'clear' ? 34 : 58}
       tint={effectiveScheme === 'dark' ? 'dark' : 'light'}
-      style={[{ borderRadius: cornerRadius, overflow: 'hidden' }, edge, style]}>
+      style={[shape, edge, style]}>
       {/*
-        The tint is what carries contrast, and on Android it is the whole
+        The tint carries the contrast, and on Android it is the whole
         effect: SDK 57's Android blur needs an explicit `blurTarget` view,
-        which floating chrome over a camera feed cannot supply. iOS blurs
-        natively behind this, so the tint only deepens it there.
+        which chrome floating over a camera feed cannot supply. On iOS it
+        only deepens the real blur behind it.
       */}
       <View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: tint }]}
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: forcedDark ? OVER_DARK.tint : colors.glassTint },
+          tint ? { backgroundColor: tint } : null,
+        ]}
       />
       {children}
     </BlurView>
+  );
+}
+
+/**
+ * Groups adjacent glass surfaces so they render as one element.
+ *
+ * Liquid Glass elements must not be layered on top of each other, and
+ * multiple effects belong in a shared container for both rendering
+ * performance and shape morphing. `spacing` controls how close two
+ * surfaces get before their shapes merge.
+ */
+export function GlassGroup({
+  children,
+  spacing = 12,
+  style,
+}: {
+  children: ReactNode;
+  spacing?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { reduceTransparency } = useDisplayPreferences();
+
+  // Without the real material there is nothing to merge, and the native
+  // container would only add a layer.
+  if (!LIQUID_GLASS || reduceTransparency) {
+    return <View style={style}>{children}</View>;
+  }
+
+  return (
+    <GlassContainer spacing={spacing} style={style}>
+      {children}
+    </GlassContainer>
   );
 }
 

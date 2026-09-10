@@ -2,7 +2,13 @@ import { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { Icon } from '@/components/ui/icon';
-import { EmptyState, Screen, ScreenScroll, ScreenTitle } from '@/components/ui/layout';
+import {
+  EmptyState,
+  Screen,
+  ScreenScroll,
+  ScreenTitle,
+  ScrollEdgeEffect,
+} from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { formatRelative } from '@/lib/date';
@@ -108,28 +114,36 @@ export default function CommunityScreen() {
         })}
       </ScrollView>
 
-      <ScreenScroll style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 0 }}>
-        {posts.length === 0 ? (
-          <EmptyState
-            icon="community"
-            title="Nothing here yet"
-            body="No sample journeys match this stage. Try another filter."
-          />
-        ) : (
-          <View style={{ gap: spacing.lg }}>
-            {posts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                liked={interactions[post.id]?.liked ?? post.likedByMe}
-                saved={interactions[post.id]?.saved ?? post.savedByMe}
-                onLike={() => toggle(post.id, 'liked')}
-                onSave={() => toggle(post.id, 'saved')}
-              />
-            ))}
-          </View>
-        )}
-      </ScreenScroll>
+      {/*
+        The header and filters are fixed chrome, so the feed scrolling
+        beneath them needs a scroll edge effect — without it, post titles
+        pass under the filter row and turn to mush.
+      */}
+      <View style={{ flex: 1 }}>
+        <ScreenScroll style={{ flex: 1 }} contentContainerStyle={{ paddingTop: spacing.sm }}>
+          {posts.length === 0 ? (
+            <EmptyState
+              icon="community"
+              title="Nothing here yet"
+              body="No sample journeys match this stage. Try another filter."
+            />
+          ) : (
+            <View style={{ gap: spacing.lg }}>
+              {posts.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  liked={interactions[post.id]?.liked ?? post.likedByMe}
+                  saved={interactions[post.id]?.saved ?? post.savedByMe}
+                  onLike={() => toggle(post.id, 'liked')}
+                  onSave={() => toggle(post.id, 'saved')}
+                />
+              ))}
+            </View>
+          )}
+        </ScreenScroll>
+        <ScrollEdgeEffect edge="top" height={20} />
+      </View>
     </Screen>
   );
 }

@@ -122,11 +122,29 @@ class Canvas {
     this.data[i + 3] = Math.round(outA * 255);
   }
 
+  /** Vertical gradient fill, for a ground with a little depth. */
+  fillGradient(topColor, bottomColor) {
+    const top = hex(topColor);
+    const bottom = hex(bottomColor);
+    for (let y = 0; y < this.size; y += 1) {
+      const t = y / (this.size - 1);
+      for (let x = 0; x < this.size; x += 1) {
+        const i = (y * this.size + x) * 4;
+        for (let c = 0; c < 3; c += 1) {
+          this.data[i + c] = Math.round(top[c] + (bottom[c] - top[c]) * t);
+        }
+        this.data[i + 3] = 255;
+      }
+    }
+  }
+
   /**
    * Rounded rectangle, antialiased by supersampling each edge pixel.
    * Sampling 4x4 is plenty at icon sizes and keeps this readable.
+   * `alpha` below 1 lets overlapping shapes build up tone, which is how
+   * the layered icon style creates depth without drawing shadows.
    */
-  roundedRect(x, y, w, h, radius, color) {
+  roundedRect(x, y, w, h, radius, color, alpha = 1) {
     const rgb = hex(color);
     const r = Math.min(radius, w / 2, h / 2);
 
@@ -153,7 +171,7 @@ class Canvas {
             if (inside(px + (sx + 0.5) / 4, py + (sy + 0.5) / 4)) hits += 1;
           }
         }
-        if (hits > 0) this.blend(px, py, rgb, hits / 16);
+        if (hits > 0) this.blend(px, py, rgb, (hits / 16) * alpha);
       }
     }
   }
@@ -165,29 +183,47 @@ class Canvas {
 
 /**
  * The mark: three strands rising left to right, centred in `size`.
+ *
+ * The strands deliberately overlap and are drawn semi-transparent, so the
+ * overlaps read brighter than the strands themselves. That gives the
+ * system's icon pipeline real layers to light, refract and shadow — a flat
+ * opaque mark has nothing for those effects to act on.
+ *
  * `scale` is the fraction of the canvas the mark occupies.
  */
-function drawMark(canvas, color, scale = 0.46) {
+function drawMark(canvas, color, scale = 0.46, alpha = 0.82) {
   const s = canvas.size;
   const markW = s * scale;
-  const strandW = markW / 4.6;
-  const gap = (markW - strandW * 3) / 2;
-  const tallest = markW * 1.16;
+  const strandW = markW / 3.5;
+  // Negative gap: each strand sits partly over the one before it.
+  const gap = -strandW * 0.18;
+  const step = strandW + gap;
+  const spanW = strandW * 3 + gap * 2;
+  const tallest = markW * 1.2;
 
-  const left = (s - markW) / 2;
+  const left = (s - spanW) / 2;
   const bottom = (s + tallest) / 2;
 
-  const heights = [tallest * 0.52, tallest * 0.78, tallest];
+  const heights = [tallest * 0.5, tallest * 0.76, tallest];
 
   heights.forEach((h, i) => {
-    const x = left + i * (strandW + gap);
-    canvas.roundedRect(x, bottom - h, strandW, h, strandW / 2, color);
+    canvas.roundedRect(
+      left + i * step,
+      bottom - h,
+      strandW,
+      h,
+      strandW / 2,
+      color,
+      alpha,
+    );
   });
 }
 
 /* -------------------------------- output ------------------------------ */
 
 const JADE = '#2F8E78';
+const JADE_LIGHT = '#3AA189';
+const JADE_DEEP = '#246B5B';
 const PAPER = '#F7F6F3';
 
 function write(name, buffer) {
@@ -201,7 +237,7 @@ console.log('Generating Hair Journey icons…');
 
 // iOS / general app icon: full-bleed, the OS applies the mask.
 const icon = new Canvas(1024);
-icon.fill(JADE);
+icon.fillGradient(JADE_LIGHT, JADE_DEEP);
 drawMark(icon, PAPER);
 write('icon.png', icon.toPng());
 
@@ -211,12 +247,12 @@ drawMark(fg, PAPER, 0.34);
 write('android-icon-foreground.png', fg.toPng());
 
 const bg = new Canvas(1024);
-bg.fill(JADE);
+bg.fillGradient(JADE_LIGHT, JADE_DEEP);
 write('android-icon-background.png', bg.toPng());
 
 // Monochrome (themed icons): the silhouette only, white on transparent.
 const mono = new Canvas(1024);
-drawMark(mono, '#FFFFFF', 0.34);
+drawMark(mono, '#FFFFFF', 0.34, 1);
 write('android-icon-monochrome.png', mono.toPng());
 
 // Splash mark sits on the splash background colour, so it is jade on clear.
@@ -225,8 +261,9 @@ drawMark(splash, JADE, 0.62);
 write('splash-icon.png', splash.toPng());
 
 const favicon = new Canvas(64);
-favicon.fill(JADE);
-drawMark(favicon, PAPER, 0.5);
+favicon.fillGradient(JADE_LIGHT, JADE_DEEP);
+// Opaque at 64px: alpha overlaps muddy together at this size.
+drawMark(favicon, PAPER, 0.52, 1);
 write('favicon.png', favicon.toPng());
 
 console.log('Done.');

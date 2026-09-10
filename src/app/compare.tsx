@@ -10,6 +10,7 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 
+import { GlassSurface } from '@/components/ui/glass-surface';
 import { EmptyState } from '@/components/ui/layout';
 import { Icon } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
@@ -17,10 +18,13 @@ import { Text } from '@/components/ui/text';
 import { formatMilestone } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import { sessionsChronological } from '@/store/selectors';
-import { useTheme } from '@/theme';
+import { concentricRadius, useTheme } from '@/theme';
 import { ANGLES, ANGLE_LABELS, type Angle } from '@/types/domain';
 
 type Mode = 'slider' | 'sideBySide';
+
+/** Inset of the selected segment inside its glass container. */
+const SEGMENT_PAD = 3;
 
 export default function CompareScreen() {
   const { from } = useLocalSearchParams<{ from?: string }>();
@@ -117,15 +121,21 @@ export default function CompareScreen() {
           })}
         </ScrollView>
 
-        {/* Mode toggle */}
-        <View
+        {/*
+          A segmented control is exactly the kind of element that belongs in
+          the glass layer: it is chrome that sits above the photographs it
+          controls. The selected segment is inset by `pad`, so its radius is
+          concentric with the container rather than an arbitrary pill.
+        */}
+        <GlassSurface
+          variant="regular"
+          borderRadius={radius.pill}
+          interactive
           style={{
             flexDirection: 'row',
             marginHorizontal: spacing.lg,
             marginTop: spacing.sm,
-            padding: 3,
-            borderRadius: radius.pill,
-            backgroundColor: colors.fill,
+            padding: SEGMENT_PAD,
           }}>
           {(['slider', 'sideBySide'] as Mode[]).map((m) => {
             const active = mode === m;
@@ -137,10 +147,13 @@ export default function CompareScreen() {
                 scaleTo={0.99}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
+                accessibilityLabel={
+                  m === 'slider' ? 'Slider comparison' : 'Side by side comparison'
+                }
                 style={{
                   flex: 1,
                   paddingVertical: spacing.sm,
-                  borderRadius: radius.pill,
+                  borderRadius: concentricRadius(radius.pill, SEGMENT_PAD),
                   alignItems: 'center',
                   backgroundColor: active ? colors.surface : 'transparent',
                 }}>
@@ -150,7 +163,7 @@ export default function CompareScreen() {
               </PressableScale>
             );
           })}
-        </View>
+        </GlassSurface>
 
         {/* Comparison */}
         <View style={{ marginTop: spacing.lg, paddingHorizontal: spacing.lg }}>
@@ -195,14 +208,14 @@ export default function CompareScreen() {
 
         {/* Session pickers */}
         <SessionPicker
-          title="BEFORE"
+          title="Before"
           sessions={sessions}
           startedAt={journey.startedAt}
           selectedIndex={beforeIndex}
           onSelect={setBeforeIndex}
         />
         <SessionPicker
-          title="AFTER"
+          title="After"
           sessions={sessions}
           startedAt={journey.startedAt}
           selectedIndex={afterIndex}

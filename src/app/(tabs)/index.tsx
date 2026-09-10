@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import {
   EmptyState,
+  FloatingBar,
   Screen,
   ScreenScroll,
   ScreenTitle,
@@ -56,7 +57,7 @@ export default function HomeScreen() {
 
   return (
     <Screen>
-      <ScreenScroll>
+      <ScreenScroll clearsFloatingBar={data.sessions.length > 0}>
         <ScreenTitle
           title={greeting}
           subtitle={
@@ -69,7 +70,7 @@ export default function HomeScreen() {
         {/* Journey duration — the single number that frames everything. */}
         <Card style={{ marginTop: spacing.lg }} tone="surface">
           <Text variant="overline" color="textTertiary">
-            JOURNEY
+            Journey
           </Text>
           <Text variant="display" style={{ marginTop: spacing.xs }}>
             {formatDuration(journey.startedAt)}
@@ -285,15 +286,23 @@ export default function HomeScreen() {
             actionLabel="Create First Update"
             onAction={() => router.push('/capture-session')}
           />
-        ) : (
+        ) : null}
+      </ScreenScroll>
+
+      {/*
+        The core action lives in the glass layer rather than at the end of
+        the content column: it stays reachable at any scroll position, and
+        the content reads as passing underneath it.
+      */}
+      {data.sessions.length > 0 ? (
+        <FloatingBar>
           <Button
             label="Update Journey"
             icon="camera"
-            style={{ marginTop: spacing.xxl }}
             onPress={() => router.push('/capture-session')}
           />
-        )}
-      </ScreenScroll>
+        </FloatingBar>
+      ) : null}
     </Screen>
   );
 }

@@ -21,6 +21,7 @@ import { useColorScheme as useSystemColorScheme } from 'react-native';
 import {
   darkColors,
   lightColors,
+  metrics,
   motion,
   radius,
   shadow,
@@ -42,6 +43,7 @@ export type Theme = {
   typography: typeof typography;
   shadow: typeof shadow;
   motion: typeof motion;
+  metrics: typeof metrics;
 };
 
 type ThemeContextValue = Theme & {
@@ -64,6 +66,7 @@ function buildTheme(scheme: ResolvedScheme): Theme {
     typography,
     shadow,
     motion,
+    metrics,
   };
 }
 

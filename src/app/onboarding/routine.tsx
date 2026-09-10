@@ -125,7 +125,7 @@ export default function RoutineStep() {
       {unusedExamples.length > 0 ? (
         <View style={{ marginTop: spacing.xl }}>
           <Text variant="overline" color="textTertiary" style={{ marginBottom: spacing.sm }}>
-            SUGGESTIONS
+            Suggestions
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
             {unusedExamples.map((example) => (

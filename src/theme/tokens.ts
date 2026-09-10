@@ -165,7 +165,12 @@ export const spacing = {
 } as const;
 
 /* ------------------------------------------------------------------ *
- * Radius — generous but controlled. `card` is the workhorse.
+ * Radius
+ *
+ * Apple's guidance is that the hardware's curvature informs every nested
+ * shape, so radii step up as containers get larger and nested shapes stay
+ * concentric with their parent. `card` is the workhorse; `section` matches
+ * the larger corner radius grouped lists took on in the refresh.
  * ------------------------------------------------------------------ */
 
 export const radius = {
@@ -173,9 +178,44 @@ export const radius = {
   sm: 10,
   md: 14,
   card: 20,
-  lg: 26,
+  section: 26,
+  lg: 28,
   xl: 34,
   pill: 999,
+} as const;
+
+/**
+ * The radius a child should use to sit concentrically inside a parent.
+ *
+ * Two rounded rectangles look wrong together unless the inner radius is
+ * the outer radius minus the gap between them — otherwise the curves run
+ * at different rates and the inset shape reads as a sticker. Apple calls
+ * this concentricity; SwiftUI exposes it as ConcentricRectangle.
+ */
+export function concentricRadius(outerRadius: number, inset: number): number {
+  return Math.max(4, outerRadius - inset);
+}
+
+/* ------------------------------------------------------------------ *
+ * Layout metrics
+ *
+ * The refresh gave lists and forms more room to breathe: taller rows and
+ * more padding, so content reads clearly through the glass layer.
+ * ------------------------------------------------------------------ */
+
+export const metrics = {
+  /** Minimum height of a row in a grouped list. */
+  rowHeight: 52,
+  /** Inner padding of a grouped section. */
+  sectionPadding: 18,
+  /** How far floating chrome sits from the screen edge. */
+  floatingInset: 16,
+  /**
+   * Height of the fade that obscures content scrolling beneath fixed
+   * chrome. Apple calls this the scroll edge effect; without it, text
+   * passing under a translucent bar becomes unreadable.
+   */
+  scrollEdgeHeight: 44,
 } as const;
 
 /* ------------------------------------------------------------------ *
@@ -277,12 +317,16 @@ export const typography = {
     lineHeight: 16,
     fontWeight: '500',
   },
-  /** Section headers — small, wide, quiet. */
+  /**
+   * Small quiet label above a value or group. Title case, with only a
+   * hair of tracking — the all-caps, widely-tracked treatment reads as a
+   * pre-refresh interface now that section headers are title case.
+   */
   overline: {
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '600',
-    letterSpacing: 0.7,
+    letterSpacing: 0.2,
   },
   /** Emphasised statistic inside a card. */
   stat: {
@@ -350,3 +394,29 @@ export const motion = {
 
 /** Hit target floor from the Apple HIG / Material guidance. */
 export const MIN_TOUCH_TARGET = 44;
+
+/**
+ * The same colour at zero alpha.
+ *
+ * Fading a surface to `transparent` is not the same thing: on some
+ * renderers that interpolates through black and leaves a grey haze at the
+ * midpoint. A gradient has to fade to its own colour with the alpha
+ * removed, which is what this produces.
+ */
+export function withZeroAlpha(color: string): string {
+  if (color.startsWith('#') && (color.length === 7 || color.length === 4)) {
+    const full =
+      color.length === 4
+        ? `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`
+        : color;
+    const r = parseInt(full.slice(1, 3), 16);
+    const g = parseInt(full.slice(3, 5), 16);
+    const b = parseInt(full.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, 0)`;
+  }
+  // Already a functional colour; swap its alpha to zero.
+  return color.replace(/rgba?\(([^)]+)\)/, (_m, inner) => {
+    const parts = String(inner).split(',').slice(0, 3).map((v) => v.trim());
+    return `rgba(${parts.join(', ')}, 0)`;
+  });
+}

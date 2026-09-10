@@ -168,7 +168,9 @@ record(
 
 /* 3. Design system — tokens, not magic values */
 
-const RAW_COLOR = /(?<![\w-])#[0-9a-fA-F]{3,8}\b|rgba?\(/g;
+// No /g flag: a global regex carries lastIndex between .test() calls and
+// would report alternating false results across files.
+const RAW_COLOR = /(?<![\w-])#[0-9a-fA-F]{3,8}\b|rgba?\(/;
 const ALLOWED_RAW = [
   'src/theme/tokens.ts',
   'scripts/',
@@ -204,6 +206,110 @@ record(
 const darkDefined =
   readFileSync(join(SRC, 'theme', 'tokens.ts'), 'utf8').includes('darkColors');
 record('Design system', 1, 'A dark palette is defined explicitly', darkDefined, '');
+
+/* 3b. Liquid Glass — Apple's rules for the material, enforced */
+
+// Glass belongs to the navigation/control layer. Content surfaces — cards,
+// list rows, photo tiles — stay opaque so content stays the priority.
+const CONTENT_COMPONENTS = ['card.tsx', 'option-card.tsx', 'stat.tsx'];
+const glassOnContent = FILES.filter(
+  (f) =>
+    CONTENT_COMPONENTS.some((c) => f.rel.endsWith(c)) &&
+    f.text.includes('GlassSurface'),
+).map((f) => f.rel);
+
+record(
+  'Liquid Glass',
+  2,
+  'Glass is confined to chrome; content surfaces stay opaque',
+  glassOnContent.length === 0,
+  glassOnContent.length ? `Glass on content: ${glassOnContent.join(', ')}` : '',
+);
+
+// "Avoid overcrowding or layering Liquid Glass elements on top of each
+// other." A GlassSurface directly wrapping another is the failure case.
+const nestedGlass = FILES.filter((f) => {
+  const opens = [...f.text.matchAll(/<GlassSurface\b/g)].length;
+  if (opens < 2) return false;
+  // Crude but effective: a second <GlassSurface before the first closes.
+  const firstOpen = f.text.indexOf('<GlassSurface');
+  const firstClose = f.text.indexOf('</GlassSurface>', firstOpen);
+  const secondOpen = f.text.indexOf('<GlassSurface', firstOpen + 1);
+  return secondOpen !== -1 && firstClose !== -1 && secondOpen < firstClose;
+}).map((f) => f.rel);
+
+record(
+  'Liquid Glass',
+  2,
+  'No glass surface is nested inside another',
+  nestedGlass.length === 0,
+  nestedGlass.length ? `Nested glass in: ${nestedGlass.join(', ')}` : '',
+);
+
+const glassSource =
+  FILES.find((f) => f.rel.endsWith('glass-surface.tsx'))?.text ?? '';
+
+record(
+  'Liquid Glass',
+  2,
+  'Reduce Transparency replaces the material with an opaque surface',
+  glassSource.includes('reduceTransparency') &&
+    glassSource.includes('useDisplayPreferences'),
+  '',
+);
+
+record(
+  'Liquid Glass',
+  1,
+  'Adjacent glass surfaces share a container rather than stacking',
+  glassSource.includes('GlassContainer') &&
+    FILES.some((f) => f.rel.includes('src/app/') && f.text.includes('GlassGroup')),
+  '',
+);
+
+// Section headers moved to title case in the refresh; all-caps reads as a
+// pre-refresh interface.
+const shoutingHeaders = FILES.filter((f) => {
+  if (!f.rel.includes('src/app/')) return false;
+  if (/textTransform:\s*'uppercase'/.test(f.text)) return true;
+  // An all-caps literal used as a header or an overline label. Two or more
+  // consecutive caps-only words, so acronyms and single words like "OK"
+  // do not trip it.
+  return /(?:title=\{?"[A-Z][A-Z ]{3,}"|>\s*[A-Z][A-Z]+(?: [A-Z]+)+\s*<)/.test(
+    f.text,
+  );
+}).map((f) => f.rel);
+
+record(
+  'Liquid Glass',
+  1,
+  'Section headers use title case, not all caps',
+  shoutingHeaders.length === 0,
+  shoutingHeaders.length ? `All-caps headers in: ${shoutingHeaders.join(', ')}` : '',
+);
+
+// Custom fixed chrome with content scrolling beneath needs a scroll edge
+// effect, or text passing under it becomes unreadable.
+const layoutSource =
+  FILES.find((f) => f.rel.endsWith('components/ui/layout.tsx'))?.text ?? '';
+record(
+  'Liquid Glass',
+  1,
+  'A scroll edge effect exists and is applied to custom fixed chrome',
+  layoutSource.includes('ScrollEdgeEffect') &&
+    FILES.some(
+      (f) => f.rel.includes('src/app/') && f.text.includes('<ScrollEdgeEffect'),
+    ),
+  '',
+);
+
+record(
+  'Liquid Glass',
+  1,
+  'Nested shapes use concentric radii rather than arbitrary ones',
+  FILES.some((f) => f.text.includes('concentricRadius')),
+  '',
+);
 
 /* 4. Robustness — empty states, permissions, failure paths */
 

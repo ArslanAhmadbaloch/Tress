@@ -13,13 +13,18 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LinearGradient } from 'expo-linear-gradient';
+
 import { Icon, type IconName } from './icon';
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
-import { useTheme } from '@/theme';
+import { useTheme, withZeroAlpha } from '@/theme';
 
 /** Height the tab bar occupies, so scroll views can clear it. */
 const TAB_BAR_CLEARANCE = 96;
+
+/** Extra room a floating control bar needs above the tab bar. */
+const FLOATING_BAR_CLEARANCE = 78;
 
 export function Screen({
   children,
@@ -57,10 +62,20 @@ export function ScreenScroll({
   children,
   contentContainerStyle,
   clearsTabBar = true,
+  clearsFloatingBar = false,
   ...rest
-}: ScrollViewProps & { children: ReactNode; clearsTabBar?: boolean }) {
+}: ScrollViewProps & {
+  children: ReactNode;
+  clearsTabBar?: boolean;
+  /** Reserve room for a FloatingBar so content can scroll clear of it. */
+  clearsFloatingBar?: boolean;
+}) {
   const { spacing } = useTheme();
   const insets = useSafeAreaInsets();
+
+  const bottom = clearsTabBar
+    ? TAB_BAR_CLEARANCE + insets.bottom + (clearsFloatingBar ? FLOATING_BAR_CLEARANCE : 0)
+    : spacing.xxl;
 
   return (
     <ScrollView
@@ -68,12 +83,7 @@ export function ScreenScroll({
       contentInsetAdjustmentBehavior="never"
       {...rest}
       contentContainerStyle={[
-        {
-          paddingHorizontal: spacing.lg,
-          paddingBottom: clearsTabBar
-            ? TAB_BAR_CLEARANCE + insets.bottom
-            : spacing.xxl,
-        },
+        { paddingHorizontal: spacing.lg, paddingBottom: bottom },
         contentContainerStyle,
       ]}>
       {children}
@@ -106,11 +116,12 @@ export function SectionHeader({
         },
         style,
       ]}>
-      <Text
-        variant="overline"
-        color="textTertiary"
-        accessibilityRole="header"
-        style={{ textTransform: 'uppercase' }}>
+      {/*
+        Title-style capitalisation, not all-caps. The system refresh moved
+        list and form section headers to title case for legibility, and a
+        screen that keeps shouting its headers reads as pre-refresh.
+      */}
+      <Text variant="headline" color="textSecondary" accessibilityRole="header">
         {title}
       </Text>
 
@@ -247,4 +258,93 @@ export function Separator({ inset = 0 }: { inset?: number }) {
   );
 }
 
-export { TAB_BAR_CLEARANCE };
+/**
+ * Scroll edge effect.
+ *
+ * Content scrolling beneath fixed chrome has to be obscured, or text
+ * passing under a translucent bar turns to mush. System bars do this for
+ * free; any custom bar has to opt in — which is what this is. It fades
+ * the app background out over the content immediately below (or above) the
+ * bar, so the boundary reads as depth rather than as a hard seam.
+ */
+export function ScrollEdgeEffect({
+  edge = 'top',
+  height,
+}: {
+  edge?: 'top' | 'bottom';
+  height?: number;
+}) {
+  const { colors, metrics } = useTheme();
+  const h = height ?? metrics.scrollEdgeHeight;
+
+  // Fully opaque against the bar, transparent against the content.
+  const solid = colors.background;
+  const clear = withZeroAlpha(solid);
+
+  return (
+    <LinearGradient
+      pointerEvents="none"
+      colors={edge === 'top' ? [solid, clear] : [clear, solid]}
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        height: h,
+        ...(edge === 'top' ? { top: 0 } : { bottom: 0 }),
+      }}
+    />
+  );
+}
+
+
+/**
+ * A primary control floating above the content.
+ *
+ * Deliberately *not* a glass surface wrapping a solid button: that stacks
+ * two materials, which the guidance rules out, and on a platform without a
+ * real backdrop blur it degrades to an opaque slab sitting on top of text.
+ *
+ * Instead the control itself is the floating element, and a scroll edge
+ * effect underneath dissolves content before it reaches the control. That
+ * is what makes the content read as passing *beneath* the layer rather
+ * than being covered by it — the same job the system does for its own bars.
+ */
+export function FloatingBar({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { spacing, metrics, shadow } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View
+      pointerEvents="box-none"
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        // NativeTabs reports the tab bar through the bottom safe-area
+        // inset, so this is measured from the top of the tab bar.
+        bottom: insets.bottom,
+        alignItems: 'stretch',
+      }}>
+      <ScrollEdgeEffect edge="bottom" height={FLOATING_BAR_CLEARANCE} />
+      <View
+        style={[
+          {
+            paddingHorizontal: metrics.floatingInset,
+            paddingBottom: spacing.md,
+          },
+          shadow.lifted,
+          style,
+        ]}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+export { TAB_BAR_CLEARANCE, FLOATING_BAR_CLEARANCE };

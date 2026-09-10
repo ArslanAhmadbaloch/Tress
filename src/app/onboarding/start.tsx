@@ -65,7 +65,7 @@ export default function StartStep() {
       primaryLabel="Create My Journey"
       onPrimary={create}>
       <Text variant="overline" color="textTertiary" style={{ marginBottom: spacing.sm }}>
-        WHAT SHOULD WE CALL YOU?
+        What should we call you?
       </Text>
       <View
         style={{
@@ -90,7 +90,7 @@ export default function StartStep() {
       </View>
 
       <Text variant="overline" color="textTertiary" style={{ marginBottom: spacing.sm }}>
-        WHEN DID YOUR JOURNEY START?
+        When did your journey start?
       </Text>
       <View style={{ gap: spacing.sm }}>
         {START_OPTIONS.map((option, index) => (

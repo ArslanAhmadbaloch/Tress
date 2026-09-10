@@ -17,7 +17,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Button } from '@/components/ui/button';
-import { GlassSurface } from '@/components/ui/glass-surface';
+import { GlassGroup, GlassSurface } from '@/components/ui/glass-surface';
 import { Icon } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
@@ -376,7 +376,8 @@ export default function CaptureSessionScreen() {
       ) : null}
 
       {/* Top bar */}
-      <View
+      <GlassGroup
+        spacing={10}
         style={{
           position: 'absolute',
           top: insets.top + spacing.sm,
@@ -447,7 +448,7 @@ export default function CaptureSessionScreen() {
             </GlassSurface>
           </PressableScale>
         ) : null}
-      </View>
+      </GlassGroup>
 
       {/* Instruction card */}
       {!pending ? (
@@ -462,7 +463,7 @@ export default function CaptureSessionScreen() {
           }}>
           <GlassSurface variant="regular" over="dark" style={{ padding: spacing.lg }}>
             <Text variant="overline" style={{ color: '#fff', opacity: 0.7 }}>
-              {`ANGLE ${index + 1} OF ${ANGLES.length}`}
+              {`Angle ${index + 1} of ${ANGLES.length}`}
             </Text>
             <Text variant="title3" style={{ color: '#fff', marginTop: 2 }}>
               {ANGLE_LABELS[angle]}
