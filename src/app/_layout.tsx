@@ -4,6 +4,7 @@ import {
   Stack,
   ThemeProvider as NavThemeProvider,
 } from 'expo-router';
+import { Parisienne_400Regular, useFonts } from '@expo-google-fonts/parisienne';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -22,8 +23,11 @@ SplashScreen.preventAutoHideAsync().catch(() => undefined);
 function Navigation() {
   const { colors, scheme, isReady: themeReady } = useTheme();
   const { isLoaded } = useAppStore();
+  // The script accent is decorative, so a failed load must not block the
+  // app — `error` counts as resolved and the fallback face is used.
+  const [fontsLoaded, fontError] = useFonts({ Parisienne_400Regular });
 
-  const ready = themeReady && isLoaded;
+  const ready = themeReady && isLoaded && (fontsLoaded || Boolean(fontError));
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
@@ -79,6 +83,12 @@ function Navigation() {
           name="routine"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
+        <Stack.Screen
+          name="capture-intro"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen name="calendar" />
+        <Stack.Screen name="learn/[slug]" />
         <Stack.Screen
           name="journal"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}

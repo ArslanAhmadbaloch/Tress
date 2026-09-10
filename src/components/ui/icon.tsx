@@ -47,7 +47,23 @@ export type IconName =
   | 'trash'
   | 'sun'
   | 'moon'
-  | 'phone';
+  | 'phone'
+  | 'learn'
+  | 'search'
+  | 'shield'
+  | 'pencil'
+  | 'trophy'
+  | 'arrowRight'
+  | 'chevronDown'
+  | 'target'
+  | 'globe'
+  | 'mail'
+  | 'star'
+  | 'help'
+  | 'drop'
+  | 'leaf'
+  | 'pill'
+  | 'dumbbell';
 
 type IconSpec = {
   /** SF Symbol name, iOS. */
@@ -57,11 +73,11 @@ type IconSpec = {
 };
 
 const ICONS: Record<IconName, IconSpec> = {
-  home: { sf: 'house.fill', md: 'home' },
-  journey: { sf: 'chart.line.uptrend.xyaxis', md: 'chart-timeline-variant' },
+  home: { sf: 'house', md: 'home-outline' },
+  journey: { sf: 'chart.bar', md: 'chart-timeline-variant' },
   capture: { sf: 'camera.fill', md: 'camera' },
   community: { sf: 'person.2.fill', md: 'account-group' },
-  profile: { sf: 'person.crop.circle.fill', md: 'account-circle' },
+  profile: { sf: 'person', md: 'account-outline' },
 
   camera: { sf: 'camera', md: 'camera-outline' },
   compare: { sf: 'rectangle.split.2x1', md: 'compare' },
@@ -94,6 +110,22 @@ const ICONS: Record<IconName, IconSpec> = {
   sun: { sf: 'sun.max.fill', md: 'white-balance-sunny' },
   moon: { sf: 'moon.fill', md: 'moon-waning-crescent' },
   phone: { sf: 'iphone', md: 'cellphone' },
+  learn: { sf: 'book', md: 'book-open-outline' },
+  search: { sf: 'magnifyingglass', md: 'magnify' },
+  shield: { sf: 'lock.shield', md: 'shield-check-outline' },
+  pencil: { sf: 'square.and.pencil', md: 'pencil-outline' },
+  trophy: { sf: 'trophy', md: 'trophy-outline' },
+  arrowRight: { sf: 'arrow.right', md: 'arrow-right' },
+  chevronDown: { sf: 'chevron.down', md: 'chevron-down' },
+  target: { sf: 'target', md: 'target' },
+  globe: { sf: 'globe', md: 'web' },
+  mail: { sf: 'envelope', md: 'email-outline' },
+  star: { sf: 'star', md: 'star-outline' },
+  help: { sf: 'questionmark.circle', md: 'help-circle-outline' },
+  drop: { sf: 'drop', md: 'water-outline' },
+  leaf: { sf: 'leaf', md: 'leaf' },
+  pill: { sf: 'pills', md: 'pill' },
+  dumbbell: { sf: 'figure.strengthtraining.traditional', md: 'dumbbell' },
 };
 
 export type IconProps = {

@@ -115,12 +115,13 @@ const dynamicRoots = routeNames
 
 /**
  * Tab screens are reached by the tab bar, not by router.push, so they are
- * "linked" if the layout declares a NativeTabs trigger with their name.
+ * "linked" if the bar declares an entry with their name. The bar is a
+ * custom component now, so the declaration lives in its TABS table.
  */
-const tabsLayout =
-  FILES.find((f) => f.rel.endsWith('(tabs)/_layout.tsx'))?.text ?? '';
+const tabBarSource =
+  FILES.find((f) => f.rel.endsWith('components/tab-bar.tsx'))?.text ?? '';
 const declaredTabs = new Set(
-  [...tabsLayout.matchAll(/NativeTabs\.Trigger\s+name="([^"]+)"/g)].map((m) =>
+  [...tabBarSource.matchAll(/name:\s*'([^']+)'/g)].map((m) =>
     m[1] === 'index' ? '/' : `/${m[1]}`,
   ),
 );
@@ -135,7 +136,7 @@ const unreachable = routeNames.filter((r) => {
 record(
   'Wiring',
   1,
-  'Tab bar declares a trigger for every tab screen',
+  'Tab bar declares an entry for every tab screen',
   appFiles
     .filter((f) => f.rel.includes('(tabs)/') && !f.rel.endsWith('_layout.tsx'))
     .every((f) => {
@@ -298,7 +299,9 @@ record(
   'A scroll edge effect exists and is applied to custom fixed chrome',
   layoutSource.includes('ScrollEdgeEffect') &&
     FILES.some(
-      (f) => f.rel.includes('src/app/') && f.text.includes('<ScrollEdgeEffect'),
+      (f) =>
+        !f.rel.endsWith('components/ui/layout.tsx') &&
+        f.text.includes('<ScrollEdgeEffect'),
     ),
   '',
 );
@@ -446,17 +449,35 @@ record(
   `${safetyCopy} surfaces carry the guardrail`,
 );
 
-const mockLabelled =
-  FILES.find((f) => f.rel.includes('sample-feed'))?.text.includes('TEMPORARY') ??
-  false;
+// Educational content is the new medical-risk surface: it is where the
+// product is most tempted to slide from explaining into advising.
+const learnLibrary =
+  FILES.find((f) => f.rel.includes('features/learn/library'))?.text ?? '';
+const learnScreens = FILES.filter((f) => f.rel.includes('/learn'));
+
+/**
+ * Comments are stripped first: the authoring rules in library.ts quote the
+ * very phrases they forbid ("no claims of guaranteed growth"), and a check
+ * that flags its own rulebook is noise rather than signal.
+ */
+const stripComments = (text) =>
+  text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+const advisoryLanguage =
+  /\b(you should take|we recommend|this will regrow|is guaranteed to)\b/i;
+
+const offenders = learnScreens
+  .filter((f) => advisoryLanguage.test(stripComments(f.text)))
+  .map((f) => f.rel);
+
 record(
   'Safety',
   1,
-  'Placeholder community data is labelled as temporary in code and UI',
-  mockLabelled &&
-    (FILES.find((f) => f.rel.endsWith('community.tsx'))?.text.includes('Sample journeys') ??
-      false),
-  '',
+  'Learn content explains rather than advises, and carries the disclaimer',
+  offenders.length === 0 &&
+    learnLibrary.includes('never cross from education into advice') &&
+    learnScreens.some((f) => f.text.includes('does not diagnose')),
+  offenders.length ? `Advisory language in: ${offenders.join(', ')}` : '',
 );
 
 /* ------------------------------- scoring ------------------------------ */

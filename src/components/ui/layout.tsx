@@ -15,13 +15,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LinearGradient } from 'expo-linear-gradient';
 
+import { Ground } from './ground';
 import { Icon, type IconName } from './icon';
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
 import { useTheme, withZeroAlpha } from '@/theme';
 
 /** Height the tab bar occupies, so scroll views can clear it. */
-const TAB_BAR_CLEARANCE = 96;
+const TAB_BAR_CLEARANCE = 118;
 
 /** Extra room a floating control bar needs above the tab bar. */
 const FLOATING_BAR_CLEARANCE = 78;
@@ -35,22 +36,22 @@ export function Screen({
   style?: StyleProp<ViewStyle>;
   edges?: ('top' | 'bottom')[];
 }) {
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
-    <View
-      style={[
-        {
-          flex: 1,
-          backgroundColor: colors.background,
-          paddingTop: edges.includes('top') ? insets.top : 0,
-          paddingBottom: edges.includes('bottom') ? insets.bottom : 0,
-        },
-        style,
-      ]}>
-      {children}
-    </View>
+    <Ground>
+      <View
+        style={[
+          {
+            flex: 1,
+            paddingTop: edges.includes('top') ? insets.top : 0,
+            paddingBottom: edges.includes('bottom') ? insets.bottom : 0,
+          },
+          style,
+        ]}>
+        {children}
+      </View>
+    </Ground>
   );
 }
 
@@ -121,7 +122,12 @@ export function SectionHeader({
         list and form section headers to title case for legibility, and a
         screen that keeps shouting its headers reads as pre-refresh.
       */}
-      <Text variant="headline" color="textSecondary" accessibilityRole="header">
+      <Text
+        variant="headline"
+        color="textSecondary"
+        accessibilityRole="header"
+        numberOfLines={1}
+        style={{ flexShrink: 1, marginRight: spacing.md }}>
         {title}
       </Text>
 
@@ -130,7 +136,8 @@ export function SectionHeader({
           onPress={onAction}
           haptic="none"
           accessibilityRole="button"
-          accessibilityLabel={action}>
+          accessibilityLabel={action}
+          style={{ flexShrink: 0 }}>
           <Text variant="subhead" color="accent">
             {action}
           </Text>
@@ -140,14 +147,27 @@ export function SectionHeader({
   );
 }
 
-/** Large screen title, used at the top of each tab. */
+/**
+ * Editorial page title.
+ *
+ * `eyebrow` is the small tracked label above; `title` and `titleMuted` set
+ * the two-tone headline, where the second line drops to grey so the phrase
+ * reads as one sentence with an emphasis rather than two headings. `script`
+ * is the decorative accent, capped at one per screen.
+ */
 export function ScreenTitle({
+  eyebrow,
   title,
+  titleMuted,
   subtitle,
+  script,
   trailing,
 }: {
+  eyebrow?: string;
   title: string;
+  titleMuted?: string;
   subtitle?: string;
+  script?: string;
   trailing?: ReactNode;
 }) {
   const { spacing } = useTheme();
@@ -163,15 +183,52 @@ export function ScreenTitle({
         paddingBottom: subtitle ? spacing.xs : spacing.sm,
       }}>
       <View style={{ flex: 1 }}>
+        {eyebrow ? (
+          <Text
+            variant="caption"
+            color="textTertiary"
+            style={{ letterSpacing: 2, marginBottom: spacing.xs }}>
+            {eyebrow.toUpperCase()}
+          </Text>
+        ) : null}
+
         <Text variant="title1" accessibilityRole="header">
           {title}
+          {titleMuted ? (
+            <Text variant="title1" color="textTertiary">
+              {'\n'}
+              {titleMuted}
+            </Text>
+          ) : null}
         </Text>
+
         {subtitle ? (
-          <Text variant="callout" color="textSecondary" style={{ marginTop: 2 }}>
+          <Text
+            variant="callout"
+            color="textSecondary"
+            style={{ marginTop: spacing.sm }}>
             {subtitle}
           </Text>
         ) : null}
       </View>
+
+      {script ? (
+        <Text
+          variant="script"
+          color="textSecondary"
+          accessible={false}
+          numberOfLines={3}
+          style={{
+            transform: [{ rotate: '-6deg' }],
+            marginTop: spacing.lg,
+            // Wide enough for a three-word phrase on three short lines;
+            // narrower and the last word silently disappears.
+            width: 132,
+            textAlign: 'right',
+          }}>
+          {script}
+        </Text>
+      ) : null}
       {trailing}
     </View>
   );

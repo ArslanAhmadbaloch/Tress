@@ -50,7 +50,9 @@ export default function ProfileScreen() {
     <Screen>
       <ScreenScroll>
         <ScreenTitle
-          title="Profile"
+          eyebrow="Profile"
+          title="Your"
+          titleMuted="journey"
           trailing={
             <PressableScale
               onPress={() => router.push('/settings')}

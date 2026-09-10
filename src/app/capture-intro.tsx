@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Screen, ScreenScroll, ScreenTitle, SectionHeader } from '@/components/ui/layout';
+import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { formatRelative } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
@@ -13,13 +14,21 @@ import { latestSession } from '@/store/selectors';
 import { useTheme } from '@/theme';
 import { ANGLES, ANGLE_GUIDANCE, ANGLE_LABELS } from '@/types/domain';
 
-const CONSISTENCY_TIPS = [
-  { icon: 'sun' as const, text: 'Use the same lighting — near a window works well' },
-  { icon: 'phone' as const, text: 'Hold the camera the same distance away' },
-  { icon: 'retake' as const, text: 'Keep your hair in its normal, dry state' },
+/**
+ * The step before the camera.
+ *
+ * Its whole job is to make the next five minutes repeatable: show which
+ * angles are coming, show what you shot last time, and state the three
+ * conditions that decide whether the comparison will be worth anything.
+ * Consistency is the product; this screen is where it is bought.
+ */
+const CONDITIONS = [
+  { icon: 'sun' as const, text: 'Same light — near a window works well' },
+  { icon: 'phone' as const, text: 'Same distance, arm held the same way' },
+  { icon: 'retake' as const, text: 'Dry hair, styled as you normally wear it' },
 ];
 
-export default function CaptureScreen() {
+export default function CaptureIntroScreen() {
   const { colors, spacing, radius } = useTheme();
   const router = useRouter();
   const { data } = useAppStore();
@@ -29,24 +38,45 @@ export default function CaptureScreen() {
 
   return (
     <Screen>
-      <ScreenScroll>
+      <ScreenScroll clearsTabBar={false}>
         <ScreenTitle
-          title={isBaseline ? 'Your baseline' : 'New update'}
+          eyebrow="Capture photos"
+          title={isBaseline ? 'Guided 5-angle' : 'New photo'}
+          titleMuted={isBaseline ? 'capture' : 'update'}
           subtitle={
             isBaseline
-              ? 'Your first photos become the reference every future update is measured against.'
-              : `Last captured ${last ? formatRelative(last.capturedAt) : 'recently'}`
+              ? 'Your first five photos become the baseline every future update is measured against.'
+              : `Last captured ${last ? formatRelative(last.capturedAt) : 'recently'}. Match those conditions as closely as you can.`
+          }
+          script="Same Angles Better Results"
+          trailing={
+            <PressableScale
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}>
+              <Icon name="close" size={15} color={colors.text} />
+            </PressableScale>
           }
         />
 
-        <SectionHeader title={`${ANGLES.length} angles`} />
+        <SectionHeader title={`${ANGLES.length} angles, in order`} />
 
         <View style={{ gap: spacing.sm }}>
           {ANGLES.map((angle, index) => {
             const previous = last?.photos.find((p) => p.angle === angle);
 
             return (
-              <Card key={angle} padded={false} tone="surface">
+              <Card key={angle} padded={false}>
                 <View
                   style={{
                     flexDirection: 'row',
@@ -64,7 +94,7 @@ export default function CaptureScreen() {
                         backgroundColor: colors.fill,
                       }}
                       contentFit="cover"
-                      accessibilityLabel={`Previous ${ANGLE_LABELS[angle]} photo`}
+                      accessibilityLabel={`Your last ${ANGLE_LABELS[angle]} photo`}
                     />
                   ) : (
                     <View
@@ -101,25 +131,40 @@ export default function CaptureScreen() {
         <SectionHeader title="For a fair comparison" />
         <Card tone="subtle">
           <View style={{ gap: spacing.md }}>
-            {CONSISTENCY_TIPS.map((tip) => (
+            {CONDITIONS.map((condition) => (
               <View
-                key={tip.text}
+                key={condition.text}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                <Icon name={tip.icon} size={17} color={colors.accent} />
+                <Icon name={condition.icon} size={17} color={colors.accent} />
                 <Text variant="callout" color="textSecondary" style={{ flex: 1 }}>
-                  {tip.text}
+                  {condition.text}
                 </Text>
               </View>
             ))}
           </View>
+
+          {last ? (
+            <Text variant="footnote" color="textTertiary" style={{ marginTop: spacing.lg }}>
+              During capture you can overlay your previous photo to line the
+              shot up — it is the fastest way to keep angles consistent.
+            </Text>
+          ) : null}
         </Card>
 
         <Button
-          label={isBaseline ? 'Capture Baseline' : 'Start Capture'}
+          label={isBaseline ? 'Capture baseline' : 'Start capture'}
           icon="camera"
           style={{ marginTop: spacing.xxl }}
-          onPress={() => router.push('/capture-session')}
+          onPress={() => router.replace('/capture-session')}
         />
+
+        <Text
+          variant="caption"
+          color="textTertiary"
+          center
+          style={{ marginTop: spacing.md }}>
+          Photos are saved to this device only.
+        </Text>
       </ScreenScroll>
     </Screen>
   );

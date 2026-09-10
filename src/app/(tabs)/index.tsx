@@ -2,22 +2,20 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import {
   EmptyState,
-  FloatingBar,
   Screen,
   ScreenScroll,
   ScreenTitle,
   SectionHeader,
 } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
-import { ProgressBar, StatTile } from '@/components/ui/stat';
+import { AnimatedNumber, ProgressBar } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
 import {
-  formatDuration,
+  formatDate,
   formatMilestone,
   formatRelative,
   toDateKey,
@@ -25,15 +23,27 @@ import {
 import { useAppStore } from '@/store/app-store';
 import {
   activeRoutineItems,
-  adherencePercent,
+  baselineSession,
   completedOn,
+  consistencyScore,
   currentStreak,
   latestSession,
   nextUpdate,
   todayProgress,
+  weekProgress,
 } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { ANGLE_LABELS } from '@/types/domain';
+import { ANGLE_LABELS, type Angle } from '@/types/domain';
+
+/** The angle the progress card leads with — the crown shows most change. */
+const HERO_ANGLE: Angle = 'crown';
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export default function HomeScreen() {
   const { colors, spacing, radius } = useTheme();
@@ -43,210 +53,204 @@ export default function HomeScreen() {
   const journey = data.journey;
   if (!journey) return null;
 
-  const last = latestSession(data);
-  const due = nextUpdate(data);
-  const adherence = adherencePercent(data);
+  const name = data.profile?.displayName?.trim();
+  const latest = latestSession(data);
+  const baseline = baselineSession(data);
+  const score = consistencyScore(data);
   const streak = currentStreak(data);
-  const progress = todayProgress(data);
+  const due = nextUpdate(data);
   const items = activeRoutineItems(data);
   const doneToday = completedOn(data, toDateKey());
+  const today = todayProgress(data);
+  const week = weekProgress(data);
 
-  const greeting = data.profile?.displayName
-    ? `Hello, ${data.profile.displayName}`
-    : 'Your journey';
+  const hasComparison = Boolean(baseline && latest && baseline.id !== latest.id);
 
   return (
     <Screen>
-      <ScreenScroll clearsFloatingBar={data.sessions.length > 0}>
+      <ScreenScroll>
         <ScreenTitle
-          title={greeting}
-          subtitle={
-            last
-              ? `Last update ${formatRelative(last.capturedAt)}`
-              : 'Start with your baseline photos'
-          }
+          eyebrow="Hair Journey"
+          title={`${greeting()},`}
+          titleMuted={name ? `${name}.` : 'friend.'}
+          subtitle={'Small steps today.\nA healthier, fuller you tomorrow.'}
+          script="Better Hair A Healthier You"
         />
 
-        {/* Journey duration — the single number that frames everything. */}
-        <Card style={{ marginTop: spacing.lg }} tone="surface">
-          <Text variant="overline" color="textTertiary">
-            Journey
-          </Text>
-          <Text variant="display" style={{ marginTop: spacing.xs }}>
-            {formatDuration(journey.startedAt)}
-          </Text>
-          <Text variant="footnote" color="textSecondary" style={{ marginTop: spacing.xs }}>
-            {data.sessions.length}{' '}
-            {data.sessions.length === 1 ? 'photo session' : 'photo sessions'} recorded
-          </Text>
-        </Card>
-
-        {last ? (
-          <>
-            <SectionHeader
-              title="Latest update"
-              action="View"
-              onAction={() => router.push(`/session/${last.id}`)}
-            />
-            <Card padded={false} onPress={() => router.push(`/session/${last.id}`)}>
-              <View style={{ flexDirection: 'row', gap: 2 }}>
-                {last.photos.slice(0, 5).map((photo) => (
-                  <View key={photo.id} style={{ flex: 1, aspectRatio: 0.78 }}>
-                    <Image
-                      source={{ uri: photo.thumbnailUri ?? photo.uri }}
-                      style={{ width: '100%', height: '100%' }}
-                      contentFit="cover"
-                      transition={180}
-                      accessibilityLabel={`${ANGLE_LABELS[photo.angle]} photo`}
-                    />
-                  </View>
-                ))}
-              </View>
-              <View style={{ padding: spacing.lg }}>
-                <Text variant="headline">
-                  {formatMilestone(journey.startedAt, last.capturedAt)}
-                </Text>
-                <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
-                  {formatRelative(last.capturedAt)} · {last.photos.length} of 5 angles
-                </Text>
-              </View>
-            </Card>
-          </>
+        {/* 1. The user's own photographs, first on the screen. */}
+        {latest ? (
+          <ProgressCard
+            baselineUri={
+              baseline?.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri
+            }
+            latestUri={
+              latest.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri
+            }
+            baselineLabel={
+              baseline ? formatMilestone(journey.startedAt, baseline.capturedAt) : ''
+            }
+            latestLabel={formatMilestone(journey.startedAt, latest.capturedAt)}
+            baselineDate={baseline ? formatDate(baseline.capturedAt) : ''}
+            latestDate={formatDate(latest.capturedAt)}
+            onPress={() =>
+              hasComparison
+                ? router.push('/compare')
+                : router.push(`/session/${latest.id}`)
+            }
+          />
         ) : null}
 
-        {/* Progress metrics */}
-        <SectionHeader title="Progress" />
-        <View style={{ flexDirection: 'row', gap: spacing.md }}>
-          <StatTile
-            icon="photo"
-            label="Sessions"
-            value={data.sessions.length}
-            caption={data.sessions.length === 0 ? 'None yet' : undefined}
+        {/* 2-4. The three numbers. */}
+        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg }}>
+          <MetricTile
+            icon="target"
+            label="Consistency"
+            value={score.value}
+            delta={score.delta}
+            onPress={() => router.push('/calendar')}
+            accessibilityHint="How consistently you are documenting. Opens your calendar."
           />
-          <StatTile
-            icon="chart"
-            label="Adherence"
-            value={adherence ?? '—'}
-            suffix={adherence === null ? '' : '%'}
-            caption="Last 30 days"
-            tone={adherence !== null && adherence >= 80 ? 'accent' : 'default'}
+          <MetricTile
+            icon="flame"
+            label="Streak"
+            value={streak}
+            unit="days"
+            onPress={() => router.push('/calendar')}
+          />
+          <MetricTile
+            icon="camera"
+            label="Photos"
+            value={data.sessions.length * 5}
+            unit="total"
+            onPress={() => router.push('/journey')}
           />
         </View>
 
-        {streak > 0 ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: spacing.md,
-              marginTop: spacing.md,
-              padding: spacing.lg,
-              borderRadius: radius.card,
-              backgroundColor: colors.accentSoft,
-            }}>
-            <Icon name="flame" size={20} color={colors.accent} />
-            <Text variant="headline" color="accent" style={{ flex: 1 }}>
-              {streak}-day streak
-            </Text>
-            <Text variant="footnote" color="textSecondary">
-              Keep it going
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Today's routine */}
-        <SectionHeader
-          title="Today's routine"
-          action={items.length > 0 ? 'Manage' : undefined}
-          onAction={items.length > 0 ? () => router.push('/routine') : undefined}
-        />
-
-        {items.length === 0 ? (
-          <Card tone="subtle">
-            <Text variant="callout" color="textSecondary">
-              Add your routine to start tracking consistency.
-            </Text>
-            <Button
-              label="Add routine"
-              variant="secondary"
-              size="md"
-              block={false}
-              style={{ marginTop: spacing.md }}
-              onPress={() => router.push('/routine')}
+        {/* 5. This week's routine. */}
+        {items.length > 0 ? (
+          <>
+            <SectionHeader
+              title="This week"
+              action="Manage"
+              onAction={() => router.push('/routine')}
             />
-          </Card>
-        ) : (
-          <Card>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: spacing.md,
-              }}>
-              <Text variant="subhead" color="textSecondary">
-                {progress.done} of {progress.total} done
-              </Text>
-              {progress.done === progress.total ? (
-                <Text variant="subhead" color="accent">
-                  Complete
+            <Card>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: spacing.md,
+                }}>
+                <Text variant="subhead" color="textSecondary">
+                  {today.done} of {today.total} done today
                 </Text>
-              ) : null}
-            </View>
+                <Text variant="subhead" color={week.done > 0 ? 'accent' : 'textTertiary'}>
+                  {week.done}/7 days
+                </Text>
+              </View>
 
-            <ProgressBar
-              progress={progress.total === 0 ? 0 : progress.done / progress.total}
-            />
+              <ProgressBar
+                progress={today.total === 0 ? 0 : today.done / today.total}
+              />
 
-            <View style={{ marginTop: spacing.lg, gap: spacing.xs }}>
-              {items.map((item) => {
-                const done = doneToday.has(item.id);
-                return (
-                  <PressableScale
-                    key={item.id}
-                    onPress={() => toggleRoutineToday(item.id)}
-                    haptic={done ? 'light' : 'success'}
-                    scaleTo={0.99}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: done }}
-                    accessibilityLabel={item.label}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: spacing.md,
-                      paddingVertical: spacing.md,
-                    }}>
-                    <Icon
-                      name={done ? 'checkCircle' : 'circle'}
-                      size={22}
-                      color={done ? colors.accent : colors.textTertiary}
-                    />
-                    <Text
-                      variant="body"
-                      color={done ? 'textSecondary' : 'text'}
+              <View style={{ marginTop: spacing.lg }}>
+                {items.map((item) => {
+                  const done = doneToday.has(item.id);
+                  return (
+                    <PressableScale
+                      key={item.id}
+                      onPress={() => toggleRoutineToday(item.id)}
+                      haptic={done ? 'light' : 'success'}
+                      scaleTo={0.99}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: done }}
+                      accessibilityLabel={item.label}
                       style={{
-                        flex: 1,
-                        textDecorationLine: done ? 'line-through' : 'none',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: spacing.md,
+                        paddingVertical: spacing.md,
                       }}>
-                      {item.label}
-                    </Text>
-                  </PressableScale>
-                );
-              })}
-            </View>
-          </Card>
+                      <View
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 17,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: colors.fill,
+                        }}>
+                        <Icon name="drop" size={16} color={colors.textSecondary} />
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <Text variant="body" color={done ? 'textSecondary' : 'text'}>
+                          {item.label}
+                        </Text>
+                        {item.detail ? (
+                          <Text variant="caption" color="textTertiary" style={{ marginTop: 1 }}>
+                            {item.detail}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      <View
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 15,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: done ? colors.accentSoft : 'transparent',
+                          borderWidth: done ? 0 : 1.5,
+                          borderColor: colors.border,
+                        }}>
+                        {done ? (
+                          <Icon name="check" size={15} color={colors.accent} />
+                        ) : null}
+                      </View>
+                    </PressableScale>
+                  );
+                })}
+              </View>
+            </Card>
+          </>
+        ) : (
+          <>
+            <SectionHeader title="This week" />
+            <Card tone="subtle">
+              <Text variant="callout" color="textSecondary">
+                Build a routine you can actually stick to.
+              </Text>
+              <PressableScale
+                onPress={() => router.push('/routine')}
+                style={{
+                  alignSelf: 'flex-start',
+                  marginTop: spacing.md,
+                  paddingHorizontal: spacing.lg,
+                  paddingVertical: spacing.sm,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.accent,
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Add routine">
+                <Text variant="subhead" color="textOnAccent">
+                  Add routine
+                </Text>
+              </PressableScale>
+            </Card>
+          </>
         )}
 
-        {/* Next update */}
+        {/* 6. What happens next. */}
         {due ? (
           <>
             <SectionHeader title="Next update" />
             <Card
-              tone={due.isOverdue ? 'surface' : 'subtle'}
-              onPress={() => router.push('/capture-session')}
+              onPress={() => router.push('/capture-intro')}
               accessibilityLabel="Start a photo update">
-              <View
-                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
                 <View
                   style={{
                     width: 44,
@@ -258,13 +262,15 @@ export default function HomeScreen() {
                   }}>
                   <Icon
                     name="camera"
-                    size={20}
+                    size={19}
                     color={due.isOverdue ? colors.textOnAccent : colors.textSecondary}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text variant="headline">
-                    {due.isOverdue ? 'Update due now' : `Photo update ${formatRelative(due.dueISO)}`}
+                    {due.isOverdue
+                      ? 'Update due now'
+                      : `Photo update ${formatRelative(due.dueISO)}`}
                   </Text>
                   <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
                     {data.sessions.length === 0
@@ -272,37 +278,265 @@ export default function HomeScreen() {
                       : 'Same five angles as last time'}
                   </Text>
                 </View>
-                <Icon name="chevronRight" size={16} color={colors.textTertiary} />
+                <Icon name="chevronRight" size={15} color={colors.textTertiary} />
               </View>
             </Card>
           </>
         ) : null}
 
+        {/* Learn */}
+        <Card
+          style={{ marginTop: spacing.xl }}
+          onPress={() => router.push('/learn')}
+          accessibilityLabel="Open the Learn library">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.accentSoft,
+              }}>
+              <Icon name="learn" size={19} color={colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text variant="headline">Learn &amp; grow</Text>
+              <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
+                How hair changes, and how to read your own timeline.
+              </Text>
+            </View>
+            <Icon name="arrowRight" size={16} color={colors.textTertiary} />
+          </View>
+        </Card>
+
         {data.sessions.length === 0 ? (
           <EmptyState
             icon="camera"
             title="Your journey starts here"
-            body="Take your baseline photos. Everything you capture later gets compared against them."
-            actionLabel="Create First Update"
-            onAction={() => router.push('/capture-session')}
+            body="Your first photos become your baseline. Everything you capture later is compared against them."
+            actionLabel="Capture baseline"
+            onAction={() => router.push('/capture-intro')}
           />
         ) : null}
       </ScreenScroll>
-
-      {/*
-        The core action lives in the glass layer rather than at the end of
-        the content column: it stays reachable at any scroll position, and
-        the content reads as passing underneath it.
-      */}
-      {data.sessions.length > 0 ? (
-        <FloatingBar>
-          <Button
-            label="Update Journey"
-            icon="camera"
-            onPress={() => router.push('/capture-session')}
-          />
-        </FloatingBar>
-      ) : null}
     </Screen>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The hair progress card.
+ *
+ * Photographs are the content of this product, so they take the largest
+ * surface on the screen and sit above every metric.
+ */
+function ProgressCard({
+  baselineUri,
+  latestUri,
+  baselineLabel,
+  latestLabel,
+  baselineDate,
+  latestDate,
+  onPress,
+}: {
+  baselineUri?: string;
+  latestUri?: string;
+  baselineLabel: string;
+  latestLabel: string;
+  baselineDate: string;
+  latestDate: string;
+  onPress: () => void;
+}) {
+  const { colors, spacing, radius } = useTheme();
+
+  return (
+    <Card
+      padded={false}
+      style={{ marginTop: spacing.lg }}
+      onPress={onPress}
+      accessibilityLabel={`Hair progress, ${baselineLabel} to ${latestLabel}`}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: spacing.lg,
+        }}>
+        <Text variant="headline">Hair progress</Text>
+        <View
+          style={{
+            paddingHorizontal: spacing.md,
+            paddingVertical: 5,
+            borderRadius: radius.pill,
+            backgroundColor: colors.fill,
+          }}>
+          <Text variant="caption" color="textSecondary">
+            {baselineLabel} → {latestLabel}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 3, paddingHorizontal: 3 }}>
+        <Frame uri={baselineUri} label={baselineLabel} date={baselineDate} />
+        <Frame uri={latestUri} label={latestLabel} date={latestDate} />
+      </View>
+
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
+          padding: spacing.lg,
+        }}>
+        <Icon name="compare" size={15} color={colors.accent} />
+        <Text variant="subhead" color="accent" style={{ flex: 1 }}>
+          Compare angles
+        </Text>
+        <Icon name="chevronRight" size={14} color={colors.textTertiary} />
+      </View>
+    </Card>
+  );
+}
+
+function Frame({
+  uri,
+  label,
+  date,
+}: {
+  uri?: string;
+  label: string;
+  date: string;
+}) {
+  const { colors, spacing, radius } = useTheme();
+
+  return (
+    <View style={{ flex: 1, aspectRatio: 0.86 }}>
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={{ width: '100%', height: '100%', borderRadius: radius.sm }}
+          contentFit="cover"
+          transition={180}
+          accessibilityLabel={`${ANGLE_LABELS[HERO_ANGLE]}, ${label}`}
+        />
+      ) : (
+        <View
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: radius.sm,
+            backgroundColor: colors.fill,
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: spacing.sm,
+          }}>
+          <Icon name="camera" size={20} color={colors.textTertiary} />
+          <Text variant="caption" color="textTertiary">
+            {label || 'Not yet'}
+          </Text>
+        </View>
+      )}
+
+      {uri ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: spacing.sm,
+            bottom: spacing.sm,
+            paddingHorizontal: spacing.sm,
+            paddingVertical: 4,
+            borderRadius: radius.xs,
+            backgroundColor: colors.photoScrim,
+          }}>
+          <Text variant="caption" color="textOnPhoto">
+            {date}
+          </Text>
+          <Text variant="caption" color="textOnPhoto" style={{ opacity: 0.75 }}>
+            {label}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function MetricTile({
+  icon,
+  label,
+  value,
+  unit,
+  delta,
+  onPress,
+  accessibilityHint,
+}: {
+  icon: 'target' | 'flame' | 'camera';
+  label: string;
+  value: number;
+  unit?: string;
+  delta?: number | null;
+  onPress: () => void;
+  accessibilityHint?: string;
+}) {
+  const { colors, spacing, radius } = useTheme();
+
+  return (
+    <PressableScale
+      onPress={onPress}
+      scaleTo={0.97}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value}${unit ? ` ${unit}` : ''}`}
+      accessibilityHint={accessibilityHint}
+      style={{
+        flex: 1,
+        padding: spacing.lg,
+        borderRadius: radius.card,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        gap: spacing.md,
+      }}>
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.accentSoft,
+        }}>
+        <Icon name={icon} size={16} color={colors.accent} />
+      </View>
+
+      <View>
+        <Text variant="footnote" color="textSecondary">
+          {label}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+          <AnimatedNumber value={value} />
+          {unit ? (
+            <Text variant="caption" color="textTertiary">
+              {unit}
+            </Text>
+          ) : null}
+        </View>
+
+        {typeof delta === 'number' && delta !== 0 ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+            <Icon
+              name="chart"
+              size={11}
+              color={delta > 0 ? colors.accent : colors.textTertiary}
+            />
+            <Text variant="caption" color={delta > 0 ? 'accent' : 'textTertiary'}>
+              {delta > 0 ? '+' : ''}
+              {delta}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </PressableScale>
   );
 }

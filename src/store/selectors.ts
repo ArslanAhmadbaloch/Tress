@@ -137,3 +137,101 @@ export function nextUpdate(data: AppData): NextUpdate | null {
 export function hasJourney(data: AppData): boolean {
   return Boolean(data.journey && data.onboardingCompletedAt);
 }
+
+/* ------------------------------------------------------------------ *
+ * Consistency score
+ *
+ * Deliberately NOT a "hair score". Nothing in this app measures hair —
+ * it stores photographs and lets you compare them — so a number claiming
+ * to rate your hair would be invented, and would read as a clinical
+ * assessment the product is not entitled to make.
+ *
+ * What it does score is the thing the user actually controls and the app
+ * genuinely observes: how consistently they are documenting. That is also
+ * the variable that determines whether their timeline will be worth
+ * anything in six months.
+ * ------------------------------------------------------------------ */
+
+export type ConsistencyScore = {
+  /** 0-100. */
+  value: number;
+  /** Change against the previous 30-day window, in points. */
+  delta: number | null;
+  /** The two inputs, so the UI can explain the number honestly. */
+  routine: number | null;
+  capture: number;
+};
+
+/** How punctual photo sessions have been, as a 0-100 figure. */
+function capturePunctuality(data: AppData): number {
+  if (!data.journey) return 0;
+  if (data.sessions.length === 0) return 0;
+
+  const elapsed = daysBetween(data.journey.startedAt) + 1;
+  const interval = Math.max(1, data.journey.updateIntervalDays);
+
+  // One session is expected per interval, plus the baseline.
+  const expected = Math.max(1, Math.floor(elapsed / interval) + 1);
+  const ratio = data.sessions.length / expected;
+
+  // Capturing more often than asked is fine, but does not score above 100.
+  return Math.round(Math.max(0, Math.min(1, ratio)) * 100);
+}
+
+export function consistencyScore(data: AppData): ConsistencyScore {
+  const routine = adherencePercent(data, 30);
+  const capture = capturePunctuality(data);
+
+  // With no routine recorded, the score is simply how well the user is
+  // keeping up with photographs — rather than penalising them for not
+  // using a feature they chose not to use.
+  const value =
+    routine === null
+      ? capture
+      : Math.round(routine * 0.6 + capture * 0.4);
+
+  const previousRoutine = adherencePercent(data, 60);
+  const delta =
+    routine === null || previousRoutine === null
+      ? null
+      : Math.round((routine - previousRoutine) * 0.6);
+
+  return { value, delta, routine, capture };
+}
+
+/** Completion for the current week, for the Home checklist. */
+export function weekProgress(data: AppData): {
+  done: number;
+  total: number;
+  days: { date: string; done: boolean; partial: boolean }[];
+} {
+  const items = activeRoutineItems(data);
+  const days: { date: string; done: boolean; partial: boolean }[] = [];
+
+  const today = new Date();
+  // Monday-first week containing today.
+  const weekday = (today.getDay() + 6) % 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - weekday);
+
+  let done = 0;
+
+  for (let i = 0; i < 7; i += 1) {
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + i);
+    const key = toDateKey(day);
+    const completed = completedOn(data, key);
+
+    const applicable = items.filter(
+      (item) => daysBetween(item.createdAt, day.toISOString()) >= 0,
+    );
+    const hit = applicable.filter((item) => completed.has(item.id)).length;
+
+    const isDone = applicable.length > 0 && hit === applicable.length;
+    if (isDone) done += 1;
+
+    days.push({ date: key, done: isDone, partial: hit > 0 && !isDone });
+  }
+
+  return { done, total: 7, days };
+}

@@ -34,8 +34,11 @@ export default function JourneyScreen() {
     <Screen>
       <ScreenScroll>
         <ScreenTitle
-          title="Journey"
+          eyebrow="Your journey"
+          title="Track your"
+          titleMuted="progress"
           subtitle={`${formatDuration(journey.startedAt)} · started ${formatDate(journey.startedAt)}`}
+          script="Progress Takes Time"
           trailing={
             data.sessions.length >= 2 ? (
               <PressableScale

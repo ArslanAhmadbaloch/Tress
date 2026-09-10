@@ -17,32 +17,33 @@ import { Platform } from 'react-native';
  * ------------------------------------------------------------------ */
 
 const palette = {
-  jade50: '#EAF5F1',
-  jade100: '#CDE7DE',
-  jade400: '#4FBFA4',
-  jade500: '#2F8E78',
-  jade600: '#256F5E',
+  /* Sage — the single accent. Muted and botanical, never a signal green:
+     this app is opened by people who are anxious about what they will see. */
+  sage50: '#F1F6EF',
+  sage100: '#E3EDDF',
+  sage200: '#CBDCC4',
+  sage400: '#8FB183',
+  sage500: '#6E8F63',
+  sage600: '#55704C',
+  sage700: '#41573A',
 
-  sand100: '#F4EFE7',
-  sand300: '#DFD3C3',
-
-  amber400: '#E0A458',
-
-  rose400: '#D96C6C',
-
-  ink900: '#0B0C0E',
-  ink800: '#121417',
-  ink700: '#191C20',
-  ink600: '#22262B',
-  ink500: '#2E3339',
-  ink400: '#454B53',
-
-  slate500: '#6B7076',
-  slate400: '#8A9099',
-  slate300: '#A8AEB6',
-
-  paper: '#F7F6F3',
+  /* Warm mineral ground — limestone and paper, never neutral grey. */
+  ivory: '#F0EEE9',
+  ivoryDeep: '#E7E4DE',
   white: '#FFFFFF',
+
+  ink900: '#0D0E10',
+  ink800: '#141619',
+  ink700: '#1B1E22',
+  ink600: '#24282D',
+  ink500: '#2F343A',
+
+  stone500: '#71736F',
+  stone400: '#9A9C97',
+  stone300: '#B7B9B3',
+
+  amber400: '#C99A5B',
+  clay400: '#C77B6B',
 } as const;
 
 export type ColorTokens = {
@@ -84,36 +85,44 @@ export type ColorTokens = {
 
   /** Scrim behind modals and sheets. */
   scrim: string;
+  /** Label plate over a photograph, in either theme. */
+  photoScrim: string;
+  /** Text sitting on `photoScrim`. Light in both themes. */
+  textOnPhoto: string;
 };
 
 export const lightColors: ColorTokens = {
-  background: palette.paper,
-  backgroundSubtle: '#EFEDE8',
+  background: palette.ivory,
+  backgroundSubtle: palette.ivoryDeep,
   surface: palette.white,
   surfaceElevated: palette.white,
-  fill: '#EAE8E3',
-  fillSelected: '#DFDCD5',
+  fill: '#EAE7E1',
+  fillSelected: '#DEDAD3',
 
-  text: '#16181C',
-  textSecondary: palette.slate500,
-  textTertiary: palette.slate400,
+  text: '#16171A',
+  textSecondary: palette.stone500,
+  textTertiary: palette.stone400,
   textOnAccent: palette.white,
 
-  accent: palette.jade500,
-  accentSoft: palette.jade50,
-  accentBorder: palette.jade100,
+  accent: palette.sage500,
+  accentSoft: palette.sage50,
+  accentBorder: palette.sage100,
 
-  success: palette.jade500,
+  success: palette.sage500,
   warning: palette.amber400,
-  danger: palette.rose400,
+  danger: palette.clay400,
 
-  separator: 'rgba(22, 24, 28, 0.08)',
-  border: 'rgba(22, 24, 28, 0.10)',
+  separator: 'rgba(22, 23, 26, 0.07)',
+  border: 'rgba(22, 23, 26, 0.06)',
 
-  glassTint: 'rgba(255, 255, 255, 0.72)',
-  glassBorder: 'rgba(255, 255, 255, 0.60)',
+  /* Cards read as white ceramic resting on the warm ground, so the glass
+     tint stays close to pure white rather than picking up the ivory. */
+  glassTint: 'rgba(255, 255, 255, 0.78)',
+  glassBorder: 'rgba(255, 255, 255, 0.85)',
 
-  scrim: 'rgba(11, 12, 14, 0.32)',
+  scrim: 'rgba(13, 14, 16, 0.28)',
+  photoScrim: 'rgba(13, 14, 16, 0.55)',
+  textOnPhoto: '#FFFFFF',
 };
 
 export const darkColors: ColorTokens = {
@@ -124,26 +133,28 @@ export const darkColors: ColorTokens = {
   fill: palette.ink600,
   fillSelected: palette.ink500,
 
-  text: '#F2F3F5',
-  textSecondary: palette.slate300,
-  textTertiary: palette.slate400,
-  textOnAccent: '#04201A',
+  text: '#F3F2EF',
+  textSecondary: palette.stone300,
+  textTertiary: palette.stone400,
+  textOnAccent: '#0F1A0C',
 
-  accent: palette.jade400,
-  accentSoft: 'rgba(79, 191, 164, 0.14)',
-  accentBorder: 'rgba(79, 191, 164, 0.28)',
+  accent: palette.sage400,
+  accentSoft: 'rgba(143, 177, 131, 0.14)',
+  accentBorder: 'rgba(143, 177, 131, 0.26)',
 
-  success: palette.jade400,
+  success: palette.sage400,
   warning: palette.amber400,
-  danger: '#E88585',
+  danger: '#D8907F',
 
-  separator: 'rgba(255, 255, 255, 0.10)',
-  border: 'rgba(255, 255, 255, 0.12)',
+  separator: 'rgba(255, 255, 255, 0.09)',
+  border: 'rgba(255, 255, 255, 0.10)',
 
-  glassTint: 'rgba(28, 31, 36, 0.66)',
-  glassBorder: 'rgba(255, 255, 255, 0.14)',
+  glassTint: 'rgba(27, 30, 34, 0.68)',
+  glassBorder: 'rgba(255, 255, 255, 0.13)',
 
-  scrim: 'rgba(0, 0, 0, 0.52)',
+  scrim: 'rgba(0, 0, 0, 0.55)',
+  photoScrim: 'rgba(13, 14, 16, 0.62)',
+  textOnPhoto: '#FFFFFF',
 };
 
 /* ------------------------------------------------------------------ *
@@ -269,10 +280,10 @@ export const typography = {
   },
   /** Large screen title. */
   title1: {
-    fontSize: 32,
-    lineHeight: 38,
+    fontSize: 34,
+    lineHeight: 39,
     fontWeight: '700',
-    letterSpacing: -0.6,
+    letterSpacing: -0.8,
   },
   title2: {
     fontSize: 24,
@@ -330,11 +341,21 @@ export const typography = {
   },
   /** Emphasised statistic inside a card. */
   stat: {
-    fontSize: 28,
-    lineHeight: 32,
+    fontSize: 34,
+    lineHeight: 38,
     fontWeight: '700',
-    letterSpacing: -0.6,
-    fontFamily: fontFamily.rounded,
+    letterSpacing: -0.8,
+  },
+  /**
+   * Decorative editorial script, for the one motivational phrase a screen
+   * is allowed. Never for anything the user has to read to use the app —
+   * it is an accent, and it is not especially legible at small sizes.
+   */
+  script: {
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: '400',
+    fontFamily: 'Parisienne_400Regular',
   },
 } satisfies Record<string, TypeStyle>;
 
