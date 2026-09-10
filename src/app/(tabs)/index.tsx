@@ -1,18 +1,25 @@
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
+import {
+  HairProgressCard,
+  HeaderActions,
+  LearnCard,
+  MetricExplainer,
+  MetricTile,
+  PhotoStack,
+} from '@/components/dashboard';
 import { Card } from '@/components/ui/card';
-import { Icon } from '@/components/ui/icon';
+import { Icon, type IconName } from '@/components/ui/icon';
 import {
   EmptyState,
   Screen,
   ScreenScroll,
   ScreenTitle,
-  SectionHeader,
+  Separator,
 } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
-import { AnimatedNumber, ProgressBar } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
 import {
   formatDate,
@@ -29,26 +36,47 @@ import {
   currentStreak,
   latestSession,
   nextUpdate,
+  sessionHistory,
   todayProgress,
-  weekProgress,
+  weeklyAdherenceHistory,
 } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { ANGLE_LABELS, type Angle } from '@/types/domain';
+import { type Angle, type RoutineItem } from '@/types/domain';
 
 /** The angle the progress card leads with — the crown shows most change. */
 const HERO_ANGLE: Angle = 'crown';
 
+/** Streak length the ring treats as full, so it has something to fill against. */
+const STREAK_TARGET = 30;
+
 function greeting(): string {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return 'Good Morning';
+  if (hour < 18) return 'Good Afternoon';
+  return 'Good Evening';
 }
 
+/** A glyph per routine item, inferred from its name. Cosmetic only. */
+function routineIcon(item: RoutineItem): IconName {
+  const label = `${item.label} ${item.detail ?? ''}`.toLowerCase();
+  if (/topical|serum|oil|spray|foam|solution/.test(label)) return 'bottle';
+  if (/water|drink|shake|collagen|tea/.test(label)) return 'glass';
+  if (/tablet|capsule|supplement|vitamin|biotin/.test(label)) return 'capsule';
+  if (/wash|shampoo|scalp|massage/.test(label)) return 'drop';
+  return 'follicle';
+}
+
+type Explainer = 'consistency' | 'streak' | 'photos' | null;
+
 export default function HomeScreen() {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing } = useTheme();
   const router = useRouter();
   const { data, toggleRoutineToday } = useAppStore();
+
+  const [explain, setExplain] = useState<Explainer>(null);
+
+  const adherenceHistory = useMemo(() => weeklyAdherenceHistory(data), [data]);
+  const photoHistory = useMemo(() => sessionHistory(data), [data]);
 
   const journey = data.journey;
   if (!journey) return null;
@@ -62,7 +90,12 @@ export default function HomeScreen() {
   const items = activeRoutineItems(data);
   const doneToday = completedOn(data, toDateKey());
   const today = todayProgress(data);
-  const week = weekProgress(data);
+
+  const totalPhotos = data.sessions.reduce((n, s) => n + s.photos.length, 0);
+  const recentThumbs = data.sessions
+    .flatMap((s) => s.photos)
+    .slice(0, 3)
+    .map((p) => p.thumbnailUri ?? p.uri);
 
   const hasComparison = Boolean(baseline && latest && baseline.id !== latest.id);
 
@@ -75,23 +108,32 @@ export default function HomeScreen() {
           titleMuted={name ? `${name}.` : 'friend.'}
           subtitle={'Small steps today.\nA healthier, fuller you tomorrow.'}
           script="Better Hair A Healthier You"
+          trailing={
+            <HeaderActions
+              initial={(name ?? 'Y').charAt(0).toUpperCase()}
+              avatarUri={data.profile?.avatarUri}
+              hasAlert={Boolean(due?.isOverdue) || today.done < today.total}
+              onNotifications={() => router.push('/settings')}
+              onProfile={() => router.push('/profile')}
+            />
+          }
         />
 
-        {/* 1. The user's own photographs, first on the screen. */}
+        {/* Hair progress — the photographs come first. */}
         {latest ? (
-          <ProgressCard
-            baselineUri={
+          <HairProgressCard
+            beforeUri={
               baseline?.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri
             }
-            latestUri={
+            afterUri={
               latest.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri
             }
-            baselineLabel={
-              baseline ? formatMilestone(journey.startedAt, baseline.capturedAt) : ''
+            beforeLabel={
+              baseline ? formatMilestone(journey.startedAt, baseline.capturedAt) : '—'
             }
-            latestLabel={formatMilestone(journey.startedAt, latest.capturedAt)}
-            baselineDate={baseline ? formatDate(baseline.capturedAt) : ''}
-            latestDate={formatDate(latest.capturedAt)}
+            afterLabel={formatMilestone(journey.startedAt, latest.capturedAt)}
+            beforeDate={baseline ? formatDate(baseline.capturedAt) : ''}
+            afterDate={formatDate(latest.capturedAt)}
             onPress={() =>
               hasComparison
                 ? router.push('/compare')
@@ -100,216 +142,197 @@ export default function HomeScreen() {
           />
         ) : null}
 
-        {/* 2-4. The three numbers. */}
-        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg }}>
+        {/* Three metrics. */}
+        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
           <MetricTile
             icon="target"
             label="Consistency"
             value={score.value}
             delta={score.delta}
+            deltaSuffix=""
+            ring={score.value / 100}
+            history={adherenceHistory}
             onPress={() => router.push('/calendar')}
-            accessibilityHint="How consistently you are documenting. Opens your calendar."
+            onExplain={() => setExplain('consistency')}
           />
           <MetricTile
             icon="flame"
             label="Streak"
             value={streak}
             unit="days"
+            ring={Math.min(1, streak / STREAK_TARGET)}
+            history={adherenceHistory}
             onPress={() => router.push('/calendar')}
+            onExplain={() => setExplain('streak')}
           />
           <MetricTile
             icon="camera"
             label="Photos"
-            value={data.sessions.length * 5}
+            value={totalPhotos}
             unit="total"
+            ring={photoHistory.length > 1 ? 1 : 0.3}
+            footer={
+              <PhotoStack
+                uris={recentThumbs}
+                remaining={Math.max(0, totalPhotos - recentThumbs.length)}
+              />
+            }
             onPress={() => router.push('/journey')}
+            onExplain={() => setExplain('photos')}
           />
         </View>
 
-        {/* 5. This week's routine. */}
+        {/* Today's stack. */}
         {items.length > 0 ? (
-          <>
-            <SectionHeader
-              title="This week"
-              action="Manage"
-              onAction={() => router.push('/routine')}
-            />
-            <Card>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: spacing.md,
-                }}>
-                <Text variant="subhead" color="textSecondary">
-                  {today.done} of {today.total} done today
-                </Text>
-                <Text variant="subhead" color={week.done > 0 ? 'accent' : 'textTertiary'}>
-                  {week.done}/7 days
-                </Text>
-              </View>
-
-              <ProgressBar
-                progress={today.total === 0 ? 0 : today.done / today.total}
-              />
-
-              <View style={{ marginTop: spacing.lg }}>
-                {items.map((item) => {
-                  const done = doneToday.has(item.id);
-                  return (
-                    <PressableScale
-                      key={item.id}
-                      onPress={() => toggleRoutineToday(item.id)}
-                      haptic={done ? 'light' : 'success'}
-                      scaleTo={0.99}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: done }}
-                      accessibilityLabel={item.label}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: spacing.md,
-                        paddingVertical: spacing.md,
-                      }}>
-                      <View
-                        style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 17,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: colors.fill,
-                        }}>
-                        <Icon name="drop" size={16} color={colors.textSecondary} />
-                      </View>
-
-                      <View style={{ flex: 1 }}>
-                        <Text variant="body" color={done ? 'textSecondary' : 'text'}>
-                          {item.label}
-                        </Text>
-                        {item.detail ? (
-                          <Text variant="caption" color="textTertiary" style={{ marginTop: 1 }}>
-                            {item.detail}
-                          </Text>
-                        ) : null}
-                      </View>
-
-                      <View
-                        style={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: 15,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: done ? colors.accentSoft : 'transparent',
-                          borderWidth: done ? 0 : 1.5,
-                          borderColor: colors.border,
-                        }}>
-                        {done ? (
-                          <Icon name="check" size={15} color={colors.accent} />
-                        ) : null}
-                      </View>
-                    </PressableScale>
-                  );
-                })}
-              </View>
-            </Card>
-          </>
-        ) : (
-          <>
-            <SectionHeader title="This week" />
-            <Card tone="subtle">
-              <Text variant="callout" color="textSecondary">
-                Build a routine you can actually stick to.
-              </Text>
-              <PressableScale
-                onPress={() => router.push('/routine')}
-                style={{
-                  alignSelf: 'flex-start',
-                  marginTop: spacing.md,
-                  paddingHorizontal: spacing.lg,
-                  paddingVertical: spacing.sm,
-                  borderRadius: radius.pill,
-                  backgroundColor: colors.accent,
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Add routine">
-                <Text variant="subhead" color="textOnAccent">
-                  Add routine
-                </Text>
-              </PressableScale>
-            </Card>
-          </>
-        )}
-
-        {/* 6. What happens next. */}
-        {due ? (
-          <>
-            <SectionHeader title="Next update" />
-            <Card
-              onPress={() => router.push('/capture-intro')}
-              accessibilityLabel="Start a photo update">
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                <View
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: radius.sm,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: due.isOverdue ? colors.accent : colors.fill,
-                  }}>
-                  <Icon
-                    name="camera"
-                    size={19}
-                    color={due.isOverdue ? colors.textOnAccent : colors.textSecondary}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text variant="headline">
-                    {due.isOverdue
-                      ? 'Update due now'
-                      : `Photo update ${formatRelative(due.dueISO)}`}
-                  </Text>
-                  <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
-                    {data.sessions.length === 0
-                      ? 'Capture your baseline to begin'
-                      : 'Same five angles as last time'}
-                  </Text>
-                </View>
-                <Icon name="chevronRight" size={15} color={colors.textTertiary} />
-              </View>
-            </Card>
-          </>
-        ) : null}
-
-        {/* Learn */}
-        <Card
-          style={{ marginTop: spacing.xl }}
-          onPress={() => router.push('/learn')}
-          accessibilityLabel="Open the Learn library">
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <Card padded={false} style={{ marginTop: spacing.md }}>
             <View
               style={{
-                width: 44,
-                height: 44,
-                borderRadius: 22,
+                flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.accentSoft,
+                justifyContent: 'space-between',
+                padding: spacing.lg,
+                paddingBottom: spacing.md,
               }}>
-              <Icon name="learn" size={19} color={colors.accent} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="headline">Learn &amp; grow</Text>
-              <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
-                How hair changes, and how to read your own timeline.
+              <Text variant="title3">Today&apos;s Stack</Text>
+              <Text
+                variant="subhead"
+                color={today.done === today.total ? 'accent' : 'textSecondary'}>
+                {today.done} of {today.total}
               </Text>
             </View>
-            <Icon name="arrowRight" size={16} color={colors.textTertiary} />
-          </View>
-        </Card>
+
+            {items.map((item, index) => {
+              const done = doneToday.has(item.id);
+              return (
+                <View key={item.id}>
+                  {index > 0 ? <Separator inset={68} /> : null}
+                  <PressableScale
+                    onPress={() => toggleRoutineToday(item.id)}
+                    haptic={done ? 'light' : 'success'}
+                    scaleTo={0.995}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: done }}
+                    accessibilityLabel={item.label}
+                    accessibilityHint={item.detail}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: spacing.md,
+                      paddingHorizontal: spacing.lg,
+                      paddingVertical: spacing.md,
+                    }}>
+                    <View
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 19,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: colors.accentSoft,
+                      }}>
+                      <Icon name={routineIcon(item)} size={16} color={colors.text} />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text variant="headline">{item.label}</Text>
+                      {item.detail ? (
+                        <Text
+                          variant="footnote"
+                          color="textSecondary"
+                          style={{ marginTop: 1 }}>
+                          {item.detail}
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <View
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 15,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: done ? colors.accentSoft : 'transparent',
+                        borderWidth: done ? 0 : 1.5,
+                        borderColor: colors.border,
+                      }}>
+                      {done ? (
+                        <Icon name="check" size={15} color={colors.accent} />
+                      ) : null}
+                    </View>
+                  </PressableScale>
+                </View>
+              );
+            })}
+          </Card>
+        ) : (
+          <Card tone="subtle" style={{ marginTop: spacing.md }}>
+            <Text variant="title3">Today&apos;s Stack</Text>
+            <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
+              Build a routine you can actually stick to.
+            </Text>
+            <PressableScale
+              onPress={() => router.push('/routine')}
+              style={{
+                alignSelf: 'flex-start',
+                marginTop: spacing.lg,
+                paddingHorizontal: spacing.xl,
+                paddingVertical: spacing.md,
+                borderRadius: 999,
+                backgroundColor: colors.accent,
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Add routine">
+              <Text variant="subhead" color="textOnAccent">
+                Add routine
+              </Text>
+            </PressableScale>
+          </Card>
+        )}
+
+        <LearnCard
+          style={{ marginTop: spacing.md }}
+          onPress={() => router.push('/learn')}
+        />
+
+        {/* A reminder, not a metric, so it sits below the fold. */}
+        {due && data.sessions.length > 0 ? (
+          <Card
+            style={{ marginTop: spacing.md }}
+            onPress={() => router.push('/capture-intro')}
+            accessibilityLabel="Start a photo update">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: due.isOverdue
+                    ? colors.accent
+                    : colors.backgroundSubtle,
+                }}>
+                <Icon
+                  name="camera"
+                  size={18}
+                  color={due.isOverdue ? colors.textOnAccent : colors.text}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text variant="headline">
+                  {due.isOverdue
+                    ? 'Photo update due now'
+                    : `Next update ${formatRelative(due.dueISO)}`}
+                </Text>
+                <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
+                  Same five angles, same conditions as last time.
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={15} color={colors.textTertiary} />
+            </View>
+          </Card>
+        ) : null}
 
         {data.sessions.length === 0 ? (
           <EmptyState
@@ -321,222 +344,51 @@ export default function HomeScreen() {
           />
         ) : null}
       </ScreenScroll>
+
+      {explain ? (
+        <MetricExplainer {...EXPLAINERS[explain]} onClose={() => setExplain(null)} />
+      ) : null}
     </Screen>
   );
 }
 
-/* ------------------------------------------------------------------ */
-
 /**
- * The hair progress card.
+ * How each number is actually derived.
  *
- * Photographs are the content of this product, so they take the largest
- * surface on the screen and sit above every metric.
+ * Written out because these are the claims the dashboard makes, and a
+ * tracking app that will not show its working is asking to be trusted on
+ * nothing.
  */
-function ProgressCard({
-  baselineUri,
-  latestUri,
-  baselineLabel,
-  latestLabel,
-  baselineDate,
-  latestDate,
-  onPress,
-}: {
-  baselineUri?: string;
-  latestUri?: string;
-  baselineLabel: string;
-  latestLabel: string;
-  baselineDate: string;
-  latestDate: string;
-  onPress: () => void;
-}) {
-  const { colors, spacing, radius } = useTheme();
-
-  return (
-    <Card
-      padded={false}
-      style={{ marginTop: spacing.lg }}
-      onPress={onPress}
-      accessibilityLabel={`Hair progress, ${baselineLabel} to ${latestLabel}`}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: spacing.lg,
-        }}>
-        <Text variant="headline">Hair progress</Text>
-        <View
-          style={{
-            paddingHorizontal: spacing.md,
-            paddingVertical: 5,
-            borderRadius: radius.pill,
-            backgroundColor: colors.fill,
-          }}>
-          <Text variant="caption" color="textSecondary">
-            {baselineLabel} → {latestLabel}
-          </Text>
-        </View>
-      </View>
-
-      <View style={{ flexDirection: 'row', gap: 3, paddingHorizontal: 3 }}>
-        <Frame uri={baselineUri} label={baselineLabel} date={baselineDate} />
-        <Frame uri={latestUri} label={latestLabel} date={latestDate} />
-      </View>
-
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.sm,
-          padding: spacing.lg,
-        }}>
-        <Icon name="compare" size={15} color={colors.accent} />
-        <Text variant="subhead" color="accent" style={{ flex: 1 }}>
-          Compare angles
-        </Text>
-        <Icon name="chevronRight" size={14} color={colors.textTertiary} />
-      </View>
-    </Card>
-  );
-}
-
-function Frame({
-  uri,
-  label,
-  date,
-}: {
-  uri?: string;
-  label: string;
-  date: string;
-}) {
-  const { colors, spacing, radius } = useTheme();
-
-  return (
-    <View style={{ flex: 1, aspectRatio: 0.86 }}>
-      {uri ? (
-        <Image
-          source={{ uri }}
-          style={{ width: '100%', height: '100%', borderRadius: radius.sm }}
-          contentFit="cover"
-          transition={180}
-          accessibilityLabel={`${ANGLE_LABELS[HERO_ANGLE]}, ${label}`}
-        />
-      ) : (
-        <View
-          style={{
-            width: '100%',
-            height: '100%',
-            borderRadius: radius.sm,
-            backgroundColor: colors.fill,
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: spacing.sm,
-          }}>
-          <Icon name="camera" size={20} color={colors.textTertiary} />
-          <Text variant="caption" color="textTertiary">
-            {label || 'Not yet'}
-          </Text>
-        </View>
-      )}
-
-      {uri ? (
-        <View
-          style={{
-            position: 'absolute',
-            left: spacing.sm,
-            bottom: spacing.sm,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 4,
-            borderRadius: radius.xs,
-            backgroundColor: colors.photoScrim,
-          }}>
-          <Text variant="caption" color="textOnPhoto">
-            {date}
-          </Text>
-          <Text variant="caption" color="textOnPhoto" style={{ opacity: 0.75 }}>
-            {label}
-          </Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function MetricTile({
-  icon,
-  label,
-  value,
-  unit,
-  delta,
-  onPress,
-  accessibilityHint,
-}: {
-  icon: 'target' | 'flame' | 'camera';
-  label: string;
-  value: number;
-  unit?: string;
-  delta?: number | null;
-  onPress: () => void;
-  accessibilityHint?: string;
-}) {
-  const { colors, spacing, radius } = useTheme();
-
-  return (
-    <PressableScale
-      onPress={onPress}
-      scaleTo={0.97}
-      accessibilityRole="button"
-      accessibilityLabel={`${label}: ${value}${unit ? ` ${unit}` : ''}`}
-      accessibilityHint={accessibilityHint}
-      style={{
-        flex: 1,
-        padding: spacing.lg,
-        borderRadius: radius.card,
-        backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: colors.border,
-        gap: spacing.md,
-      }}>
-      <View
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 16,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.accentSoft,
-        }}>
-        <Icon name={icon} size={16} color={colors.accent} />
-      </View>
-
-      <View>
-        <Text variant="footnote" color="textSecondary">
-          {label}
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-          <AnimatedNumber value={value} />
-          {unit ? (
-            <Text variant="caption" color="textTertiary">
-              {unit}
-            </Text>
-          ) : null}
-        </View>
-
-        {typeof delta === 'number' && delta !== 0 ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-            <Icon
-              name="chart"
-              size={11}
-              color={delta > 0 ? colors.accent : colors.textTertiary}
-            />
-            <Text variant="caption" color={delta > 0 ? 'accent' : 'textTertiary'}>
-              {delta > 0 ? '+' : ''}
-              {delta}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </PressableScale>
-  );
-}
+const EXPLAINERS: Record<
+  Exclude<Explainer, null>,
+  { title: string; body: string; points: string[] }
+> = {
+  consistency: {
+    title: 'Consistency',
+    body: 'How consistently you are documenting — not an assessment of your hair. Nothing in this app measures hair; it stores your photographs and puts them side by side so you can judge for yourself.',
+    points: [
+      'Routine adherence over the last 30 days, weighted 60%',
+      'Photo sessions taken against those expected for your interval, weighted 40%',
+      'The change compares this 30-day window with the previous one',
+      'With no routine recorded, it is based on photo sessions alone',
+    ],
+  },
+  streak: {
+    title: 'Streak',
+    body: 'Consecutive days on which every item in your stack was ticked off.',
+    points: [
+      'Today does not break a streak until the day ends',
+      'Items only count from the day you added them',
+      'The ring fills against a 30-day mark',
+    ],
+  },
+  photos: {
+    title: 'Photos',
+    body: 'Every photograph stored on this device, across all your sessions.',
+    points: [
+      'Five angles per complete session',
+      'Kept in the app’s private storage — nothing is uploaded',
+      'Deleting a session deletes its photographs too',
+    ],
+  },
+};

@@ -63,7 +63,14 @@ export type IconName =
   | 'drop'
   | 'leaf'
   | 'pill'
-  | 'dumbbell';
+  | 'dumbbell'
+  | 'idea'
+  | 'arrowUpRight'
+  | 'arrowDownRight'
+  | 'follicle'
+  | 'bottle'
+  | 'capsule'
+  | 'glass';
 
 type IconSpec = {
   /** SF Symbol name, iOS. */
@@ -126,6 +133,15 @@ const ICONS: Record<IconName, IconSpec> = {
   leaf: { sf: 'leaf', md: 'leaf' },
   pill: { sf: 'pills', md: 'pill' },
   dumbbell: { sf: 'figure.strengthtraining.traditional', md: 'dumbbell' },
+  idea: { sf: 'lightbulb', md: 'lightbulb-outline' },
+  arrowUpRight: { sf: 'arrow.up.right', md: 'trending-up' },
+  arrowDownRight: { sf: 'arrow.down.right', md: 'trending-down' },
+  // Routine item glyphs: the reference distinguishes topical, tablet,
+  // capsule and drink so a five-item list is scannable without reading.
+  follicle: { sf: 'drop.triangle', md: 'hair-dryer-outline' },
+  bottle: { sf: 'eyedropper', md: 'bottle-tonic-outline' },
+  capsule: { sf: 'pill', md: 'pill' },
+  glass: { sf: 'cup.and.saucer', md: 'cup-outline' },
 };
 
 export type IconProps = {

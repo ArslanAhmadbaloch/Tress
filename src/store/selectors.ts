@@ -235,3 +235,65 @@ export function weekProgress(data: AppData): {
 
   return { done, total: 7, days };
 }
+
+/**
+ * Trailing weekly adherence, oldest first, for the dashboard sparklines.
+ *
+ * Real history rather than decoration: each point is that week's completion
+ * rate. Weeks before the journey started are omitted rather than plotted as
+ * zero, which would draw a fake collapse at the left edge of every new
+ * user's chart.
+ */
+export function weeklyAdherenceHistory(data: AppData, weeks = 8): number[] {
+  const items = activeRoutineItems(data);
+  if (!data.journey || items.length === 0) return [];
+
+  const series: number[] = [];
+  const today = new Date();
+
+  for (let w = weeks - 1; w >= 0; w -= 1) {
+    let expected = 0;
+    let completed = 0;
+
+    for (let d = 0; d < 7; d += 1) {
+      const day = new Date(today);
+      day.setDate(today.getDate() - (w * 7 + d));
+
+      if (daysBetween(data.journey.startedAt, day.toISOString()) < 0) continue;
+      if (daysBetween(day.toISOString()) < 0) continue;
+
+      const done = completedOn(data, toDateKey(day));
+      for (const item of items) {
+        if (daysBetween(item.createdAt, day.toISOString()) < 0) continue;
+        expected += 1;
+        if (done.has(item.id)) completed += 1;
+      }
+    }
+
+    if (expected > 0) series.push(Math.round((completed / expected) * 100));
+  }
+
+  return series;
+}
+
+/** Cumulative photo-session count per week, oldest first. */
+export function sessionHistory(data: AppData, weeks = 8): number[] {
+  if (!data.journey || data.sessions.length === 0) return [];
+
+  const series: number[] = [];
+  const today = new Date();
+
+  for (let w = weeks - 1; w >= 0; w -= 1) {
+    const cutoff = new Date(today);
+    cutoff.setDate(today.getDate() - w * 7);
+
+    if (daysBetween(data.journey.startedAt, cutoff.toISOString()) < 0) continue;
+
+    const count = data.sessions.filter(
+      (s) => new Date(s.capturedAt).getTime() <= cutoff.getTime(),
+    ).length;
+    series.push(count);
+  }
+
+  return series;
+}

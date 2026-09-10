@@ -177,12 +177,11 @@ export function ScreenTitle({
       style={{
         flexDirection: 'row',
         alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: spacing.lg,
+        gap: spacing.md,
         paddingTop: spacing.sm,
         paddingBottom: subtitle ? spacing.xs : spacing.sm,
       }}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         {eyebrow ? (
           <Text
             variant="caption"
@@ -192,7 +191,13 @@ export function ScreenTitle({
           </Text>
         ) : null}
 
-        <Text variant="title1" accessibilityRole="header">
+        <Text
+          variant="title1"
+          accessibilityRole="header"
+          // Long greetings must shrink rather than break mid-word.
+          adjustsFontSizeToFit
+          minimumFontScale={0.82}
+          numberOfLines={titleMuted ? 2 : 1}>
           {title}
           {titleMuted ? (
             <Text variant="title1" color="textTertiary">
@@ -212,24 +217,30 @@ export function ScreenTitle({
         ) : null}
       </View>
 
-      {script ? (
-        <Text
-          variant="script"
-          color="textSecondary"
-          accessible={false}
-          numberOfLines={3}
-          style={{
-            transform: [{ rotate: '-6deg' }],
-            marginTop: spacing.lg,
-            // Wide enough for a three-word phrase on three short lines;
-            // narrower and the last word silently disappears.
-            width: 132,
-            textAlign: 'right',
-          }}>
-          {script}
-        </Text>
+      {/*
+        Actions and the script accent share one right-hand column, stacked:
+        side by side they squeeze the headline until it breaks mid-word.
+      */}
+      {trailing || script ? (
+        <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
+          {trailing}
+          {script ? (
+            <Text
+              variant="script"
+              color="textSecondary"
+              accessible={false}
+              numberOfLines={3}
+              style={{
+                transform: [{ rotate: '-6deg' }],
+                marginTop: trailing ? spacing.xl : spacing.lg,
+                width: 128,
+                textAlign: 'right',
+              }}>
+              {script}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
-      {trailing}
     </View>
   );
 }
