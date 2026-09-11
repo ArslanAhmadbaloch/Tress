@@ -49,7 +49,7 @@ const TOPICS: LearnCategory[] = [
 ];
 
 const LATEST_COUNT = 3;
-const TOPIC_CARD_WIDTH = 92;
+const TOPIC_CARD_WIDTH = 108;
 
 /**
  * The Learn library, laid out after the Learn & Grow design: search,

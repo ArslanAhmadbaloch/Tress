@@ -5,6 +5,7 @@
 
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 
@@ -264,7 +265,6 @@ export function ChipRow<T extends string>({
   onChange: (next: T) => void;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
-  const glow = splitAlpha(colors.tabGlow);
 
   return (
     <ScrollView
@@ -296,17 +296,7 @@ export function ChipRow<T extends string>({
               },
               selected && shadow.soft,
             ]}>
-            {selected ? (
-              <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
-                <Defs>
-                  <RadialGradient id={`chip-${option.value}`} cx="50%" cy="50%" r="50%">
-                    <Stop offset="0" stopColor={glow.color} stopOpacity={glow.opacity * 0.9} />
-                    <Stop offset="1" stopColor={glow.color} stopOpacity={0} />
-                  </RadialGradient>
-                </Defs>
-                <Ellipse cx="50%" cy="50%" rx="48%" ry="46%" fill={`url(#chip-${option.value})`} />
-              </Svg>
-            ) : null}
+            {selected ? <ChipGlow id={option.value} /> : null}
             <Text
               variant="subhead"
               style={{
@@ -319,6 +309,43 @@ export function ChipRow<T extends string>({
         );
       })}
     </ScrollView>
+  );
+}
+
+/**
+ * The green light inside a selected chip. Sized from the chip's own
+ * layout: percentage geometry does not resolve reliably inside a pill.
+ */
+function ChipGlow({ id }: { id: string }) {
+  const { colors } = useTheme();
+  const glow = splitAlpha(colors.tabGlow);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  return (
+    <View
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={(e) =>
+        setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })
+      }>
+      {size.w > 0 ? (
+        <Svg width={size.w} height={size.h}>
+          <Defs>
+            <RadialGradient id={`chip-${id}`} cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor={glow.color} stopOpacity={glow.opacity * 0.9} />
+              <Stop offset="1" stopColor={glow.color} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Ellipse
+            cx={size.w / 2}
+            cy={size.h / 2}
+            rx={size.w * 0.48}
+            ry={size.h * 0.46}
+            fill={`url(#chip-${id})`}
+          />
+        </Svg>
+      ) : null}
+    </View>
   );
 }
 
