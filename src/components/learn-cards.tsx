@@ -60,9 +60,19 @@ export function ArticleCover({
 }) {
   const { colors } = useTheme();
   const image = articleImage(article);
+  // The frond is drawn to the cover's own size, so a thumbnail gets a
+  // small frond and the reader's header a large one — never a clipped
+  // corner of a big one.
+  const [box, setBox] = useState({ w: 0, h: 0 });
 
   return (
-    <View style={[{ overflow: 'hidden', backgroundColor: colors.backgroundSubtle }, style]}>
+    <View
+      onLayout={
+        image
+          ? undefined
+          : (e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })
+      }
+      style={[{ overflow: 'hidden', backgroundColor: colors.backgroundSubtle }, style]}>
       {image ? (
         <Image
           source={image}
@@ -74,9 +84,11 @@ export function ArticleCover({
         />
       ) : (
         <>
-          <View style={{ position: 'absolute', top: 0, bottom: 0, right: '-8%', width: '70%' }}>
-            <LeafShadow width={200} height={260} />
-          </View>
+          {box.w > 0 ? (
+            <View style={{ position: 'absolute', top: 0, right: -box.w * 0.06 }}>
+              <LeafShadow width={box.w * 0.62} height={box.h} />
+            </View>
+          ) : null}
           <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
             <GlassOrb size={iconSize * 2.4} ring={false} tone="neutral">
               <Icon name={CATEGORY_ICONS[article.category]} size={iconSize} color={colors.text} />
