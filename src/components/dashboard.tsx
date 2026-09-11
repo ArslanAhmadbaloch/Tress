@@ -231,8 +231,10 @@ export function HairProgressCard({
       </View>
 
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        <Frame source={before} date={beforeDate} label={beforeLabel} align="left" />
-        <Frame source={after} date={afterDate} label={afterLabel} align="right" />
+        {/* Example photos carry no date plate: they have no real date, and
+            the line beneath the frames is what labels them. */}
+        <Frame source={before} date={beforeDate} label={beforeLabel} align="left" plate={!example} />
+        <Frame source={after} date={afterDate} label={afterLabel} align="right" plate={!example} />
 
         {/* The split handle, centred on the seam between the photographs. */}
         <View
@@ -276,11 +278,13 @@ function Frame({
   date,
   label,
   align,
+  plate = true,
 }: {
   source?: FrameSource;
   date: string;
   label: string;
   align: 'left' | 'right';
+  plate?: boolean;
 }) {
   const { colors, spacing, radius } = useTheme();
 
@@ -319,7 +323,7 @@ function Frame({
         </View>
       )}
 
-      {source ? (
+      {source && plate ? (
         <View
           style={{
             position: 'absolute',
