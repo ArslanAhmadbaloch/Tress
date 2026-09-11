@@ -5,6 +5,7 @@ import { View } from 'react-native';
 import {
   HairProgressCard,
   HeaderActions,
+  JournalCard,
   LearnCard,
   MetricExplainer,
   MetricTile,
@@ -279,6 +280,13 @@ export default function HomeScreen() {
             </PressableScale>
           </Card>
         )}
+
+        <JournalCard
+          entries={data.journal}
+          onOpen={() => router.push('/journal')}
+          onWrite={() => router.push({ pathname: '/journal', params: { compose: '1' } })}
+          style={{ marginTop: spacing.md }}
+        />
 
         <LearnCard
           style={{ marginTop: spacing.md }}

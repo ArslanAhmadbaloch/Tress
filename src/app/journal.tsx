@@ -1,6 +1,6 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, ScrollView, TextInput, View } from 'react-native';
+import { Alert, Platform, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,9 @@ export default function JournalScreen() {
   const { data, addJournalEntry, deleteJournalEntry } = useAppStore();
 
   const [draft, setDraft] = useState('');
-  const [composing, setComposing] = useState(false);
+  // Home's "+" opens the journal ready to write.
+  const { compose } = useLocalSearchParams<{ compose?: string }>();
+  const [composing, setComposing] = useState(compose === '1');
 
   const journey = data.journey;
 
@@ -42,8 +44,13 @@ export default function JournalScreen() {
   };
 
   return (
+    // A page sheet on iOS already clears the status bar; Android is full screen.
     <View
-      style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+        paddingTop: Platform.OS === 'ios' ? spacing.sm : insets.top,
+      }}>
       <View
         style={{
           flexDirection: 'row',

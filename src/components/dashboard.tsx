@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassOrb } from './ui/glass-orb';
 import { LeafShadow } from './ui/leaf-shadow';
+import { CheckGlyph } from './ui/routine-glyphs';
 import { BulbGlyph } from './ui/tab-glyphs';
 import { Icon } from './ui/icon';
 import { PressableScale } from './ui/pressable-scale';
@@ -29,6 +30,7 @@ import { placeholderSeries, Sparkline } from './ui/ring';
 import { AnimatedNumber } from './ui/stat';
 import { Text } from './ui/text';
 import { ARTICLES } from '@/features/learn/library';
+import { formatDate, formatRelative, toDateKey } from '@/lib/date';
 import { spacing, useTheme } from '@/theme';
 
 /* --------------------------- header actions --------------------------- */
@@ -555,6 +557,180 @@ export function PhotoStack({
         </GlassOrb>
       ) : null}
     </View>
+  );
+}
+
+/* ---------------------------- hair journal ---------------------------- */
+
+const WEEK_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+/**
+ * The journal on Home: the latest entry set as a quote, this week's
+ * writing at a glance, and a one-tap way to add today's line. Every mark
+ * on it is the user's own writing; nothing here is scored.
+ */
+export function JournalCard({
+  entries,
+  onOpen,
+  onWrite,
+  style,
+}: {
+  /** Newest first. */
+  entries: { body: string; createdAt: string }[];
+  onOpen: () => void;
+  onWrite: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { colors, spacing, radius, shadow } = useTheme();
+  const latest = entries[0];
+
+  // Monday-first days of this week, and which of them have an entry.
+  const now = new Date();
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  const written = new Set(entries.map((e) => toDateKey(new Date(e.createdAt))));
+  const todayKey = toDateKey(now);
+  const week = WEEK_LETTERS.map((letter, i) => {
+    const day = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    const key = toDateKey(day);
+    return {
+      key,
+      letter,
+      done: written.has(key),
+      isToday: key === todayKey,
+      future: key > todayKey,
+    };
+  });
+  const daysThisWeek = week.filter((d) => d.done).length;
+
+  return (
+    <PressableScale
+      onPress={onOpen}
+      scaleTo={0.99}
+      accessibilityRole="button"
+      accessibilityLabel={
+        latest
+          ? `Hair journal. Latest entry: ${latest.body}. Opens your journal.`
+          : 'Hair journal. Opens your journal.'
+      }
+      style={[
+        {
+          padding: spacing.lg,
+          borderRadius: radius.section,
+          backgroundColor: colors.surface,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.glassBorder,
+        },
+        shadow.soft,
+        style,
+      ]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+        <GlassOrb size={42} ring={false} tone="neutral">
+          <Icon name="pencil" size={17} color={colors.text} />
+        </GlassOrb>
+        <View style={{ flex: 1 }}>
+          <Text variant="title3">Hair Journal</Text>
+          <Text variant="caption" color="textTertiary" style={{ marginTop: 1 }}>
+            {latest
+              ? `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} · last ${formatRelative(latest.createdAt)}`
+              : 'Your words, beside your photos'}
+          </Text>
+        </View>
+        <PressableScale
+          onPress={onWrite}
+          haptic="light"
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Write a journal entry">
+          <GlassOrb size={38} ring={false}>
+            <Icon name="plus" size={16} color={colors.text} />
+          </GlassOrb>
+        </PressableScale>
+      </View>
+
+      {/* The latest entry, set as a quote on a sheet of paper. */}
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: spacing.md,
+          marginTop: spacing.md,
+          padding: spacing.md,
+          borderRadius: radius.md,
+          backgroundColor: colors.backgroundSubtle,
+        }}>
+        <View
+          style={{
+            width: 3,
+            borderRadius: 2,
+            backgroundColor: colors.accent,
+            opacity: latest ? 1 : 0.45,
+          }}
+        />
+        <View style={{ flex: 1 }}>
+          <Text
+            variant="callout"
+            color={latest ? 'text' : 'textSecondary'}
+            numberOfLines={3}
+            style={{ fontStyle: latest ? 'italic' : 'normal' }}>
+            {latest
+              ? `“${latest.body}”`
+              : 'How does your hair feel today? A line a day gives your photos context later.'}
+          </Text>
+          {latest ? (
+            <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xs }}>
+              {formatDate(latest.createdAt)}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
+      {/* This week at a glance. */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: spacing.md,
+        }}>
+        <Text variant="caption" color="textSecondary">
+          This week
+        </Text>
+        <Text variant="caption" color={daysThisWeek ? 'accent' : 'textTertiary'}>
+          {daysThisWeek} of 7 days
+        </Text>
+      </View>
+      <View
+        accessible
+        accessibilityLabel={`Wrote on ${daysThisWeek} of 7 days this week`}
+        style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm }}>
+        {week.map((d) => (
+          <View key={d.key} style={{ alignItems: 'center', gap: 5 }}>
+            {d.done ? (
+              <GlassOrb size={26} ring={false}>
+                <CheckGlyph size={12} />
+              </GlassOrb>
+            ) : (
+              <View
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 13,
+                  borderWidth: d.isToday ? 1.5 : 1,
+                  borderColor: d.isToday ? colors.accent : colors.separator,
+                  backgroundColor: colors.surface,
+                  opacity: d.future ? 0.5 : 1,
+                }}
+              />
+            )}
+            <Text
+              variant="caption"
+              color={d.isToday ? 'accent' : 'textTertiary'}
+              style={{ fontWeight: d.isToday ? '600' : '500' }}>
+              {d.letter}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </PressableScale>
   );
 }
 
