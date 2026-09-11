@@ -76,7 +76,7 @@ const LIGHT: Record<GroundVariant, Plate> = {
  * darker than the surface they are supposed to be floating on.
  */
 const DARK: Record<GroundVariant, Plate> = {
-  /** Measured 42. */
+  /** Measured 43 (the updated plate, rock softened); lands near 28. */
   stone: {
     source: require('@/assets/images/ground-dark-stone.jpg'),
     veil: 0.5,
