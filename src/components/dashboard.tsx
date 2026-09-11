@@ -34,22 +34,21 @@ import { spacing, useTheme } from '@/theme';
 /* --------------------------- header actions --------------------------- */
 
 /**
- * The bell and avatar pair.
+ * The settings and profile pair at the top of Home.
  *
- * The bell's dot only appears when there is genuinely something waiting —
- * a decorative badge that is always lit trains people to ignore it.
+ * No badge on the gear: a dot there would read as "something is wrong
+ * with your settings". Due photos and unticked items are already shown
+ * on Home itself, where they can be acted on.
  */
 export function HeaderActions({
   initial,
   avatarUri,
-  hasAlert,
-  onNotifications,
+  onSettings,
   onProfile,
 }: {
   initial: string;
   avatarUri?: string;
-  hasAlert: boolean;
-  onNotifications: () => void;
+  onSettings: () => void;
   onProfile: () => void;
 }) {
   const { colors, spacing, shadow } = useTheme();
@@ -57,11 +56,9 @@ export function HeaderActions({
   return (
     <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
       <PressableScale
-        onPress={onNotifications}
+        onPress={onSettings}
         accessibilityRole="button"
-        accessibilityLabel={
-          hasAlert ? 'Notifications, one waiting' : 'Notifications'
-        }
+        accessibilityLabel="Settings"
         style={[
           {
             width: 46,
@@ -73,22 +70,7 @@ export function HeaderActions({
           },
           shadow.soft,
         ]}>
-        <Icon name="bell" size={19} color={colors.text} />
-        {hasAlert ? (
-          <View
-            style={{
-              position: 'absolute',
-              top: 9,
-              right: 11,
-              width: 9,
-              height: 9,
-              borderRadius: 5,
-              backgroundColor: colors.accent,
-              borderWidth: 1.5,
-              borderColor: colors.surface,
-            }}
-          />
-        ) : null}
+        <Icon name="settings" size={19} color={colors.text} />
       </PressableScale>
 
       <PressableScale

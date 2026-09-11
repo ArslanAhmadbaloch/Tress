@@ -112,8 +112,7 @@ export default function HomeScreen() {
             <HeaderActions
               initial={(name ?? 'Y').charAt(0).toUpperCase()}
               avatarUri={data.profile?.avatarUri}
-              hasAlert={Boolean(due?.isOverdue) || today.done < today.total}
-              onNotifications={() => router.push('/settings')}
+              onSettings={() => router.push('/settings')}
               onProfile={() => router.push('/profile')}
             />
           }
