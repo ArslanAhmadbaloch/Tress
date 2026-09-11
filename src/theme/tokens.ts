@@ -119,6 +119,8 @@ export type ColorTokens = {
   tabGlow: string;
   /** The drawn frond shadow on the Learn guide covers. */
   leafShadow: string;
+  /** The edge of each guide cover, firm enough to tell the books apart. */
+  coverEdge: string;
 };
 
 export const lightColors: ColorTokens = {
@@ -169,6 +171,7 @@ export const lightColors: ColorTokens = {
   orbNeutralRimBottom: '#D8D5CF',
   tabGlow: '#D6EDCB',
   leafShadow: '#4E6448',
+  coverEdge: 'rgba(22, 23, 26, 0.16)',
 };
 
 export const darkColors: ColorTokens = {
@@ -229,6 +232,7 @@ export const darkColors: ColorTokens = {
   tabGlow: 'rgba(143, 177, 131, 0.34)',
   /* A shadow is darker than the paper it falls on, in both themes. */
   leafShadow: '#000000',
+  coverEdge: 'rgba(255, 255, 255, 0.22)',
 };
 
 /* ------------------------------------------------------------------ *
@@ -426,19 +430,6 @@ export const typography = {
     lineHeight: 32,
     fontWeight: '700',
     letterSpacing: -0.9,
-  },
-  /**
-   * A title printed on a guide cover. A high-contrast serif, because that
-   * is what makes a small rectangle read as a book rather than a card.
-   * The weight lives in the face, so no fontWeight is layered on top —
-   * Android would otherwise substitute a synthetic bold.
-   */
-  cover: {
-    fontSize: 9.5,
-    lineHeight: 10.5,
-    fontWeight: '400',
-    letterSpacing: -0.1,
-    fontFamily: 'PlayfairDisplay_700Bold',
   },
   /**
    * Decorative editorial script, for the one motivational phrase a screen

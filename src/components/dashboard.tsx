@@ -7,7 +7,6 @@
  */
 
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useState, type ReactNode } from 'react';
 import {
   Modal,
@@ -30,7 +29,7 @@ import { placeholderSeries, Sparkline } from './ui/ring';
 import { AnimatedNumber } from './ui/stat';
 import { Text } from './ui/text';
 import { ARTICLES } from '@/features/learn/library';
-import { spacing, useTheme, withZeroAlpha } from '@/theme';
+import { spacing, useTheme } from '@/theme';
 
 /* --------------------------- header actions --------------------------- */
 
@@ -547,13 +546,7 @@ const COVER_H = 72;
 /** Vertical padding; the cover stack cancels it to reach both edges. */
 const LEARN_PAD_V = spacing.sm + spacing.xxs;
 
-/**
- * The route into the library.
- *
- * The fanned covers are not decoration standing in for content: the front
- * one carries the title of the library's featured article, so what the
- * card shows is what the reader will find behind it.
- */
+/** The route into the library. */
 export function LearnCard({
   onPress,
   style,
@@ -608,7 +601,7 @@ export function LearnCard({
           </Text>
         </View>
 
-        <CoverStack title={featured.coverTitle ?? featured.title} />
+        <CoverStack />
 
         <View
           style={[
@@ -629,8 +622,12 @@ export function LearnCard({
   );
 }
 
-/** Three article covers fanned like cards, the front one titled. */
-function CoverStack({ title }: { title: string }) {
+/**
+ * Three guide covers fanned like cards. No print on them: at this size
+ * type turns to noise, so each book is told apart by a clearly drawn edge
+ * and its own shadow instead.
+ */
+function CoverStack() {
   const { spacing } = useTheme();
 
   return (
@@ -648,22 +645,12 @@ function CoverStack({ title }: { title: string }) {
       }}>
       <Cover rotate="9deg" left={12} bottom={-6} />
       <Cover rotate="3deg" left={6} bottom={-12} />
-      <Cover rotate="-6deg" left={0} bottom={-18} title={title} />
+      <Cover rotate="-6deg" left={0} bottom={-18} />
     </View>
   );
 }
 
-function Cover({
-  rotate,
-  left,
-  bottom,
-  title,
-}: {
-  rotate: string;
-  left: number;
-  bottom: number;
-  title?: string;
-}) {
+function Cover({ rotate, left, bottom }: { rotate: string; left: number; bottom: number }) {
   const { colors, shadow } = useTheme();
 
   return (
@@ -686,35 +673,13 @@ function Cover({
           flex: 1,
           borderRadius: 7,
           overflow: 'hidden',
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.border,
+          borderWidth: 1,
+          borderColor: colors.coverEdge,
         }}>
-        {/* A palm frond's shadow on the right third, faded toward the
-            title so the text always sits on clean paper. */}
+        {/* A palm frond's shadow falling across the cover. */}
         <View style={{ position: 'absolute', top: -2, bottom: -2, right: -6 }}>
-          <LeafShadow width={COVER_W * 0.72} height={COVER_H + 4} />
+          <LeafShadow width={COVER_W * 0.85} height={COVER_H + 4} />
         </View>
-        <LinearGradient
-          colors={[colors.surface, withZeroAlpha(colors.surface)]}
-          start={{ x: 0.45, y: 0 }}
-          end={{ x: 0.85, y: 0 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        {title ? (
-          <View style={{ padding: 4, paddingTop: 6, width: COVER_W - 2 }}>
-            <Text
-              variant="caption"
-              color="textTertiary"
-              numberOfLines={1}
-              style={{ fontSize: 5, lineHeight: 7, letterSpacing: 0.6 }}>
-              GUIDE
-            </Text>
-            <Text variant="cover" numberOfLines={4} style={{ marginTop: 2 }}>
-              {title}
-            </Text>
-          </View>
-        ) : null}
       </View>
     </View>
   );
