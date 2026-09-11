@@ -348,3 +348,124 @@ export function monthlyAdherenceHistory(data: AppData, months = 6): MonthPoint[]
 
   return out;
 }
+
+/* ------------------------------------------------------------------ *
+ * Measurement series for the Journey charts. Every value is something
+ * the app records directly; nothing here estimates hair.
+ * ------------------------------------------------------------------ */
+
+export type SeriesPoint = { key: string; label: string; value: number | null };
+
+function mondayOf(date: Date): Date {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
+
+const shortDay = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+/** Routine adherence per Monday-first week, oldest first; null before tracking. */
+export function weeklyAdherenceSeries(data: AppData, weeks = 8): SeriesPoint[] {
+  const items = activeRoutineItems(data);
+  const thisMonday = mondayOf(new Date());
+  const out: SeriesPoint[] = [];
+
+  for (let w = weeks - 1; w >= 0; w -= 1) {
+    const start = new Date(thisMonday);
+    start.setDate(start.getDate() - w * 7);
+    let expected = 0;
+    let completed = 0;
+
+    if (data.journey && items.length > 0) {
+      for (let d = 0; d < 7; d += 1) {
+        const day = new Date(start);
+        day.setDate(start.getDate() + d);
+        const iso = day.toISOString();
+        if (daysBetween(iso) < 0) break; // the future
+        if (daysBetween(data.journey.startedAt, iso) < 0) continue;
+
+        const done = completedOn(data, toDateKey(day));
+        for (const item of items) {
+          if (daysBetween(item.createdAt, iso) < 0) continue;
+          expected += 1;
+          if (done.has(item.id)) completed += 1;
+        }
+      }
+    }
+
+    out.push({
+      key: toDateKey(start),
+      label: shortDay(start),
+      value: expected > 0 ? Math.round((completed / expected) * 100) : null,
+    });
+  }
+  return out;
+}
+
+/** Photo sessions captured in each calendar month, oldest first. */
+export function monthlySessionCounts(data: AppData, months = 6): SeriesPoint[] {
+  const now = new Date();
+  const out: SeriesPoint[] = [];
+  for (let m = months - 1; m >= 0; m -= 1) {
+    const first = new Date(now.getFullYear(), now.getMonth() - m, 1);
+    const next = new Date(now.getFullYear(), now.getMonth() - m + 1, 1);
+    const count = data.sessions.filter((s) => {
+      const t = new Date(s.capturedAt);
+      return t >= first && t < next;
+    }).length;
+    out.push({
+      key: `${first.getFullYear()}-${first.getMonth()}`,
+      label: first.toLocaleDateString(undefined, { month: 'short' }),
+      value: count,
+    });
+  }
+  return out;
+}
+
+/** Journal entries written in each Monday-first week, oldest first. */
+export function weeklyJournalCounts(data: AppData, weeks = 8): SeriesPoint[] {
+  const thisMonday = mondayOf(new Date());
+  const out: SeriesPoint[] = [];
+  for (let w = weeks - 1; w >= 0; w -= 1) {
+    const start = new Date(thisMonday);
+    start.setDate(start.getDate() - w * 7);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    const count = data.journal.filter((e) => {
+      const t = new Date(e.createdAt);
+      return t >= start && t < end;
+    }).length;
+    out.push({ key: toDateKey(start), label: shortDay(start), value: count });
+  }
+  return out;
+}
+
+export type DayCell = { key: string; value: number | null; isToday: boolean };
+
+/**
+ * Share of the stack completed on each of the last `days` days, oldest
+ * first: 0-1, or null where nothing applied (before tracking began).
+ */
+export function dailyCompletion(data: AppData, days = 28): DayCell[] {
+  const items = activeRoutineItems(data);
+  const today = new Date();
+  const todayKey = toDateKey(today);
+  const out: DayCell[] = [];
+
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    const key = toDateKey(day);
+    const iso = day.toISOString();
+    let value: number | null = null;
+
+    if (data.journey && daysBetween(data.journey.startedAt, iso) >= 0) {
+      const applicable = items.filter((item) => daysBetween(item.createdAt, iso) >= 0);
+      if (applicable.length > 0) {
+        const done = completedOn(data, key);
+        value = applicable.filter((item) => done.has(item.id)).length / applicable.length;
+      }
+    }
+    out.push({ key, value, isToday: key === todayKey });
+  }
+  return out;
+}

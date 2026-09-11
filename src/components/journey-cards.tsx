@@ -38,7 +38,7 @@ import { PressableScale } from './ui/pressable-scale';
 import { placeholderSeries } from './ui/ring';
 import { CheckGlyph } from './ui/routine-glyphs';
 import { Text } from './ui/text';
-import type { MonthPoint } from '@/store/selectors';
+import type { DayCell, MonthPoint, SeriesPoint } from '@/store/selectors';
 import { splitAlpha, useTheme } from '@/theme';
 
 /* ------------------------------ shared ------------------------------ */
@@ -500,6 +500,208 @@ function TrendChart({ points, preview }: { points: MonthPoint[]; preview: boolea
         </Svg>
       ) : null}
     </View>
+  );
+}
+
+/* ------------------------------ bar chart --------------------------- */
+
+const BAR_CHART_HEIGHT = 132;
+const BAR_LABEL_SPACE = 18;
+const BAR_VALUE_SPACE = 22;
+
+/**
+ * A small bar chart for one measurement series. The current period is
+ * the solid bar and carries its value; earlier periods sit behind it in
+ * a lighter tint. With no history yet it draws a seeded preview, faded
+ * and labelled, so the card keeps its shape without claiming data.
+ */
+export function BarChartCard({
+  title,
+  caption,
+  points,
+  max,
+  format,
+  preview,
+  style,
+}: {
+  title: string;
+  caption: string;
+  points: SeriesPoint[];
+  /** Top of the scale; defaults to the largest value. */
+  max?: number;
+  format: (value: number) => string;
+  preview: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { colors, spacing } = useTheme();
+  const [width, setWidth] = useState(0);
+
+  const n = points.length;
+  const values: (number | null)[] = preview
+    ? placeholderSeries(title, n).map((v) => v)
+    : points.map((p) => p.value);
+  const top = preview
+    ? 1
+    : Math.max(1, max ?? 0, ...values.map((v) => v ?? 0));
+
+  const plotH = BAR_CHART_HEIGHT - BAR_LABEL_SPACE - BAR_VALUE_SPACE;
+  const slot = n > 0 ? width / n : 0;
+  const barW = Math.min(22, slot * 0.52);
+  const lastIndex = n - 1;
+  const current = points[lastIndex]?.value;
+
+  return (
+    <Panel style={style}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <Text variant="headline">{title}</Text>
+        {!preview && typeof current === 'number' ? (
+          <Text variant="headline" color="accent">
+            {format(current)}
+          </Text>
+        ) : null}
+      </View>
+      <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+        {caption}
+      </Text>
+
+      <View
+        onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}
+        style={{ height: BAR_CHART_HEIGHT, marginTop: spacing.md }}
+        accessible
+        accessibilityLabel={
+          preview
+            ? `${title} chart preview. No history yet.`
+            : `${title}: ${points
+                .map((p) => `${p.label} ${p.value === null ? 'no data' : format(p.value)}`)
+                .join(', ')}`
+        }>
+        {width > 0 ? (
+          <Svg width={width} height={BAR_CHART_HEIGHT}>
+            <Line
+              x1={0}
+              x2={width}
+              y1={BAR_VALUE_SPACE + plotH}
+              y2={BAR_VALUE_SPACE + plotH}
+              stroke={colors.separator}
+              strokeWidth={1}
+            />
+            {points.map((p, i) => {
+              const v = values[i];
+              const cx = slot * i + slot / 2;
+              const isCurrent = i === lastIndex;
+              const h = v === null ? 3 : Math.max(3, (v / top) * plotH);
+              const y = BAR_VALUE_SPACE + plotH - h;
+              const fill = preview
+                ? colors.fillSelected
+                : v === null
+                  ? colors.fill
+                  : colors.accent;
+              const opacity = preview ? 0.7 : v === null ? 1 : isCurrent ? 1 : 0.38;
+              return (
+                <G key={p.key}>
+                  <Rect
+                    x={cx - barW / 2}
+                    y={y}
+                    width={barW}
+                    height={h}
+                    rx={Math.min(6, barW / 2)}
+                    fill={fill}
+                    fillOpacity={opacity}
+                  />
+                  {!preview && isCurrent && typeof v === 'number' ? (
+                    <SvgText
+                      x={cx}
+                      y={y - 6}
+                      fontSize={10}
+                      fontWeight="600"
+                      fill={colors.accent}
+                      textAnchor="middle">
+                      {format(v)}
+                    </SvgText>
+                  ) : null}
+                  <SvgText
+                    x={cx}
+                    y={BAR_CHART_HEIGHT - 4}
+                    fontSize={9}
+                    fontWeight={isCurrent ? '600' : '400'}
+                    fill={isCurrent && !preview ? colors.accent : colors.textTertiary}
+                    textAnchor="middle">
+                    {p.label}
+                  </SvgText>
+                </G>
+              );
+            })}
+          </Svg>
+        ) : null}
+      </View>
+
+      {preview ? (
+        <Text variant="caption" color="textTertiary" center style={{ marginTop: spacing.xs }}>
+          Preview. Fills in as you track.
+        </Text>
+      ) : null}
+    </Panel>
+  );
+}
+
+/* --------------------------- check-in grid -------------------------- */
+
+const GRID_GAP = 5;
+
+/**
+ * The last four weeks, a square a day: darker as more of the stack was
+ * done, faint before tracking began, today outlined.
+ */
+export function CheckInGrid({
+  days,
+  style,
+}: {
+  days: DayCell[];
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { colors, spacing, radius } = useTheme();
+  const [width, setWidth] = useState(0);
+  const cell = width > 0 ? (width - GRID_GAP * 6) / 7 : 0;
+  const tracked = days.filter((d) => d.value !== null);
+  const full = tracked.filter((d) => d.value === 1).length;
+
+  return (
+    <Panel style={style}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <Text variant="headline">Daily check-ins</Text>
+        <Text variant="footnote" color={full ? 'accent' : 'textTertiary'}>
+          {full} full {full === 1 ? 'day' : 'days'}
+        </Text>
+      </View>
+      <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+        Last 4 weeks · darker means more of your stack done
+      </Text>
+
+      <View
+        onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}
+        accessible
+        accessibilityLabel={`Daily check-ins: ${full} of the last ${days.length} days had the whole stack done`}
+        style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP, marginTop: spacing.md }}>
+        {cell > 0
+          ? days.map((d) => (
+              <View
+                key={d.key}
+                style={{
+                  width: cell,
+                  height: 24,
+                  borderRadius: radius.xs,
+                  backgroundColor:
+                    d.value === null || d.value === 0 ? colors.fill : colors.accent,
+                  opacity:
+                    d.value === null ? 0.5 : d.value === 0 ? 1 : 0.28 + 0.72 * d.value,
+                  borderWidth: d.isToday ? 1.5 : 0,
+                  borderColor: colors.accent,
+                }}
+              />
+            ))
+          : null}
+      </View>
+    </Panel>
   );
 }
 

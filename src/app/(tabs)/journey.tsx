@@ -5,6 +5,8 @@ import { View } from 'react-native';
 
 import { HeaderActions, MetricExplainer } from '@/components/dashboard';
 import {
+  BarChartCard,
+  CheckInGrid,
   KeyMetricsCard,
   MilestonesCard,
   NoteRow,
@@ -29,8 +31,12 @@ import {
   adherencePercent,
   baselineSession,
   consistencyScore,
+  dailyCompletion,
   monthlyAdherenceHistory,
+  monthlySessionCounts,
   sessionsChronological,
+  weeklyAdherenceSeries,
+  weeklyJournalCounts,
 } from '@/store/selectors';
 import { useTheme } from '@/theme';
 import { ANGLE_LABELS, type AppData, type PhotoSession } from '@/types/domain';
@@ -75,6 +81,10 @@ export default function JourneyScreen() {
   const [explain, setExplain] = useState(false);
 
   const history = useMemo(() => monthlyAdherenceHistory(data, months), [data, months]);
+  const weekly = useMemo(() => weeklyAdherenceSeries(data, 8), [data]);
+  const checkIns = useMemo(() => dailyCompletion(data, 28), [data]);
+  const sessionsByMonth = useMemo(() => monthlySessionCounts(data, 6), [data]);
+  const journalByWeek = useMemo(() => weeklyJournalCounts(data, 8), [data]);
 
   const journey = data.journey;
   if (!journey) return null;
@@ -209,7 +219,35 @@ export default function JourneyScreen() {
 
         {tab === 'measurements' ? (
           <>
-            {scoreCard}
+            {/* Consistency lives on Overview; here, the series behind it. */}
+            <BarChartCard
+              title="Weekly routine"
+              caption="Share of your stack completed each week"
+              points={weekly}
+              max={100}
+              format={(v) => `${v}%`}
+              preview={weekly.every((p) => p.value === null)}
+              style={{ marginTop: spacing.md }}
+            />
+            <CheckInGrid days={checkIns} style={{ marginTop: spacing.md }} />
+            <BarChartCard
+              title="Photo sessions"
+              caption="Sessions captured each month"
+              points={sessionsByMonth}
+              max={2}
+              format={(v) => `${v}`}
+              preview={data.sessions.length === 0}
+              style={{ marginTop: spacing.md }}
+            />
+            <BarChartCard
+              title="Hair Journal"
+              caption="Entries written each week"
+              points={journalByWeek}
+              max={3}
+              format={(v) => `${v}`}
+              preview={data.journal.length === 0}
+              style={{ marginTop: spacing.md }}
+            />
             <KeyMetricsCard
               rows={metrics}
               onDetails={() => router.push('/calendar')}
