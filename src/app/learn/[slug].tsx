@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ArticleCover } from '@/components/learn-cards';
+import { articleImageCredit } from '@/features/learn/images';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -53,6 +54,8 @@ export default function ArticleScreen() {
     );
   }
 
+  const credit = articleImageCredit(article);
+
   const related = ARTICLES.filter(
     (a) => a.slug !== article.slug && a.category === article.category,
   ).slice(0, 3);
@@ -73,6 +76,11 @@ export default function ArticleScreen() {
             borderRadius: radius.section,
           }}
         />
+        {credit ? (
+          <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xs }}>
+            Photo: {credit.photographer} / Unsplash
+          </Text>
+        ) : null}
 
         <Text
           variant="caption"
