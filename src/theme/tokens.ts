@@ -426,10 +426,10 @@ export const typography = {
   },
   /** The number on a dashboard metric tile, sized for a third of the width. */
   metric: {
-    fontSize: 28,
-    lineHeight: 32,
+    fontSize: 24,
+    lineHeight: 28,
     fontWeight: '700',
-    letterSpacing: -0.9,
+    letterSpacing: -0.7,
   },
   /**
    * Decorative editorial script, for the one motivational phrase a screen

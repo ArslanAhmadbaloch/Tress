@@ -156,7 +156,7 @@ export default function HomeScreen() {
         {/* Three metrics. */}
         <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
           <MetricTile
-            glyph={<StrandGlyph size={25} />}
+            glyph={<StrandGlyph size={21} />}
             label="Consistency"
             value={score.value}
             delta={score.delta}
@@ -168,7 +168,7 @@ export default function HomeScreen() {
             onExplain={() => setExplain('consistency')}
           />
           <MetricTile
-            glyph={<BarsGlyph size={24} />}
+            glyph={<BarsGlyph size={19} />}
             label="Streak"
             value={streak}
             unit="days"
@@ -179,7 +179,7 @@ export default function HomeScreen() {
             onExplain={() => setExplain('streak')}
           />
           <MetricTile
-            glyph={<Icon name="camera" size={22} color={colors.text} />}
+            glyph={<Icon name="camera" size={18} color={colors.text} />}
             label="Photos"
             value={totalPhotos}
             unit="total"

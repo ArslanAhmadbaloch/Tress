@@ -363,7 +363,7 @@ const MIN_REAL_POINTS = 3;
 /** Weeks of history at which the line reaches full strength. */
 const FULL_STRENGTH_POINTS = 8;
 
-const CHART_HEIGHT = 30;
+const CHART_HEIGHT = 22;
 
 /**
  * One dashboard metric.
@@ -440,7 +440,7 @@ export function MetricTile({
       style={[
         {
           flex: 1,
-          padding: spacing.md,
+          padding: spacing.sm + spacing.xxs,
           borderRadius: radius.card,
           backgroundColor: colors.surface,
           borderWidth: StyleSheet.hairlineWidth,
@@ -454,7 +454,7 @@ export function MetricTile({
           alignItems: 'flex-start',
           justifyContent: 'space-between',
         }}>
-        <GlassOrb size={42} progress={ring}>
+        <GlassOrb size={34} progress={ring}>
           {glyph}
         </GlassOrb>
 
@@ -464,24 +464,24 @@ export function MetricTile({
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel={`How ${label} is calculated`}>
-          <Icon name="info" size={17} color={colors.textSecondary} />
+          <Icon name="info" size={15} color={colors.textSecondary} />
         </PressableScale>
       </View>
 
       <Text
-        variant="subhead"
+        variant="footnote"
         color="textSecondary"
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.8}
-        style={{ marginTop: spacing.sm }}>
+        style={{ marginTop: spacing.xs }}>
         {label}
       </Text>
 
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
         <AnimatedNumber value={value} suffix={suffix} variant="metric" />
         {unit ? (
-          <Text variant="callout" color="textTertiary" numberOfLines={1}>
+          <Text variant="footnote" color="textTertiary" numberOfLines={1}>
             {unit}
           </Text>
         ) : null}
@@ -524,7 +524,7 @@ export function MetricTile({
   );
 }
 
-const THUMB = 24;
+const THUMB = 22;
 
 /** The photo tile's footer: overlapping recent thumbnails, then a glass count. */
 export function PhotoStack({
