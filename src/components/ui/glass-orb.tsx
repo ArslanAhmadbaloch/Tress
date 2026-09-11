@@ -41,6 +41,7 @@ export function GlassOrb({
   progress = 0,
   ring = true,
   tone = 'green',
+  emphasis = 'normal',
   children,
   style,
 }: {
@@ -51,6 +52,11 @@ export function GlassOrb({
   ring?: boolean;
   /** Green for metrics and tasks; neutral for plain navigation. */
   tone?: 'green' | 'neutral';
+  /**
+   * 'strong' pushes the optics for a primary control: a brighter glint, a
+   * second inner rim of light, a stronger caustic and a deeper shadow.
+   */
+  emphasis?: 'normal' | 'strong';
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -74,6 +80,7 @@ export function GlassOrb({
   const uid = useId().replace(/[^A-Za-z0-9]/g, '');
   const id = (name: string) => `${name}${uid}`;
 
+  const strong = emphasis === 'strong';
   const pad = ring ? ARC_GAP + ARC_THICKNESS : 0;
   const box = size + pad * 2;
   const c = box / 2;
@@ -94,7 +101,7 @@ export function GlassOrb({
         { width: box, height: box },
         // Without a ring there is no room in the drawing for a contact
         // shadow, so the view casts one instead.
-        !ring && [{ borderRadius: box / 2 }, shadow.soft],
+        !ring && [{ borderRadius: box / 2 }, strong ? shadow.lifted : shadow.soft],
         style,
       ]}>
       <Svg width={box} height={box} style={StyleSheet.absoluteFill} accessible={false}>
@@ -119,6 +126,10 @@ export function GlassOrb({
           <LinearGradient id={id('rim')} x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" {...stop(colors.orbRimTop)} />
             <Stop offset="1" {...stop(glass.rimBottom)} />
+          </LinearGradient>
+          <LinearGradient id={id('innerRim')} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" {...stop(colors.orbGlint, 0.95)} />
+            <Stop offset="0.5" {...stop(colors.orbGlint, 0)} />
           </LinearGradient>
           <LinearGradient
             id={id('arc')}
@@ -178,17 +189,17 @@ export function GlassOrb({
         {/* Light focused at the lower edge. */}
         <Ellipse
           cx={c}
-          cy={c + r * 0.58}
-          rx={r * 0.6}
-          ry={r * 0.26}
+          cy={c + r * (strong ? 0.56 : 0.58)}
+          rx={r * (strong ? 0.68 : 0.6)}
+          ry={r * (strong ? 0.32 : 0.26)}
           fill={`url(#${id('caustic')})`}
         />
         {/* Specular glint. */}
         <Ellipse
           cx={c - r * 0.1}
-          cy={c - r * 0.5}
-          rx={r * 0.62}
-          ry={r * 0.32}
+          cy={c - r * (strong ? 0.48 : 0.5)}
+          rx={r * (strong ? 0.7 : 0.62)}
+          ry={r * (strong ? 0.36 : 0.32)}
           fill={`url(#${id('glint')})`}
         />
         {/* Lit rim: bright where the light hits, tinted where it leaves. */}
@@ -197,9 +208,21 @@ export function GlassOrb({
           cy={c}
           r={r - 0.5}
           stroke={`url(#${id('rim')})`}
-          strokeWidth={1}
+          strokeWidth={strong ? 1.4 : 1}
           fill="none"
         />
+        {/* A second, inner rim of light: the doubled edge that makes thick
+            glass read as thick. */}
+        {strong ? (
+          <Circle
+            cx={c}
+            cy={c}
+            r={r - 2.4}
+            stroke={`url(#${id('innerRim')})`}
+            strokeWidth={1.2}
+            fill="none"
+          />
+        ) : null}
       </Svg>
 
       <View

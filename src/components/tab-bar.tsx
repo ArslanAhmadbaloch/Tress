@@ -57,7 +57,7 @@ const CENTRE_INDEX = 2;
 
 const ITEM_HEIGHT = 50;
 const GLOW_SIZE = 52;
-const CENTRE_SIZE = 46;
+const CENTRE_SIZE = 54;
 
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const { spacing, radius, shadow } = useTheme();
@@ -224,8 +224,8 @@ function CentreAction({ onPress }: { onPress: () => void }) {
         scaleTo={1}
         accessibilityRole="button"
         accessibilityLabel="New photo update">
-        <GlassOrb size={CENTRE_SIZE} ring={false} tone="neutral">
-          <PlusGlyph size={22} color={colors.text} />
+        <GlassOrb size={CENTRE_SIZE} ring={false} tone="neutral" emphasis="strong">
+          <PlusGlyph size={24} color={colors.text} />
         </GlassOrb>
       </PressableScale>
     </Animated.View>
