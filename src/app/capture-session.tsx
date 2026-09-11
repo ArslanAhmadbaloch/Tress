@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions, type CameraCapturedPicture } from 'expo-camera';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,7 +47,12 @@ export default function CaptureSessionScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
-  const [index, setIndex] = useState(0);
+  // The intro can open capture at a chosen angle; the session still
+  // collects all five, wrapping round to any it skipped.
+  const { start } = useLocalSearchParams<{ start?: string }>();
+  const [index, setIndex] = useState(() =>
+    Math.max(0, ANGLES.indexOf(start as Angle)),
+  );
   const [shots, setShots] = useState<Shot[]>([]);
   const [pending, setPending] = useState<CameraCapturedPicture | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -120,12 +125,14 @@ export default function CaptureSessionScreen() {
     ]);
     setPending(null);
 
-    if (index < ANGLES.length - 1) {
-      setIndex((i) => i + 1);
-    } else {
-      setPhase('summary');
-    }
-  }, [pending, angle, index]);
+    // Next angle still missing, wrapping round, so a session started
+    // part-way through still collects all five before the summary.
+    const taken = new Set([...shots.map((s) => s.angle), angle]);
+    const after = ANGLES.findIndex((a, i) => i > index && !taken.has(a));
+    const next = after !== -1 ? after : ANGLES.findIndex((a) => !taken.has(a));
+    if (next === -1) setPhase('summary');
+    else setIndex(next);
+  }, [pending, angle, index, shots]);
 
   const retake = useCallback(() => setPending(null), []);
 
@@ -415,7 +422,7 @@ export default function CaptureSessionScreen() {
                 height: 3,
                 borderRadius: 2,
                 backgroundColor:
-                  shots.some((s) => s.angle === a) || i < index
+                  shots.some((s) => s.angle === a)
                     ? colors.accent
                     : 'rgba(255,255,255,0.32)',
               }}

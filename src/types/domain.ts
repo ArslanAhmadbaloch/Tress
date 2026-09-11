@@ -8,22 +8,28 @@
  */
 
 /** The five standardised capture angles, in the order they're shot. */
+/**
+ * Capture order, matching the guided capture design: top, both sides,
+ * back, then hairline. The keys are storage identifiers and never change,
+ * so sessions saved under the old order still load; only the order and
+ * the labels are presentation.
+ */
 export const ANGLES = [
-  'front',
+  'top',
   'leftTemple',
   'rightTemple',
   'crown',
-  'top',
+  'front',
 ] as const;
 
 export type Angle = (typeof ANGLES)[number];
 
 export const ANGLE_LABELS: Record<Angle, string> = {
-  front: 'Front',
-  leftTemple: 'Left Temple',
-  rightTemple: 'Right Temple',
-  crown: 'Crown',
   top: 'Top',
+  leftTemple: 'Left Side',
+  rightTemple: 'Right Side',
+  crown: 'Back',
+  front: 'Hairline',
 };
 
 /** Shown during guided capture, one per angle. */
@@ -32,7 +38,7 @@ export const ANGLE_GUIDANCE: Record<
   { instruction: string; tips: string[] }
 > = {
   front: {
-    instruction: 'Face the camera straight on.',
+    instruction: 'Face the camera with your hair off your forehead so the hairline shows.',
     tips: [
       'Head level, eyes forward',
       'Hair in its normal position',
@@ -40,19 +46,19 @@ export const ANGLE_GUIDANCE: Record<
     ],
   },
   leftTemple: {
-    instruction: 'Turn your head to show your left temple.',
+    instruction: 'Turn your head to the right to show your left side.',
     tips: ['Rotate about 45°', 'Keep your chin level', 'Same side every session'],
   },
   rightTemple: {
-    instruction: 'Turn your head to show your right temple.',
+    instruction: 'Turn your head to the left to show your right side.',
     tips: ['Rotate about 45°', 'Keep your chin level', 'Mirror your left angle'],
   },
   crown: {
-    instruction: 'Tilt your head forward to show the crown.',
+    instruction: 'Tilt your head forward and capture the back and crown.',
     tips: ['Chin toward your chest', 'Camera above your head', 'Hold steady'],
   },
   top: {
-    instruction: 'Show the top of your head.',
+    instruction: 'Hold your phone above your head and capture a clear top view.',
     tips: ['Camera directly overhead', 'Part your hair as usual', 'Even lighting'],
   },
 };
