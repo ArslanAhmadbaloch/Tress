@@ -107,6 +107,10 @@ for (const f of FILES) {
     const target = m[1].split('?')[0].replace(/\/\$\{.*/, '').replace(/\/\[.*/, '');
     if (target.startsWith('/')) pushed.add(target.replace(/\/+$/, '') || '/');
   }
+  // Object-form navigation: router.push({ pathname: '/x', params }).
+  for (const m of f.text.matchAll(/pathname:\s*['"`](\/[^'"`?]*)['"`]/g)) {
+    pushed.add(m[1].replace(/\/+$/, '') || '/');
+  }
 }
 
 const dynamicRoots = routeNames

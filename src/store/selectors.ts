@@ -297,3 +297,54 @@ export function sessionHistory(data: AppData, weeks = 8): number[] {
 
   return series;
 }
+
+export type MonthPoint = {
+  key: string;
+  /** Short month name, e.g. "Jan". */
+  label: string;
+  /** Routine adherence for the month, 0-100; null before tracking began. */
+  value: number | null;
+};
+
+/**
+ * Routine adherence per calendar month, oldest first, for the Journey
+ * chart. Months before the journey (or before any routine item existed)
+ * are null rather than zero, so a new user's chart does not draw a fake
+ * collapse at the start.
+ */
+export function monthlyAdherenceHistory(data: AppData, months = 6): MonthPoint[] {
+  const items = activeRoutineItems(data);
+  const now = new Date();
+  const out: MonthPoint[] = [];
+
+  for (let m = months - 1; m >= 0; m -= 1) {
+    const first = new Date(now.getFullYear(), now.getMonth() - m, 1);
+    const last = new Date(now.getFullYear(), now.getMonth() - m + 1, 0);
+
+    let expected = 0;
+    let completed = 0;
+
+    if (data.journey && items.length > 0) {
+      for (let day = new Date(first); day <= last; day.setDate(day.getDate() + 1)) {
+        const iso = day.toISOString();
+        if (daysBetween(iso) < 0) break; // the future
+        if (daysBetween(data.journey.startedAt, iso) < 0) continue;
+
+        const done = completedOn(data, toDateKey(day));
+        for (const item of items) {
+          if (daysBetween(item.createdAt, iso) < 0) continue;
+          expected += 1;
+          if (done.has(item.id)) completed += 1;
+        }
+      }
+    }
+
+    out.push({
+      key: `${first.getFullYear()}-${first.getMonth()}`,
+      label: first.toLocaleDateString(undefined, { month: 'short' }),
+      value: expected > 0 ? Math.round((completed / expected) * 100) : null,
+    });
+  }
+
+  return out;
+}
