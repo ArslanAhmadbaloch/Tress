@@ -210,11 +210,12 @@ export function SegmentedTabs<T extends string>({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
+              {/* The tab bar's own label style. No shrink-to-fit: inside the
+                  glass pill iOS sizes text on a first, near-zero-width pass
+                  and never grows it back. */}
               <Text
-                variant="subhead"
+                variant="caption"
                 numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.8}
                 style={{
                   color: selected ? colors.text : colors.textSecondary,
                   fontWeight: selected ? '600' : '500',
