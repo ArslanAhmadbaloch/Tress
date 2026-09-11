@@ -28,7 +28,7 @@ import { placeholderSeries, Sparkline } from './ui/ring';
 import { AnimatedNumber } from './ui/stat';
 import { Text } from './ui/text';
 import { ARTICLES } from '@/features/learn/library';
-import { useTheme } from '@/theme';
+import { spacing, useTheme } from '@/theme';
 
 /* --------------------------- header actions --------------------------- */
 
@@ -539,8 +539,11 @@ export function PhotoStack({
 
 /* ----------------------------- learn card ----------------------------- */
 
-const COVER_W = 60;
-const COVER_H = 78;
+const COVER_W = 56;
+const COVER_H = 72;
+
+/** Vertical padding; the cover stack cancels it to reach both edges. */
+const LEARN_PAD_V = spacing.sm + spacing.xxs;
 
 /**
  * The route into the library.
@@ -575,25 +578,30 @@ export function LearnCard({
           // Kept as short as the tab bar, like the reference: one title and
           // two lines, with the covers filling the height on the right.
           gap: spacing.sm,
-          paddingVertical: spacing.md,
+          paddingVertical: LEARN_PAD_V,
           paddingLeft: spacing.lg,
           paddingRight: spacing.md,
           borderRadius: radius.section,
           overflow: 'hidden',
         }}>
-        <GlassOrb size={50} ring={false} tone="neutral">
-          <BulbGlyph size={25} color={colors.text} />
+        <GlassOrb size={46} ring={false} tone="neutral">
+          <BulbGlyph size={23} color={colors.text} />
         </GlassOrb>
 
         <View style={{ flex: 1, marginLeft: spacing.xs }}>
-          <Text variant="title3" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+          <Text
+            variant="headline"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+            style={{ fontWeight: '700' }}>
             Learn &amp; Grow
           </Text>
           <Text
-            variant="footnote"
+            variant="caption"
             color="textSecondary"
             numberOfLines={2}
-            style={{ marginTop: 2 }}>
+            style={{ marginTop: 2, fontWeight: '400' }}>
             Science-backed guides on how hair grows.
           </Text>
         </View>
@@ -603,16 +611,16 @@ export function LearnCard({
         <View
           style={[
             {
-              width: 44,
-              height: 44,
-              borderRadius: 22,
+              width: 40,
+              height: 40,
+              borderRadius: 20,
               alignItems: 'center',
               justifyContent: 'center',
               backgroundColor: colors.surface,
             },
             shadow.lifted,
           ]}>
-          <Icon name="arrowRight" size={17} color={colors.text} />
+          <Icon name="arrowRight" size={16} color={colors.text} />
         </View>
       </View>
     </PressableScale>
@@ -628,9 +636,16 @@ function CoverStack({ title }: { title: string }) {
       accessible={false}
       // Spans the card's full height so the covers can sit on its bottom
       // edge and run off it, as a stack of printed guides would.
-      style={{ width: COVER_W + 12, alignSelf: 'stretch', marginVertical: -spacing.md }}>
-      <Cover rotate="9deg" left={15} bottom={-6} />
-      <Cover rotate="3deg" left={8} bottom={-12} />
+      style={{
+        width: COVER_W + 20,
+        alignSelf: 'stretch',
+        marginVertical: -LEARN_PAD_V,
+        // Clear air before the arrow, as in the reference; the back
+        // cover's tilt would otherwise lean into it.
+        marginRight: spacing.sm,
+      }}>
+      <Cover rotate="9deg" left={12} bottom={-6} />
+      <Cover rotate="3deg" left={6} bottom={-12} />
       <Cover rotate="-6deg" left={0} bottom={-18} title={title} />
     </View>
   );
@@ -687,7 +702,7 @@ function Cover({
           accessible={false}
         />
         {title ? (
-          <View style={{ padding: 5, paddingTop: 7, width: COVER_W - 4 }}>
+          <View style={{ padding: 4, paddingTop: 6, width: COVER_W - 2 }}>
             <Text
               variant="caption"
               color="textTertiary"
@@ -698,7 +713,7 @@ function Cover({
             <Text
               variant="caption"
               numberOfLines={4}
-              style={{ fontSize: 9, lineHeight: 11, fontWeight: '700', marginTop: 3 }}>
+              style={{ fontSize: 8, lineHeight: 10, fontWeight: '700', marginTop: 2 }}>
               {title}
             </Text>
           </View>
