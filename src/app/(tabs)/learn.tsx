@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { TextInput, View } from 'react-native';
 
 import { Card } from '@/components/ui/card';
 import { Icon, type IconName } from '@/components/ui/icon';
@@ -34,24 +34,37 @@ const CATEGORY_ICONS: Record<LearnCategory, IconName> = {
   science: 'info',
 };
 
+/** Every category, in reading order: foundations first, frontier last. */
 const TOPICS: LearnCategory[] = [
   'basics',
   'growth',
   'treatments',
   'scalp',
+  'nutrition',
   'lifestyle',
+  'transplants',
+  'science',
 ];
+
+/** How many recent articles the default view lists. */
+const LATEST_COUNT = 8;
 
 export default function LearnScreen() {
   const { colors, spacing, radius } = useTheme();
   const router = useRouter();
   const [query, setQuery] = useState('');
+  const [topic, setTopic] = useState<LearnCategory | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
 
   const results = useMemo(() => searchArticles(query), [query]);
   const featured = ARTICLES.find((a) => a.featured) ?? ARTICLES[0];
   const searching = query.trim().length > 0;
 
-  const latest = results.filter((a) => a.slug !== featured.slug);
+  // The default view lists only the newest few; topics hold the rest.
+  const latest = ARTICLES.filter((a) => a.slug !== featured.slug)
+    .sort((a, b) => b.updated.localeCompare(a.updated))
+    .slice(0, LATEST_COUNT);
+  const topicArticles = topic ? ARTICLES.filter((a) => a.category === topic) : [];
 
   return (
     <Screen ground="leaves">
@@ -125,6 +138,63 @@ export default function LearnScreen() {
               </Card>
             </>
           )
+        ) : topic ? (
+          <>
+            {/* One topic, every article in it. */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.md,
+                marginTop: spacing.xl,
+              }}>
+              <View style={{ flex: 1 }}>
+                <Text variant="title3" accessibilityRole="header">
+                  {CATEGORY_LABELS[topic]}
+                </Text>
+                <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
+                  {topicArticles.length} {topicArticles.length === 1 ? 'article' : 'articles'}
+                </Text>
+              </View>
+              <PressableScale
+                onPress={() => setTopic(null)}
+                haptic="light"
+                accessibilityRole="button"
+                accessibilityLabel="Back to all topics"
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.xs,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.sm,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}>
+                <Icon name="chevronLeft" size={12} color={colors.text} />
+                <Text variant="subhead">All topics</Text>
+              </PressableScale>
+            </View>
+
+            <Card padded={false} style={{ marginTop: spacing.md }}>
+              {topicArticles.map((article, i) => (
+                <View key={article.slug}>
+                  {i > 0 ? <Separator inset={spacing.lg} /> : null}
+                  <ArticleRow
+                    article={article}
+                    onPress={() => router.push(`/learn/${article.slug}`)}
+                  />
+                </View>
+              ))}
+            </Card>
+
+            <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xl }}>
+              Educational information only. Hair Journey does not diagnose
+              conditions or recommend treatments — speak to a qualified
+              healthcare professional about anything medical.
+            </Text>
+          </>
         ) : (
           <>
             {/* Featured — the one editorial card on the screen */}
@@ -188,47 +258,53 @@ export default function LearnScreen() {
               </View>
             </PressableScale>
 
-            {/* Topics */}
+            {/* Topics — every category, three to a row, with its size. */}
             <SectionHeader title="Popular topics" />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: spacing.sm }}>
-              {TOPICS.map((topic) => (
-                <PressableScale
-                  key={topic}
-                  onPress={() => setQuery(CATEGORY_LABELS[topic])}
-                  scaleTo={0.96}
-                  accessibilityRole="button"
-                  accessibilityLabel={CATEGORY_LABELS[topic]}
-                  style={{
-                    width: 116,
-                    padding: spacing.lg,
-                    borderRadius: radius.card,
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    gap: spacing.md,
-                  }}>
-                  <View
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: colors.accentSoft,
-                    }}>
-                    <Icon
-                      name={CATEGORY_ICONS[topic]}
-                      size={17}
-                      color={colors.accent}
-                    />
-                  </View>
-                  <Text variant="subhead">{CATEGORY_LABELS[topic]}</Text>
-                </PressableScale>
-              ))}
-            </ScrollView>
+            <View
+              onLayout={(e) => setGridWidth(Math.floor(e.nativeEvent.layout.width))}
+              style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+              {gridWidth > 0
+                ? TOPICS.map((t) => {
+                    const count = ARTICLES.filter((art) => art.category === t).length;
+                    return (
+                      <PressableScale
+                        key={t}
+                        onPress={() => setTopic(t)}
+                        scaleTo={0.96}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${CATEGORY_LABELS[t]}, ${count} articles`}
+                        style={{
+                          width: (gridWidth - spacing.sm * 2) / 3,
+                          minHeight: 126,
+                          padding: spacing.md,
+                          borderRadius: radius.card,
+                          backgroundColor: colors.surface,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                          gap: spacing.sm,
+                        }}>
+                        <View
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 17,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: colors.accentSoft,
+                          }}>
+                          <Icon name={CATEGORY_ICONS[t]} size={16} color={colors.accent} />
+                        </View>
+                        <Text variant="subhead" numberOfLines={2} style={{ flex: 1 }}>
+                          {CATEGORY_LABELS[t]}
+                        </Text>
+                        <Text variant="caption" color="textTertiary">
+                          {count} {count === 1 ? 'article' : 'articles'}
+                        </Text>
+                      </PressableScale>
+                    );
+                  })
+                : null}
+            </View>
 
             {/* Latest */}
             <SectionHeader title="Latest articles" />
