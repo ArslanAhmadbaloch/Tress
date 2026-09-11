@@ -110,6 +110,13 @@ export type ColorTokens = {
   /** The progress arc around the orb, from its start to its tip. */
   arcStart: string;
   arcEnd: string;
+  /** Uncoloured glass, for orbs that are not about progress. */
+  orbNeutralCore: string;
+  orbNeutralMid: string;
+  orbNeutralEdge: string;
+  orbNeutralRimBottom: string;
+  /** The soft green light behind the selected tab. */
+  tabGlow: string;
 };
 
 export const lightColors: ColorTokens = {
@@ -154,6 +161,11 @@ export const lightColors: ColorTokens = {
   orbShadow: 'rgba(85, 112, 76, 0.17)',
   arcStart: '#DCEBD4',
   arcEnd: '#8DBF7B',
+  orbNeutralCore: '#FFFFFF',
+  orbNeutralMid: '#F6F5F2',
+  orbNeutralEdge: '#E3E1DC',
+  orbNeutralRimBottom: '#D8D5CF',
+  tabGlow: '#D6EDCB',
 };
 
 export const darkColors: ColorTokens = {
@@ -207,6 +219,11 @@ export const darkColors: ColorTokens = {
   orbShadow: 'rgba(0, 0, 0, 0.42)',
   arcStart: 'rgba(143, 177, 131, 0.38)',
   arcEnd: '#9CC98A',
+  orbNeutralCore: 'rgba(255, 255, 255, 0.17)',
+  orbNeutralMid: 'rgba(255, 255, 255, 0.09)',
+  orbNeutralEdge: 'rgba(255, 255, 255, 0.05)',
+  orbNeutralRimBottom: 'rgba(255, 255, 255, 0.14)',
+  tabGlow: 'rgba(143, 177, 131, 0.34)',
 };
 
 /* ------------------------------------------------------------------ *

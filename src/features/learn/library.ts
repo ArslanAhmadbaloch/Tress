@@ -49,6 +49,8 @@ export type Article = {
   readingMinutes: number;
   updated: string;
   featured?: boolean;
+  /** A few words for places too small for the full title, like a cover. */
+  coverTitle?: string;
   keyTakeaways: string[];
   sections: ArticleSection[];
   /** Plain-language pointers, not a formal bibliography. */
@@ -65,6 +67,7 @@ export const ARTICLES: Article[] = [
     readingMinutes: 5,
     updated: '2026-08-01',
     featured: true,
+    coverTitle: 'Why Hair Changes Slowly',
     keyTakeaways: [
       'Scalp hair typically grows around 1 cm per month',
       'Each follicle runs its own independent cycle',

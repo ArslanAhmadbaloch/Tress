@@ -21,11 +21,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassOrb } from './ui/glass-orb';
+import { BulbGlyph } from './ui/tab-glyphs';
 import { Icon } from './ui/icon';
 import { PressableScale } from './ui/pressable-scale';
 import { placeholderSeries, Sparkline } from './ui/ring';
 import { AnimatedNumber } from './ui/stat';
 import { Text } from './ui/text';
+import { ARTICLES } from '@/features/learn/library';
 import { useTheme } from '@/theme';
 
 /* --------------------------- header actions --------------------------- */
@@ -537,6 +539,16 @@ export function PhotoStack({
 
 /* ----------------------------- learn card ----------------------------- */
 
+const COVER_W = 60;
+const COVER_H = 78;
+
+/**
+ * The route into the library.
+ *
+ * The fanned covers are not decoration standing in for content: the front
+ * one carries the title of the library's featured article, so what the
+ * card shows is what the reader will find behind it.
+ */
 export function LearnCard({
   onPress,
   style,
@@ -545,60 +557,148 @@ export function LearnCard({
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
+  const featured = ARTICLES.find((a) => a.featured) ?? ARTICLES[0];
 
   return (
     <PressableScale
       onPress={onPress}
       scaleTo={0.99}
       accessibilityRole="button"
-      accessibilityLabel="Learn and grow. Opens the library."
-      style={[
-        {
+      accessibilityLabel={`Learn and grow. Featured: ${featured.title}. Opens the library.`}
+      // The shadow lives on the outer view; the inner one clips, so the
+      // covers can run off the bottom edge without clipping the shadow.
+      style={[{ borderRadius: radius.section, backgroundColor: colors.surface }, shadow.soft, style]}>
+      <View
+        style={{
           flexDirection: 'row',
           alignItems: 'center',
-          gap: spacing.lg,
-          padding: spacing.lg,
+          gap: spacing.md,
+          paddingVertical: spacing.lg,
+          paddingLeft: spacing.lg,
+          paddingRight: spacing.md,
           borderRadius: radius.section,
-          backgroundColor: colors.surface,
           overflow: 'hidden',
+        }}>
+        <GlassOrb size={52} ring={false} tone="neutral">
+          <BulbGlyph size={26} color={colors.text} />
+        </GlassOrb>
+
+        <View style={{ flex: 1 }}>
+          <Text variant="title3" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+            Learn &amp; Grow
+          </Text>
+          <Text variant="footnote" color="textSecondary" style={{ marginTop: 3 }}>
+            Science-backed guides on how hair grows.
+          </Text>
+        </View>
+
+        <CoverStack title={featured.coverTitle ?? featured.title} />
+
+        <View
+          style={[
+            {
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.surface,
+            },
+            shadow.lifted,
+          ]}>
+          <Icon name="arrowRight" size={17} color={colors.text} />
+        </View>
+      </View>
+    </PressableScale>
+  );
+}
+
+/** Three article covers fanned like cards, the front one titled. */
+function CoverStack({ title }: { title: string }) {
+  const { spacing } = useTheme();
+
+  return (
+    <View
+      accessible={false}
+      // Spans the card's full height so the covers can sit on its bottom
+      // edge and run off it, as a stack of printed guides would.
+      style={{ width: COVER_W + 16, alignSelf: 'stretch', marginVertical: -spacing.lg }}>
+      <Cover rotate="9deg" left={15} bottom={-6} />
+      <Cover rotate="3deg" left={8} bottom={-12} />
+      <Cover rotate="-6deg" left={0} bottom={-18} title={title} />
+    </View>
+  );
+}
+
+function Cover({
+  rotate,
+  left,
+  bottom,
+  title,
+}: {
+  rotate: string;
+  left: number;
+  bottom: number;
+  title?: string;
+}) {
+  const { colors, scheme, shadow } = useTheme();
+
+  return (
+    <View
+      style={[
+        {
+          position: 'absolute',
+          left,
+          bottom,
+          width: COVER_W,
+          height: COVER_H,
+          borderRadius: 7,
+          backgroundColor: colors.surface,
+          transform: [{ rotate }],
         },
         shadow.soft,
-        style,
       ]}>
       <View
         style={{
-          width: 48,
-          height: 48,
-          borderRadius: 24,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.backgroundSubtle,
-        }}>
-        <Icon name="idea" size={20} color={colors.text} />
-      </View>
-
-      <View style={{ flex: 1 }}>
-        <Text variant="title3">Learn &amp; Grow</Text>
-        <Text variant="footnote" color="textSecondary" style={{ marginTop: 3 }}>
-          Evidence-based guides on how hair changes, and how to read your own
-          timeline.
-        </Text>
-      </View>
-
-      <View
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: 21,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.surface,
-          borderWidth: 1,
+          flex: 1,
+          borderRadius: 7,
+          overflow: 'hidden',
+          borderWidth: StyleSheet.hairlineWidth,
           borderColor: colors.border,
         }}>
-        <Icon name="arrowRight" size={16} color={colors.text} />
+        {/* The foliage plate from the Learn backdrop: leaf shadow on
+            plaster, the same image the design's covers use. */}
+        <Image
+          source={
+            scheme === 'dark'
+              ? require('@/assets/images/ground-dark-leaves.jpg')
+              : require('@/assets/images/ground-leaves.jpg')
+          }
+          style={{ position: 'absolute', top: 0, bottom: 0, right: -COVER_W * 0.15, width: COVER_W }}
+          contentFit="cover"
+          contentPosition={{ left: '30%', top: '40%' }}
+          cachePolicy="memory-disk"
+          accessible={false}
+        />
+        {title ? (
+          <View style={{ padding: 5, paddingTop: 7, width: COVER_W - 4 }}>
+            <Text
+              variant="caption"
+              color="textTertiary"
+              numberOfLines={1}
+              style={{ fontSize: 5, lineHeight: 7, letterSpacing: 0.6 }}>
+              GUIDE
+            </Text>
+            <Text
+              variant="caption"
+              numberOfLines={4}
+              style={{ fontSize: 9, lineHeight: 11, fontWeight: '700', marginTop: 3 }}>
+              {title}
+            </Text>
+          </View>
+        ) : null}
       </View>
-    </PressableScale>
+    </View>
   );
 }
 

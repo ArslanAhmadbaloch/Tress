@@ -14,7 +14,9 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
+import type { ReactNode } from 'react';
 import { View } from 'react-native';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
@@ -23,23 +25,39 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
+import { GlassOrb } from './ui/glass-orb';
 import { GlassSurface } from './ui/glass-surface';
 import { ScrollEdgeEffect } from './ui/layout';
-import { Icon, type IconName } from './ui/icon';
 import { PressableScale } from './ui/pressable-scale';
+import {
+  HomeGlyph,
+  JourneyGlyph,
+  LearnGlyph,
+  PlusGlyph,
+  ProfileGlyph,
+  type TabGlyphProps,
+} from './ui/tab-glyphs';
 import { Text } from './ui/text';
-import { motion, useTheme } from '@/theme';
+import { motion, splitAlpha, useTheme } from '@/theme';
 
-/** Route name → label and icon. Order here is the order on screen. */
-const TABS: { name: string; label: string; icon: IconName }[] = [
-  { name: 'index', label: 'Home', icon: 'home' },
-  { name: 'journey', label: 'Journey', icon: 'journey' },
-  { name: 'learn', label: 'Learn', icon: 'learn' },
-  { name: 'profile', label: 'Profile', icon: 'profile' },
+/** Route name → label and glyph. Order here is the order on screen. */
+const TABS: {
+  name: string;
+  label: string;
+  Glyph: (props: TabGlyphProps) => ReactNode;
+}[] = [
+  { name: 'index', label: 'Home', Glyph: HomeGlyph },
+  { name: 'journey', label: 'Journey', Glyph: JourneyGlyph },
+  { name: 'learn', label: 'Learn', Glyph: LearnGlyph },
+  { name: 'profile', label: 'Profile', Glyph: ProfileGlyph },
 ];
 
 /** Where the centre action sits in the row. */
 const CENTRE_INDEX = 2;
+
+const ITEM_HEIGHT = 62;
+const GLOW_SIZE = 66;
+const CENTRE_SIZE = 58;
 
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const { spacing, radius, shadow } = useTheme();
@@ -48,15 +66,20 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
 
   const activeRoute = state.routes[state.index]?.name;
 
-  const slots: (typeof TABS)[number][] = [
-    ...TABS.slice(0, CENTRE_INDEX),
-    ...TABS.slice(CENTRE_INDEX),
-  ];
-
   const go = (name: string) => {
     if (name === activeRoute) return;
     navigation.navigate(name);
   };
+
+  const renderTab = (tab: (typeof TABS)[number]) => (
+    <TabItem
+      key={tab.name}
+      label={tab.label}
+      Glyph={tab.Glyph}
+      active={activeRoute === tab.name}
+      onPress={() => go(tab.name)}
+    />
+  );
 
   return (
     <View
@@ -83,30 +106,14 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
           {
             flexDirection: 'row',
             alignItems: 'center',
-            paddingVertical: spacing.sm,
-            paddingHorizontal: spacing.xs,
+            paddingVertical: spacing.xs + 2,
+            paddingHorizontal: spacing.sm,
           },
           shadow.lifted,
         ]}>
-        {slots.slice(0, CENTRE_INDEX).map((tab) => (
-          <TabItem
-            key={tab.name}
-            {...tab}
-            active={activeRoute === tab.name}
-            onPress={() => go(tab.name)}
-          />
-        ))}
-
+        {TABS.slice(0, CENTRE_INDEX).map(renderTab)}
         <CentreAction onPress={() => router.push('/capture-intro')} />
-
-        {slots.slice(CENTRE_INDEX).map((tab) => (
-          <TabItem
-            key={tab.name}
-            {...tab}
-            active={activeRoute === tab.name}
-            onPress={() => go(tab.name)}
-          />
-        ))}
+        {TABS.slice(CENTRE_INDEX).map(renderTab)}
       </GlassSurface>
     </View>
   );
@@ -114,16 +121,17 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
 
 function TabItem({
   label,
-  icon,
+  Glyph,
   active,
   onPress,
 }: {
   label: string;
-  icon: IconName;
+  Glyph: (props: TabGlyphProps) => ReactNode;
   active: boolean;
   onPress: () => void;
 }) {
-  const { colors, spacing, radius } = useTheme();
+  const { colors } = useTheme();
+  const tint = active ? colors.text : colors.textSecondary;
 
   return (
     <PressableScale
@@ -135,29 +143,59 @@ function TabItem({
       accessibilityLabel={label}
       style={{
         flex: 1,
+        height: ITEM_HEIGHT,
         alignItems: 'center',
-        gap: 3,
-        paddingVertical: spacing.sm,
-        borderRadius: radius.pill,
-        // The selected tab gets a soft sage wash rather than a hard fill,
-        // so the bar stays quiet.
-        backgroundColor: active ? colors.accentSoft : 'transparent',
+        justifyContent: 'center',
       }}>
-      <Icon
-        name={icon}
-        size={21}
-        color={active ? colors.accent : colors.textSecondary}
-      />
-      <Text variant="caption" color={active ? 'accent' : 'textSecondary'}>
+      {/* The selected tab sits in a pool of soft green light rather than a
+          filled chip, so the bar stays white and calm. */}
+      {active ? <TabGlow /> : null}
+      <Glyph size={24} color={tint} active={active} />
+      <Text
+        variant="subhead"
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+        style={{ color: tint, marginTop: 3, fontWeight: active ? '600' : '500' }}>
         {label}
       </Text>
     </PressableScale>
   );
 }
 
-/** The elevated primary action. Sits proud of the bar and never selects. */
+function TabGlow() {
+  const { colors } = useTheme();
+  const glow = splitAlpha(colors.tabGlow);
+  const r = GLOW_SIZE / 2;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        width: GLOW_SIZE,
+        height: GLOW_SIZE,
+        top: (ITEM_HEIGHT - GLOW_SIZE) / 2,
+        left: '50%',
+        marginLeft: -r,
+      }}>
+      <Svg width={GLOW_SIZE} height={GLOW_SIZE}>
+        <Defs>
+          <RadialGradient id="tabglow" cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor={glow.color} stopOpacity={glow.opacity} />
+            <Stop offset="0.62" stopColor={glow.color} stopOpacity={glow.opacity * 0.85} />
+            <Stop offset="1" stopColor={glow.color} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={r} cy={r} r={r} fill="url(#tabglow)" />
+      </Svg>
+    </View>
+  );
+}
+
+/** The primary action: a bead of clear glass set into the bar. Never selects. */
 function CentreAction({ onPress }: { onPress: () => void }) {
-  const { colors, shadow } = useTheme();
+  const { colors } = useTheme();
   const scale = useSharedValue(1);
   const reduceMotion = useReducedMotion();
 
@@ -171,7 +209,8 @@ function CentreAction({ onPress }: { onPress: () => void }) {
   };
 
   return (
-    <Animated.View style={[{ width: 66, alignItems: 'center' }, animatedStyle]}>
+    <Animated.View
+      style={[{ width: CENTRE_SIZE + 14, alignItems: 'center' }, animatedStyle]}>
       <PressableScale
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
@@ -184,23 +223,10 @@ function CentreAction({ onPress }: { onPress: () => void }) {
         haptic="none"
         scaleTo={1}
         accessibilityRole="button"
-        accessibilityLabel="New photo update"
-        style={[
-          {
-            width: 54,
-            height: 54,
-            borderRadius: 27,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.border,
-            // Lifts it out of the bar so it reads as the primary action.
-            marginTop: -12,
-          },
-          shadow.lifted,
-        ]}>
-        <Icon name="plus" size={24} color={colors.text} />
+        accessibilityLabel="New photo update">
+        <GlassOrb size={CENTRE_SIZE} ring={false} tone="neutral">
+          <PlusGlyph size={28} color={colors.text} />
+        </GlassOrb>
       </PressableScale>
     </Animated.View>
   );

@@ -40,6 +40,7 @@ export function GlassOrb({
   size = 42,
   progress = 0,
   ring = true,
+  tone = 'green',
   children,
   style,
 }: {
@@ -48,10 +49,26 @@ export function GlassOrb({
   /** 0-1, drives the arc. */
   progress?: number;
   ring?: boolean;
+  /** Green for metrics and tasks; neutral for plain navigation. */
+  tone?: 'green' | 'neutral';
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors, shadow } = useTheme();
+  const glass =
+    tone === 'neutral'
+      ? {
+          core: colors.orbNeutralCore,
+          mid: colors.orbNeutralMid,
+          edge: colors.orbNeutralEdge,
+          rimBottom: colors.orbNeutralRimBottom,
+        }
+      : {
+          core: colors.orbCore,
+          mid: colors.orbMid,
+          edge: colors.orbEdge,
+          rimBottom: colors.orbRimBottom,
+        };
   // Gradient ids must be unique per instance; useId's colons are not
   // valid inside url(#…) on every renderer.
   const uid = useId().replace(/[^A-Za-z0-9]/g, '');
@@ -87,9 +104,9 @@ export function GlassOrb({
             <Stop offset="1" {...stop(colors.orbShadow, 0)} />
           </RadialGradient>
           <RadialGradient id={id('body')} cx="40%" cy="28%" fx="40%" fy="28%" r="80%">
-            <Stop offset="0" {...stop(colors.orbCore)} />
-            <Stop offset="0.55" {...stop(colors.orbMid)} />
-            <Stop offset="1" {...stop(colors.orbEdge)} />
+            <Stop offset="0" {...stop(glass.core)} />
+            <Stop offset="0.55" {...stop(glass.mid)} />
+            <Stop offset="1" {...stop(glass.edge)} />
           </RadialGradient>
           <RadialGradient id={id('caustic')} cx="50%" cy="50%" r="50%">
             <Stop offset="0" {...stop(colors.orbGlint, 0.8)} />
@@ -101,7 +118,7 @@ export function GlassOrb({
           </LinearGradient>
           <LinearGradient id={id('rim')} x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" {...stop(colors.orbRimTop)} />
-            <Stop offset="1" {...stop(colors.orbRimBottom)} />
+            <Stop offset="1" {...stop(glass.rimBottom)} />
           </LinearGradient>
           <LinearGradient
             id={id('arc')}
