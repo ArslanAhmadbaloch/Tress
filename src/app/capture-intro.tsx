@@ -37,7 +37,7 @@ export default function CaptureIntroScreen() {
   const isBaseline = data.sessions.length === 0;
 
   return (
-    <Screen>
+    <Screen ground="arch">
       <ScreenScroll clearsTabBar={false}>
         <ScreenTitle
           eyebrow="Capture photos"

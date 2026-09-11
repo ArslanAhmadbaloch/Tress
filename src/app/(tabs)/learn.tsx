@@ -54,7 +54,7 @@ export default function LearnScreen() {
   const latest = results.filter((a) => a.slug !== featured.slug);
 
   return (
-    <Screen>
+    <Screen ground="leaves">
       <ScreenScroll>
         <ScreenTitle
           eyebrow="Learn"

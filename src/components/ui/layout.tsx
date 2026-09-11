@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { Ground } from './ground';
+import { Ground, type GroundVariant } from './ground';
 import { Icon, type IconName } from './icon';
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
@@ -31,15 +31,18 @@ export function Screen({
   children,
   style,
   edges = ['top'],
+  ground = 'stone',
 }: {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   edges?: ('top' | 'bottom')[];
+  /** Which background plate this screen sits on. */
+  ground?: GroundVariant;
 }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <Ground>
+    <Ground variant={ground}>
       <View
         style={[
           {

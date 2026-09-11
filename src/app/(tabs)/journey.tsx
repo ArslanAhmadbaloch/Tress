@@ -31,7 +31,7 @@ export default function JourneyScreen() {
   const sessions = sessionsChronological(data).reverse();
 
   return (
-    <Screen>
+    <Screen ground="arch">
       <ScreenScroll>
         <ScreenTitle
           eyebrow="Your journey"
@@ -52,7 +52,12 @@ export default function JourneyScreen() {
                   paddingHorizontal: spacing.lg,
                   paddingVertical: spacing.sm,
                   borderRadius: radius.pill,
-                  backgroundColor: colors.fill,
+                  // `fill` is tuned to sit inside a white card; on the
+                  // background plate it all but disappears. Controls that
+                  // rest directly on the ground need their own surface.
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
                 }}>
                 <Icon name="compare" size={15} color={colors.text} />
                 <Text variant="subhead">Compare</Text>

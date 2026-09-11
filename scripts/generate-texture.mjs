@@ -1,5 +1,13 @@
 /**
- * Generates the warm mineral ground the app sits on.
+ * Generates the DARK mineral ground.
+ *
+ * Light mode now uses photographic plates (ground-stone / arch / leaves).
+ * Dark mode still needs a generated one: those plates are all bright
+ * plaster, and darkening a photograph of white stone gives grey mud rather
+ * than a night version of the same surface. This keeps just enough tooth
+ * that large flat areas do not band on OLED.
+ *
+ * The light output below is kept as the fallback plate.
  *
  *   node scripts/generate-texture.mjs
  *

@@ -120,7 +120,7 @@ export default function CalendarScreen() {
   const isCurrentMonth = monthOffset === 0;
 
   return (
-    <Screen>
+    <Screen ground="arch">
       <ScreenScroll>
         <ScreenTitle
           eyebrow="Calendar"
