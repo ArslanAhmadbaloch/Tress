@@ -39,6 +39,8 @@ const TIMER_SETTINGS = [0, 3, 5] as const;
 type TimerSetting = (typeof TIMER_SETTINGS)[number];
 const TIMER_KEY = 'hj.captureTimer';
 
+const SHUTTER_SIZE = 78;
+
 type Shot = {
   angle: Angle;
   /** Cache URI from the camera, before it is persisted. */
@@ -66,6 +68,11 @@ export default function CaptureSessionScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [showGhost, setShowGhost] = useState(true);
   const [phase, setPhase] = useState<'capture' | 'summary'>('capture');
+
+  // Bottom edge of the compact instruction card, measured, so the head
+  // guide can sit in the clear space beneath it instead of under it.
+  const [cardBottom, setCardBottom] = useState<number | null>(null);
+  const [tipsOpen, setTipsOpen] = useState(false);
 
   /*
    * Self-timer. The top and back angles are shot blind — the screen faces
@@ -385,8 +392,14 @@ export default function CaptureSessionScreen() {
 
   /* ---------------------------- camera ------------------------------ */
 
-  const { width } = Dimensions.get('window');
-  const guideWidth = width * 0.62;
+  const { width, height } = Dimensions.get('window');
+  // The guide lives in the space between the instruction card and the
+  // shutter, so the card never covers any part of the outline. It keeps
+  // its usual size whenever that space allows.
+  const areaTop = (cardBottom ?? insets.top + 68 + 104) + spacing.md;
+  const areaBottom = height - (insets.bottom + spacing.xl + SHUTTER_SIZE + spacing.md);
+  const areaHeight = Math.max(0, areaBottom - areaTop);
+  const guideWidth = Math.min(width * 0.62, (areaHeight - spacing.sm) / 1.32);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -437,10 +450,13 @@ export default function CaptureSessionScreen() {
 
           <View
             style={{
-              flex: 1,
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: areaTop,
+              height: areaHeight,
               alignItems: 'center',
               justifyContent: 'center',
-              paddingBottom: 80,
             }}>
             <View
               style={{
@@ -460,12 +476,15 @@ export default function CaptureSessionScreen() {
       {countdown !== null ? (
         <View
           pointerEvents="none"
+          // Centred on the guide, where the user's eyes already are.
           style={{
             position: 'absolute',
-            inset: 0,
+            left: 0,
+            right: 0,
+            top: areaTop,
+            height: areaHeight,
             alignItems: 'center',
             justifyContent: 'center',
-            paddingBottom: 80,
           }}>
           <Animated.Text
             key={countdown}
@@ -594,42 +613,79 @@ export default function CaptureSessionScreen() {
         <Animated.View
           key={angle}
           entering={FadeInDown.duration(300)}
+          onLayout={(e) => {
+            // Measure only the compact card; open tips are temporary.
+            if (tipsOpen) return;
+            const { y, height: h } = e.nativeEvent.layout;
+            setCardBottom(y + h);
+          }}
           style={{
             position: 'absolute',
             top: insets.top + 68,
             left: spacing.lg,
             right: spacing.lg,
           }}>
-          <GlassSurface variant="regular" over="dark" style={{ padding: spacing.lg }}>
-            <Text variant="overline" style={{ color: '#fff', opacity: 0.7 }}>
-              {`Angle ${index + 1} of ${ANGLES.length}`}
-            </Text>
-            <Text variant="title3" style={{ color: '#fff', marginTop: 2 }}>
-              {ANGLE_LABELS[angle]}
-            </Text>
-            <Text variant="callout" style={{ color: '#fff', opacity: 0.85, marginTop: 4 }}>
-              {guidance.instruction}
-            </Text>
-
-            <View style={{ marginTop: spacing.md, gap: 4 }}>
-              {guidance.tips.map((tip) => (
-                <View
-                  key={tip}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                  <View
-                    style={{
-                      width: 3,
-                      height: 3,
-                      borderRadius: 2,
-                      backgroundColor: colors.accent,
-                    }}
-                  />
-                  <Text variant="footnote" style={{ color: '#fff', opacity: 0.75 }}>
-                    {tip}
-                  </Text>
-                </View>
-              ))}
+          {/* Compact by default: the angle and one instruction. Tips open
+              on demand, and while open they may overlap the guide. */}
+          <GlassSurface
+            variant="regular"
+            over="dark"
+            style={{ paddingVertical: spacing.md, paddingLeft: spacing.lg, paddingRight: spacing.md }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <Text variant="overline" style={{ color: '#fff', opacity: 0.7 }}>
+                  {`Angle ${index + 1} of ${ANGLES.length}`}
+                </Text>
+                <Text variant="headline" style={{ color: '#fff', marginTop: 2 }}>
+                  {ANGLE_LABELS[angle]}
+                </Text>
+                <Text
+                  variant="footnote"
+                  numberOfLines={2}
+                  style={{ color: '#fff', opacity: 0.85, marginTop: 2 }}>
+                  {guidance.instruction}
+                </Text>
+              </View>
+              <PressableScale
+                onPress={() => setTipsOpen((open) => !open)}
+                haptic="light"
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: tipsOpen }}
+                accessibilityLabel={tipsOpen ? 'Hide tips' : 'Show tips for this angle'}
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 15,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(255,255,255,0.14)',
+                }}>
+                <Icon name={tipsOpen ? 'close' : 'info'} size={15} color="#fff" />
+              </PressableScale>
             </View>
+
+            {tipsOpen ? (
+              <View style={{ marginTop: spacing.md, gap: 4 }}>
+                {guidance.tips.map((tip) => (
+                  <View
+                    key={tip}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <View
+                      style={{
+                        width: 3,
+                        height: 3,
+                        borderRadius: 2,
+                        backgroundColor: colors.accent,
+                      }}
+                    />
+                    <Text variant="footnote" style={{ color: '#fff', opacity: 0.75 }}>
+                      {tip}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
           </GlassSurface>
         </Animated.View>
       ) : null}
@@ -677,9 +733,9 @@ export default function CaptureSessionScreen() {
                     : `Capture ${ANGLE_LABELS[angle]}`
               }
               style={{
-                width: 78,
-                height: 78,
-                borderRadius: 39,
+                width: SHUTTER_SIZE,
+                height: SHUTTER_SIZE,
+                borderRadius: SHUTTER_SIZE / 2,
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderWidth: 4,
