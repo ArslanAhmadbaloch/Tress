@@ -194,21 +194,32 @@ export function ScreenTitle({
           </Text>
         ) : null}
 
+        {/*
+          Two single-line texts rather than one two-line text. On iOS a
+          wrapping text wraps before it shrinks, so a long first line broke
+          mid-phrase and pushed the muted line out; a single line shrinks
+          reliably. VoiceOver hears the pair as one heading.
+        */}
         <Text
           variant="title1"
           accessibilityRole="header"
-          // Long greetings must shrink rather than break mid-word.
+          accessibilityLabel={titleMuted ? `${title} ${titleMuted}` : undefined}
           adjustsFontSizeToFit
-          minimumFontScale={0.82}
-          numberOfLines={titleMuted ? 2 : 1}>
+          minimumFontScale={0.66}
+          numberOfLines={1}>
           {title}
-          {titleMuted ? (
-            <Text variant="title1" color="textTertiary">
-              {'\n'}
-              {titleMuted}
-            </Text>
-          ) : null}
         </Text>
+        {titleMuted ? (
+          <Text
+            variant="title1"
+            color="textTertiary"
+            accessible={false}
+            adjustsFontSizeToFit
+            minimumFontScale={0.66}
+            numberOfLines={1}>
+            {titleMuted}
+          </Text>
+        ) : null}
 
         {subtitle ? (
           <Text
