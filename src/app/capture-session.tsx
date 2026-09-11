@@ -28,6 +28,7 @@ import { latestSession } from '@/store/selectors';
 import { motion, useTheme } from '@/theme';
 import {
   ANGLES,
+  ANGLE_GUIDANCE,
   ANGLE_LABELS,
   type Angle,
 } from '@/types/domain';
@@ -36,6 +37,8 @@ import {
 const TIMER_SETTINGS = [0, 3, 5] as const;
 type TimerSetting = (typeof TIMER_SETTINGS)[number];
 const TIMER_KEY = 'hj.captureTimer';
+
+const SHUTTER_SIZE = 78;
 
 type Shot = {
   angle: Angle;
@@ -95,6 +98,7 @@ export default function CaptureSessionScreen() {
 
   const previous = latestSession(data);
   const angle = ANGLES[index];
+  const guidance = ANGLE_GUIDANCE[angle];
 
   const ghostUri = useMemo(
     () => previous?.photos.find((p) => p.angle === angle)?.uri,
@@ -592,6 +596,42 @@ export default function CaptureSessionScreen() {
           </PressableScale>
         ) : null}
       </GlassGroup>
+
+      {/* Angle guide: low in the frame, in the clear space between the head
+          outline and the shutter, so it never sits over the outline. */}
+      {!pending ? (
+        <Animated.View
+          key={angle}
+          entering={FadeIn.duration(250)}
+          pointerEvents="none"
+          accessible
+          accessibilityLabel={`Angle ${index + 1} of ${ANGLES.length}, ${ANGLE_LABELS[angle]}. ${guidance.instruction}`}
+          style={{
+            position: 'absolute',
+            left: spacing.lg,
+            right: spacing.lg,
+            bottom: insets.bottom + spacing.xl + SHUTTER_SIZE + spacing.lg,
+          }}>
+          <GlassSurface
+            variant="regular"
+            over="dark"
+            style={{
+              paddingVertical: spacing.md,
+              paddingHorizontal: spacing.lg,
+              alignItems: 'center',
+            }}>
+            <Text variant="overline" style={{ color: '#fff', opacity: 0.7 }}>
+              {`Angle ${index + 1} of ${ANGLES.length} · ${ANGLE_LABELS[angle]}`}
+            </Text>
+            <Text
+              variant="subhead"
+              numberOfLines={2}
+              style={{ color: '#fff', marginTop: 4, textAlign: 'center' }}>
+              {guidance.instruction}
+            </Text>
+          </GlassSurface>
+        </Animated.View>
+      ) : null}
 
       {/* Bottom controls */}
       <View
