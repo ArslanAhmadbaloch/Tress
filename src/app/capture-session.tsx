@@ -384,6 +384,9 @@ export default function CaptureSessionScreen() {
 
   const { width } = Dimensions.get('window');
   const guideWidth = width * 0.62;
+  // High in the frame, just under the top bar: where a face sits when the
+  // phone is held at arm's length, rather than in the middle of the screen.
+  const guideTop = insets.top + 64 + spacing.lg;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -434,10 +437,11 @@ export default function CaptureSessionScreen() {
 
           <View
             style={{
-              flex: 1,
+              position: 'absolute',
+              top: guideTop,
+              left: 0,
+              right: 0,
               alignItems: 'center',
-              justifyContent: 'center',
-              paddingBottom: 80,
             }}>
             <View
               style={{
@@ -457,12 +461,15 @@ export default function CaptureSessionScreen() {
       {countdown !== null ? (
         <View
           pointerEvents="none"
+          // Centred on the guide, where the user's eyes already are.
           style={{
             position: 'absolute',
-            inset: 0,
+            top: guideTop,
+            height: guideWidth * 1.32,
+            left: 0,
+            right: 0,
             alignItems: 'center',
             justifyContent: 'center',
-            paddingBottom: 80,
           }}>
           <Animated.Text
             key={countdown}
