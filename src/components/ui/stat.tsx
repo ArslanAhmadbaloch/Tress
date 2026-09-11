@@ -30,7 +30,7 @@ export function AnimatedNumber({
 }: {
   value: number;
   suffix?: string;
-  variant?: 'stat' | 'display' | 'title2';
+  variant?: 'stat' | 'display' | 'title2' | 'metric';
   color?: 'text' | 'accent' | 'textOnAccent';
 }) {
   const reduceMotion = useReducedMotion();

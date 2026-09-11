@@ -7,11 +7,12 @@
  */
 
 import { Image } from 'expo-image';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   View,
   useWindowDimensions,
   type StyleProp,
@@ -19,9 +20,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon, type IconName } from './ui/icon';
+import { GlassOrb } from './ui/glass-orb';
+import { Icon } from './ui/icon';
 import { PressableScale } from './ui/pressable-scale';
-import { ProgressRing, Sparkline } from './ui/ring';
+import { placeholderSeries, Sparkline } from './ui/ring';
 import { AnimatedNumber } from './ui/stat';
 import { Text } from './ui/text';
 import { useTheme } from '@/theme';
@@ -311,14 +313,31 @@ function Frame({
 /* ------------------------------ metric tile --------------------------- */
 
 /**
+ * Weeks of real history needed before a tile's trend line is the user's
+ * own data rather than a faded placeholder. Two points only ever draw a
+ * straight line, which says nothing about a trend.
+ */
+const MIN_REAL_POINTS = 3;
+
+/** Weeks of history at which the line reaches full strength. */
+const FULL_STRENGTH_POINTS = 8;
+
+const CHART_HEIGHT = 30;
+
+/**
  * One dashboard metric.
  *
  * The (i) is not decoration: every number here is derived, and a derived
  * number the user cannot interrogate is one they will either over-trust or
  * ignore. Tapping it explains exactly how the figure was computed.
+ *
+ * The trend line always renders, so the tile keeps its shape from day one.
+ * Until there is enough real history it draws a seeded placeholder at low
+ * strength — visibly faded, and announced as a preview — and it brightens
+ * toward the full theme green as the user's own weeks accumulate.
  */
 export function MetricTile({
-  icon,
+  glyph,
   label,
   value,
   unit,
@@ -326,41 +345,65 @@ export function MetricTile({
   delta,
   deltaSuffix = '%',
   ring,
-  history,
+  history = [],
+  seed,
   footer,
   onPress,
   onExplain,
 }: {
-  icon: IconName;
+  /** Drawn inside the glass orb. */
+  glyph: ReactNode;
   label: string;
   value: number;
   unit?: string;
   suffix?: string;
   delta?: number | null;
   deltaSuffix?: string;
-  /** 0-1, drives the arc around the icon. */
+  /** 0-1, drives the arc around the orb. */
   ring: number;
+  /** Real weekly history, oldest first. */
   history?: number[];
-  /** Replaces the sparkline, for the photo tile. */
+  /** Keeps each tile's placeholder shape distinct and stable. */
+  seed?: string;
+  /** Replaces the trend line, for the photo tile once photos exist. */
   footer?: ReactNode;
   onPress: () => void;
   onExplain: () => void;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
+  const [chartWidth, setChartWidth] = useState(0);
+
+  const isPlaceholder = history.length < MIN_REAL_POINTS;
+  const series = isPlaceholder ? placeholderSeries(seed ?? label) : history;
+  const strength = isPlaceholder
+    ? 0
+    : 0.55 +
+      0.45 *
+        Math.min(
+          1,
+          (history.length - MIN_REAL_POINTS) /
+            (FULL_STRENGTH_POINTS - MIN_REAL_POINTS),
+        );
+
+  const showsPreview = !footer && isPlaceholder;
+  const hasDelta = typeof delta === 'number' && delta !== 0;
 
   return (
     <PressableScale
       onPress={onPress}
       scaleTo={0.97}
       accessibilityRole="button"
-      accessibilityLabel={`${label}: ${value}${suffix ?? ''}${unit ? ` ${unit}` : ''}`}
+      accessibilityLabel={`${label}: ${value}${suffix ?? ''}${unit ? ` ${unit}` : ''}${
+        showsPreview ? '. Trend preview only, not enough history yet.' : ''
+      }`}
       style={[
         {
           flex: 1,
           padding: spacing.md,
-          paddingBottom: spacing.sm,
           borderRadius: radius.card,
           backgroundColor: colors.surface,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.glassBorder,
         },
         shadow.soft,
       ]}>
@@ -370,19 +413,9 @@ export function MetricTile({
           alignItems: 'flex-start',
           justifyContent: 'space-between',
         }}>
-        <ProgressRing progress={ring} size={44}>
-          <View
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 17,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.accentSoft,
-            }}>
-            <Icon name={icon} size={16} color={colors.text} />
-          </View>
-        </ProgressRing>
+        <GlassOrb size={42} progress={ring}>
+          {glyph}
+        </GlassOrb>
 
         <PressableScale
           onPress={onExplain}
@@ -390,29 +423,41 @@ export function MetricTile({
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel={`How ${label} is calculated`}>
-          <Icon name="info" size={15} color={colors.textTertiary} />
+          <Icon name="info" size={17} color={colors.textSecondary} />
         </PressableScale>
       </View>
 
-      <Text variant="subhead" color="textSecondary" style={{ marginTop: spacing.md }}>
+      <Text
+        variant="subhead"
+        color="textSecondary"
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+        style={{ marginTop: spacing.sm }}>
         {label}
       </Text>
 
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-        <AnimatedNumber value={value} suffix={suffix} />
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+        <AnimatedNumber value={value} suffix={suffix} variant="metric" />
         {unit ? (
-          <Text variant="footnote" color="textSecondary">
+          <Text variant="callout" color="textTertiary" numberOfLines={1}>
             {unit}
           </Text>
         ) : null}
-        {typeof delta === 'number' && delta !== 0 ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 1 }}>
+        {hasDelta ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 1 }}>
             <Icon
               name={delta > 0 ? 'arrowUpRight' : 'arrowDownRight'}
-              size={11}
+              size={12}
               color={delta > 0 ? colors.accent : colors.textTertiary}
             />
-            <Text variant="caption" color={delta > 0 ? 'accent' : 'textTertiary'}>
+            <Text
+              variant="footnote"
+              color={delta > 0 ? 'accent' : 'textTertiary'}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+              style={{ fontWeight: '600' }}>
               {delta > 0 ? '+' : ''}
               {delta}
               {deltaSuffix}
@@ -421,20 +466,26 @@ export function MetricTile({
         ) : null}
       </View>
 
-      <View style={{ height: 34, justifyContent: 'flex-end', marginTop: spacing.xs }}>
-        {footer ?? (history && history.length > 1 ? (
-          <Sparkline values={history} width={96} height={28} />
-        ) : (
-          <Text variant="caption" color="textTertiary">
-            Not enough history yet
-          </Text>
-        ))}
+      <View
+        onLayout={(e) => setChartWidth(Math.floor(e.nativeEvent.layout.width))}
+        style={{ height: CHART_HEIGHT, marginTop: spacing.xs, justifyContent: 'flex-end' }}>
+        {footer ??
+          (chartWidth > 0 ? (
+            <Sparkline
+              values={series}
+              width={chartWidth}
+              height={CHART_HEIGHT}
+              strength={strength}
+            />
+          ) : null)}
       </View>
     </PressableScale>
   );
 }
 
-/** The photo tile's footer: a stack of recent thumbnails plus a count. */
+const THUMB = 24;
+
+/** The photo tile's footer: overlapping recent thumbnails, then a glass count. */
 export function PhotoStack({
   uris,
   remaining,
@@ -442,48 +493,43 @@ export function PhotoStack({
   uris: string[];
   remaining: number;
 }) {
-  const { colors, spacing, radius } = useTheme();
-
-  if (uris.length === 0) {
-    return (
-      <Text variant="caption" color="textTertiary">
-        None yet
-      </Text>
-    );
-  }
+  const { colors, shadow } = useTheme();
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {uris.map((uri, i) => (
-        <Image
+        <View
           key={uri}
-          source={{ uri }}
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 13,
-            borderWidth: 2,
-            borderColor: colors.surface,
-            backgroundColor: colors.fill,
-            marginLeft: i === 0 ? 0 : -8,
-          }}
-          contentFit="cover"
-          accessible={false}
-        />
+          style={[
+            {
+              width: THUMB,
+              height: THUMB,
+              borderRadius: THUMB / 2,
+              padding: 1.5,
+              marginLeft: i === 0 ? 0 : -4,
+              backgroundColor: colors.surface,
+            },
+            shadow.soft,
+          ]}>
+          <Image
+            source={{ uri }}
+            style={{ flex: 1, borderRadius: THUMB / 2, backgroundColor: colors.fill }}
+            contentFit="cover"
+            accessible={false}
+          />
+        </View>
       ))}
       {remaining > 0 ? (
-        <View
-          style={{
-            marginLeft: spacing.xs,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: 3,
-            borderRadius: radius.pill,
-            backgroundColor: colors.accentSoft,
-          }}>
-          <Text variant="caption" color="accent">
-            +{remaining}
+        <GlassOrb size={THUMB + 2} ring={false} style={{ marginLeft: -2 }}>
+          <Text
+            variant="caption"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+            style={{ fontWeight: '700' }}>
+            {remaining > 99 ? '99+' : `+${remaining}`}
           </Text>
-        </View>
+        </GlassOrb>
       ) : null}
     </View>
   );

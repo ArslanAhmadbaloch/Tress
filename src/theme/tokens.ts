@@ -91,6 +91,25 @@ export type ColorTokens = {
   photoScrim: string;
   /** Text sitting on `photoScrim`. Light in both themes. */
   textOnPhoto: string;
+
+  /*
+   * The green glass orb behind each dashboard metric. A sphere of tinted
+   * glass: a radial body lit from the upper left, a lit rim, a specular
+   * glint on top, and light gathering at the bottom edge where a real
+   * glass bead would focus it. Colours only — the geometry is in GlassOrb.
+   */
+  orbCore: string;
+  orbMid: string;
+  orbEdge: string;
+  orbRimTop: string;
+  orbRimBottom: string;
+  /** Specular highlight and the caustic at the lower edge. */
+  orbGlint: string;
+  /** Contact shadow beneath the orb. */
+  orbShadow: string;
+  /** The progress arc around the orb, from its start to its tip. */
+  arcStart: string;
+  arcEnd: string;
 };
 
 export const lightColors: ColorTokens = {
@@ -125,6 +144,16 @@ export const lightColors: ColorTokens = {
   scrim: 'rgba(13, 14, 16, 0.28)',
   photoScrim: 'rgba(13, 14, 16, 0.55)',
   textOnPhoto: '#FFFFFF',
+
+  orbCore: '#F8FBF6',
+  orbMid: '#E9F2E4',
+  orbEdge: '#CFE2C5',
+  orbRimTop: 'rgba(255, 255, 255, 0.95)',
+  orbRimBottom: '#BCD4B1',
+  orbGlint: 'rgba(255, 255, 255, 0.92)',
+  orbShadow: 'rgba(85, 112, 76, 0.17)',
+  arcStart: '#DCEBD4',
+  arcEnd: '#8DBF7B',
 };
 
 export const darkColors: ColorTokens = {
@@ -166,6 +195,18 @@ export const darkColors: ColorTokens = {
   scrim: 'rgba(0, 0, 0, 0.55)',
   photoScrim: 'rgba(13, 14, 16, 0.62)',
   textOnPhoto: '#FFFFFF',
+
+  /* Dark glass is mostly transparent: the tint and the lit rim carry it,
+     because a bright body would glow like a lamp on a dark card. */
+  orbCore: 'rgba(176, 206, 164, 0.44)',
+  orbMid: 'rgba(143, 177, 131, 0.27)',
+  orbEdge: 'rgba(143, 177, 131, 0.16)',
+  orbRimTop: 'rgba(255, 255, 255, 0.40)',
+  orbRimBottom: 'rgba(143, 177, 131, 0.32)',
+  orbGlint: 'rgba(255, 255, 255, 0.24)',
+  orbShadow: 'rgba(0, 0, 0, 0.42)',
+  arcStart: 'rgba(143, 177, 131, 0.38)',
+  arcEnd: '#9CC98A',
 };
 
 /* ------------------------------------------------------------------ *
@@ -357,6 +398,13 @@ export const typography = {
     fontWeight: '700',
     letterSpacing: -0.8,
   },
+  /** The number on a dashboard metric tile, sized for a third of the width. */
+  metric: {
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '700',
+    letterSpacing: -0.9,
+  },
   /**
    * Decorative editorial script, for the one motivational phrase a screen
    * is allowed. Never for anything the user has to read to use the app —
@@ -451,4 +499,18 @@ export function withZeroAlpha(color: string): string {
     const parts = String(inner).split(',').slice(0, 3).map((v) => v.trim());
     return `rgba(${parts.join(', ')}, 0)`;
   });
+}
+
+/**
+ * A colour split into its opaque part and its alpha.
+ *
+ * SVG gradient stops ignore the alpha inside rgba() on iOS: the stop takes
+ * the colour at full strength and only honours `stopOpacity`. Anything
+ * that feeds a translucent token into a gradient has to pass the alpha
+ * separately, or glass that should be a tint renders as a solid bead.
+ */
+export function splitAlpha(color: string): { color: string; opacity: number } {
+  const m = color.match(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/);
+  if (!m) return { color, opacity: 1 };
+  return { color: `rgb(${m[1]}, ${m[2]}, ${m[3]})`, opacity: Number(m[4]) };
 }

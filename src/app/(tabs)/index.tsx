@@ -11,6 +11,7 @@ import {
   PhotoStack,
 } from '@/components/dashboard';
 import { Card } from '@/components/ui/card';
+import { BarsGlyph, StrandGlyph } from '@/components/ui/metric-glyphs';
 import { Icon, type IconName } from '@/components/ui/icon';
 import {
   EmptyState,
@@ -48,6 +49,13 @@ const HERO_ANGLE: Angle = 'crown';
 
 /** Streak length the ring treats as full, so it has something to fill against. */
 const STREAK_TARGET = 30;
+
+/** Sessions the photo ring fills across — enough for a first real comparison. */
+const SESSION_TARGET = 6;
+
+/** Shown in every explainer, because the tiles draw a line from day one. */
+const TREND_NOTE =
+  'Until there are three weeks of history, the faded line under the number is a placeholder shape, not your data. It turns solid green as your own history builds.';
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -145,37 +153,43 @@ export default function HomeScreen() {
         {/* Three metrics. */}
         <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
           <MetricTile
-            icon="target"
+            glyph={<StrandGlyph size={25} />}
             label="Consistency"
             value={score.value}
             delta={score.delta}
             deltaSuffix=""
             ring={score.value / 100}
             history={adherenceHistory}
+            seed="consistency"
             onPress={() => router.push('/calendar')}
             onExplain={() => setExplain('consistency')}
           />
           <MetricTile
-            icon="flame"
+            glyph={<BarsGlyph size={24} />}
             label="Streak"
             value={streak}
             unit="days"
             ring={Math.min(1, streak / STREAK_TARGET)}
             history={adherenceHistory}
+            seed="streak"
             onPress={() => router.push('/calendar')}
             onExplain={() => setExplain('streak')}
           />
           <MetricTile
-            icon="camera"
+            glyph={<Icon name="camera" size={22} color={colors.text} />}
             label="Photos"
             value={totalPhotos}
             unit="total"
-            ring={photoHistory.length > 1 ? 1 : 0.3}
+            ring={Math.min(1, data.sessions.length / SESSION_TARGET)}
+            history={photoHistory}
+            seed="photos"
             footer={
-              <PhotoStack
-                uris={recentThumbs}
-                remaining={Math.max(0, totalPhotos - recentThumbs.length)}
-              />
+              recentThumbs.length > 0 ? (
+                <PhotoStack
+                  uris={recentThumbs}
+                  remaining={Math.max(0, totalPhotos - recentThumbs.length)}
+                />
+              ) : undefined
             }
             onPress={() => router.push('/journey')}
             onExplain={() => setExplain('photos')}
@@ -371,6 +385,7 @@ const EXPLAINERS: Record<
       'Photo sessions taken against those expected for your interval, weighted 40%',
       'The change compares this 30-day window with the previous one',
       'With no routine recorded, it is based on photo sessions alone',
+      TREND_NOTE,
     ],
   },
   streak: {
@@ -380,6 +395,7 @@ const EXPLAINERS: Record<
       'Today does not break a streak until the day ends',
       'Items only count from the day you added them',
       'The ring fills against a 30-day mark',
+      TREND_NOTE,
     ],
   },
   photos: {
@@ -389,6 +405,8 @@ const EXPLAINERS: Record<
       'Five angles per complete session',
       'Kept in the app’s private storage — nothing is uploaded',
       'Deleting a session deletes its photographs too',
+      'The ring fills across your first six sessions',
+      'Before your first photos, the faded line is a placeholder shape, not your data',
     ],
   },
 };
