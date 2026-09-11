@@ -7,6 +7,7 @@
  */
 
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useState, type ReactNode } from 'react';
 import {
   Modal,
@@ -21,6 +22,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassOrb } from './ui/glass-orb';
+import { LeafShadow } from './ui/leaf-shadow';
 import { BulbGlyph } from './ui/tab-glyphs';
 import { Icon } from './ui/icon';
 import { PressableScale } from './ui/pressable-scale';
@@ -28,7 +30,7 @@ import { placeholderSeries, Sparkline } from './ui/ring';
 import { AnimatedNumber } from './ui/stat';
 import { Text } from './ui/text';
 import { ARTICLES } from '@/features/learn/library';
-import { spacing, useTheme } from '@/theme';
+import { spacing, useTheme, withZeroAlpha } from '@/theme';
 
 /* --------------------------- header actions --------------------------- */
 
@@ -662,7 +664,7 @@ function Cover({
   bottom: number;
   title?: string;
 }) {
-  const { colors, scheme, shadow } = useTheme();
+  const { colors, shadow } = useTheme();
 
   return (
     <View
@@ -687,19 +689,17 @@ function Cover({
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: colors.border,
         }}>
-        {/* The foliage plate from the Learn backdrop: leaf shadow on
-            plaster, the same image the design's covers use. */}
-        <Image
-          source={
-            scheme === 'dark'
-              ? require('@/assets/images/ground-dark-leaves.jpg')
-              : require('@/assets/images/ground-leaves.jpg')
-          }
-          style={{ position: 'absolute', top: 0, bottom: 0, right: -COVER_W * 0.15, width: COVER_W }}
-          contentFit="cover"
-          contentPosition={{ left: '30%', top: '40%' }}
-          cachePolicy="memory-disk"
-          accessible={false}
+        {/* A palm frond's shadow on the right third, faded toward the
+            title so the text always sits on clean paper. */}
+        <View style={{ position: 'absolute', top: -2, bottom: -2, right: -6 }}>
+          <LeafShadow width={COVER_W * 0.72} height={COVER_H + 4} />
+        </View>
+        <LinearGradient
+          colors={[colors.surface, withZeroAlpha(colors.surface)]}
+          start={{ x: 0.45, y: 0 }}
+          end={{ x: 0.85, y: 0 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
         />
         {title ? (
           <View style={{ padding: 4, paddingTop: 6, width: COVER_W - 2 }}>

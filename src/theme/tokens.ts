@@ -117,6 +117,8 @@ export type ColorTokens = {
   orbNeutralRimBottom: string;
   /** The soft green light behind the selected tab. */
   tabGlow: string;
+  /** The drawn frond shadow on the Learn guide covers. */
+  leafShadow: string;
 };
 
 export const lightColors: ColorTokens = {
@@ -166,6 +168,7 @@ export const lightColors: ColorTokens = {
   orbNeutralEdge: '#E3E1DC',
   orbNeutralRimBottom: '#D8D5CF',
   tabGlow: '#D6EDCB',
+  leafShadow: '#4E6448',
 };
 
 export const darkColors: ColorTokens = {
@@ -224,6 +227,8 @@ export const darkColors: ColorTokens = {
   orbNeutralEdge: 'rgba(255, 255, 255, 0.05)',
   orbNeutralRimBottom: 'rgba(255, 255, 255, 0.14)',
   tabGlow: 'rgba(143, 177, 131, 0.34)',
+  /* A shadow is darker than the paper it falls on, in both themes. */
+  leafShadow: '#000000',
 };
 
 /* ------------------------------------------------------------------ *
