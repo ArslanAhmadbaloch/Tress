@@ -107,7 +107,7 @@ export default function HomeScreen() {
           title={`${greeting()},`}
           titleMuted={name ? `${name}.` : 'friend.'}
           subtitle={'Small steps today.\nA healthier, fuller you tomorrow.'}
-          script="Better Hair A Healthier You"
+          script="Better Hair Healthier You"
           trailing={
             <HeaderActions
               initial={(name ?? 'Y').charAt(0).toUpperCase()}
