@@ -22,7 +22,7 @@ import { Text } from './text';
 import { useTheme, withZeroAlpha } from '@/theme';
 
 /** Height the tab bar occupies, so scroll views can clear it. */
-const TAB_BAR_CLEARANCE = 118;
+const TAB_BAR_CLEARANCE = 106;
 
 /** Extra room a floating control bar needs above the tab bar. */
 const FLOATING_BAR_CLEARANCE = 78;

@@ -55,9 +55,9 @@ const TABS: {
 /** Where the centre action sits in the row. */
 const CENTRE_INDEX = 2;
 
-const ITEM_HEIGHT = 62;
-const GLOW_SIZE = 66;
-const CENTRE_SIZE = 58;
+const ITEM_HEIGHT = 50;
+const GLOW_SIZE = 52;
+const CENTRE_SIZE = 46;
 
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const { spacing, radius, shadow } = useTheme();
@@ -106,7 +106,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
           {
             flexDirection: 'row',
             alignItems: 'center',
-            paddingVertical: spacing.xs + 2,
+            paddingVertical: spacing.xs,
             paddingHorizontal: spacing.sm,
           },
           shadow.lifted,
@@ -150,13 +150,13 @@ function TabItem({
       {/* The selected tab sits in a pool of soft green light rather than a
           filled chip, so the bar stays white and calm. */}
       {active ? <TabGlow /> : null}
-      <Glyph size={24} color={tint} active={active} />
+      <Glyph size={20} color={tint} active={active} />
       <Text
-        variant="subhead"
+        variant="caption"
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.8}
-        style={{ color: tint, marginTop: 3, fontWeight: active ? '600' : '500' }}>
+        style={{ color: tint, marginTop: 2, fontWeight: active ? '600' : '500' }}>
         {label}
       </Text>
     </PressableScale>
@@ -210,7 +210,7 @@ function CentreAction({ onPress }: { onPress: () => void }) {
 
   return (
     <Animated.View
-      style={[{ width: CENTRE_SIZE + 14, alignItems: 'center' }, animatedStyle]}>
+      style={[{ width: CENTRE_SIZE + 12, alignItems: 'center' }, animatedStyle]}>
       <PressableScale
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
@@ -225,7 +225,7 @@ function CentreAction({ onPress }: { onPress: () => void }) {
         accessibilityRole="button"
         accessibilityLabel="New photo update">
         <GlassOrb size={CENTRE_SIZE} ring={false} tone="neutral">
-          <PlusGlyph size={28} color={colors.text} />
+          <PlusGlyph size={22} color={colors.text} />
         </GlassOrb>
       </PressableScale>
     </Animated.View>
