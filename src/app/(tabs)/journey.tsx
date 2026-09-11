@@ -35,13 +35,13 @@ import {
 import { useTheme } from '@/theme';
 import { ANGLE_LABELS, type AppData, type PhotoSession } from '@/types/domain';
 
-type Tab = 'overview' | 'photos' | 'measurements' | 'notes';
+type Tab = 'overview' | 'photos' | 'measurements' | 'journal';
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'overview', label: 'Overview' },
   { value: 'photos', label: 'Photos' },
   { value: 'measurements', label: 'Measurements' },
-  { value: 'notes', label: 'Notes' },
+  { value: 'journal', label: 'Journal' },
 ];
 
 const RANGES = [3, 6, 12] as const;
@@ -183,7 +183,7 @@ export default function JourneyScreen() {
                   : undefined
               }
               onOpen={() => router.push('/journal')}
-              onSeeAll={() => setTab('notes')}
+              onSeeAll={() => setTab('journal')}
               style={{ marginTop: spacing.md }}
             />
           </>
@@ -219,13 +219,13 @@ export default function JourneyScreen() {
           </>
         ) : null}
 
-        {tab === 'notes' ? (
+        {tab === 'journal' ? (
           data.journal.length === 0 ? (
             <EmptyState
               icon="note"
-              title="No notes yet"
-              body="Write what changed, how you felt, anything worth remembering. Notes stay on this device."
-              actionLabel="Write a Note"
+              title="No journal entries yet"
+              body="Write what changed, how you felt, anything worth remembering. Your journal stays on this device."
+              actionLabel="Write an Entry"
               onAction={() => router.push('/journal')}
             />
           ) : (
@@ -239,7 +239,7 @@ export default function JourneyScreen() {
                 ))}
               </Panel>
               <Button
-                label="Open Notes"
+                label="Open Journal"
                 icon="note"
                 variant="secondary"
                 style={{ marginTop: spacing.md }}

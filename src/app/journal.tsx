@@ -31,7 +31,7 @@ export default function JournalScreen() {
   };
 
   const confirmDelete = (id: string) => {
-    Alert.alert('Delete this note?', 'This cannot be undone.', [
+    Alert.alert('Delete this entry?', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -87,7 +87,7 @@ export default function JournalScreen() {
               placeholderTextColor={colors.textTertiary}
               multiline
               autoFocus
-              accessibilityLabel="New journal note"
+              accessibilityLabel="New journal entry"
               style={{
                 color: colors.text,
                 fontSize: 16,
@@ -117,18 +117,20 @@ export default function JournalScreen() {
             </View>
           </Card>
         ) : (
-          <Button label="New note" icon="plus" onPress={() => setComposing(true)} />
+          <Button label="New entry" icon="plus" onPress={() => setComposing(true)} />
         )}
 
         {data.journal.length === 0 ? (
           <EmptyState
             icon="note"
-            title="No notes yet"
-            body="Notes give your photos context — what changed, what you started, how your hair felt."
+            title="No entries yet"
+            body="Journal entries give your photos context — what changed, what you started, how your hair felt."
           />
         ) : (
           <>
-            <SectionHeader title={`${data.journal.length} notes`} />
+            <SectionHeader
+              title={`${data.journal.length} ${data.journal.length === 1 ? 'entry' : 'entries'}`}
+            />
             <View style={{ gap: spacing.sm }}>
               {data.journal.map((entry) => {
                 const session = entry.sessionId
@@ -162,7 +164,7 @@ export default function JournalScreen() {
                         haptic="none"
                         hitSlop={10}
                         accessibilityRole="button"
-                        accessibilityLabel="Delete note">
+                        accessibilityLabel="Delete entry">
                         <Icon name="trash" size={15} color={colors.textTertiary} />
                       </PressableScale>
                     </View>

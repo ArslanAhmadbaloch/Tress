@@ -774,7 +774,7 @@ export function MilestonesCard({
   );
 }
 
-/* -------------------------------- notes ----------------------------- */
+/* ------------------------------- journal ---------------------------- */
 
 export function NoteRow({ body, date }: { body: string; date: string }) {
   const { colors, spacing } = useTheme();
@@ -809,12 +809,16 @@ export function NotesCard({
   const { colors, spacing } = useTheme();
   return (
     <Panel style={style}>
-      <PanelHeader title="Notes" action={latest ? 'See All' : undefined} onAction={onSeeAll} />
+      <PanelHeader title="Hair Journal" action={latest ? 'See All' : undefined} onAction={onSeeAll} />
       <PressableScale
         onPress={onOpen}
         scaleTo={0.99}
         accessibilityRole="button"
-        accessibilityLabel={latest ? `Latest note: ${latest.body}. Opens notes.` : 'Write your first note'}
+        accessibilityLabel={
+          latest
+            ? `Latest journal entry: ${latest.body}. Opens your journal.`
+            : 'Write your first journal entry'
+        }
         style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
         <View style={{ flex: 1 }}>
           {latest ? (
@@ -822,7 +826,7 @@ export function NotesCard({
           ) : (
             <NoteRow
               body="Write what changed, how you felt, anything worth remembering."
-              date="No notes yet"
+              date="No entries yet"
             />
           )}
         </View>
