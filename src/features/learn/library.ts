@@ -14,6 +14,15 @@
  *  - anything clinical ends by pointing at a qualified professional
  */
 
+import { BASICS_ARTICLES } from './articles/basics';
+import { GROWTH_ARTICLES } from './articles/growth';
+import { LIFESTYLE_ARTICLES } from './articles/lifestyle';
+import { NUTRITION_ARTICLES } from './articles/nutrition';
+import { SCALP_ARTICLES } from './articles/scalp';
+import { SCIENCE_ARTICLES } from './articles/science';
+import { TRANSPLANTS_ARTICLES } from './articles/transplants';
+import { TREATMENTS_ARTICLES } from './articles/treatments';
+
 export type LearnCategory =
   | 'basics'
   | 'growth'
@@ -55,7 +64,8 @@ export type Article = {
   references?: string[];
 };
 
-export const ARTICLES: Article[] = [
+/** The original hand-written pieces; the topic libraries follow below. */
+const CORE_ARTICLES: Article[] = [
   {
     slug: 'why-hair-changes-slowly',
     title: 'Why hair changes so slowly',
@@ -241,6 +251,24 @@ export const ARTICLES: Article[] = [
       },
     ],
   },
+];
+
+
+/**
+ * Every article, core pieces first, then one researched set per topic.
+ * Each set was written from sources its author opened and read; every
+ * article lists them under Further reading.
+ */
+export const ARTICLES: Article[] = [
+  ...CORE_ARTICLES,
+  ...BASICS_ARTICLES,
+  ...GROWTH_ARTICLES,
+  ...TREATMENTS_ARTICLES,
+  ...SCALP_ARTICLES,
+  ...NUTRITION_ARTICLES,
+  ...LIFESTYLE_ARTICLES,
+  ...TRANSPLANTS_ARTICLES,
+  ...SCIENCE_ARTICLES,
 ];
 
 export const FAQS: { question: string; answer: string }[] = [
