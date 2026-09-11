@@ -428,6 +428,19 @@ export const typography = {
     letterSpacing: -0.9,
   },
   /**
+   * A title printed on a guide cover. A high-contrast serif, because that
+   * is what makes a small rectangle read as a book rather than a card.
+   * The weight lives in the face, so no fontWeight is layered on top —
+   * Android would otherwise substitute a synthetic bold.
+   */
+  cover: {
+    fontSize: 9.5,
+    lineHeight: 10.5,
+    fontWeight: '400',
+    letterSpacing: -0.1,
+    fontFamily: 'PlayfairDisplay_700Bold',
+  },
+  /**
    * Decorative editorial script, for the one motivational phrase a screen
    * is allowed. Never for anything the user has to read to use the app —
    * it is an accent, and it is not especially legible at small sizes.

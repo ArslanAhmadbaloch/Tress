@@ -5,6 +5,7 @@ import {
   ThemeProvider as NavThemeProvider,
 } from 'expo-router';
 import { Parisienne_400Regular, useFonts } from '@expo-google-fonts/parisienne';
+import { PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -25,7 +26,7 @@ function Navigation() {
   const { isLoaded } = useAppStore();
   // The script accent is decorative, so a failed load must not block the
   // app — `error` counts as resolved and the fallback face is used.
-  const [fontsLoaded, fontError] = useFonts({ Parisienne_400Regular });
+  const [fontsLoaded, fontError] = useFonts({ Parisienne_400Regular, PlayfairDisplay_700Bold });
 
   const ready = themeReady && isLoaded && (fontsLoaded || Boolean(fontError));
 

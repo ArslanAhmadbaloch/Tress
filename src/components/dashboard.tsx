@@ -710,10 +710,7 @@ function Cover({
               style={{ fontSize: 5, lineHeight: 7, letterSpacing: 0.6 }}>
               GUIDE
             </Text>
-            <Text
-              variant="caption"
-              numberOfLines={4}
-              style={{ fontSize: 8, lineHeight: 10, fontWeight: '700', marginTop: 2 }}>
+            <Text variant="cover" numberOfLines={4} style={{ marginTop: 2 }}>
               {title}
             </Text>
           </View>
