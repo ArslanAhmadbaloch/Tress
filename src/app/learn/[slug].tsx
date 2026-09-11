@@ -57,7 +57,7 @@ export default function ArticleScreen() {
   ).slice(0, 3);
 
   return (
-    <Screen edges={[]}>
+    <Screen edges={[]} ground="plain">
       <ScreenScroll contentContainerStyle={{ paddingTop: insets.top + spacing.sm }}>
         <BackBar onBack={() => router.back()} inline />
 
@@ -205,7 +205,7 @@ function FaqScreen() {
   const router = useRouter();
 
   return (
-    <Screen edges={[]}>
+    <Screen edges={[]} ground="plain">
       <ScreenScroll contentContainerStyle={{ paddingTop: insets.top + spacing.sm }}>
         <BackBar onBack={() => router.back()} inline />
 

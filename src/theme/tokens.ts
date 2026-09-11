@@ -36,7 +36,9 @@ const palette = {
   ink800: '#141619',
   ink700: '#1B1E22',
   ink600: '#24282D',
+  ink550: '#282D33',
   ink500: '#2F343A',
+  ink450: '#383E45',
 
   stone500: '#71736F',
   stone400: '#9A9C97',
@@ -128,10 +130,19 @@ export const lightColors: ColorTokens = {
 export const darkColors: ColorTokens = {
   background: palette.ink900,
   backgroundSubtle: palette.ink800,
-  surface: palette.ink700,
-  surfaceElevated: palette.ink600,
-  fill: palette.ink600,
-  fillSelected: palette.ink500,
+  /*
+   * Surfaces sit deliberately higher than a conventional dark theme would
+   * put them. The background plates photograph as lit walls, and after
+   * their veils land around luminance 28, a card at the old ink700 (29)
+   * would have been level with the ground it is meant to float on. These
+   * values keep roughly twelve points of separation, which is what makes
+   * the card read as a panel resting on a surface rather than a hole cut
+   * into one.
+   */
+  surface: palette.ink550,
+  surfaceElevated: palette.ink500,
+  fill: palette.ink500,
+  fillSelected: palette.ink450,
 
   text: '#F3F2EF',
   textSecondary: palette.stone300,
