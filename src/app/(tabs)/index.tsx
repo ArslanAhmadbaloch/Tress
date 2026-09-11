@@ -140,7 +140,18 @@ export default function HomeScreen() {
                 : router.push(`/session/${latest.id}`)
             }
           />
-        ) : null}
+        ) : (
+          // No photos yet: show what the comparison will look like, using
+          // clearly labelled sample photographs, and lead into capture.
+          <HairProgressCard
+            example
+            beforeLabel="Month 0"
+            afterLabel="Month 6"
+            beforeDate="Example"
+            afterDate="Example"
+            onPress={() => router.push('/capture-intro')}
+          />
+        )}
 
         {/* Three metrics. */}
         <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>

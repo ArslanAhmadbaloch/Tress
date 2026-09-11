@@ -121,12 +121,23 @@ export function HeaderActions({
 
 /* ---------------------------- progress card --------------------------- */
 
+/** Sample photographs from the design kit, shown only as a labelled example. */
+const EXAMPLE_BEFORE = require('@/assets/images/example-before.jpg');
+const EXAMPLE_AFTER = require('@/assets/images/example-after.jpg');
+
+type FrameSource = number | { uri: string };
+
 /**
  * Hair progress.
  *
  * The largest surface on the screen, because the photographs are the
  * product. The handle between the frames is an affordance, not a control:
  * it signals that tapping opens the real comparison, where dragging works.
+ *
+ * With `example`, it shows the design kit's sample photographs until the
+ * user has their own. They are never presented as a result: each photo is
+ * labelled "Example", a line beneath says so plainly, and VoiceOver
+ * announces the card as an example rather than a comparison.
  */
 export function HairProgressCard({
   beforeUri,
@@ -135,6 +146,7 @@ export function HairProgressCard({
   afterLabel,
   beforeDate,
   afterDate,
+  example = false,
   onPress,
 }: {
   beforeUri?: string;
@@ -143,16 +155,32 @@ export function HairProgressCard({
   afterLabel: string;
   beforeDate: string;
   afterDate: string;
+  example?: boolean;
   onPress: () => void;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
+
+  const before: FrameSource | undefined = example
+    ? EXAMPLE_BEFORE
+    : beforeUri
+      ? { uri: beforeUri }
+      : undefined;
+  const after: FrameSource | undefined = example
+    ? EXAMPLE_AFTER
+    : afterUri
+      ? { uri: afterUri }
+      : undefined;
 
   return (
     <PressableScale
       onPress={onPress}
       scaleTo={0.99}
       accessibilityRole="button"
-      accessibilityLabel={`Hair progress, ${beforeLabel} to ${afterLabel}. Opens comparison.`}
+      accessibilityLabel={
+        example
+          ? 'Hair progress, example photos only. Opens capture so you can start your own.'
+          : `Hair progress, ${beforeLabel} to ${afterLabel}. Opens comparison.`
+      }
       style={[
         {
           marginTop: spacing.lg,
@@ -186,68 +214,70 @@ export function HairProgressCard({
             </Text>
           </View>
           <View
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 15,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}>
+            style={[
+              {
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.surface,
+              },
+              shadow.soft,
+            ]}>
             <Icon name="chevronRight" size={14} color={colors.text} />
           </View>
         </View>
       </View>
 
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        <Frame uri={beforeUri} date={beforeDate} label={beforeLabel} align="left" />
-        <Frame uri={afterUri} date={afterDate} label={afterLabel} align="right" />
-      </View>
+        <Frame source={before} date={beforeDate} label={beforeLabel} align="left" />
+        <Frame source={after} date={afterDate} label={afterLabel} align="right" />
 
-      {/* The split handle, centred across the seam. */}
-      <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: 0,
-          bottom: 0,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
+        {/* The split handle, centred on the seam between the photographs. */}
         <View
-          style={[
-            {
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: 'row',
-              gap: 1,
-              backgroundColor: colors.surface,
-              marginTop: spacing.xxl,
-            },
-            shadow.lifted,
-          ]}>
-          <Icon name="chevronLeft" size={12} color={colors.text} />
-          <Icon name="chevronRight" size={12} color={colors.text} />
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+          <View
+            style={[
+              {
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                gap: 1,
+                backgroundColor: colors.surface,
+              },
+              shadow.lifted,
+            ]}>
+            <Icon name="chevronLeft" size={12} color={colors.text} />
+            <Icon name="chevronRight" size={12} color={colors.text} />
+          </View>
         </View>
       </View>
+
+      {example ? (
+        <Text
+          variant="caption"
+          color="textTertiary"
+          center
+          style={{ marginTop: spacing.sm, marginBottom: spacing.xxs }}>
+          Example photos. Yours will appear here.
+        </Text>
+      ) : null}
     </PressableScale>
   );
 }
 
 function Frame({
-  uri,
+  source,
   date,
   label,
   align,
 }: {
-  uri?: string;
+  source?: FrameSource;
   date: string;
   label: string;
   align: 'left' | 'right';
@@ -255,10 +285,12 @@ function Frame({
   const { colors, spacing, radius } = useTheme();
 
   return (
-    <View style={{ flex: 1, aspectRatio: 0.82 }}>
-      {uri ? (
+    // Wider than tall, as in the reference: a top-down crown shot reads
+    // best with room either side of the head.
+    <View style={{ flex: 1, aspectRatio: 1.2 }}>
+      {source ? (
         <Image
-          source={{ uri }}
+          source={source}
           style={{
             width: '100%',
             height: '100%',
@@ -287,7 +319,7 @@ function Frame({
         </View>
       )}
 
-      {uri ? (
+      {source ? (
         <View
           style={{
             position: 'absolute',
@@ -301,9 +333,11 @@ function Frame({
             borderBottomRightRadius: align === 'right' ? radius.md : 0,
             backgroundColor: colors.photoScrim,
           }}>
-          <Text variant="caption" color="textOnPhoto">
-            {date}
-          </Text>
+          {date ? (
+            <Text variant="caption" color="textOnPhoto">
+              {date}
+            </Text>
+          ) : null}
           <Text variant="caption" color="textOnPhoto">
             {label}
           </Text>
