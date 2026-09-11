@@ -12,7 +12,7 @@ import { Screen, ScreenScroll, ScreenTitle } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { BulbGlyph } from '@/components/ui/tab-glyphs';
 import { Text } from '@/components/ui/text';
-import { ANGLE_EXAMPLES } from '@/features/capture/examples';
+import { ANGLE_EXAMPLES, CAPTURE_PORTRAIT } from '@/features/capture/examples';
 import { formatRelative } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
@@ -105,7 +105,7 @@ export default function CaptureIntroScreen() {
           script="Same Angles Better Results"
         />
 
-        {/* The five angles as one set, the selected one large in the middle. */}
+        {/* The five angles as one set around a front-facing portrait. */}
         <View
           accessibilityRole="radiogroup"
           style={{ width: W, height: H, alignSelf: 'center', marginTop: spacing.md }}>
@@ -139,12 +139,13 @@ export default function CaptureIntroScreen() {
               },
               shadow.lifted,
             ]}>
+            {/* A fixed front-facing portrait: the person the five angles
+                are taken of. The selected angle shows in the step card. */}
             <Image
-              source={ANGLE_EXAMPLES[angle]}
+              source={CAPTURE_PORTRAIT}
               style={{ flex: 1, borderRadius: centre / 2 }}
               contentFit="cover"
-              transition={180}
-              accessibilityLabel={`Example ${label} photo`}
+              accessible={false}
             />
           </View>
 
