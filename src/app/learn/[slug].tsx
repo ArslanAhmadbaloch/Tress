@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ArticleCover } from '@/components/learn-cards';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -60,6 +61,18 @@ export default function ArticleScreen() {
     <Screen edges={[]} ground="plain">
       <ScreenScroll contentContainerStyle={{ paddingTop: insets.top + spacing.sm }}>
         <BackBar onBack={() => router.back()} inline />
+
+        {/* The article's picture: a related photograph, or a drawn cover. */}
+        <ArticleCover
+          article={article}
+          iconSize={30}
+          style={{
+            marginTop: spacing.lg,
+            width: '100%',
+            aspectRatio: 16 / 10,
+            borderRadius: radius.section,
+          }}
+        />
 
         <Text
           variant="caption"

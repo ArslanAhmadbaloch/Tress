@@ -1,17 +1,17 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { TextInput, View } from 'react-native';
+import { ScrollView, TextInput, View } from 'react-native';
 
-import { Card } from '@/components/ui/card';
-import { Icon, type IconName } from '@/components/ui/icon';
 import {
-  EmptyState,
-  Screen,
-  ScreenScroll,
-  ScreenTitle,
-  SectionHeader,
-  Separator,
-} from '@/components/ui/layout';
+  ArticleListRow,
+  ChipRow,
+  FaqCard,
+  FeaturedCard,
+  TopicCard,
+} from '@/components/learn-cards';
+import { Card } from '@/components/ui/card';
+import { Icon } from '@/components/ui/icon';
+import { EmptyState, Screen, ScreenScroll, ScreenTitle, Separator } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import {
@@ -23,56 +23,94 @@ import {
 } from '@/features/learn/library';
 import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
 
-const CATEGORY_ICONS: Record<LearnCategory, IconName> = {
-  basics: 'learn',
-  growth: 'chart',
-  treatments: 'pill',
-  scalp: 'drop',
-  nutrition: 'leaf',
-  lifestyle: 'dumbbell',
-  transplants: 'sparkle',
-  science: 'info',
-};
+type Filter = 'all' | LearnCategory;
 
-/** Every category, in reading order: foundations first, frontier last. */
+const CHIPS: { value: Filter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'basics', label: 'Hair Loss' },
+  { value: 'treatments', label: 'Treatments' },
+  { value: 'nutrition', label: 'Nutrition' },
+  { value: 'lifestyle', label: 'Lifestyle' },
+  { value: 'science', label: 'Science' },
+  { value: 'growth', label: 'Hair Growth' },
+  { value: 'scalp', label: 'Scalp' },
+  { value: 'transplants', label: 'Transplants' },
+];
+
 const TOPICS: LearnCategory[] = [
   'basics',
-  'growth',
   'treatments',
-  'scalp',
   'nutrition',
   'lifestyle',
+  'scalp',
+  'growth',
   'transplants',
   'science',
 ];
 
-/** How many recent articles the default view lists. */
-const LATEST_COUNT = 8;
+const LATEST_COUNT = 3;
+const TOPIC_CARD_WIDTH = 92;
 
+/**
+ * The Learn library, laid out after the Learn & Grow design: search,
+ * filter chips, one featured story, topic cards, the latest pieces and
+ * the FAQ. Everything below the chips is a view of the same library.
+ */
 export default function LearnScreen() {
   const { colors, spacing, radius } = useTheme();
   const router = useRouter();
+
   const [query, setQuery] = useState('');
-  const [topic, setTopic] = useState<LearnCategory | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [showAll, setShowAll] = useState(false);
+  const [topicsExpanded, setTopicsExpanded] = useState(false);
   const [gridWidth, setGridWidth] = useState(0);
 
   const results = useMemo(() => searchArticles(query), [query]);
-  const featured = ARTICLES.find((a) => a.featured) ?? ARTICLES[0];
   const searching = query.trim().length > 0;
+  const featured = ARTICLES.find((a) => a.featured) ?? ARTICLES[0];
+  const byDate = useMemo(
+    () => [...ARTICLES].sort((a, b) => b.updated.localeCompare(a.updated)),
+    [],
+  );
 
-  // The default view lists only the newest few; topics hold the rest.
-  const latest = ARTICLES.filter((a) => a.slug !== featured.slug)
-    .sort((a, b) => b.updated.localeCompare(a.updated))
-    .slice(0, LATEST_COUNT);
-  const topicArticles = topic ? ARTICLES.filter((a) => a.category === topic) : [];
+  // The newest pieces, one per topic, so the short list shows range.
+  const latest = useMemo(() => {
+    const seen = new Set<LearnCategory>();
+    const picked: Article[] = [];
+    for (const a of byDate) {
+      if (a.slug === featured.slug || seen.has(a.category)) continue;
+      seen.add(a.category);
+      picked.push(a);
+      if (picked.length === LATEST_COUNT) break;
+    }
+    return picked;
+  }, [byDate, featured.slug]);
+
+  const open = (a: Article) => router.push(`/learn/${a.slug}`);
+  const chooseFilter = (next: Filter) => {
+    setFilter(next);
+    setShowAll(false);
+  };
+
+  const list = (articles: Article[]) => (
+    <Card padded={false} style={{ marginTop: spacing.md }}>
+      {articles.map((a, i) => (
+        <View key={a.slug}>
+          {i > 0 ? <Separator inset={spacing.md} insetEnd={spacing.md} /> : null}
+          <ArticleListRow article={a} onPress={() => open(a)} />
+        </View>
+      ))}
+    </Card>
+  );
 
   return (
     <Screen ground="leaves">
       <ScreenScroll>
         <ScreenTitle
-          eyebrow="Learn"
+          eyebrow="Learn & Grow"
           title="Knowledge"
-          titleMuted="for real results"
+          titleMuted="for Real Results"
           subtitle="Evidence-based information. No noise."
           script="Better Knowledge Healthier Hair"
         />
@@ -95,7 +133,7 @@ export default function LearnScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search articles and topics"
+            placeholder="Search articles, topics, or questions..."
             placeholderTextColor={colors.textTertiary}
             returnKeyType="search"
             accessibilityLabel="Search the library"
@@ -113,300 +151,147 @@ export default function LearnScreen() {
           ) : null}
         </View>
 
+        <ChipRow options={CHIPS} value={filter} onChange={chooseFilter} />
+
         {searching ? (
           results.length === 0 ? (
             <EmptyState
               icon="search"
               title="Nothing found"
-              body="Try a different word, or browse the topics below."
+              body="Try a different word, or pick a topic above."
             />
           ) : (
             <>
-              <SectionHeader
+              <SectionRow
                 title={`${results.length} ${results.length === 1 ? 'result' : 'results'}`}
               />
-              <Card padded={false}>
-                {results.map((article, i) => (
-                  <View key={article.slug}>
-                    {i > 0 ? <Separator inset={spacing.lg} /> : null}
-                    <ArticleRow
-                      article={article}
-                      onPress={() => router.push(`/learn/${article.slug}`)}
-                    />
-                  </View>
-                ))}
-              </Card>
+              {list(results)}
             </>
           )
-        ) : topic ? (
+        ) : filter !== 'all' ? (
           <>
-            {/* One topic, every article in it. */}
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: spacing.md,
-                marginTop: spacing.xl,
-              }}>
-              <View style={{ flex: 1 }}>
-                <Text variant="title3" accessibilityRole="header">
-                  {CATEGORY_LABELS[topic]}
-                </Text>
-                <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
-                  {topicArticles.length} {topicArticles.length === 1 ? 'article' : 'articles'}
-                </Text>
-              </View>
-              <PressableScale
-                onPress={() => setTopic(null)}
-                haptic="light"
-                accessibilityRole="button"
-                accessibilityLabel="Back to all topics"
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: spacing.xs,
-                  paddingHorizontal: spacing.md,
-                  paddingVertical: spacing.sm,
-                  borderRadius: radius.pill,
-                  backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                }}>
-                <Icon name="chevronLeft" size={12} color={colors.text} />
-                <Text variant="subhead">All topics</Text>
-              </PressableScale>
-            </View>
-
-            <Card padded={false} style={{ marginTop: spacing.md }}>
-              {topicArticles.map((article, i) => (
-                <View key={article.slug}>
-                  {i > 0 ? <Separator inset={spacing.lg} /> : null}
-                  <ArticleRow
-                    article={article}
-                    onPress={() => router.push(`/learn/${article.slug}`)}
-                  />
-                </View>
-              ))}
-            </Card>
-
-            <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xl }}>
-              Educational information only. Hair Journey does not diagnose
-              conditions or recommend treatments — speak to a qualified
-              healthcare professional about anything medical.
-            </Text>
+            <SectionRow
+              title={CATEGORY_LABELS[filter]}
+              detail={`${ARTICLES.filter((a) => a.category === filter).length} articles`}
+            />
+            {list(ARTICLES.filter((a) => a.category === filter))}
+          </>
+        ) : showAll ? (
+          <>
+            <SectionRow
+              title="All Articles"
+              detail={`${byDate.length} articles, newest first`}
+              action="Done"
+              onAction={() => setShowAll(false)}
+            />
+            {list(byDate)}
           </>
         ) : (
           <>
-            {/* Featured — the one editorial card on the screen */}
-            <PressableScale
-              onPress={() => router.push(`/learn/${featured.slug}`)}
-              scaleTo={0.985}
-              accessibilityRole="button"
-              accessibilityLabel={`Featured: ${featured.title}`}
-              style={{
-                marginTop: spacing.xl,
-                borderRadius: radius.section,
-                overflow: 'hidden',
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-                padding: spacing.xl,
-              }}>
+            <FeaturedCard article={featured} onPress={() => open(featured)} />
+
+            <SectionRow
+              title="Popular Topics"
+              action={topicsExpanded ? 'Less' : 'See All'}
+              onAction={() => setTopicsExpanded((v) => !v)}
+            />
+            {topicsExpanded ? (
               <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}>
-                <View
-                  style={{
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: 4,
-                    borderRadius: radius.pill,
-                    backgroundColor: colors.accentSoft,
-                  }}>
-                  <Text variant="caption" color="accent">
-                    Featured
-                  </Text>
-                </View>
-                <Text variant="caption" color="textTertiary">
-                  {featured.readingMinutes} min read
-                </Text>
-              </View>
-
-              <Text variant="title2" style={{ marginTop: spacing.lg }}>
-                {featured.title}
-              </Text>
-              <Text
-                variant="callout"
-                color="textSecondary"
-                style={{ marginTop: spacing.sm }}>
-                {featured.standfirst}
-              </Text>
-
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: spacing.sm,
-                  marginTop: spacing.lg,
-                }}>
-                <Text variant="subhead" color="accent">
-                  Read article
-                </Text>
-                <Icon name="arrowRight" size={15} color={colors.accent} />
-              </View>
-            </PressableScale>
-
-            {/* Topics — every category, three to a row, with its size. */}
-            <SectionHeader title="Popular topics" />
-            <View
-              onLayout={(e) => setGridWidth(Math.floor(e.nativeEvent.layout.width))}
-              style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-              {gridWidth > 0
-                ? TOPICS.map((t) => {
-                    const count = ARTICLES.filter((art) => art.category === t).length;
-                    return (
-                      <PressableScale
+                onLayout={(e) => setGridWidth(Math.floor(e.nativeEvent.layout.width))}
+                style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }}>
+                {gridWidth > 0
+                  ? TOPICS.map((t) => (
+                      <TopicCard
                         key={t}
-                        onPress={() => setTopic(t)}
-                        scaleTo={0.96}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${CATEGORY_LABELS[t]}, ${count} articles`}
-                        style={{
-                          width: (gridWidth - spacing.sm * 2) / 3,
-                          minHeight: 126,
-                          padding: spacing.md,
-                          borderRadius: radius.card,
-                          backgroundColor: colors.surface,
-                          borderWidth: 1,
-                          borderColor: colors.border,
-                          gap: spacing.sm,
-                        }}>
-                        <View
-                          style={{
-                            width: 34,
-                            height: 34,
-                            borderRadius: 17,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            backgroundColor: colors.accentSoft,
-                          }}>
-                          <Icon name={CATEGORY_ICONS[t]} size={16} color={colors.accent} />
-                        </View>
-                        <Text variant="subhead" numberOfLines={2} style={{ flex: 1 }}>
-                          {CATEGORY_LABELS[t]}
-                        </Text>
-                        <Text variant="caption" color="textTertiary">
-                          {count} {count === 1 ? 'article' : 'articles'}
-                        </Text>
-                      </PressableScale>
-                    );
-                  })
-                : null}
-            </View>
-
-            {/* Latest */}
-            <SectionHeader title="Latest articles" />
-            <Card padded={false}>
-              {latest.map((article, i) => (
-                <View key={article.slug}>
-                  {i > 0 ? <Separator inset={spacing.lg} /> : null}
-                  <ArticleRow
-                    article={article}
-                    onPress={() => router.push(`/learn/${article.slug}`)}
-                  />
-                </View>
-              ))}
-            </Card>
-
-            {/* FAQ */}
-            <PressableScale
-              onPress={() => router.push('/learn/faq')}
-              scaleTo={0.99}
-              accessibilityRole="button"
-              accessibilityLabel="Frequently asked questions"
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: spacing.md,
-                marginTop: spacing.xl,
-                padding: spacing.lg,
-                borderRadius: radius.card,
-                backgroundColor: colors.accentSoft,
-              }}>
-              <Icon name="help" size={19} color={colors.accent} />
-              <View style={{ flex: 1 }}>
-                <Text variant="headline">Have a question?</Text>
-                <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
-                  Common questions about tracking and photographs.
-                </Text>
+                        topic={t}
+                        width={(gridWidth - spacing.sm * 3) / 4}
+                        onPress={() => chooseFilter(t)}
+                      />
+                    ))
+                  : null}
               </View>
-              <Icon name="chevronRight" size={15} color={colors.textTertiary} />
-            </PressableScale>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginTop: spacing.sm, marginHorizontal: -spacing.xl }}
+                contentContainerStyle={{
+                  gap: spacing.sm,
+                  paddingHorizontal: spacing.xl,
+                  paddingVertical: spacing.xs,
+                }}>
+                {TOPICS.map((t) => (
+                  <TopicCard
+                    key={t}
+                    topic={t}
+                    width={TOPIC_CARD_WIDTH}
+                    onPress={() => chooseFilter(t)}
+                  />
+                ))}
+              </ScrollView>
+            )}
 
-            <Text
-              variant="caption"
-              color="textTertiary"
-              style={{ marginTop: spacing.xl }}>
-              Educational information only. Hair Journey does not diagnose
-              conditions or recommend treatments — speak to a qualified
-              healthcare professional about anything medical.
-            </Text>
+            <SectionRow title="Latest Articles" action="See All" onAction={() => setShowAll(true)} />
+            {list(latest)}
+
+            <FaqCard onPress={() => router.push('/learn/faq')} style={{ marginTop: spacing.lg }} />
           </>
         )}
+
+        <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xl }}>
+          Educational information only. Hair Journey does not diagnose
+          conditions or recommend treatments — speak to a qualified
+          healthcare professional about anything medical.
+        </Text>
       </ScreenScroll>
     </Screen>
   );
 }
 
-function ArticleRow({
-  article,
-  onPress,
+function SectionRow({
+  title,
+  detail,
+  action,
+  onAction,
 }: {
-  article: Article;
-  onPress: () => void;
+  title: string;
+  detail?: string;
+  action?: string;
+  onAction?: () => void;
 }) {
-  const { colors, spacing, radius } = useTheme();
-
+  const { colors, spacing } = useTheme();
   return (
-    <PressableScale
-      onPress={onPress}
-      scaleTo={0.99}
-      accessibilityRole="button"
-      accessibilityLabel={`${article.title}, ${article.readingMinutes} minute read`}
+    <View
       style={{
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.md,
-        padding: spacing.lg,
+        justifyContent: 'space-between',
+        marginTop: spacing.xl,
       }}>
-      <View
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: radius.sm,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.fill,
-        }}>
-        <Icon
-          name={CATEGORY_ICONS[article.category]}
-          size={18}
-          color={colors.textSecondary}
-        />
-      </View>
-
       <View style={{ flex: 1 }}>
-        <Text variant="headline" numberOfLines={2}>
-          {article.title}
+        <Text variant="title3" accessibilityRole="header">
+          {title}
         </Text>
-        <Text variant="caption" color="textTertiary" style={{ marginTop: 3 }}>
-          {CATEGORY_LABELS[article.category]} · {article.readingMinutes} min read
-        </Text>
+        {detail ? (
+          <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
+            {detail}
+          </Text>
+        ) : null}
       </View>
-
-      <Icon name="chevronRight" size={15} color={colors.textTertiary} />
-    </PressableScale>
+      {action && onAction ? (
+        <PressableScale
+          onPress={onAction}
+          haptic="light"
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`${action}, ${title}`}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <Text variant="subhead" color="textSecondary">
+            {action}
+          </Text>
+          <Icon name="chevronRight" size={12} color={colors.textSecondary} />
+        </PressableScale>
+      ) : null}
+    </View>
   );
 }
