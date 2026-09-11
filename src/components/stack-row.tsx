@@ -18,11 +18,11 @@ import { routineIconFor } from '@/features/routine/icons';
 import { spacing, useTheme } from '@/theme';
 import { TIME_OF_DAY_LABELS, type RoutineItem } from '@/types/domain';
 
-const ORB = 46;
-const CHECK = 40;
+const ORB = 38;
+const CHECK = 30;
 
 /** Where a row's text begins, so separators can start under it. */
-export const STACK_TEXT_INSET = spacing.lg * 2 + ORB;
+export const STACK_TEXT_INSET = spacing.lg + ORB + spacing.md;
 
 /** "5% — Morning", "Morning", or just the note — whichever exists. */
 export function stackSubtitle(
@@ -64,21 +64,21 @@ export function StackRow({
       style={{
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.lg,
+        gap: spacing.md,
         paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.md,
+        paddingVertical: spacing.sm + spacing.xxs,
       }}>
       <GlassOrb size={ORB} ring={false}>
-        <RoutineGlyph icon={routineIconFor(item)} size={24} />
+        <RoutineGlyph icon={routineIconFor(item)} size={19} />
       </GlassOrb>
 
       <View style={{ flex: 1 }}>
-        <Text variant="headline" numberOfLines={1} style={{ fontWeight: '500' }}>
+        <Text variant="callout" numberOfLines={1} style={{ fontWeight: '500' }}>
           {item.label}
         </Text>
         {subtitle ? (
           <Text
-            variant="callout"
+            variant="footnote"
             color="textTertiary"
             numberOfLines={1}
             style={{ marginTop: 2 }}>
@@ -91,7 +91,7 @@ export function StackRow({
 
       {done ? (
         <GlassOrb size={CHECK} ring={false}>
-          <CheckGlyph size={20} />
+          <CheckGlyph size={15} />
         </GlassOrb>
       ) : (
         <View

@@ -210,9 +210,9 @@ export default function HomeScreen() {
                 padding: spacing.lg,
                 paddingBottom: spacing.xs,
               }}>
-              <Text variant="title2">Today&apos;s Stack</Text>
+              <Text variant="title3">Today&apos;s Stack</Text>
               <Text
-                variant="headline"
+                variant="callout"
                 color={today.done === today.total ? 'accent' : 'textSecondary'}
                 style={{ fontWeight: '500' }}>
                 {today.done} of {today.total}
@@ -243,14 +243,14 @@ export default function HomeScreen() {
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: spacing.lg,
+                gap: spacing.md,
                 paddingHorizontal: spacing.lg,
-                paddingVertical: spacing.md,
+                paddingVertical: spacing.sm + spacing.xxs,
               }}>
-              <GlassOrb size={46} ring={false}>
-                <Icon name="plus" size={18} color={colors.accent} />
+              <GlassOrb size={38} ring={false}>
+                <Icon name="plus" size={15} color={colors.accent} />
               </GlassOrb>
-              <Text variant="headline" color="accent" style={{ flex: 1, fontWeight: '500' }}>
+              <Text variant="callout" color="accent" style={{ flex: 1, fontWeight: '500' }}>
                 Add or edit tasks
               </Text>
               <Icon name="chevronRight" size={15} color={colors.textTertiary} />
