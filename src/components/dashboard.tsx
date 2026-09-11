@@ -603,20 +603,11 @@ export function LearnCard({
 
         <CoverStack />
 
-        <View
-          style={[
-            {
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.surface,
-            },
-            shadow.lifted,
-          ]}>
+        {/* The same green glass as the Today's Stack icons, so the card's
+            way forward reads as part of the same set. */}
+        <GlassOrb size={40} ring={false}>
           <Icon name="arrowRight" size={16} color={colors.text} />
-        </View>
+        </GlassOrb>
       </View>
     </PressableScale>
   );
