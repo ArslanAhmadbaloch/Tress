@@ -248,12 +248,6 @@ export default function JourneyScreen() {
               preview={data.journal.length === 0}
               style={{ marginTop: spacing.md }}
             />
-            <KeyMetricsCard
-              rows={metrics}
-              onDetails={() => router.push('/calendar')}
-              style={{ marginTop: spacing.md }}
-            />
-            <MilestonesCard items={milestonesFor(data)} style={{ marginTop: spacing.md }} />
           </>
         ) : null}
 
