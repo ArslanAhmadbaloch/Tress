@@ -128,14 +128,43 @@ export type PhotoSession = {
 
 export type RoutineCadence = 'daily' | 'weekly';
 
+/**
+ * The glyph a routine item is shown with. Purely a visual cue so a list
+ * is scannable without reading; it carries no meaning about the item.
+ */
+export type RoutineIcon = 'dropper' | 'pill' | 'capsule' | 'cup' | 'drop';
+
+export const ROUTINE_ICONS: RoutineIcon[] = ['dropper', 'pill', 'capsule', 'cup', 'drop'];
+
+export const ROUTINE_ICON_LABELS: Record<RoutineIcon, string> = {
+  dropper: 'Dropper bottle',
+  pill: 'Tablet',
+  capsule: 'Capsule',
+  cup: 'Drink',
+  drop: 'Wash or massage',
+};
+
+export type RoutineTimeOfDay = 'morning' | 'evening' | 'anytime';
+
+export const TIME_OF_DAY_LABELS: Record<RoutineTimeOfDay, string> = {
+  morning: 'Morning',
+  evening: 'Evening',
+  anytime: 'Anytime',
+};
+
 export type RoutineItem = {
   id: string;
   journeyId: string;
   label: string;
   /** Free text; the app never suggests or validates treatments. */
   detail?: string;
+  /**
+   * Chosen when the item is added. Optional so items saved before icons
+   * existed still load; those fall back to a guess from the label.
+   */
+  icon?: RoutineIcon;
   cadence: RoutineCadence;
-  timeOfDay?: 'morning' | 'evening' | 'anytime';
+  timeOfDay?: RoutineTimeOfDay;
   createdAt: string;
   archivedAt?: string;
 };

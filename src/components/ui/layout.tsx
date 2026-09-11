@@ -316,7 +316,13 @@ export function EmptyState({
 }
 
 /** Divider used inside grouped lists. */
-export function Separator({ inset = 0 }: { inset?: number }) {
+export function Separator({
+  inset = 0,
+  insetEnd = 0,
+}: {
+  inset?: number;
+  insetEnd?: number;
+}) {
   const { colors } = useTheme();
   return (
     <View
@@ -324,6 +330,7 @@ export function Separator({ inset = 0 }: { inset?: number }) {
         height: 1,
         backgroundColor: colors.separator,
         marginLeft: inset,
+        marginRight: insetEnd,
       }}
     />
   );

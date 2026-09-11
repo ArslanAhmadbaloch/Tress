@@ -10,9 +10,11 @@ import {
   MetricTile,
   PhotoStack,
 } from '@/components/dashboard';
+import { STACK_TEXT_INSET, StackRow } from '@/components/stack-row';
 import { Card } from '@/components/ui/card';
+import { GlassOrb } from '@/components/ui/glass-orb';
 import { BarsGlyph, StrandGlyph } from '@/components/ui/metric-glyphs';
-import { Icon, type IconName } from '@/components/ui/icon';
+import { Icon } from '@/components/ui/icon';
 import {
   EmptyState,
   Screen,
@@ -42,7 +44,7 @@ import {
   weeklyAdherenceHistory,
 } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { type Angle, type RoutineItem } from '@/types/domain';
+import { type Angle } from '@/types/domain';
 
 /** The angle the progress card leads with — the crown shows most change. */
 const HERO_ANGLE: Angle = 'crown';
@@ -62,16 +64,6 @@ function greeting(): string {
   if (hour < 12) return 'Good Morning';
   if (hour < 18) return 'Good Afternoon';
   return 'Good Evening';
-}
-
-/** A glyph per routine item, inferred from its name. Cosmetic only. */
-function routineIcon(item: RoutineItem): IconName {
-  const label = `${item.label} ${item.detail ?? ''}`.toLowerCase();
-  if (/topical|serum|oil|spray|foam|solution/.test(label)) return 'bottle';
-  if (/water|drink|shake|collagen|tea/.test(label)) return 'glass';
-  if (/tablet|capsule|supplement|vitamin|biotin/.test(label)) return 'capsule';
-  if (/wash|shampoo|scalp|massage/.test(label)) return 'drop';
-  return 'follicle';
 }
 
 type Explainer = 'consistency' | 'streak' | 'photos' | null;
@@ -205,79 +197,53 @@ export default function HomeScreen() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: spacing.lg,
-                paddingBottom: spacing.md,
+                paddingBottom: spacing.xs,
               }}>
-              <Text variant="title3">Today&apos;s Stack</Text>
+              <Text variant="title2">Today&apos;s Stack</Text>
               <Text
-                variant="subhead"
-                color={today.done === today.total ? 'accent' : 'textSecondary'}>
+                variant="headline"
+                color={today.done === today.total ? 'accent' : 'textSecondary'}
+                style={{ fontWeight: '500' }}>
                 {today.done} of {today.total}
               </Text>
             </View>
 
-            {items.map((item, index) => {
-              const done = doneToday.has(item.id);
-              return (
-                <View key={item.id}>
-                  {index > 0 ? <Separator inset={68} /> : null}
-                  <PressableScale
-                    onPress={() => toggleRoutineToday(item.id)}
-                    haptic={done ? 'light' : 'success'}
-                    scaleTo={0.995}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: done }}
-                    accessibilityLabel={item.label}
-                    accessibilityHint={item.detail}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: spacing.md,
-                      paddingHorizontal: spacing.lg,
-                      paddingVertical: spacing.md,
-                    }}>
-                    <View
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 19,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: colors.accentSoft,
-                      }}>
-                      <Icon name={routineIcon(item)} size={16} color={colors.text} />
-                    </View>
+            {items.map((item, index) => (
+              <View key={item.id}>
+                {index > 0 ? (
+                  <Separator inset={STACK_TEXT_INSET} insetEnd={spacing.lg} />
+                ) : null}
+                <StackRow
+                  item={item}
+                  done={doneToday.has(item.id)}
+                  onToggle={() => toggleRoutineToday(item.id)}
+                />
+              </View>
+            ))}
 
-                    <View style={{ flex: 1 }}>
-                      <Text variant="headline">{item.label}</Text>
-                      {item.detail ? (
-                        <Text
-                          variant="footnote"
-                          color="textSecondary"
-                          style={{ marginTop: 1 }}>
-                          {item.detail}
-                        </Text>
-                      ) : null}
-                    </View>
-
-                    <View
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 15,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: done ? colors.accentSoft : 'transparent',
-                        borderWidth: done ? 0 : 1.5,
-                        borderColor: colors.border,
-                      }}>
-                      {done ? (
-                        <Icon name="check" size={15} color={colors.accent} />
-                      ) : null}
-                    </View>
-                  </PressableScale>
-                </View>
-              );
-            })}
+            {/* The way back into the routine once it has items — without
+                this, Home offers no route to add or remove a task. */}
+            <Separator inset={STACK_TEXT_INSET} insetEnd={spacing.lg} />
+            <PressableScale
+              onPress={() => router.push('/routine')}
+              scaleTo={0.99}
+              accessibilityRole="button"
+              accessibilityLabel="Add or edit tasks"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.lg,
+                paddingHorizontal: spacing.lg,
+                paddingVertical: spacing.md,
+              }}>
+              <GlassOrb size={46} ring={false}>
+                <Icon name="plus" size={18} color={colors.accent} />
+              </GlassOrb>
+              <Text variant="headline" color="accent" style={{ flex: 1, fontWeight: '500' }}>
+                Add or edit tasks
+              </Text>
+              <Icon name="chevronRight" size={15} color={colors.textTertiary} />
+            </PressableScale>
           </Card>
         ) : (
           <Card tone="subtle" style={{ marginTop: spacing.md }}>
