@@ -154,7 +154,7 @@ export default function CardScreen() {
           // A page sheet on iOS already clears the status bar.
           paddingTop: (Platform.OS === 'ios' ? 0 : insets.top) + spacing.md,
           paddingBottom: insets.bottom + spacing.xl,
-          paddingHorizontal: spacing.xl,
+          paddingHorizontal: spacing.lg,
           alignItems: 'center',
         }}>
         <View

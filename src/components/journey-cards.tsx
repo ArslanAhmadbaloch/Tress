@@ -188,14 +188,21 @@ export function ScoreCard({
           marginTop: spacing.sm,
         }}>
         {/*
-          Nothing recorded yet reads as an em dash, not as a 48pt zero.
-          The number is accurate either way; a screen that opens on a
-          giant nought tells somebody they have failed at a thing they
-          have not started, which is the opposite of what this app is for.
+          With nothing recorded there is no number to show, so the slot
+          says what to do instead. A 48pt zero told somebody they had
+          failed at a thing they had not started; a 48pt em dash read as a
+          redaction. A sentence reads as an invitation.
         */}
-        <Text variant="display" style={{ fontSize: 48, lineHeight: 54 }}>
-          {started ? value : '—'}
-        </Text>
+        {started ? (
+          <Text variant="display" style={{ fontSize: 48, lineHeight: 54 }}>
+            {value}
+          </Text>
+        ) : (
+          <Text variant="callout" color="textSecondary" style={{ flex: 1 }}>
+            Tick something off, or take your first photos, and this starts
+            filling in.
+          </Text>
+        )}
         {typeof delta === 'number' && delta !== 0 ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
             <Icon
@@ -216,15 +223,28 @@ export function ScoreCard({
         ) : null}
       </View>
 
-      <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xs }}>
-        {started ? 'Routine adherence by month' : 'Your first tick starts this.'}
-      </Text>
+      {/*
+        One caption, not two. The chart below already says "Preview. Your
+        own line fills in as you track." when there is nothing in it, so a
+        second line here saying the same thing was the third time this card
+        told somebody they had not started.
+      */}
+      {started ? (
+        <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xs }}>
+          Routine adherence by month
+        </Text>
+      ) : null}
 
       <TrendChart points={points} preview={isPreview} />
 
+      {/*
+        The label stays whatever happens — a drawn line that is not yours
+        must say so. But once the card has already invited somebody to
+        start, the long version repeats it, so it shortens to the label.
+      */}
       {isPreview ? (
         <Text variant="caption" color="textTertiary" center style={{ marginTop: spacing.xs }}>
-          Preview. Your own line fills in as you track.
+          {started ? 'Preview. Your own line fills in as you track.' : 'Preview'}
         </Text>
       ) : null}
     </Panel>

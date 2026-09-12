@@ -139,7 +139,9 @@ export default function JourneyScreen() {
     <ScoreCard
       value={score.value}
       delta={score.delta}
-      started={data.sessions.length > 0 || data.routineLogs.length > 0}
+      started={
+        data.sessions.length > 0 || data.routineLogs.some((log) => log.completed)
+      }
       points={history}
       months={months}
       onCycleRange={() => setMonths(RANGES[(RANGES.indexOf(months) + 1) % RANGES.length])}

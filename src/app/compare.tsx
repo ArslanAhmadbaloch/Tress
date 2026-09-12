@@ -389,16 +389,18 @@ function SliderCompare({
 }
 
 function Label({ text, position }: { text: string; position: 'left' | 'right' }) {
+  const { spacing, radius } = useTheme();
+
   return (
     <View
       pointerEvents="none"
       style={{
         position: 'absolute',
-        top: 12,
-        [position]: 12,
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 8,
+        top: spacing.md,
+        [position]: spacing.md,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs + 2,
+        borderRadius: radius.xs,
         backgroundColor: 'rgba(0,0,0,0.55)',
       }}>
       <Text variant="caption" style={{ color: '#fff' }}>

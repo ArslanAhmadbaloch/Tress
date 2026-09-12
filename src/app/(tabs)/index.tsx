@@ -108,7 +108,10 @@ export default function HomeScreen() {
           eyebrow="Hair Journey"
           title={`${greeting()},`}
           titleMuted={name ? `${name}.` : 'friend.'}
-          subtitle={'Small steps today.\nA healthier, fuller you tomorrow.'}
+          // No subtitle: the script beside it already carries the warm
+          // line, and two motivational statements stacked in one header is
+          // one motivational statement too many — it also cost two lines
+          // of the first screenful before any of the user's own data.
           // The one place the script appears, and it says what the
           // lockup says. Two versions of a brand line is one too many.
           script={'Better Hair.\nConfident You.'}

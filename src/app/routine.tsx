@@ -11,16 +11,14 @@ import { Icon } from '@/components/ui/icon';
 import { EmptyState, SectionHeader, Separator } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { RoutineGlyph } from '@/components/ui/routine-glyphs';
-import { ProgressBar, StatTile } from '@/components/ui/stat';
+import { ProgressBar } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
 import { inferRoutineIcon } from '@/features/routine/icons';
 import { toDateKey } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import {
   activeRoutineItems,
-  adherencePercent,
   completedOn,
-  currentStreak,
   todayProgress,
 } from '@/store/selectors';
 import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
@@ -61,12 +59,12 @@ export default function RoutineScreen() {
   const items = activeRoutineItems(data);
   const done = completedOn(data, toDateKey());
   const progress = todayProgress(data);
-  const adherence = adherencePercent(data);
-  const streak = currentStreak(data);
 
   const canAdd = name.trim().length > 0;
   /** Held just long enough for the tick to register before the form clears. */
   const [added, setAdded] = useState(false);
+  /** The form is a second job, so it stays closed while a stack exists. */
+  const [adding, setAdding] = useState(false);
 
   const add = () => {
     const label = name.trim();
@@ -86,7 +84,10 @@ export default function RoutineScreen() {
   const addAndConfirm = () => {
     add();
     setAdded(true);
-    setTimeout(() => setAdded(false), 700);
+    setTimeout(() => {
+      setAdded(false);
+      setAdding(false);
+    }, 700);
   };
 
   const confirmRemove = (id: string, label: string) => {
@@ -153,19 +154,12 @@ export default function RoutineScreen() {
         }}>
         {items.length > 0 ? (
           <>
-            <View style={{ flexDirection: 'row', gap: spacing.md }}>
-              <StatTile
-                icon="chart"
-                label="Adherence"
-                value={adherence ?? 0}
-                suffix="%"
-                caption="Last 30 days"
-                tone={adherence !== null && adherence >= 80 ? 'accent' : 'default'}
-              />
-              <StatTile icon="flame" label="Day streak" value={streak} />
-            </View>
-
-            <SectionHeader title="Today" />
+            {/*
+              Adherence and streak live on Home. Repeating them here put two
+              more zeros at the top of the one screen whose job is to let
+              somebody tick something off.
+            */}
+            <SectionHeader title="Today" style={{ marginTop: spacing.sm }} />
             <Card>
               <View
                 style={{
@@ -222,6 +216,20 @@ export default function RoutineScreen() {
           />
         )}
 
+        {/*
+          Open by default only when there is nothing to tick off. With a
+          stack on screen, adding is the second job, not the first.
+        */}
+        {items.length > 0 && !adding ? (
+          <Button
+            label="Add a task"
+            icon="plus"
+            variant="secondary"
+            style={{ marginTop: spacing.xl }}
+            onPress={() => setAdding(true)}
+          />
+        ) : (
+          <>
         <SectionHeader title="Add a task" />
         <Card>
           <TextInput
@@ -336,10 +344,14 @@ export default function RoutineScreen() {
           </Text>
         </View>
 
+          </>
+        )}
+
+        {/* Quieter than "Add a task": leaving is not the point of being here. */}
         <Button
           label="Done"
-          variant="secondary"
-          style={{ marginTop: spacing.xl }}
+          variant="ghost"
+          style={{ marginTop: spacing.md }}
           onPress={() => router.back()}
         />
       </ScrollView>
