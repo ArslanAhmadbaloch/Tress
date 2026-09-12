@@ -126,32 +126,24 @@ export default function HomeScreen() {
         />
 
         {/* Hair progress — the photographs come first. */}
-        {latest ? (
+        {hasComparison && baseline && latest ? (
           <HairProgressCard
-            beforeUri={
-              baseline?.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri
-            }
-            afterUri={
-              latest.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri
-            }
-            beforeLabel={
-              baseline ? formatMilestone(journey.startedAt, baseline.capturedAt) : '—'
-            }
-            afterLabel={formatMilestone(journey.startedAt, latest.capturedAt)}
-            beforeDate={baseline ? formatDate(baseline.capturedAt) : ''}
+            beforeUri={baseline.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri}
+            afterUri={latest.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri}
+            beforeLabel={formatMilestone(journey.startedAt, baseline.capturedAt, baseline.isBaseline)}
+            afterLabel={formatMilestone(journey.startedAt, latest.capturedAt, latest.isBaseline)}
+            beforeDate={formatDate(baseline.capturedAt)}
             afterDate={formatDate(latest.capturedAt)}
-            single={!hasComparison}
-            onPress={() =>
-              hasComparison
-                ? router.push('/compare')
-                : router.push(`/session/${latest.id}`)
-            }
+            onPress={() => router.push('/compare')}
           />
         ) : (
-          // No photos yet: show what the comparison will look like, using
-          // clearly labelled sample photographs, and lead into capture.
+          // Nothing to compare yet — either no photos at all, or only the
+          // baseline. Both show the same labelled example of what the card
+          // becomes, because a baseline on its own is not progress and
+          // dressing it up as the card's finished state would say it was.
           <HairProgressCard
             example
+            awaitingFirstUpdate={Boolean(latest)}
             beforeLabel="Month 0"
             afterLabel="Month 6"
             beforeDate="Example"

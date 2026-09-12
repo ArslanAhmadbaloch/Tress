@@ -54,7 +54,7 @@ export default function SessionDetailScreen() {
   }
 
   const journey = data.journey;
-  const milestone = formatMilestone(journey.startedAt, session.capturedAt);
+  const milestone = formatMilestone(journey.startedAt, session.capturedAt, session.isBaseline);
 
   const saveNote = () => {
     updateSessionNote(session.id, noteDraft);

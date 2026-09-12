@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { toDateKey } from '@/lib/date';
+import { formatMilestone, toDateKey } from '@/lib/date';
 import {
   adherencePercent,
   consistencyScore,
@@ -204,6 +204,35 @@ test('monthly sessions: a session lands in its own calendar month', () => {
   const months = monthlySessionCounts(data, 6);
   assert.equal(months[months.length - 1].value, 1, 'this month holds one');
   assert.equal(months[months.length - 2].value, 1, 'last month holds the other');
+});
+
+/* ------------------------------ milestones ----------------------------- */
+
+test('milestone: only the baseline session is called Baseline', () => {
+  const start = daysAgo(0).toISOString();
+
+  assert.equal(formatMilestone(start, start, true), 'Baseline');
+  assert.equal(
+    formatMilestone(start, start, false),
+    'Day 1',
+    'a second set taken the same day is not the baseline',
+  );
+});
+
+test('milestone: two sessions never carry the same label on one comparison', () => {
+  // The exact case that put "Baseline → Baseline" on the progress card.
+  const start = daysAgo(0).toISOString();
+  const before = formatMilestone(start, start, true);
+  const after = formatMilestone(start, start, false);
+  assert.notEqual(before, after);
+});
+
+test('milestone: later sessions read in weeks, months and years', () => {
+  const start = daysAgo(400).toISOString();
+  assert.equal(formatMilestone(start, daysAgo(397).toISOString(), false), 'Day 4');
+  assert.equal(formatMilestone(start, daysAgo(390).toISOString(), false), 'Week 1');
+  assert.equal(formatMilestone(start, daysAgo(280).toISOString(), false), 'Month 3');
+  assert.equal(formatMilestone(start, daysAgo(35).toISOString(), false), 'Year 1');
 });
 
 /* --------------------------- consistency delta ------------------------- */

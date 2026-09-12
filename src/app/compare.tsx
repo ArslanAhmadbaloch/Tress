@@ -188,18 +188,18 @@ export default function CompareScreen() {
             <SliderCompare
               beforeUri={beforePhoto.uri}
               afterUri={afterPhoto.uri}
-              beforeLabel={formatMilestone(journey.startedAt, before.capturedAt)}
-              afterLabel={formatMilestone(journey.startedAt, after.capturedAt)}
+              beforeLabel={formatMilestone(journey.startedAt, before.capturedAt, before.isBaseline)}
+              afterLabel={formatMilestone(journey.startedAt, after.capturedAt, after.isBaseline)}
             />
           ) : (
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               <SidePanel
                 uri={beforePhoto.uri}
-                label={formatMilestone(journey.startedAt, before.capturedAt)}
+                label={formatMilestone(journey.startedAt, before.capturedAt, before.isBaseline)}
               />
               <SidePanel
                 uri={afterPhoto.uri}
-                label={formatMilestone(journey.startedAt, after.capturedAt)}
+                label={formatMilestone(journey.startedAt, after.capturedAt, after.isBaseline)}
                 highlighted
               />
             </View>
@@ -453,7 +453,12 @@ function SessionPicker({
   onSelect,
 }: {
   title: string;
-  sessions: { id: string; capturedAt: string; photos: { id: string; thumbnailUri?: string; uri: string }[] }[];
+  sessions: {
+    id: string;
+    capturedAt: string;
+    isBaseline: boolean;
+    photos: { id: string; thumbnailUri?: string; uri: string }[];
+  }[];
   startedAt: string;
   selectedIndex: number;
   onSelect: (index: number) => void;
@@ -482,7 +487,7 @@ function SessionPicker({
               scaleTo={0.96}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={`${title.toLowerCase()}: ${formatMilestone(startedAt, session.capturedAt)}`}
+              accessibilityLabel={`${title.toLowerCase()}: ${formatMilestone(startedAt, session.capturedAt, session.isBaseline)}`}
               style={{ alignItems: 'center', width: 62 }}>
               <View
                 style={{
@@ -508,7 +513,7 @@ function SessionPicker({
                 center
                 numberOfLines={1}
                 style={{ marginTop: 4 }}>
-                {formatMilestone(startedAt, session.capturedAt)}
+                {formatMilestone(startedAt, session.capturedAt, session.isBaseline)}
               </Text>
             </PressableScale>
           );

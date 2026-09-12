@@ -119,9 +119,9 @@ type FrameSource = number | { uri: string };
  * it signals that tapping opens the real comparison, where dragging works.
  *
  * With `example`, it shows the design kit's sample photographs until the
- * user has their own. They are never presented as a result: each photo is
- * labelled "Example", a line beneath says so plainly, and VoiceOver
- * announces the card as an example rather than a comparison.
+ * user has a real before and after. They are never presented as a result:
+ * each photo is labelled "Example", a line beneath says so plainly, and
+ * VoiceOver announces the card as an example rather than a comparison.
  */
 export function HairProgressCard({
   beforeUri,
@@ -131,7 +131,7 @@ export function HairProgressCard({
   beforeDate,
   afterDate,
   example = false,
-  single = false,
+  awaitingFirstUpdate = false,
   onPress,
 }: {
   beforeUri?: string;
@@ -142,12 +142,12 @@ export function HairProgressCard({
   afterDate: string;
   example?: boolean;
   /**
-   * One session exists, so there is nothing to compare it against. The card
-   * shows that one photograph rather than the same frame twice: two
-   * identical images under a split handle read as a before-and-after that
-   * found no change, which is a claim the app has no business making.
+   * The baseline is taken but no update is, so the example is standing in
+   * for a comparison the user has already started. Only the wording
+   * changes: promising their photos "will appear here" to someone who has
+   * already taken some reads as a bug.
    */
-  single?: boolean;
+  awaitingFirstUpdate?: boolean;
   onPress: () => void;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
@@ -170,10 +170,10 @@ export function HairProgressCard({
       accessibilityRole="button"
       accessibilityLabel={
         example
-          ? 'Hair progress, example photos only. Opens capture so you can start your own.'
-          : single
-            ? `Hair progress, ${afterLabel}. Opens this update.`
-            : `Hair progress, ${beforeLabel} to ${afterLabel}. Opens comparison.`
+          ? awaitingFirstUpdate
+            ? 'Hair progress, example photos only until your first update. Opens capture.'
+            : 'Hair progress, example photos only. Opens capture so you can start your own.'
+          : `Hair progress, ${beforeLabel} to ${afterLabel}. Opens comparison.`
       }
       style={[
         {
@@ -204,7 +204,7 @@ export function HairProgressCard({
               backgroundColor: colors.backgroundSubtle,
             }}>
             <Text variant="caption" color="textSecondary">
-              {single ? afterLabel : `${beforeLabel} → ${afterLabel}`}
+              {beforeLabel} → {afterLabel}
             </Text>
           </View>
           <View
@@ -227,9 +227,7 @@ export function HairProgressCard({
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
         {/* Example photos carry no date plate: they have no real date, and
             the line beneath the frames is what labels them. */}
-        {single ? null : (
-          <Frame source={before} date={beforeDate} label={beforeLabel} align="left" plate={!example} />
-        )}
+        <Frame source={before} date={beforeDate} label={beforeLabel} align="left" plate={!example} />
         <Frame source={after} date={afterDate} label={afterLabel} align="right" plate={!example} />
 
         {/* The split handle, centred on the seam between the photographs. */}
@@ -238,7 +236,6 @@ export function HairProgressCard({
           style={[
             StyleSheet.absoluteFill,
             { alignItems: 'center', justifyContent: 'center' },
-            single && { display: 'none' },
           ]}>
           <View
             style={[
@@ -260,15 +257,15 @@ export function HairProgressCard({
         </View>
       </View>
 
-      {example || single ? (
+      {example ? (
         <Text
           variant="caption"
           color="textTertiary"
           center
           style={{ marginTop: spacing.sm, marginBottom: spacing.xxs }}>
-          {example
-            ? 'Example photos. Yours will appear here.'
-            : 'Your next update will sit beside this one.'}
+          {awaitingFirstUpdate
+            ? 'Example photos. Yours replace them at your first update.'
+            : 'Example photos. Yours will appear here.'}
         </Text>
       ) : null}
     </PressableScale>

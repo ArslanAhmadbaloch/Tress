@@ -173,7 +173,7 @@ export default function JournalScreen() {
                       <Text variant="caption" color="textTertiary">
                         {formatDate(entry.createdAt)}
                         {session && journey
-                          ? ` · ${formatMilestone(journey.startedAt, session.capturedAt)}`
+                          ? ` · ${formatMilestone(journey.startedAt, session.capturedAt, session.isBaseline)}`
                           : ''}
                       </Text>
                       <PressableScale

@@ -108,7 +108,7 @@ export default function ProfilePhotoScreen() {
                   marginBottom: spacing.sm,
                 }}>
                 <Text variant="subhead">
-                  {startedAt ? formatMilestone(startedAt, session.capturedAt) : 'Session'}
+                  {startedAt ? formatMilestone(startedAt, session.capturedAt, session.isBaseline) : 'Session'}
                 </Text>
                 <Text variant="caption" color="textTertiary">
                   {formatDate(session.capturedAt)}

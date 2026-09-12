@@ -81,10 +81,23 @@ export function formatDurationCompact(
   return rem === 0 ? `${years}y` : `${years}y ${rem}mo`;
 }
 
-/** Short timeline marker: "Baseline", "Month 3", "Year 1". */
-export function formatMilestone(startISO: string, atISO: string): string {
+/**
+ * Short timeline marker: "Baseline", "Month 3", "Year 1".
+ *
+ * `isBaseline` is the session's own flag, not something inferred from the
+ * date. A second set taken the same day as the first is still day one, and
+ * calling it "Baseline" too puts the same label on both halves of a
+ * comparison — which reads as a rendering fault rather than as two
+ * captures, and is simply untrue of the later one.
+ */
+export function formatMilestone(
+  startISO: string,
+  atISO: string,
+  isBaseline: boolean,
+): string {
   const days = daysBetween(startISO, atISO);
-  if (days <= 0) return 'Baseline';
+  if (isBaseline) return 'Baseline';
+  if (days <= 0) return 'Day 1';
 
   const months = monthsBetween(startISO, atISO);
   if (months === 0) {

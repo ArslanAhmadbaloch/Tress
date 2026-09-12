@@ -101,7 +101,7 @@ export default function JourneyScreen() {
       id: session.id,
       thumbnailUri: photo?.thumbnailUri ?? photo?.uri,
       date: formatDateShort(session.capturedAt),
-      label: formatMilestone(journey.startedAt, session.capturedAt),
+      label: formatMilestone(journey.startedAt, session.capturedAt, session.isBaseline),
     };
   });
 
@@ -361,7 +361,7 @@ function SessionTimeline({
                 onPress={() => router.push(`/session/${session.id}`)}
                 scaleTo={0.985}
                 accessibilityRole="button"
-                accessibilityLabel={`${formatMilestone(startedAt, session.capturedAt)}, ${formatDate(session.capturedAt)}`}
+                accessibilityLabel={`${formatMilestone(startedAt, session.capturedAt, session.isBaseline)}, ${formatDate(session.capturedAt)}`}
                 style={{
                   backgroundColor: colors.surface,
                   borderRadius: radius.card,
@@ -378,7 +378,7 @@ function SessionTimeline({
                     paddingBottom: spacing.md,
                   }}>
                   <View style={{ flex: 1 }}>
-                    <Text variant="title3">{formatMilestone(startedAt, session.capturedAt)}</Text>
+                    <Text variant="title3">{formatMilestone(startedAt, session.capturedAt, session.isBaseline)}</Text>
                     <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
                       {formatDate(session.capturedAt)}
                     </Text>
