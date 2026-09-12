@@ -93,12 +93,19 @@ const BLOOM = { delay: 200, rise: 420, fall: 900 };
 const SHEEN = { delay: 560, duration: 1000 };
 const WORDMARK_IN = { delay: 820, duration: 520 };
 const TAGLINE_IN = { delay: 1040, duration: 520 };
-/** How long the finished lockup is held before it clears. */
-const HOLD_UNTIL = 2080;
-const EXIT = 420;
+/**
+ * When the lockup starts to clear, measured from the first frame.
+ *
+ * The tagline lands at 1560ms, so this leaves the finished lockup whole
+ * and still on screen for a beat under two seconds — long enough to be
+ * looked at rather than glimpsed, which is the whole point of showing it.
+ */
+const HOLD_UNTIL = 3500;
+/** Unhurried, so the lockup dissolves rather than cutting away. */
+const EXIT = 560;
 
 /** The same beats, collapsed for Reduce Motion. */
-const CALM = { fade: 280, hold: 620, exit: 280 };
+const CALM = { fade: 280, hold: 1900, exit: 320 };
 
 const easeOut = Easing.out(Easing.cubic);
 const easeInOut = Easing.inOut(Easing.quad);
