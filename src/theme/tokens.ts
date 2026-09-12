@@ -136,6 +136,8 @@ export type ColorTokens = {
   /** The field an exported card is laid on, so the PNG is not transparent. */
   cardExportTop: string;
   cardExportBottom: string;
+  /** The light that crosses the card's glass. */
+  cardRay: string;
 };
 
 export const lightColors: ColorTokens = {
@@ -195,6 +197,7 @@ export const lightColors: ColorTokens = {
   cardPanelEdge: 'rgba(255, 255, 255, 0.78)',
   cardExportTop: '#F4F2ED',
   cardExportBottom: '#E7E3DB',
+  cardRay: '#FFFFFF',
 };
 
 export const darkColors: ColorTokens = {
@@ -264,6 +267,8 @@ export const darkColors: ColorTokens = {
   cardPanelEdge: 'rgba(255, 255, 255, 0.11)',
   cardExportTop: '#23272C',
   cardExportBottom: '#14171A',
+  /* Dark glass catches less: a bright ray would read as a searchlight. */
+  cardRay: 'rgba(255, 255, 255, 0.42)',
 };
 
 /* ------------------------------------------------------------------ *

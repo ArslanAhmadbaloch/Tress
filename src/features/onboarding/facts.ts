@@ -50,7 +50,7 @@ export const FACTS: Record<'gradual' | 'feelings' | 'cause', Fact> = {
     footnote: 'Same angles. Consistent light. Your own timeline.',
     source: 'From our guide on why treatments take months to judge.',
     slug: 'treatments-why-treatments-take-months-to-judge',
-    cta: 'Show Me How',
+    cta: 'Continue',
   },
 
   feelings: {

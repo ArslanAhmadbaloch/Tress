@@ -27,7 +27,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 
-import { MemberCard } from '@/components/member-card';
+import { CardFloat, MemberCard } from '@/components/member-card';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Screen } from '@/components/ui/layout';
@@ -201,13 +201,15 @@ export default function CardScreen() {
             The capture target. Its own field travels with it into the PNG,
             so the exported card is a finished image rather than a cut-out.
           */}
-          <View ref={shot} collapsable={false} style={{ borderRadius: radius.xl }}>
-            <LinearGradient
-              colors={[colors.cardExportTop, colors.cardExportBottom]}
-              style={{ padding: EXPORT_MARGIN, borderRadius: radius.xl }}>
-              <MemberCard {...card} width={cardWidth} />
-            </LinearGradient>
-          </View>
+          <CardFloat>
+            <View ref={shot} collapsable={false} style={{ borderRadius: radius.xl }}>
+              <LinearGradient
+                colors={[colors.cardExportTop, colors.cardExportBottom]}
+                style={{ padding: EXPORT_MARGIN, borderRadius: radius.xl }}>
+                <MemberCard {...card} width={cardWidth} />
+              </LinearGradient>
+            </View>
+          </CardFloat>
         </Animated.View>
 
         <View style={{ flex: 1, minHeight: spacing.xl }} />

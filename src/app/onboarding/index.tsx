@@ -31,7 +31,7 @@ import {
   Wash,
 } from '@/components/funnel';
 import { BrandLockup } from '@/components/brand-lockup';
-import { MemberCard } from '@/components/member-card';
+import { CardFloat, MemberCard } from '@/components/member-card';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
@@ -584,15 +584,17 @@ export default function OnboardingFunnel() {
             </Rise>
 
             <Rise index={2} style={{ alignItems: 'center' }}>
-              <MemberCard
-                name={answers.name.trim() || 'You'}
-                age={answers.age ? Number(answers.age) : undefined}
-                goalLabel={goalLabel}
-                portraitUri={answers.avatarUri}
-                startedAt={new Date().toISOString()}
-                consistency={0}
-                width={cardWidth}
-              />
+              <CardFloat>
+                <MemberCard
+                  name={answers.name.trim() || 'You'}
+                  age={answers.age ? Number(answers.age) : undefined}
+                  goalLabel={goalLabel}
+                  portraitUri={answers.avatarUri}
+                  startedAt={new Date().toISOString()}
+                  consistency={0}
+                  width={cardWidth}
+                />
+              </CardFloat>
             </Rise>
           </>
         ),

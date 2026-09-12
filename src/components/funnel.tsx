@@ -415,7 +415,9 @@ export function Scale({
                 style={{
                   height,
                   borderRadius: 12,
-                  backgroundColor: selected ? colors.accent : colors.fill,
+                  // The surface white, not the warm fill: on the plate the
+                  // fill reads as brown rather than as an empty step.
+                  backgroundColor: selected ? colors.accent : colors.surface,
                   borderWidth: selected ? 0 : 1,
                   borderColor: colors.border,
                 }}

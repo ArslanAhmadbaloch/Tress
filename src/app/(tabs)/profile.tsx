@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { View, useWindowDimensions } from 'react-native';
 
-import { MemberCard } from '@/components/member-card';
+import { CardFloat, MemberCard } from '@/components/member-card';
 import { Card } from '@/components/ui/card';
 import { Icon, type IconName } from '@/components/ui/icon';
 import {
@@ -67,15 +67,17 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel="Your journey card. Opens it full size, where you can save it."
           style={{ marginTop: spacing.sm, alignItems: 'center' }}>
-          <MemberCard
-            name={name}
-            goalLabel={HAIR_GOAL_LABELS[journey.goal]}
-            portraitUri={data.profile?.avatarUri}
-            age={data.profile?.age}
-            startedAt={journey.startedAt}
-            consistency={consistency}
-            width={cardWidth}
-          />
+          <CardFloat>
+            <MemberCard
+              name={name}
+              goalLabel={HAIR_GOAL_LABELS[journey.goal]}
+              portraitUri={data.profile?.avatarUri}
+              age={data.profile?.age}
+              startedAt={journey.startedAt}
+              consistency={consistency}
+              width={cardWidth}
+            />
+          </CardFloat>
         </PressableScale>
 
         <Text

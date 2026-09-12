@@ -20,8 +20,17 @@
 
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useId, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useId, type ReactNode } from 'react';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, {
   Circle,
   Defs,
@@ -31,9 +40,10 @@ import Svg, {
 } from 'react-native-svg';
 
 import { Icon } from './ui/icon';
+import { LeafShadow } from './ui/leaf-shadow';
 import { Text } from './ui/text';
 import { daysBetween } from '@/lib/date';
-import { fontFamily, splitAlpha, useTheme } from '@/theme';
+import { fontFamily, splitAlpha, useTheme, withZeroAlpha } from '@/theme';
 
 const MARK = require('@/assets/images/app-mark.jpg');
 
@@ -116,6 +126,8 @@ export function MemberCard({
         colors={[colors.cardTop, colors.cardBottom]}
         style={StyleSheet.absoluteFill}
       />
+
+      <Ambience width={width} u={u} />
 
       <View style={{ padding: u(20), gap: u(14) }}>
         {/* ------------------------------ header ----------------------------- */}
@@ -335,6 +347,147 @@ export function MemberCard({
       </View>
     </View>
   );
+}
+
+/* ------------------------------- ambience ------------------------------- */
+
+/** How long a light ray takes to cross the card, and the pause between. */
+const RAY_TRAVEL = 5200;
+const RAY_REST = 3400;
+/** How long the frond takes to drift to one side and back. */
+const DRIFT = 11000;
+
+/**
+ * What makes the card look like an object in a room rather than a picture
+ * of one: a frond's shadow drifting across it the way one does on a wall,
+ * and light crossing the glass every so often.
+ *
+ * Both are slow — slow enough that you notice the card is alive without
+ * ever watching it happen — and both stop entirely under Reduce Motion,
+ * where a card that never settles is a card you cannot read.
+ */
+function Ambience({ width, u }: { width: number; u: Unit }) {
+  const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
+  const ray = useSharedValue(0);
+  const drift = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+
+    ray.set(
+      withRepeat(
+        withDelay(RAY_REST, withTiming(1, { duration: RAY_TRAVEL, easing: Easing.inOut(Easing.quad) })),
+        -1,
+        false,
+      ),
+    );
+    drift.set(
+      withRepeat(withTiming(1, { duration: DRIFT, easing: Easing.inOut(Easing.sin) }), -1, true),
+    );
+  }, [reduceMotion, ray, drift]);
+
+  const clear = withZeroAlpha(colors.cardRay);
+  const travel = width * 1.9;
+  // Resolved out here: `u` is a plain closure, and calling it inside an
+  // animated style would send a non-worklet to the UI thread.
+  const driftX = u(18);
+  const rayStyle = useAnimatedStyle(() => {
+    const t = ray.get();
+    return {
+      // The card is already close to white, so a faint ray adds nothing:
+      // a gleam has to actually be brighter than the glass it crosses.
+      opacity: Math.sin(Math.PI * t) * 0.75,
+      transform: [{ translateX: -width * 0.7 + t * travel }, { rotate: '18deg' }],
+    };
+  });
+
+  const driftStyle = useAnimatedStyle(() => {
+    const t = drift.get() - 0.5;
+    return { transform: [{ translateX: t * driftX }, { rotate: `${26 + t * 5}deg` }] };
+  });
+
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            top: -u(120),
+            bottom: -u(120),
+            left: 0,
+            width: width * 0.34,
+            opacity: 0.07,
+          },
+          driftStyle,
+        ]}>
+        <LeafShadow width={width * 0.34} height={width * 0.9} />
+      </Animated.View>
+
+      <Animated.View
+        style={[
+          { position: 'absolute', top: -u(160), bottom: -u(160), width: width * 0.22 },
+          rayStyle,
+        ]}>
+        <LinearGradient
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          colors={[clear, colors.cardRay, colors.cardRay, clear]}
+          locations={[0, 0.42, 0.58, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
+/* -------------------------------- float --------------------------------- */
+
+/** How far the card rises and falls, and how far it tips, at rest. */
+const BOB = 5;
+const TIP = 0.7;
+
+/**
+ * The card, floating.
+ *
+ * Two loops of different lengths rather than one, so the motion never
+ * repeats on a beat you can count — which is the difference between an
+ * object hanging in the air and a thing being animated at you.
+ */
+export function CardFloat({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const reduceMotion = useReducedMotion();
+  const bob = useSharedValue(0.5);
+  const tip = useSharedValue(0.5);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+
+    bob.set(
+      withRepeat(withTiming(1, { duration: 3900, easing: Easing.inOut(Easing.sin) }), -1, true),
+    );
+    tip.set(
+      withDelay(
+        700,
+        withRepeat(withTiming(1, { duration: 6100, easing: Easing.inOut(Easing.sin) }), -1, true),
+      ),
+    );
+  }, [reduceMotion, bob, tip]);
+
+  const animated = useAnimatedStyle(() => ({
+    transform: [
+      { perspective: 900 },
+      { translateY: (bob.get() - 0.5) * 2 * BOB },
+      { rotateZ: `${(tip.get() - 0.5) * 2 * TIP}deg` },
+    ],
+  }));
+
+  return <Animated.View style={[style, animated]}>{children}</Animated.View>;
 }
 
 /* -------------------------------- pieces -------------------------------- */
