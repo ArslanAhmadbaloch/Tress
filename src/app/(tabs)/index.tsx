@@ -14,7 +14,8 @@ import {
 import { STACK_TEXT_INSET, StackRow } from '@/components/stack-row';
 import { Card } from '@/components/ui/card';
 import { GlassOrb } from '@/components/ui/glass-orb';
-import { BarsGlyph, StrandGlyph } from '@/components/ui/metric-glyphs';
+import { StrandGlyph } from '@/components/ui/metric-glyphs';
+import { Flicker } from '@/components/ui/motion';
 import { Icon } from '@/components/ui/icon';
 import {
   EmptyState,
@@ -168,7 +169,17 @@ export default function HomeScreen() {
             onExplain={() => setExplain('consistency')}
           />
           <MetricTile
-            glyph={<BarsGlyph size={19} />}
+            glyph={
+              // Lit only while the streak is: an unlit streak should look
+              // unlit, and a flame that flickers at zero is a lie.
+              <Flicker alive={streak > 0}>
+                <Icon
+                  name="flame"
+                  size={18}
+                  color={streak > 0 ? colors.accent : colors.textTertiary}
+                />
+              </Flicker>
+            }
             label="Streak"
             value={streak}
             unit="days"

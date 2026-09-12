@@ -13,19 +13,31 @@
  * running clockwise. It is decorative; the tile states the number.
  */
 
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, type ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, {
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import Svg, {
   Circle,
   Defs,
   Ellipse,
   LinearGradient,
-  Path,
   RadialGradient,
   Stop,
 } from 'react-native-svg';
 
-import { splitAlpha, useTheme } from '@/theme';
+import { motion, splitAlpha, useTheme } from '@/theme';
+
+/**
+ * The arc is a dashed circle rather than a drawn path, so its length can be
+ * animated on the UI thread: a ring that fills is a ring you believe, and a
+ * ring that simply appears at 62% is a number wearing a costume.
+ */
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 /** Stop props with the colour's own alpha folded into stopOpacity. */
 function stop(color: string, opacity = 1) {
@@ -88,12 +100,19 @@ export function GlassOrb({
   const ra = r + ARC_GAP + ARC_THICKNESS / 2;
   const p = Math.max(0, Math.min(1, progress));
 
-  // The arc as an explicit path from 12 o'clock, rather than a rotated
-  // dashed circle, so its gradient is laid out in plain screen space.
-  const theta = p * Math.PI * 2;
-  const arcPath = `M ${c} ${c - ra} A ${ra} ${ra} 0 ${p > 0.5 ? 1 : 0} 1 ${
-    c + ra * Math.sin(theta)
-  } ${c - ra * Math.cos(theta)}`;
+  const circumference = 2 * Math.PI * ra;
+  const reduceMotion = useReducedMotion();
+  const fill = useSharedValue(reduceMotion ? p : 0);
+
+  useEffect(() => {
+    fill.set(reduceMotion ? p : withSpring(p, motion.spring.gentle));
+  }, [p, reduceMotion, fill]);
+
+  const arcProps = useAnimatedProps(() => ({
+    strokeDashoffset: circumference * (1 - fill.get()),
+    // A zero-length arc with a round cap still draws a dot at 12 o'clock.
+    opacity: fill.get() < 0.001 ? 0 : 1,
+  }));
 
   return (
     <View
@@ -163,24 +182,19 @@ export function GlassOrb({
               strokeWidth={ARC_THICKNESS}
               fill="none"
             />
-            {p >= 0.999 ? (
-              <Circle
-                cx={c}
-                cy={c}
-                r={ra}
-                stroke={`url(#${id('arc')})`}
-                strokeWidth={ARC_THICKNESS}
-                fill="none"
-              />
-            ) : p > 0 ? (
-              <Path
-                d={arcPath}
-                stroke={`url(#${id('arc')})`}
-                strokeWidth={ARC_THICKNESS}
-                strokeLinecap="round"
-                fill="none"
-              />
-            ) : null}
+            {/* Rotated so the dash starts at twelve o'clock. */}
+            <AnimatedCircle
+              cx={c}
+              cy={c}
+              r={ra}
+              stroke={`url(#${id('arc')})`}
+              strokeWidth={ARC_THICKNESS}
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              fill="none"
+              transform={`rotate(-90 ${c} ${c})`}
+              animatedProps={arcProps}
+            />
           </>
         ) : null}
 

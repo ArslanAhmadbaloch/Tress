@@ -10,6 +10,7 @@
 
 import { Image } from 'expo-image';
 import { useId, useState, type ReactNode } from 'react';
+import Animated, { ZoomIn, useReducedMotion } from 'react-native-reanimated';
 import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, {
   Circle,
@@ -798,6 +799,8 @@ export function MilestonesCard({
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors, spacing } = useTheme();
+  const reduceMotion = useReducedMotion();
+
   return (
     <Panel style={[{ padding: spacing.md }, style]}>
       <PanelHeader title="Milestones" />
@@ -812,9 +815,18 @@ export function MilestonesCard({
             {/* Rail: a bead per milestone, joined by a hairline. */}
             <View style={{ width: 24, alignItems: 'center' }}>
               {m.done ? (
-                <GlassOrb size={24} ring={false}>
-                  <CheckGlyph size={12} />
-                </GlassOrb>
+                // Reached milestones land one after another as the card
+                // appears, so a run of them reads as an accumulation.
+                <Animated.View
+                  entering={
+                    reduceMotion
+                      ? undefined
+                      : ZoomIn.springify().damping(13).stiffness(360).delay(i * 90)
+                  }>
+                  <GlassOrb size={24} ring={false}>
+                    <CheckGlyph size={12} />
+                  </GlassOrb>
+                </Animated.View>
               ) : (
                 <View
                   style={{

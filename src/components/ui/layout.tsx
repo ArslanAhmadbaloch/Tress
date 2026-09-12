@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { Ground, type GroundVariant } from './ground';
 import { Icon, type IconName } from './icon';
+import { Sprout } from './motion';
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
 import { useTheme, withZeroAlpha } from '@/theme';
@@ -281,6 +282,11 @@ export function EmptyState({
         paddingVertical: spacing.giant,
         paddingHorizontal: spacing.xl,
       }}>
+      {/*
+        An empty screen is the one place with nothing else to say, so the
+        seedling grows on arrival rather than sitting there. Screens that
+        name a specific action keep their glyph; the rest get the sprout.
+      */}
       <View
         style={{
           width: 68,
@@ -291,7 +297,11 @@ export function EmptyState({
           justifyContent: 'center',
           marginBottom: spacing.lg,
         }}>
-        <Icon name={icon} size={28} color={colors.accent} />
+        {icon === 'sparkle' ? (
+          <Sprout size={40} />
+        ) : (
+          <Icon name={icon} size={28} color={colors.accent} />
+        )}
       </View>
 
       <Text variant="title3" center>

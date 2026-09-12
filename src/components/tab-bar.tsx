@@ -27,6 +27,7 @@ import Animated, {
 
 import { GlassOrb } from './ui/glass-orb';
 import { GlassSurface } from './ui/glass-surface';
+import { Pop } from './ui/motion';
 import { ScrollEdgeEffect } from './ui/layout';
 import { PressableScale } from './ui/pressable-scale';
 import {
@@ -150,7 +151,9 @@ function TabItem({
       {/* The selected tab sits in a pool of soft green light rather than a
           filled chip, so the bar stays white and calm. */}
       {active ? <TabGlow /> : null}
-      <Glyph size={20} color={tint} active={active} />
+      <Pop active={active}>
+        <Glyph size={20} color={tint} active={active} />
+      </Pop>
       <Text
         variant="caption"
         numberOfLines={1}

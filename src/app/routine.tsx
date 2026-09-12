@@ -65,6 +65,8 @@ export default function RoutineScreen() {
   const streak = currentStreak(data);
 
   const canAdd = name.trim().length > 0;
+  /** Held just long enough for the tick to register before the form clears. */
+  const [added, setAdded] = useState(false);
 
   const add = () => {
     const label = name.trim();
@@ -79,6 +81,12 @@ export default function RoutineScreen() {
     setName('');
     setDetail('');
     setChosenIcon(null);
+  };
+
+  const addAndConfirm = () => {
+    add();
+    setAdded(true);
+    setTimeout(() => setAdded(false), 700);
   };
 
   const confirmRemove = (id: string, label: string) => {
@@ -304,8 +312,9 @@ export default function RoutineScreen() {
           <Button
             label="Add to stack"
             icon="plus"
-            disabled={!canAdd}
-            onPress={add}
+            disabled={!canAdd || added}
+            succeeded={added}
+            onPress={addAndConfirm}
             style={{ marginTop: spacing.xl }}
           />
         </Card>

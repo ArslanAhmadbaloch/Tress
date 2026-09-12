@@ -26,10 +26,17 @@ export default function JournalScreen() {
 
   const journey = data.journey;
 
+  /** Held just long enough for the tick to be seen, then the composer goes. */
+  const [saved, setSaved] = useState(false);
+
   const save = () => {
     addJournalEntry(draft);
-    setDraft('');
-    setComposing(false);
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      setDraft('');
+      setComposing(false);
+    }, 620);
   };
 
   const confirmDelete = (id: string) => {
@@ -118,7 +125,8 @@ export default function JournalScreen() {
                 label="Save"
                 size="md"
                 onPress={save}
-                disabled={!draft.trim()}
+                succeeded={saved}
+                disabled={!draft.trim() || saved}
                 style={{ flex: 1 }}
               />
             </View>

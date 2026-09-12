@@ -106,9 +106,19 @@ function Navigation() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.background },
+          /*
+           * A push slides in from the right, which is what going deeper
+           * feels like; sheets rise from the bottom, which is what a
+           * temporary thing feels like. Set once here rather than per
+           * route, so a new screen inherits the app's grammar by default.
+           */
+          animation: 'slide_from_right',
+          animationDuration: 280,
+          gestureEnabled: true,
         }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="onboarding" />
+        {/* The app itself has no direction to come from; it just arrives. */}
+        <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+        <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
         <Stack.Screen
           name="capture-session"
           options={{

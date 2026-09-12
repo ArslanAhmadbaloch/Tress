@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 import { View } from 'react-native';
 
 import { GlassOrb } from './ui/glass-orb';
+import { Burst, Pop } from './ui/motion';
 import { PressableScale } from './ui/pressable-scale';
 import { CheckGlyph, RoutineGlyph } from './ui/routine-glyphs';
 import { Text } from './ui/text';
@@ -89,22 +90,29 @@ export function StackRow({
 
       {accessory}
 
-      {done ? (
-        <GlassOrb size={CHECK} ring={false}>
-          <CheckGlyph size={15} />
-        </GlassOrb>
-      ) : (
-        <View
-          style={{
-            width: CHECK,
-            height: CHECK,
-            borderRadius: CHECK / 2,
-            borderWidth: 1.5,
-            borderColor: colors.fillSelected,
-            backgroundColor: colors.surface,
-          }}
-        />
-      )}
+      {/* Ticking something off is the one moment in the app worth
+          celebrating, so it gets the pop and the burst. */}
+      <View style={{ width: CHECK, height: CHECK }}>
+        <Burst active={done} size={CHECK * 2.1} />
+        <Pop active={done}>
+          {done ? (
+            <GlassOrb size={CHECK} ring={false}>
+              <CheckGlyph size={15} />
+            </GlassOrb>
+          ) : (
+            <View
+              style={{
+                width: CHECK,
+                height: CHECK,
+                borderRadius: CHECK / 2,
+                borderWidth: 1.5,
+                borderColor: colors.fillSelected,
+                backgroundColor: colors.surface,
+              }}
+            />
+          )}
+        </Pop>
+      </View>
     </PressableScale>
   );
 }

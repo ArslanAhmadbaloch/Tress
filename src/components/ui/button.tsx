@@ -1,4 +1,5 @@
 import { ActivityIndicator, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { FadeIn, FadeOut, ZoomIn } from 'react-native-reanimated';
 
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
@@ -16,6 +17,12 @@ export type ButtonProps = {
   icon?: IconName;
   disabled?: boolean;
   loading?: boolean;
+  /**
+   * Briefly replaces the label with a tick, for a press that finished
+   * something. Never set it for a press that only navigates: a check mark
+   * that means "you went somewhere" is a check mark that means nothing.
+   */
+  succeeded?: boolean;
   /** Stretch to the container width — the default for primary CTAs. */
   block?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -30,6 +37,7 @@ export function Button({
   icon,
   disabled,
   loading,
+  succeeded,
   block = true,
   style,
   accessibilityHint,
@@ -86,15 +94,21 @@ export function Button({
               : colors.text
           }
         />
+      ) : succeeded ? (
+        <Animated.View
+          entering={ZoomIn.springify().damping(12).stiffness(420)}
+          exiting={FadeOut.duration(120)}>
+          <Icon name="check" size={20} color={colors[labelColor]} />
+        </Animated.View>
       ) : (
-        <>
-          {icon ? (
-            <Icon name={icon} size={18} color={colors[labelColor]} />
-          ) : null}
+        <Animated.View
+          entering={FadeIn.duration(160)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {icon ? <Icon name={icon} size={18} color={colors[labelColor]} /> : null}
           <Text variant="headline" color={labelColor}>
             {label}
           </Text>
-        </>
+        </Animated.View>
       )}
     </PressableScale>
   );
