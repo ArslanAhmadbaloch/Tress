@@ -77,6 +77,33 @@ async function renderInto(
 }
 
 /**
+ * Bring a frame down to storage size the moment it leaves the camera.
+ *
+ * A phone hands back a twelve-megapixel JPEG. The app never stores one
+ * that large, but until this existed it held every captured frame at full
+ * resolution until the session was saved — so by the third angle the
+ * device was carrying three full-size images plus a live capture session,
+ * and anything that needed the main thread (presenting the discard
+ * confirmation, for instance) waited behind their decoding.
+ *
+ * It costs a moment at the shutter and returns it many times over.
+ */
+export async function shrinkCapture(
+  sourceUri: string,
+): Promise<{ uri: string; width: number; height: number }> {
+  const rendered = await ImageManipulator.manipulate(sourceUri)
+    .resize({ width: FULL_MAX_WIDTH })
+    .renderAsync();
+
+  const saved = await rendered.saveAsync({
+    compress: FULL_QUALITY,
+    format: SaveFormat.JPEG,
+  });
+
+  return { uri: saved.uri, width: saved.width, height: saved.height };
+}
+
+/**
  * Persist one captured frame. Safe to call concurrently for different
  * angles — filenames are namespaced by session and angle.
  */

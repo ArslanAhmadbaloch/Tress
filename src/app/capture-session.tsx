@@ -27,7 +27,7 @@ import {
   saveCaptureTimer,
   type CaptureTimer,
 } from '@/lib/device-preferences';
-import { persistCapture } from '@/lib/photo-storage';
+import { persistCapture, shrinkCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
 import { motion, useTheme } from '@/theme';
@@ -66,6 +66,8 @@ export default function CaptureSessionScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showGhost, setShowGhost] = useState(true);
+  /** True while a system alert is up, so the capture session can pause. */
+  const [confirming, setConfirming] = useState(false);
   const [phase, setPhase] = useState<'capture' | 'summary'>('capture');
 
   /*
@@ -137,11 +139,20 @@ export default function CaptureSessionScreen() {
       // but on Android it can hand back an unrotated or empty frame, and a
       // black progress photo is worse than a slightly slower shutter.
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.9 });
-      if (photo) setPending(photo);
+      if (photo) {
+        // Down to storage size before it touches state: what is previewed,
+        // held and shown in the summary is then the size it will be saved
+        // at, not a full-resolution frame waiting to be resized later.
+        const small = await shrinkCapture(photo.uri);
+        setPending({ ...photo, ...small });
+      }
     } catch {
+      setConfirming(true);
       Alert.alert(
         "Couldn't take that photo",
         'Something interrupted the camera. Please try again.',
+        [{ text: 'OK', onPress: () => setConfirming(false) }],
+        { onDismiss: () => setConfirming(false) },
       );
     } finally {
       setIsCapturing(false);
@@ -253,13 +264,19 @@ export default function CaptureSessionScreen() {
       router.back();
       return;
     }
+
+    // The camera stops while the confirmation is up. A system alert
+    // presented over a running capture session has to wait for it, which
+    // is what made "are you sure" arrive seconds after the tap.
+    setConfirming(true);
     Alert.alert(
       'Discard this update?',
       'The photos you have taken so far will not be saved.',
       [
-        { text: 'Keep capturing', style: 'cancel' },
+        { text: 'Keep capturing', style: 'cancel', onPress: () => setConfirming(false) },
         { text: 'Discard', style: 'destructive', onPress: () => router.back() },
       ],
+      { onDismiss: () => setConfirming(false) },
     );
   }, [shots.length, pending, router]);
 
@@ -403,6 +420,7 @@ export default function CaptureSessionScreen() {
           style={{ flex: 1 }}
           facing="front"
           mode="picture"
+          active={!confirming}
           // Mirroring off so left/right temples map to the real side.
           mirror={false}
         />
