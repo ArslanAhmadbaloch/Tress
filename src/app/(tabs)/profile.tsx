@@ -7,7 +7,6 @@ import { Icon, type IconName } from '@/components/ui/icon';
 import {
   Screen,
   ScreenScroll,
-  ScreenTitle,
   SectionHeader,
   Separator,
 } from '@/components/ui/layout';
@@ -39,28 +38,32 @@ export default function ProfileScreen() {
   return (
     <Screen>
       <ScreenScroll>
-        <ScreenTitle
-          eyebrow="Profile"
-          title="Your"
-          titleMuted="journey"
-          subtitle={'Your card, your journal,\nand everything you have set.'}
-          trailing={
-            <PressableScale
-              onPress={() => router.push('/settings')}
-              accessibilityRole="button"
-              accessibilityLabel="Settings"
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 19,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.fill,
-              }}>
-              <Icon name="settings" size={18} color={colors.text} />
-            </PressableScale>
-          }
-        />
+        {/*
+          No headline. The card carries the user's own name and goal, so a
+          title above it was labelling something already labelled, and the
+          subtitle listed the page's contents to someone looking straight
+          at them. The gear stays: it is this tab's only control, and the
+          card is what the screen opens with.
+
+          The tab bar still names the screen, and the section headers below
+          are real headings, so the rotor has somewhere to land.
+        */}
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: spacing.sm }}>
+          <PressableScale
+            onPress={() => router.push('/settings')}
+            accessibilityRole="button"
+            accessibilityLabel="Settings"
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.fill,
+            }}>
+            <Icon name="settings" size={18} color={colors.text} />
+          </PressableScale>
+        </View>
 
         <PressableScale
           onPress={() => router.push('/card')}
