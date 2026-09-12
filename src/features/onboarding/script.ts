@@ -22,9 +22,11 @@
  * them.
  */
 
+import { inferRoutineIcon } from '@/features/routine/icons';
 import type {
   Approach,
   HairGoal,
+  Medication,
   Motivation,
   Onset,
   RoutineIcon,
@@ -43,6 +45,7 @@ export type StepId =
   | 'impact'
   | 'factFeelings'
   | 'approach'
+  | 'medication'
   | 'system'
   | 'cadence'
   | 'factCause'
@@ -63,6 +66,7 @@ export const STEPS: StepId[] = [
   'impact',
   'factFeelings',
   'approach',
+  'medication',
   'system',
   'cadence',
   'factCause',
@@ -163,6 +167,49 @@ export const APPROACH_CHOICES: Choice<Approach>[] = [
   { value: 'figuring', label: "I'm still figuring it out", icon: 'help' },
 ];
 
+/**
+ * The treatments people are most often already using.
+ *
+ * A checklist, not a menu. Nobody is being offered these — the question is
+ * only what is already in their bathroom cabinet, asked so their routine
+ * can say "Finasteride" instead of "Prescription medication" and remind
+ * them of the real thing. The order is roughly how commonly each comes up,
+ * because a list you scan is a list you answer honestly.
+ *
+ * `covers` is the generic approach this replaces in the stack, so someone
+ * who ticked "Topical treatments" and then named minoxidil gets one item
+ * rather than two saying the same thing.
+ */
+export const MEDICATION_CHOICES: (Choice<Medication> & { covers?: Approach })[] = [
+  { value: 'minoxidilTopical', label: 'Minoxidil (topical)', detail: 'Liquid or foam', icon: 'bottle', covers: 'topical' },
+  { value: 'finasterideOral', label: 'Finasteride (oral)', icon: 'pill', covers: 'prescription' },
+  { value: 'minoxidilOral', label: 'Minoxidil (oral)', icon: 'pill', covers: 'prescription' },
+  { value: 'finasterideTopical', label: 'Finasteride (topical)', icon: 'bottle', covers: 'topical' },
+  { value: 'dutasteride', label: 'Dutasteride', icon: 'pill', covers: 'prescription' },
+  { value: 'spironolactone', label: 'Spironolactone', icon: 'pill', covers: 'prescription' },
+  { value: 'ketoconazole', label: 'Ketoconazole shampoo', icon: 'drop', covers: 'haircare' },
+  { value: 'other', label: 'Something else', detail: 'Type it in', icon: 'help' },
+  { value: 'none', label: 'Nothing right now', icon: 'circle' },
+];
+
+/** Ticking this clears the rest, and the rest clear it. */
+export const MEDICATION_EXCLUSIVE: Medication = 'none';
+
+/**
+ * Approaches that make the medication question worth asking.
+ *
+ * Somebody who has just said they are doing nothing yet has answered it
+ * already, and putting a list of drugs in front of them reads as a
+ * suggestion that they should be on one.
+ */
+export const ASKS_MEDICATION: Approach[] = [
+  'topical',
+  'prescription',
+  'supplements',
+  'haircare',
+  'clinic',
+];
+
 export const CONSISTENCY_CHOICES: Choice<SelfConsistency>[] = [
   { value: 'very', label: 'Very consistent' },
   { value: 'mostly', label: 'Mostly consistent' },
@@ -220,6 +267,16 @@ export const COPY = {
     title: 'What are you doing for your hair right now?',
     subtitle: 'Whatever it is, it’s a starting point. Nothing here is graded.',
     second: 'How consistent do you feel you’ve been?',
+    cta: 'Continue',
+  },
+  medication: {
+    title: 'Are you using anything for your hair?',
+    subtitle:
+      'Tick whatever you already use and it goes straight into your routine. Nothing here is a suggestion — Hair Journey doesn’t advise on treatments or doses.',
+    otherLabel: 'What are you using?',
+    otherPlaceholder: 'e.g. Rosemary oil',
+    footnote: 'Stays on this device. You can change it any time.',
+    skip: 'Prefer not to say',
     cta: 'Continue',
   },
   system: {
@@ -303,3 +360,72 @@ export const ROUTINE_SEEDS: Partial<
   supplements: { label: 'Supplements', icon: 'capsule', timeOfDay: 'morning' },
   haircare: { label: 'Hair-care routine', icon: 'drop', timeOfDay: 'evening' },
 };
+
+/**
+ * The stack entry each named treatment becomes.
+ *
+ * Every one is 'anytime', and that is the whole point: the generic seeds
+ * above can guess at a morning or an evening because "supplements" carries
+ * no schedule of its own, but putting a named drug in the morning slot is
+ * this app telling somebody when to take their medicine. It has no business
+ * doing that. Whoever prescribed it said when; the user moves the item to
+ * match, and the app records what they tell it.
+ */
+export const MEDICATION_SEEDS: Record<
+  Exclude<Medication, 'other' | 'none'>,
+  { label: string; icon: RoutineIcon; timeOfDay: RoutineTimeOfDay }
+> = {
+  minoxidilTopical: { label: 'Minoxidil (topical)', icon: 'dropper', timeOfDay: 'anytime' },
+  finasterideOral: { label: 'Finasteride (oral)', icon: 'pill', timeOfDay: 'anytime' },
+  minoxidilOral: { label: 'Minoxidil (oral)', icon: 'pill', timeOfDay: 'anytime' },
+  finasterideTopical: { label: 'Finasteride (topical)', icon: 'dropper', timeOfDay: 'anytime' },
+  dutasteride: { label: 'Dutasteride', icon: 'pill', timeOfDay: 'anytime' },
+  spironolactone: { label: 'Spironolactone', icon: 'pill', timeOfDay: 'anytime' },
+  ketoconazole: { label: 'Ketoconazole shampoo', icon: 'drop', timeOfDay: 'anytime' },
+};
+
+export type RoutineSeed = { label: string; icon: RoutineIcon; timeOfDay: RoutineTimeOfDay };
+
+/**
+ * Everything the funnel's answers put in the stack, in the order it appears.
+ *
+ * Named treatments lead, because they are the specific things and the
+ * generic ones are a fallback for what we could not name. Where a named
+ * treatment covers an approach, the approach's generic seed is dropped:
+ * "Topical treatment" and "Minoxidil (topical)" are one bottle, and two
+ * rows for it would be two rows to tick every day.
+ */
+export function routineSeedsFor({
+  approaches,
+  medications = [],
+  medicationNote = '',
+}: {
+  approaches: Approach[];
+  medications?: Medication[];
+  medicationNote?: string;
+}): RoutineSeed[] {
+  const named = medications.filter(
+    (m): m is keyof typeof MEDICATION_SEEDS => m in MEDICATION_SEEDS,
+  );
+
+  const seeds: RoutineSeed[] = named.map((m) => MEDICATION_SEEDS[m]);
+
+  const note = medicationNote.trim();
+  if (medications.includes('other') && note) {
+    seeds.push({ label: note, icon: inferRoutineIcon(note), timeOfDay: 'anytime' });
+  }
+
+  const covered = new Set(
+    MEDICATION_CHOICES.filter((c) => named.includes(c.value as never))
+      .map((c) => c.covers)
+      .filter((a) => a !== undefined),
+  );
+
+  for (const approach of approaches) {
+    if (covered.has(approach)) continue;
+    const seed = ROUTINE_SEEDS[approach];
+    if (seed) seeds.push(seed);
+  }
+
+  return seeds;
+}

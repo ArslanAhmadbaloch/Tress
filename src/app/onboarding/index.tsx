@@ -39,14 +39,17 @@ import { FACTS, type Fact } from '@/features/onboarding/facts';
 import {
   AREA_CHOICES,
   APPROACH_CHOICES,
+  ASKS_MEDICATION,
   CADENCE_CHOICES,
   CONSISTENCY_CHOICES,
   COPY,
   GOAL_CHOICES,
   MEANING_CHOICES,
+  MEDICATION_CHOICES,
+  MEDICATION_EXCLUSIVE,
   NEEDS_SYSTEM,
   ONSET_CHOICES,
-  ROUTINE_SEEDS,
+  routineSeedsFor,
   STEPS,
   TRIGGER_CHOICES,
   UNCOUNTED,
@@ -61,6 +64,7 @@ import {
   TRACKING_AREA_LABELS,
   type Approach,
   type HairGoal,
+  type Medication,
   type Motivation,
   type Onset,
   type SelfConsistency,
@@ -76,6 +80,8 @@ type Answers = {
   preoccupation: number | null;
   triggers: Trigger[];
   approaches: Approach[];
+  medications: Medication[];
+  medicationNote: string;
   consistency: SelfConsistency | null;
   intervalDays: number;
   avatarUri?: string;
@@ -91,6 +97,8 @@ const EMPTY: Answers = {
   preoccupation: null,
   triggers: [],
   approaches: [],
+  medications: [],
+  medicationNote: '',
   consistency: null,
   intervalDays: 30,
   name: '',
@@ -100,6 +108,18 @@ const EMPTY: Answers = {
 /** Toggle membership of a multi-select answer. */
 function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+}
+
+/**
+ * As above, but "Nothing right now" cannot be true alongside a treatment.
+ * Letting both stand would put an item in the stack for someone who just
+ * said they take nothing.
+ */
+function toggleMedication(list: Medication[], value: Medication): Medication[] {
+  if (value === MEDICATION_EXCLUSIVE) {
+    return list.includes(value) ? [] : [value];
+  }
+  return toggle(list.filter((m) => m !== MEDICATION_EXCLUSIVE), value);
 }
 
 export default function OnboardingFunnel() {
@@ -121,8 +141,14 @@ export default function OnboardingFunnel() {
   const steps = useMemo(() => {
     const needsSystem =
       answers.consistency !== null && NEEDS_SYSTEM.includes(answers.consistency);
-    return STEPS.filter((s) => s !== 'system' || needsSystem);
-  }, [answers.consistency]);
+    const asksMedication = answers.approaches.some((a) => ASKS_MEDICATION.includes(a));
+
+    return STEPS.filter((s) => {
+      if (s === 'system') return needsSystem;
+      if (s === 'medication') return asksMedication;
+      return true;
+    });
+  }, [answers.consistency, answers.approaches]);
 
   const step = steps[Math.min(cursor, steps.length - 1)];
 
@@ -140,6 +166,8 @@ export default function OnboardingFunnel() {
   const commit = () => {
     const age = Number.parseInt(answers.age, 10);
 
+    const note = answers.medicationNote.trim();
+
     createJourney({
       displayName: answers.name,
       age: Number.isFinite(age) && age > 0 && age < 120 ? age : undefined,
@@ -154,12 +182,16 @@ export default function OnboardingFunnel() {
         preoccupation: answers.preoccupation ?? undefined,
         triggers: answers.triggers,
         approaches: answers.approaches,
+        medications: answers.medications.length > 0 ? answers.medications : undefined,
+        medicationNote: note || undefined,
         selfConsistency: answers.consistency ?? undefined,
         updateIntervalDays: answers.intervalDays,
       },
-      routineSeeds: answers.approaches
-        .map((approach) => ROUTINE_SEEDS[approach])
-        .filter((seed) => seed !== undefined),
+      routineSeeds: routineSeedsFor({
+        approaches: answers.approaches,
+        medications: answers.medications,
+        medicationNote: note,
+      }),
     });
   };
 
@@ -385,6 +417,48 @@ export default function OnboardingFunnel() {
                   onToggle={(v) => set({ consistency: v })}
                 />
               </>
+            ) : null}
+          </>
+        ),
+      });
+
+    /* ----------------------------- medication ------------------------- */
+    case 'medication':
+      return shell({
+        cta: COPY.medication.cta,
+        onCta: next,
+        // Never disabled, and there is a way past without answering. This
+        // is the one question in the funnel that asks for medical
+        // information about a person, and it is theirs to withhold.
+        secondary: answers.medications.length === 0 ? COPY.medication.skip : undefined,
+        onSecondary: answers.medications.length === 0 ? next : undefined,
+        footnote: COPY.medication.footnote,
+        children: (
+          <>
+            <StepTitle
+              title={COPY.medication.title}
+              subtitle={COPY.medication.subtitle}
+            />
+            <Choices
+              choices={MEDICATION_CHOICES}
+              multi
+              selected={answers.medications}
+              onToggle={(v) => set({ medications: toggleMedication(answers.medications, v) })}
+              from={2}
+            />
+
+            {answers.medications.includes('other') ? (
+              <Rise index={2 + MEDICATION_CHOICES.length}>
+                <View style={{ marginTop: spacing.lg }}>
+                  <Field
+                    value={answers.medicationNote}
+                    onChange={(medicationNote) => set({ medicationNote })}
+                    placeholder={COPY.medication.otherPlaceholder}
+                    label={COPY.medication.otherLabel}
+                    autoFocus
+                  />
+                </View>
+              </Rise>
             ) : null}
           </>
         ),
@@ -633,10 +707,15 @@ export default function OnboardingFunnel() {
               />
               <PlanFact
                 label="Your routine"
+                // The real stack, not a paraphrase of it: this line is the
+                // last thing they see before the app builds it.
                 value={
-                  answers.approaches
-                    .map((a) => ROUTINE_SEEDS[a]?.label)
-                    .filter(Boolean)
+                  routineSeedsFor({
+                    approaches: answers.approaches,
+                    medications: answers.medications,
+                    medicationNote: answers.medicationNote,
+                  })
+                    .map((seed) => seed.label)
                     .join(' · ') || 'Add one whenever you like'
                 }
                 index={5}

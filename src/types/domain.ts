@@ -139,6 +139,27 @@ export type Approach =
   | 'nothing'
   | 'figuring';
 
+/**
+ * A treatment the user tells us they are already using.
+ *
+ * This list exists so someone can tick what they take instead of typing it,
+ * and so their routine can carry the real name rather than "Prescription
+ * medication". It is a vocabulary for recording, never a menu of options:
+ * the app does not rank these, comment on them, suggest one to anybody, or
+ * hold any opinion about doses or schedules. Anything not listed goes in as
+ * free text under `other`.
+ */
+export type Medication =
+  | 'minoxidilTopical'
+  | 'finasterideOral'
+  | 'minoxidilOral'
+  | 'finasterideTopical'
+  | 'dutasteride'
+  | 'spironolactone'
+  | 'ketoconazole'
+  | 'other'
+  | 'none';
+
 /** How consistent they feel they have been. Their own estimate. */
 export type SelfConsistency = 'very' | 'mostly' | 'onOff' | 'forget' | 'notStarted';
 
@@ -210,6 +231,25 @@ export const APPROACH_LABELS: Record<Approach, string> = {
   figuring: "I'm still figuring it out",
 };
 
+/**
+ * How each treatment is named, everywhere it appears.
+ *
+ * Generic names only. A brand name would read as an endorsement of one
+ * manufacturer, and the person ticking the box may well be using a
+ * different one.
+ */
+export const MEDICATION_LABELS: Record<Medication, string> = {
+  minoxidilTopical: 'Minoxidil (topical)',
+  finasterideOral: 'Finasteride (oral)',
+  minoxidilOral: 'Minoxidil (oral)',
+  finasterideTopical: 'Finasteride (topical)',
+  dutasteride: 'Dutasteride',
+  spironolactone: 'Spironolactone',
+  ketoconazole: 'Ketoconazole shampoo',
+  other: 'Something else',
+  none: 'Nothing right now',
+};
+
 export const SELF_CONSISTENCY_LABELS: Record<SelfConsistency, string> = {
   very: 'Very consistent',
   mostly: 'Mostly consistent',
@@ -248,6 +288,14 @@ export type Journey = {
   preoccupation?: number;
   triggers: Trigger[];
   approaches: Approach[];
+  /**
+   * What they told us they are using, if they answered. Optional because
+   * the question can be passed over and because journeys created before it
+   * existed have no answer to give — absent means unanswered, not "none".
+   */
+  medications?: Medication[];
+  /** Whatever they typed after ticking "Something else". */
+  medicationNote?: string;
   selfConsistency?: SelfConsistency;
   /** Days between photo-session reminders. */
   updateIntervalDays: number;

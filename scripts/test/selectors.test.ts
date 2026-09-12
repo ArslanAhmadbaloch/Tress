@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { routineSeedsFor } from '@/features/onboarding/script';
 import { formatMilestone, toDateKey } from '@/lib/date';
 import {
   adherencePercent,
@@ -233,6 +234,93 @@ test('milestone: later sessions read in weeks, months and years', () => {
   assert.equal(formatMilestone(start, daysAgo(390).toISOString(), false), 'Week 1');
   assert.equal(formatMilestone(start, daysAgo(280).toISOString(), false), 'Month 3');
   assert.equal(formatMilestone(start, daysAgo(35).toISOString(), false), 'Year 1');
+});
+
+/* ---------------------------- routine seeding -------------------------- */
+
+test('seeds: approaches alone still build the stack they always did', () => {
+  const seeds = routineSeedsFor({ approaches: ['topical', 'supplements'] });
+  assert.deepEqual(
+    seeds.map((s) => s.label),
+    ['Topical treatment', 'Supplements'],
+  );
+});
+
+test('seeds: a named treatment replaces the generic row for its category', () => {
+  const seeds = routineSeedsFor({
+    approaches: ['topical', 'haircare'],
+    medications: ['minoxidilTopical'],
+  });
+  assert.deepEqual(
+    seeds.map((s) => s.label),
+    ['Minoxidil (topical)', 'Hair-care routine'],
+    'the topical seed steps aside; hair-care is untouched',
+  );
+});
+
+test('seeds: an uncovered approach keeps its generic row', () => {
+  const seeds = routineSeedsFor({
+    approaches: ['topical', 'supplements'],
+    medications: ['finasterideOral'],
+  });
+  assert.deepEqual(
+    seeds.map((s) => s.label),
+    ['Finasteride (oral)', 'Topical treatment', 'Supplements'],
+    'finasteride covers prescription, which was never selected',
+  );
+});
+
+test('seeds: no named treatment is ever given a time of day', () => {
+  const seeds = routineSeedsFor({
+    approaches: [],
+    medications: ['minoxidilTopical', 'finasterideOral', 'dutasteride', 'ketoconazole'],
+  });
+  assert.equal(seeds.length, 4);
+  for (const seed of seeds) {
+    assert.equal(
+      seed.timeOfDay,
+      'anytime',
+      `${seed.label} must not carry a schedule the app invented`,
+    );
+  }
+});
+
+test('seeds: "nothing right now" puts nothing in the stack', () => {
+  const seeds = routineSeedsFor({ approaches: [], medications: ['none'] });
+  assert.deepEqual(seeds, []);
+});
+
+test('seeds: a typed treatment goes in under its own name', () => {
+  const seeds = routineSeedsFor({
+    approaches: [],
+    medications: ['other'],
+    medicationNote: '  Rosemary oil  ',
+  });
+  assert.deepEqual(
+    seeds.map((s) => s.label),
+    ['Rosemary oil'],
+  );
+  assert.equal(seeds[0].timeOfDay, 'anytime');
+});
+
+test('seeds: "something else" with nothing typed adds no empty row', () => {
+  const seeds = routineSeedsFor({
+    approaches: [],
+    medications: ['other'],
+    medicationNote: '   ',
+  });
+  assert.deepEqual(seeds, []);
+});
+
+test('seeds: an unanswered medication question changes nothing', () => {
+  // Journeys created before the question existed, and anyone who skipped it.
+  const before = routineSeedsFor({ approaches: ['prescription'] });
+  const after = routineSeedsFor({ approaches: ['prescription'], medications: [] });
+  assert.deepEqual(before, after);
+  assert.deepEqual(
+    before.map((s) => s.label),
+    ['Prescription medication'],
+  );
 });
 
 /* --------------------------- consistency delta ------------------------- */
