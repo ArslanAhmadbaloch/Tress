@@ -140,6 +140,7 @@ export default function HomeScreen() {
             afterLabel={formatMilestone(journey.startedAt, latest.capturedAt)}
             beforeDate={baseline ? formatDate(baseline.capturedAt) : ''}
             afterDate={formatDate(latest.capturedAt)}
+            single={!hasComparison}
             onPress={() =>
               hasComparison
                 ? router.push('/compare')

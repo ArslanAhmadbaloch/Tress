@@ -37,18 +37,30 @@ export function todayProgress(data: AppData): { done: number; total: number } {
  * extends past today — otherwise a brand-new journey would show a
  * misleadingly low number against days that never existed.
  */
-export function adherencePercent(data: AppData, windowDays = 30): number | null {
+export function adherencePercent(
+  data: AppData,
+  windowDays = 30,
+  /**
+   * How many days back the window ends. Zero is the window ending today;
+   * 30 is the month before that. Without this the only way to ask about a
+   * previous period was to widen the window, which returns a figure that
+   * still contains the current one.
+   */
+  endingDaysAgo = 0,
+): number | null {
   const items = activeRoutineItems(data);
   if (!data.journey || items.length === 0) return null;
 
-  const elapsed = daysBetween(data.journey.startedAt) + 1;
+  const elapsed = daysBetween(data.journey.startedAt) + 1 - endingDaysAgo;
+  if (elapsed <= 0) return null;
   const days = Math.max(1, Math.min(windowDays, elapsed));
 
   let expected = 0;
   let completed = 0;
   const today = new Date();
 
-  for (let offset = 0; offset < days; offset += 1) {
+  for (let i = 0; i < days; i += 1) {
+    const offset = i + endingDaysAgo;
     const day = new Date(today);
     day.setDate(day.getDate() - offset);
     const key = toDateKey(day);
@@ -190,7 +202,10 @@ export function consistencyScore(data: AppData): ConsistencyScore {
       ? capture
       : Math.round(routine * 0.6 + capture * 0.4);
 
-  const previousRoutine = adherencePercent(data, 60);
+  // The month before this one, not the two months containing it: a
+  // sixty-day window still holds the thirty days being compared against,
+  // so it can only ever report half the movement that actually happened.
+  const previousRoutine = adherencePercent(data, 30, 30);
   const delta =
     routine === null || previousRoutine === null
       ? null

@@ -45,6 +45,7 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
@@ -59,7 +60,8 @@
     "lint": "expo lint",
     "gate": "node scripts/quality-gate.mjs",
     "icons": "node scripts/generate-icons.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./scripts/test/register.mjs --test \"scripts/test/**/*.test.ts\""
   },
   "private": true
 }

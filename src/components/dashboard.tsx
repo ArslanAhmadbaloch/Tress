@@ -131,6 +131,7 @@ export function HairProgressCard({
   beforeDate,
   afterDate,
   example = false,
+  single = false,
   onPress,
 }: {
   beforeUri?: string;
@@ -140,6 +141,13 @@ export function HairProgressCard({
   beforeDate: string;
   afterDate: string;
   example?: boolean;
+  /**
+   * One session exists, so there is nothing to compare it against. The card
+   * shows that one photograph rather than the same frame twice: two
+   * identical images under a split handle read as a before-and-after that
+   * found no change, which is a claim the app has no business making.
+   */
+  single?: boolean;
   onPress: () => void;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
@@ -163,7 +171,9 @@ export function HairProgressCard({
       accessibilityLabel={
         example
           ? 'Hair progress, example photos only. Opens capture so you can start your own.'
-          : `Hair progress, ${beforeLabel} to ${afterLabel}. Opens comparison.`
+          : single
+            ? `Hair progress, ${afterLabel}. Opens this update.`
+            : `Hair progress, ${beforeLabel} to ${afterLabel}. Opens comparison.`
       }
       style={[
         {
@@ -194,7 +204,7 @@ export function HairProgressCard({
               backgroundColor: colors.backgroundSubtle,
             }}>
             <Text variant="caption" color="textSecondary">
-              {beforeLabel} → {afterLabel}
+              {single ? afterLabel : `${beforeLabel} → ${afterLabel}`}
             </Text>
           </View>
           <View
@@ -217,13 +227,19 @@ export function HairProgressCard({
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
         {/* Example photos carry no date plate: they have no real date, and
             the line beneath the frames is what labels them. */}
-        <Frame source={before} date={beforeDate} label={beforeLabel} align="left" plate={!example} />
+        {single ? null : (
+          <Frame source={before} date={beforeDate} label={beforeLabel} align="left" plate={!example} />
+        )}
         <Frame source={after} date={afterDate} label={afterLabel} align="right" plate={!example} />
 
         {/* The split handle, centred on the seam between the photographs. */}
         <View
           pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+          style={[
+            StyleSheet.absoluteFill,
+            { alignItems: 'center', justifyContent: 'center' },
+            single && { display: 'none' },
+          ]}>
           <View
             style={[
               {
@@ -244,13 +260,15 @@ export function HairProgressCard({
         </View>
       </View>
 
-      {example ? (
+      {example || single ? (
         <Text
           variant="caption"
           color="textTertiary"
           center
           style={{ marginTop: spacing.sm, marginBottom: spacing.xxs }}>
-          Example photos. Yours will appear here.
+          {example
+            ? 'Example photos. Yours will appear here.'
+            : 'Your next update will sit beside this one.'}
         </Text>
       ) : null}
     </PressableScale>
