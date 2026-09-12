@@ -57,7 +57,9 @@ function consistencyStage(value: number): string {
 
 export type MemberCardProps = {
   name: string;
-  /** The goal they chose at onboarding, shown under the name. */
+  /** Optional, asked at the end of the funnel. Takes the line under the name. */
+  age?: number;
+  /** The goal they chose at onboarding. Stands in when there is no age. */
   goalLabel?: string;
   /** Their chosen picture, from photos they captured here. */
   portraitUri?: string;
@@ -70,6 +72,7 @@ export type MemberCardProps = {
 
 export function MemberCard({
   name,
+  age,
   goalLabel,
   portraitUri,
   startedAt,
@@ -180,7 +183,7 @@ export function MemberCard({
               {name}
             </Text>
 
-            {goalLabel ? (
+            {age || goalLabel ? (
               <Text
                 numberOfLines={2}
                 style={{
@@ -189,7 +192,7 @@ export function MemberCard({
                   color: colors.textSecondary,
                   marginTop: u(3),
                 }}>
-                {goalLabel}
+                {age ? `${age} years old` : goalLabel}
               </Text>
             ) : null}
 

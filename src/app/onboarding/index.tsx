@@ -1,100 +1,1002 @@
+/**
+ * The onboarding funnel.
+ *
+ * One screen holding a step machine, rather than seventeen routes. Every
+ * answer lives here until the card is revealed, which is the moment the
+ * journey is actually created — so someone can go back and change anything
+ * they said, and nothing is written until they have seen what it makes.
+ *
+ * The order is the argument. Three questions about what this means to them
+ * before anything about hair; a fact card in return before a fourth
+ * question; their name asked last, once the journey is already theirs.
+ */
+
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Alert, TextInput, View, useWindowDimensions } from 'react-native';
 
-import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
+import {
+  Breathe,
+  ChoiceRow,
+  FactBody,
+  FunnelShell,
+  PlanFact,
+  PlanLine,
+  Rise,
+  Scale,
+  StepTitle,
+  SubHeading,
+  Wash,
+} from '@/components/funnel';
+import { MemberCard } from '@/components/member-card';
+import { GlassOrb } from '@/components/ui/glass-orb';
+import { Icon, type IconName } from '@/components/ui/icon';
+import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
-import { useTheme } from '@/theme';
+import { FACTS, type Fact } from '@/features/onboarding/facts';
+import {
+  AREA_CHOICES,
+  APPROACH_CHOICES,
+  CADENCE_CHOICES,
+  CONSISTENCY_CHOICES,
+  COPY,
+  GOAL_CHOICES,
+  MEANING_CHOICES,
+  NEEDS_SYSTEM,
+  ONSET_CHOICES,
+  ROUTINE_SEEDS,
+  STEPS,
+  TRIGGER_CHOICES,
+  UNCOUNTED,
+  type Choice,
+} from '@/features/onboarding/script';
+import { persistProfilePhoto } from '@/lib/photo-storage';
+import { useAppStore } from '@/store/app-store';
+import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
+import {
+  HAIR_GOAL_LABELS,
+  PREOCCUPATION_STEPS,
+  TRACKING_AREA_LABELS,
+  type Approach,
+  type HairGoal,
+  type Motivation,
+  type Onset,
+  type SelfConsistency,
+  type TrackingArea,
+  type Trigger,
+} from '@/types/domain';
 
-const PILLARS = [
-  { icon: 'camera' as const, text: 'Standardised photos, the same five angles every time' },
-  { icon: 'chart' as const, text: 'A timeline that shows what actually changed' },
-  { icon: 'lock' as const, text: 'Private by default — you choose what to share' },
-];
+type Answers = {
+  motivations: Motivation[];
+  goal: HairGoal | null;
+  noticed: Onset | null;
+  areas: TrackingArea[];
+  preoccupation: number | null;
+  triggers: Trigger[];
+  approaches: Approach[];
+  consistency: SelfConsistency | null;
+  intervalDays: number;
+  avatarUri?: string;
+  name: string;
+  age: string;
+};
 
-export default function Welcome() {
+const EMPTY: Answers = {
+  motivations: [],
+  goal: null,
+  noticed: null,
+  areas: [],
+  preoccupation: null,
+  triggers: [],
+  approaches: [],
+  consistency: null,
+  intervalDays: 30,
+  name: '',
+  age: '',
+};
+
+/** Toggle membership of a multi-select answer. */
+function toggle<T>(list: T[], value: T): T[] {
+  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+}
+
+export default function OnboardingFunnel() {
   const { colors, spacing, radius } = useTheme();
-  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const router = useRouter();
+  const { createJourney } = useAppStore();
+
+  const [answers, setAnswers] = useState<Answers>(EMPTY);
+  const [cursor, setCursor] = useState(0);
+
+  const set = (patch: Partial<Answers>) => setAnswers((prev) => ({ ...prev, ...patch }));
+
+  /**
+   * The willpower screen only appears for the people it is about. Telling
+   * someone who is already consistent that they need a system is a small
+   * insult, and it costs a screen.
+   */
+  const steps = useMemo(() => {
+    const needsSystem =
+      answers.consistency !== null && NEEDS_SYSTEM.includes(answers.consistency);
+    return STEPS.filter((s) => s !== 'system' || needsSystem);
+  }, [answers.consistency]);
+
+  const step = steps[Math.min(cursor, steps.length - 1)];
+
+  const progress = useMemo(() => {
+    const counted = steps.filter((s) => !UNCOUNTED.includes(s));
+    const done = steps.slice(0, cursor).filter((s) => !UNCOUNTED.includes(s)).length;
+    return counted.length === 0 ? null : done / counted.length;
+  }, [steps, cursor]);
+
+  const next = () => setCursor((c) => Math.min(c + 1, steps.length - 1));
+  const back = () => setCursor((c) => Math.max(0, c - 1));
+
+  /* ------------------------ committing the journey ---------------------- */
+
+  const commit = () => {
+    const age = Number.parseInt(answers.age, 10);
+
+    createJourney({
+      displayName: answers.name,
+      age: Number.isFinite(age) && age > 0 && age < 120 ? age : undefined,
+      avatarUri: answers.avatarUri,
+      journey: {
+        // Today is the baseline, whatever they have been doing until now.
+        startedAt: new Date().toISOString(),
+        trackingAreas: answers.areas,
+        motivations: answers.motivations,
+        goal: answers.goal ?? 'unsure',
+        noticed: answers.noticed ?? undefined,
+        preoccupation: answers.preoccupation ?? undefined,
+        triggers: answers.triggers,
+        approaches: answers.approaches,
+        selfConsistency: answers.consistency ?? undefined,
+        updateIntervalDays: answers.intervalDays,
+      },
+      routineSeeds: answers.approaches
+        .map((approach) => ROUTINE_SEEDS[approach])
+        .filter((seed) => seed !== undefined),
+    });
+  };
+
+  // Created on arrival at the card, not on the last tap: the card is the
+  // first thing that reads from the store, and it should read the truth.
+  useEffect(() => {
+    if (step === 'card') commit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  /* ------------------------------ the photo ----------------------------- */
+
+  const addPhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        'Photos are not available',
+        'Hair Journey needs permission to open your photo library. You can turn it on in your device Settings, or skip this for now.',
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (result.canceled) return;
+
+    try {
+      // The picker hands back a cache file the OS may clear; keep our own.
+      set({ avatarUri: await persistProfilePhoto(result.assets[0].uri) });
+      next();
+    } catch {
+      Alert.alert('That photo could not be saved', 'Try another, or skip for now.');
+    }
+  };
+
+  /* -------------------------------- render ------------------------------ */
+
+  const shell = (props: Omit<Parameters<typeof FunnelShell>[0], 'stepKey' | 'progress'>) => (
+    <FunnelShell
+      {...props}
+      stepKey={step}
+      progress={progress}
+      onBack={cursor > 0 ? back : undefined}
+    />
+  );
+
+  const goalLabel = answers.goal ? HAIR_GOAL_LABELS[answers.goal] : undefined;
+  const cardWidth = Math.min(320, width - spacing.lg * 2 - spacing.xl);
+
+  switch (step) {
+    /* ----------------------------- welcome ---------------------------- */
+    case 'welcome':
+      return shell({
+        centred: true,
+        cta: COPY.welcome.cta,
+        onCta: next,
+        footnote: COPY.welcome.footnote,
+        children: (
+          <>
+            <Wash />
+            <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxxl }}>
+              <Breathe>
+                <GlassOrb size={96} ring={false} emphasis="strong">
+                  <Icon name="leaf" size={40} color={colors.accent} />
+                </GlassOrb>
+              </Breathe>
+            </Rise>
+
+            <Rise index={1}>
+              <Text variant="display" center>
+                {COPY.welcome.title}
+              </Text>
+              <Text variant="display" color="textTertiary" center>
+                {COPY.welcome.titleMuted}
+              </Text>
+            </Rise>
+
+            <Rise index={2}>
+              <Text
+                variant="callout"
+                color="textSecondary"
+                center
+                style={{ marginTop: spacing.xl, paddingHorizontal: spacing.lg }}>
+                {COPY.welcome.body}
+              </Text>
+            </Rise>
+          </>
+        ),
+      });
+
+    /* ---------------------------- what it means ----------------------- */
+    case 'meaning':
+      return shell({
+        cta: COPY.meaning.cta,
+        onCta: next,
+        ctaDisabled: answers.motivations.length === 0,
+        children: (
+          <>
+            <StepTitle title={COPY.meaning.title} subtitle={COPY.meaning.subtitle} />
+            <Choices
+              choices={MEANING_CHOICES}
+              multi
+              selected={answers.motivations}
+              onToggle={(v) => set({ motivations: toggle(answers.motivations, v) })}
+              from={2}
+            />
+          </>
+        ),
+      });
+
+    /* -------------------------------- goal ---------------------------- */
+    case 'goal':
+      return shell({
+        cta: COPY.goal.cta,
+        onCta: next,
+        ctaDisabled: answers.goal === null,
+        footnote: answers.goal ? COPY.goal.settle : undefined,
+        children: (
+          <>
+            <StepTitle title={COPY.goal.title} subtitle={COPY.goal.subtitle} />
+            <Choices
+              choices={GOAL_CHOICES}
+              multi={false}
+              selected={answers.goal ? [answers.goal] : []}
+              onToggle={(v) => set({ goal: v })}
+              from={2}
+            />
+          </>
+        ),
+      });
+
+    /* ------------------------------- facts ---------------------------- */
+    case 'factGradual':
+      return shell({
+        cta: FACTS.gradual.cta,
+        onCta: next,
+        children: <FactScreen fact={FACTS.gradual} illustration={<Timeline />} />,
+      });
+
+    case 'factFeelings':
+      return shell({
+        cta: FACTS.feelings.cta,
+        onCta: next,
+        children: <FactScreen fact={FACTS.feelings} illustration={<Arc />} />,
+      });
+
+    case 'factCause':
+      return shell({
+        cta: FACTS.cause.cta,
+        onCta: next,
+        children: <FactScreen fact={FACTS.cause} illustration={<Strands />} />,
+      });
+
+    /* ------------------------------- story ---------------------------- */
+    case 'story':
+      return shell({
+        cta: COPY.story.cta,
+        onCta: next,
+        ctaDisabled: answers.noticed === null || answers.areas.length === 0,
+        children: (
+          <>
+            <StepTitle title={COPY.story.title} />
+            <Choices
+              choices={ONSET_CHOICES}
+              multi={false}
+              selected={answers.noticed ? [answers.noticed] : []}
+              onToggle={(v) => set({ noticed: v })}
+              from={1}
+            />
+
+            {answers.noticed ? (
+              <>
+                <SubHeading text={COPY.story.second} />
+                <Choices
+                  choices={AREA_CHOICES}
+                  multi
+                  selected={answers.areas}
+                  onToggle={(v) => set({ areas: toggle(answers.areas, v) })}
+                />
+              </>
+            ) : null}
+          </>
+        ),
+      });
+
+    /* ------------------------------- impact --------------------------- */
+    case 'impact':
+      return shell({
+        cta: COPY.impact.cta,
+        onCta: next,
+        ctaDisabled: answers.preoccupation === null,
+        children: (
+          <>
+            <StepTitle title={COPY.impact.title} />
+            <Scale
+              steps={PREOCCUPATION_STEPS}
+              value={answers.preoccupation}
+              low={COPY.impact.scaleLow}
+              high={COPY.impact.scaleHigh}
+              onChange={(v) => set({ preoccupation: v })}
+              index={1}
+            />
+
+            {answers.preoccupation !== null ? (
+              <>
+                <SubHeading text={COPY.impact.second} />
+                <Choices
+                  choices={TRIGGER_CHOICES}
+                  multi
+                  selected={answers.triggers}
+                  onToggle={(v) => set({ triggers: toggle(answers.triggers, v) })}
+                />
+              </>
+            ) : null}
+          </>
+        ),
+      });
+
+    /* ------------------------------ approach -------------------------- */
+    case 'approach':
+      return shell({
+        cta: COPY.approach.cta,
+        onCta: next,
+        ctaDisabled: answers.approaches.length === 0 || answers.consistency === null,
+        children: (
+          <>
+            <StepTitle title={COPY.approach.title} subtitle={COPY.approach.subtitle} />
+            <Choices
+              choices={APPROACH_CHOICES}
+              multi
+              selected={answers.approaches}
+              onToggle={(v) => set({ approaches: toggle(answers.approaches, v) })}
+              from={2}
+            />
+
+            {answers.approaches.length > 0 ? (
+              <>
+                <SubHeading text={COPY.approach.second} />
+                <Choices
+                  choices={CONSISTENCY_CHOICES}
+                  multi={false}
+                  selected={answers.consistency ? [answers.consistency] : []}
+                  onToggle={(v) => set({ consistency: v })}
+                />
+              </>
+            ) : null}
+          </>
+        ),
+      });
+
+    /* ------------------------------- system --------------------------- */
+    case 'system':
+      return shell({
+        centred: true,
+        cta: COPY.system.cta,
+        onCta: next,
+        children: (
+          <>
+            <Wash />
+            <Rise index={0}>
+              <Text variant="title1" center>
+                {COPY.system.title}
+              </Text>
+              <Text variant="title1" color="textTertiary" center>
+                {COPY.system.titleMuted}
+              </Text>
+            </Rise>
+
+            <Rise index={1}>
+              <Text
+                variant="callout"
+                color="textSecondary"
+                center
+                style={{ marginTop: spacing.lg, marginBottom: spacing.xxxl }}>
+                {COPY.system.body}
+              </Text>
+            </Rise>
+
+            {['Morning', 'Evening', 'Photo day'].map((label, i) => (
+              <Rise key={label} index={2 + i}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: spacing.md,
+                    padding: spacing.lg,
+                    marginBottom: spacing.sm,
+                    borderRadius: radius.md,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}>
+                  <Text variant="headline" style={{ flex: 1 }}>
+                    {label}
+                  </Text>
+                  <View
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: colors.accent,
+                    }}>
+                    <Icon name="check" size={13} color={colors.textOnAccent} />
+                  </View>
+                </View>
+              </Rise>
+            ))}
+          </>
+        ),
+      });
+
+    /* ------------------------------ cadence --------------------------- */
+    case 'cadence':
+      return shell({
+        cta: COPY.cadence.cta,
+        onCta: next,
+        children: (
+          <>
+            <StepTitle title={COPY.cadence.title} subtitle={COPY.cadence.subtitle} />
+            <Choices
+              choices={CADENCE_CHOICES}
+              multi={false}
+              selected={[String(answers.intervalDays)]}
+              onToggle={(v) => set({ intervalDays: Number(v) })}
+              from={2}
+            />
+          </>
+        ),
+      });
+
+    /* ------------------------------- photo ---------------------------- */
+    case 'photo':
+      return shell({
+        centred: true,
+        cta: answers.avatarUri ? 'Continue' : COPY.photo.cta,
+        onCta: answers.avatarUri ? next : addPhoto,
+        secondary: answers.avatarUri ? 'Choose a different photo' : COPY.photo.skip,
+        onSecondary: answers.avatarUri ? addPhoto : next,
+        children: (
+          <>
+            <Wash />
+            <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxl }}>
+              <View
+                style={{
+                  width: 148,
+                  height: 148,
+                  borderRadius: 74,
+                  overflow: 'hidden',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.accentSoft,
+                  borderWidth: 1,
+                  borderColor: colors.accentBorder,
+                }}>
+                {answers.avatarUri ? (
+                  <Image
+                    source={{ uri: answers.avatarUri }}
+                    style={{ width: '100%', height: '100%' }}
+                    contentFit="cover"
+                    accessibilityLabel="Your photo"
+                  />
+                ) : (
+                  <Icon name="profile" size={54} color={colors.accent} />
+                )}
+              </View>
+            </Rise>
+
+            <Rise index={1}>
+              <Text variant="title1" center>
+                {COPY.photo.title}
+              </Text>
+              <Text
+                variant="callout"
+                color="textSecondary"
+                center
+                style={{ marginTop: spacing.md }}>
+                {COPY.photo.subtitle}
+              </Text>
+            </Rise>
+          </>
+        ),
+      });
+
+    /* -------------------------------- name ---------------------------- */
+    case 'name':
+      return shell({
+        cta: COPY.name.cta,
+        onCta: next,
+        ctaDisabled: answers.name.trim().length === 0,
+        children: (
+          <>
+            <StepTitle title={COPY.name.title} />
+            <Rise index={1}>
+              <Field
+                value={answers.name}
+                onChange={(name) => set({ name })}
+                placeholder="Your name"
+                label="Your name"
+                autoFocus
+              />
+            </Rise>
+
+            <SubHeading text={COPY.name.second} index={2} />
+            <Rise index={3}>
+              <Field
+                value={answers.age}
+                onChange={(age) => set({ age: age.replace(/[^0-9]/g, '').slice(0, 3) })}
+                placeholder="Age"
+                label="Your age"
+                keyboardType="number-pad"
+              />
+              <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
+                {COPY.name.ageHint}
+              </Text>
+            </Rise>
+          </>
+        ),
+      });
+
+    /* -------------------------------- card ---------------------------- */
+    case 'card':
+      return shell({
+        centred: true,
+        cta: COPY.card.cta,
+        onCta: next,
+        children: (
+          <>
+            <Wash />
+            <Rise index={0}>
+              <Text variant="title2" center>
+                {COPY.card.title}
+              </Text>
+              <Text
+                variant="callout"
+                color="textSecondary"
+                center
+                style={{ marginTop: spacing.xs, marginBottom: spacing.xl }}>
+                {COPY.card.subtitle}
+              </Text>
+            </Rise>
+
+            <Rise index={2} style={{ alignItems: 'center' }}>
+              <MemberCard
+                name={answers.name.trim() || 'You'}
+                age={answers.age ? Number(answers.age) : undefined}
+                goalLabel={goalLabel}
+                portraitUri={answers.avatarUri}
+                startedAt={new Date().toISOString()}
+                consistency={0}
+                width={cardWidth}
+              />
+            </Rise>
+          </>
+        ),
+      });
+
+    /* -------------------------------- plan ---------------------------- */
+    case 'plan':
+      return shell({
+        cta: COPY.plan.cta,
+        onCta: next,
+        children: (
+          <>
+            <StepTitle
+              title={`Your journey is ready,`}
+              muted={`${answers.name.trim() || 'You'}.`}
+            />
+
+            <View style={{ gap: spacing.sm }}>
+              <PlanFact label="Your goal" value={goalLabel ?? 'Still deciding'} index={2} />
+              <PlanFact
+                label="What you're focusing on"
+                value={
+                  answers.areas.length
+                    ? answers.areas.map((a) => TRACKING_AREA_LABELS[a]).join(' · ')
+                    : 'Everything, for now'
+                }
+                index={3}
+              />
+              <PlanFact
+                label="Your check-in"
+                value={
+                  CADENCE_CHOICES.find((c) => c.value === String(answers.intervalDays))?.label ??
+                  'Once a month'
+                }
+                index={4}
+              />
+              <PlanFact
+                label="Your routine"
+                value={
+                  answers.approaches
+                    .map((a) => ROUTINE_SEEDS[a]?.label)
+                    .filter(Boolean)
+                    .join(' · ') || 'Add one whenever you like'
+                }
+                index={5}
+              />
+            </View>
+
+            <Rise index={6} style={{ marginTop: spacing.xxl, marginBottom: spacing.sm }}>
+              <Text variant="title3">We’ll help you</Text>
+            </Rise>
+            {COPY.plan.promises.map((promise, i) => (
+              <PlanLine key={promise} text={promise} index={7 + i} />
+            ))}
+          </>
+        ),
+      });
+
+    /* ------------------------------- future --------------------------- */
+    case 'future':
+      return shell({
+        centred: true,
+        cta: COPY.future.cta,
+        onCta: next,
+        children: (
+          <>
+            <Wash />
+            <Rise index={0}>
+              <Text variant="title1" center>
+                {COPY.future.title}
+              </Text>
+              <Text variant="title1" color="textTertiary" center>
+                {COPY.future.titleMuted}
+              </Text>
+            </Rise>
+
+            <View style={{ marginVertical: spacing.xxxl }}>
+              {['Today', 'Month 1', 'Month 3', 'Month 6'].map((label, i) => (
+                <Rise key={label} index={1 + i}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
+                    <View style={{ alignItems: 'center', width: 22 }}>
+                      <View
+                        style={{
+                          width: i === 0 ? 14 : 9,
+                          height: i === 0 ? 14 : 9,
+                          borderRadius: 7,
+                          backgroundColor: i === 0 ? colors.accent : colors.accentBorder,
+                        }}
+                      />
+                      {i < 3 ? (
+                        <View
+                          style={{
+                            width: 2,
+                            height: 34,
+                            backgroundColor: colors.accentBorder,
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                    <Text
+                      variant={i === 0 ? 'headline' : 'callout'}
+                      color={i === 0 ? 'text' : 'textSecondary'}
+                      style={{ marginBottom: i < 3 ? 34 : 0 }}>
+                      {label}
+                    </Text>
+                  </View>
+                </Rise>
+              ))}
+            </View>
+
+            <Rise index={5}>
+              <Text variant="callout" color="textSecondary" center>
+                {COPY.future.body}
+              </Text>
+            </Rise>
+          </>
+        ),
+      });
+
+    /* ------------------------------ baseline -------------------------- */
+    case 'baseline':
+    default:
+      return shell({
+        cta: COPY.baseline.cta,
+        onCta: () => router.replace('/capture-intro'),
+        secondary: COPY.baseline.skip,
+        onSecondary: () => router.replace('/'),
+        children: (
+          <>
+            <StepTitle title={COPY.baseline.title} subtitle={COPY.baseline.subtitle} />
+            {['Top', 'Left Side', 'Right Side', 'Back', 'Hairline'].map((angle, i) => (
+              <Rise key={angle} index={2 + i}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: spacing.md,
+                    padding: spacing.lg,
+                    marginBottom: spacing.sm,
+                    borderRadius: radius.md,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}>
+                  <Text variant="caption" color="textTertiary" style={{ width: 22 }}>
+                    {String(i + 1).padStart(2, '0')}
+                  </Text>
+                  <Text variant="headline" style={{ flex: 1 }}>
+                    {angle}
+                  </Text>
+                  <Icon name="camera" size={17} color={colors.textTertiary} />
+                </View>
+              </Rise>
+            ))}
+          </>
+        ),
+      });
+  }
+}
+
+/* ------------------------------- fragments ------------------------------ */
+
+function Choices<T extends string>({
+  choices,
+  multi,
+  selected,
+  onToggle,
+  from = 0,
+}: {
+  choices: Choice<T>[];
+  multi: boolean;
+  selected: T[];
+  onToggle: (value: T) => void;
+  /** Where this list sits in the screen's stagger. */
+  from?: number;
+}) {
+  const { spacing } = useTheme();
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      {choices.map((choice, i) => (
+        <ChoiceRow
+          key={choice.value}
+          label={choice.label}
+          detail={choice.detail}
+          icon={choice.icon as IconName | undefined}
+          multi={multi}
+          selected={selected.includes(choice.value)}
+          onPress={() => onToggle(choice.value)}
+          index={from + i}
+        />
+      ))}
+    </View>
+  );
+}
+
+function FactScreen({ fact, illustration }: { fact: Fact; illustration: ReactNode }) {
+  const router = useRouter();
+  const { colors, spacing } = useTheme();
+
+  return (
+    <>
+      <Wash />
+      <FactBody
+        eyebrow={fact.eyebrow}
+        headline={fact.headline}
+        body={[...fact.body]}
+        footnote={fact.footnote}>
+        {illustration}
+      </FactBody>
+
+      <Rise index={6} style={{ marginTop: spacing.lg }}>
+        <PressableScale
+          onPress={() => router.push({ pathname: '/learn/[slug]', params: { slug: fact.slug } })}
+          haptic="none"
+          accessibilityRole="button"
+          accessibilityLabel="Read the full guide"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+          <Text variant="subhead" color="accent" style={{ flexShrink: 1 }}>
+            {fact.source}
+          </Text>
+          <Icon name="arrowRight" size={13} color={colors.accent} />
+        </PressableScale>
+      </Rise>
+    </>
+  );
+}
+
+/** Four frames of the same head, a month apart: the change you cannot see. */
+function Timeline() {
+  const { colors, spacing } = useTheme();
+
+  return (
+    <Breathe>
+      <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' }}>
+        {[0, 1, 2, 3].map((i) => (
+          <View key={i} style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}>
+            <View
+              style={{
+                width: '100%',
+                aspectRatio: 0.82,
+                borderRadius: 14,
+                backgroundColor: colors.accentSoft,
+                borderWidth: 1,
+                borderColor: colors.accentBorder,
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                overflow: 'hidden',
+              }}>
+              <View
+                style={{
+                  width: '62%',
+                  height: `${46 + i * 9}%`,
+                  borderTopLeftRadius: 40,
+                  borderTopRightRadius: 40,
+                  backgroundColor: colors.accent,
+                  opacity: 0.22 + i * 0.14,
+                }}
+              />
+            </View>
+            <Text variant="caption" color="textTertiary">
+              {i === 0 ? 'Now' : `+${i * 2}m`}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </Breathe>
+  );
+}
+
+/** Concern → Clarity → Consistency → Progress, as a settling arc. */
+function Arc() {
+  const { colors, spacing } = useTheme();
+  const stages = ['Concern', 'Clarity', 'Consistency', 'Progress'];
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      {stages.map((stage, i) => (
+        <View key={stage} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <View
+            style={{
+              height: 10,
+              width: `${22 + i * 22}%`,
+              borderRadius: 5,
+              backgroundColor: colors.accent,
+              opacity: 0.25 + i * 0.2,
+            }}
+          />
+          <Text variant="footnote" color={i === stages.length - 1 ? 'accent' : 'textSecondary'}>
+            {stage}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Many strands, all different: causes that look alike from outside. */
+function Strands() {
+  const { colors, spacing } = useTheme();
+
+  return (
+    <Breathe>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+          gap: spacing.xs,
+          height: 96,
+        }}>
+        {Array.from({ length: 14 }, (_, i) => (
+          <View
+            key={i}
+            style={{
+              flex: 1,
+              height: `${42 + ((i * 37) % 58)}%`,
+              borderRadius: 6,
+              backgroundColor: colors.accent,
+              opacity: 0.18 + ((i * 13) % 5) * 0.12,
+            }}
+          />
+        ))}
+      </View>
+    </Breathe>
+  );
+}
+
+/**
+ * A text field that holds its own value.
+ *
+ * The funnel re-renders the whole step on every answer, and a controlled
+ * input whose value round-trips through that drops characters when someone
+ * types quickly — the name comes out as its first letter. Keeping the value
+ * here and reporting it upward leaves nothing for a slow render to lose.
+ */
+function Field({
+  value,
+  onChange,
+  placeholder,
+  label,
+  autoFocus,
+  keyboardType,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+  label: string;
+  autoFocus?: boolean;
+  keyboardType?: 'number-pad';
+}) {
+  const { colors, spacing, radius } = useTheme();
+  const [text, setText] = useState(value);
+
+  const change = (next: string) => {
+    setText(next);
+    onChange(next);
+  };
 
   return (
     <View
       style={{
-        flex: 1,
-        backgroundColor: colors.background,
-        paddingTop: insets.top,
-        paddingBottom: insets.bottom + spacing.lg,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
         paddingHorizontal: spacing.lg,
+        height: MIN_TOUCH_TARGET + 12,
+        justifyContent: 'center',
       }}>
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Animated.View entering={FadeIn.duration(500)}>
-          <View
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: radius.lg,
-              backgroundColor: colors.accent,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: spacing.xxl,
-            }}>
-            <Icon name="sparkle" size={30} color={colors.textOnAccent} />
-          </View>
-        </Animated.View>
-
-        <Animated.View entering={FadeInDown.delay(120).duration(520)}>
-          <Text variant="display" accessibilityRole="header">
-            Hair{'\n'}Journey
-          </Text>
-          <Text
-            variant="title3"
-            color="textSecondary"
-            style={{ marginTop: spacing.lg, maxWidth: 300 }}>
-            Track your hair. See your progress. Document your journey.
-          </Text>
-        </Animated.View>
-
-        <View style={{ marginTop: spacing.huge, gap: spacing.lg }}>
-          {PILLARS.map((pillar, i) => (
-            <Animated.View
-              key={pillar.icon}
-              entering={FadeInDown.delay(260 + i * 90).duration(460)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: spacing.md,
-              }}>
-              <View
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: radius.sm,
-                  backgroundColor: colors.accentSoft,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                <Icon name={pillar.icon} size={17} color={colors.accent} />
-              </View>
-              <Text variant="callout" color="textSecondary" style={{ flex: 1 }}>
-                {pillar.text}
-              </Text>
-            </Animated.View>
-          ))}
-        </View>
-      </View>
-
-      <Animated.View entering={FadeInDown.delay(560).duration(460)} style={{ gap: spacing.md }}>
-        <Button
-          label="Get Started"
-          onPress={() => router.push('/onboarding/tracking')}
-        />
-        <Text variant="caption" color="textTertiary" center>
-          Hair Journey helps you document and track. It does not provide
-          medical advice or diagnosis.
-        </Text>
-      </Animated.View>
+      <TextInput
+        value={text}
+        onChangeText={change}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textTertiary}
+        autoCapitalize={keyboardType === 'number-pad' ? 'none' : 'words'}
+        autoFocus={autoFocus}
+        keyboardType={keyboardType}
+        accessibilityLabel={label}
+        style={{ color: colors.text, fontSize: 17 }}
+      />
     </View>
   );
 }

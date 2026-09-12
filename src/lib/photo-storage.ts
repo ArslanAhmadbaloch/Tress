@@ -108,6 +108,17 @@ export async function persistCapture(
   };
 }
 
+/**
+ * Keep a photo the person picked from their library.
+ *
+ * The picker hands back a file in a cache the OS may clear at any point,
+ * and this one has to outlive that: it is on their card.
+ */
+export async function persistProfilePhoto(sourceUri: string): Promise<string> {
+  const saved = await renderInto(sourceUri, 'profile.jpg', 640, FULL_QUALITY);
+  return saved.uri;
+}
+
 /** Remove a photo and its thumbnail. Missing files are not an error. */
 export function deletePhotoFiles(uris: (string | undefined)[]): void {
   for (const uri of uris) {

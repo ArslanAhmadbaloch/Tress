@@ -75,13 +75,72 @@ export type TrackingArea =
   | 'transplantRecovery'
   | 'generalChanges';
 
-export type JourneyGoal =
-  | 'trackChanges'
-  | 'monitorProgress'
-  | 'stayConsistent'
-  | 'documentTreatment'
-  | 'documentTransplant'
-  | 'understandLongTerm';
+/**
+ * What better hair would mean to them.
+ *
+ * Asked first, before anything about hair itself. Someone says "hair loss"
+ * and means "I want to stop thinking about it every time I pass a mirror";
+ * the second is the thing worth building around, and it is theirs to name
+ * rather than ours to assume.
+ */
+export type Motivation =
+  | 'confidence'
+  | 'myself'
+  | 'photos'
+  | 'worry'
+  | 'comfort'
+  | 'understand'
+  | 'other';
+
+/**
+ * The change they most hope to see.
+ *
+ * Recorded as an aspiration they stated, and shown back to them as one.
+ * The app never treats it as a forecast: whether anybody's hair actually
+ * changes depends on why it is changing and what they do about it, and
+ * nothing here can promise an outcome.
+ */
+export type HairGoal =
+  | 'fullness'
+  | 'hairline'
+  | 'crown'
+  | 'shedding'
+  | 'overall'
+  | 'routineWorking'
+  | 'unsure';
+
+/** When they first noticed something changing. */
+export type Onset =
+  | 'recently'
+  | 'months'
+  | 'halfYear'
+  | 'twoYears'
+  | 'longer'
+  | 'unsure';
+
+/** The moments that bring it to mind. The real-life trigger, not a severity. */
+export type Trigger =
+  | 'mirror'
+  | 'photos'
+  | 'lighting'
+  | 'styling'
+  | 'shower'
+  | 'future'
+  | 'none';
+
+/** What they are already doing. Recorded, never judged or recommended. */
+export type Approach =
+  | 'topical'
+  | 'prescription'
+  | 'supplements'
+  | 'haircare'
+  | 'clinic'
+  | 'transplant'
+  | 'nothing'
+  | 'figuring';
+
+/** How consistent they feel they have been. Their own estimate. */
+export type SelfConsistency = 'very' | 'mostly' | 'onOff' | 'forget' | 'notStarted';
 
 /**
  * Display names for the onboarding answers.
@@ -101,20 +160,74 @@ export const TRACKING_AREA_LABELS: Record<TrackingArea, string> = {
   generalChanges: 'General changes',
 };
 
-export const JOURNEY_GOAL_LABELS: Record<JourneyGoal, string> = {
-  trackChanges: 'Track changes over time',
-  monitorProgress: 'Monitor my progress',
-  stayConsistent: 'Stay consistent with my routine',
-  documentTreatment: 'Document a treatment journey',
-  documentTransplant: 'Document transplant recovery',
-  understandLongTerm: 'Understand my long-term changes',
+export const MOTIVATION_LABELS: Record<Motivation, string> = {
+  confidence: 'Feel more confident',
+  myself: 'Feel like myself again',
+  photos: 'Look better in photos',
+  worry: 'Stop worrying about my hair',
+  comfort: 'Feel comfortable with my appearance',
+  understand: "Just understand what's happening",
+  other: 'Something else',
 };
+
+export const HAIR_GOAL_LABELS: Record<HairGoal, string> = {
+  fullness: 'More fullness',
+  hairline: 'A stronger-looking hairline',
+  crown: 'More density at the crown',
+  shedding: 'Less shedding',
+  overall: 'Better-looking overall hair',
+  routineWorking: 'Knowing whether my routine is working',
+  unsure: "I'm not sure yet",
+};
+
+export const ONSET_LABELS: Record<Onset, string> = {
+  recently: 'Recently',
+  months: 'A few months ago',
+  halfYear: '6–12 months ago',
+  twoYears: '1–2 years ago',
+  longer: 'More than 2 years ago',
+  unsure: "I'm not sure",
+};
+
+export const TRIGGER_LABELS: Record<Trigger, string> = {
+  mirror: 'Looking in the mirror',
+  photos: 'Taking photos',
+  lighting: 'Bright lighting',
+  styling: 'Styling my hair',
+  shower: 'Seeing my hair after showering',
+  future: 'Thinking about the future',
+  none: "It doesn't really bother me",
+};
+
+export const APPROACH_LABELS: Record<Approach, string> = {
+  topical: 'Topical treatments',
+  prescription: 'Prescription medication',
+  supplements: 'Supplements',
+  haircare: 'Hair-care routine',
+  clinic: 'Dermatologist or clinic',
+  transplant: 'Hair transplant',
+  nothing: 'Nothing yet',
+  figuring: "I'm still figuring it out",
+};
+
+export const SELF_CONSISTENCY_LABELS: Record<SelfConsistency, string> = {
+  very: 'Very consistent',
+  mostly: 'Mostly consistent',
+  onOff: 'On and off',
+  forget: 'I keep forgetting',
+  notStarted: "I haven't started",
+};
+
+/** How often hair crosses their mind, from rarely to often. */
+export const PREOCCUPATION_STEPS = 5;
 
 /* ------------------------------------------------------------------ */
 
 export type Profile = {
   id: string;
   displayName: string;
+  /** Asked at the end of onboarding, and optional. Shown on their card. */
+  age?: number;
   /** Local file URI or remote URL; undefined renders initials. */
   avatarUri?: string;
   bio?: string;
@@ -127,7 +240,15 @@ export type Journey = {
   /** The day the user considers their journey to have begun. */
   startedAt: string;
   trackingAreas: TrackingArea[];
-  goals: JourneyGoal[];
+  /** Everything the funnel asked, kept so the app can speak to the person. */
+  motivations: Motivation[];
+  goal: HairGoal;
+  noticed?: Onset;
+  /** 0 to PREOCCUPATION_STEPS - 1: how often their hair crosses their mind. */
+  preoccupation?: number;
+  triggers: Trigger[];
+  approaches: Approach[];
+  selfConsistency?: SelfConsistency;
   /** Days between photo-session reminders. */
   updateIntervalDays: number;
   createdAt: string;
@@ -232,7 +353,12 @@ export type AppData = {
   onboardingCompletedAt: string | null;
 };
 
-export const SCHEMA_VERSION = 1;
+/**
+ * Bumped for the funnel: a journey now records what the person said they
+ * want and where they are starting from, and the old three-question shape
+ * cannot be filled in after the fact.
+ */
+export const SCHEMA_VERSION = 2;
 
 export const EMPTY_DATA: AppData = {
   schemaVersion: SCHEMA_VERSION,

@@ -25,13 +25,11 @@ import {
   type AppData,
   type JournalEntry,
   type Journey,
-  type JourneyGoal,
   type Photo,
   type PhotoSession,
   type Profile,
   type RoutineItem,
   type RoutineLog,
-  type TrackingArea,
 } from '@/types/domain';
 
 const STORAGE_KEY = 'hj.data.v1';
@@ -43,12 +41,20 @@ function makeId(prefix: string): string {
     .slice(2, 8)}`;
 }
 
-type CreateJourneyInput = {
+/**
+ * Everything the funnel gathered.
+ *
+ * Taken whole rather than in pieces: a journey is created once, at the
+ * moment the person's card is revealed to them, and every answer that led
+ * there belongs to it.
+ */
+export type CreateJourneyInput = {
   displayName: string;
-  trackingAreas: TrackingArea[];
-  goals: JourneyGoal[];
-  startedAt: string;
-  routineLabels: string[];
+  age?: number;
+  avatarUri?: string;
+  journey: Omit<Journey, 'id' | 'profileId' | 'createdAt'>;
+  /** Seeded from what they said they are already doing. */
+  routineSeeds: Pick<RoutineItem, 'label' | 'icon' | 'timeOfDay'>[];
 };
 
 type AppStore = {
@@ -137,28 +143,23 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       profile: {
         id: profileId,
         displayName: input.displayName.trim() || 'You',
+        age: input.age,
+        avatarUri: input.avatarUri,
         createdAt: now,
       },
       journey: {
+        ...input.journey,
         id: journeyId,
         profileId,
-        startedAt: input.startedAt,
-        trackingAreas: input.trackingAreas,
-        goals: input.goals,
-        updateIntervalDays: 30,
         createdAt: now,
       },
-      routineItems: input.routineLabels
-        .map((label) => label.trim())
-        .filter(Boolean)
-        .map((label) => ({
-          id: makeId('rti'),
-          journeyId,
-          label,
-          cadence: 'daily' as const,
-          timeOfDay: 'anytime' as const,
-          createdAt: now,
-        })),
+      routineItems: input.routineSeeds.map((seed) => ({
+        ...seed,
+        id: makeId('rti'),
+        journeyId,
+        cadence: 'daily' as const,
+        createdAt: now,
+      })),
       onboardingCompletedAt: now,
     }));
   }, []);

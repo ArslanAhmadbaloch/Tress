@@ -46,7 +46,13 @@
           "faceIDPermission": "Hair Journey uses Face ID to unlock your journey."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Hair Journey uses a photo of you on your journey card. It stays on this device."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

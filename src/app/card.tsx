@@ -36,7 +36,7 @@ import { Text } from '@/components/ui/text';
 import { useAppStore } from '@/store/app-store';
 import { consistencyScore } from '@/store/selectors';
 import { motion, useTheme } from '@/theme';
-import { JOURNEY_GOAL_LABELS } from '@/types/domain';
+import { HAIR_GOAL_LABELS } from '@/types/domain';
 
 /**
  * Widest the card is drawn here.
@@ -102,10 +102,10 @@ export default function CardScreen() {
   if (!journey) return null;
 
   const cardWidth = Math.min(MAX_CARD_WIDTH, width - (spacing.xl + EXPORT_MARGIN) * 2);
-  const goal = journey.goals[0];
   const card = {
     name: data.profile?.displayName?.trim() || 'You',
-    goalLabel: goal ? JOURNEY_GOAL_LABELS[goal] : undefined,
+    goalLabel: HAIR_GOAL_LABELS[journey.goal],
+    age: data.profile?.age,
     portraitUri: data.profile?.avatarUri,
     startedAt: journey.startedAt,
     consistency: consistencyScore(data).value,

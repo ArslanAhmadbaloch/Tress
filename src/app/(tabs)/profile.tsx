@@ -18,7 +18,7 @@ import { useAppStore } from '@/store/app-store';
 import { useAppLock } from '@/store/lock-provider';
 import { consistencyScore } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { JOURNEY_GOAL_LABELS } from '@/types/domain';
+import { HAIR_GOAL_LABELS } from '@/types/domain';
 
 export default function ProfileScreen() {
   const { colors, spacing } = useTheme();
@@ -33,7 +33,6 @@ export default function ProfileScreen() {
   const name = data.profile?.displayName?.trim() || 'You';
   const consistency = consistencyScore(data).value;
   // Day one counts as a tracked day; a journey started today reads "1".
-  const goal = journey.goals[0];
   // The card is drawn at its design size, never stretched to the screen.
   const cardWidth = Math.min(340, width - spacing.lg * 2);
 
@@ -70,8 +69,9 @@ export default function ProfileScreen() {
           style={{ marginTop: spacing.sm, alignItems: 'center' }}>
           <MemberCard
             name={name}
-            goalLabel={goal ? JOURNEY_GOAL_LABELS[goal] : undefined}
+            goalLabel={HAIR_GOAL_LABELS[journey.goal]}
             portraitUri={data.profile?.avatarUri}
+            age={data.profile?.age}
             startedAt={journey.startedAt}
             consistency={consistency}
             width={cardWidth}
