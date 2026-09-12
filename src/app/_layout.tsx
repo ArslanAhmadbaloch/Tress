@@ -93,6 +93,10 @@ function Navigation() {
           name="journal"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
+        <Stack.Screen
+          name="profile-photo"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
       </Stack>
     </NavThemeProvider>
   );

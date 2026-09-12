@@ -4,17 +4,18 @@ import { View } from 'react-native';
 import { OnboardingStep } from '@/components/onboarding-step';
 import { OptionCard } from '@/components/ui/option-card';
 import { useTheme } from '@/theme';
-import type { JourneyGoal } from '@/types/domain';
+import { JOURNEY_GOAL_LABELS, type JourneyGoal } from '@/types/domain';
 
 import { useOnboardingDraft } from './_layout';
 
-const GOALS: { value: JourneyGoal; label: string; description?: string }[] = [
-  { value: 'trackChanges', label: 'Track changes over time' },
-  { value: 'monitorProgress', label: 'Monitor my progress' },
-  { value: 'stayConsistent', label: 'Stay consistent with my routine' },
-  { value: 'documentTreatment', label: 'Document a treatment journey' },
-  { value: 'documentTransplant', label: 'Document transplant recovery' },
-  { value: 'understandLongTerm', label: 'Understand my long-term changes' },
+/** The first one picked is the line printed on the journey card. */
+const GOALS: JourneyGoal[] = [
+  'trackChanges',
+  'monitorProgress',
+  'stayConsistent',
+  'documentTreatment',
+  'documentTransplant',
+  'understandLongTerm',
 ];
 
 export default function GoalsStep() {
@@ -34,11 +35,10 @@ export default function GoalsStep() {
       <View style={{ gap: spacing.sm }}>
         {GOALS.map((goal) => (
           <OptionCard
-            key={goal.value}
-            label={goal.label}
-            description={goal.description}
-            selected={draft.goals.includes(goal.value)}
-            onPress={() => toggleGoal(goal.value)}
+            key={goal}
+            label={JOURNEY_GOAL_LABELS[goal]}
+            selected={draft.goals.includes(goal)}
+            onPress={() => toggleGoal(goal)}
           />
         ))}
       </View>

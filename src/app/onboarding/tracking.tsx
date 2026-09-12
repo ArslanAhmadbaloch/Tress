@@ -4,19 +4,23 @@ import { View } from 'react-native';
 import { OnboardingStep } from '@/components/onboarding-step';
 import { OptionCard } from '@/components/ui/option-card';
 import { useTheme } from '@/theme';
-import type { TrackingArea } from '@/types/domain';
+import { TRACKING_AREA_LABELS, type TrackingArea } from '@/types/domain';
 
 import { useOnboardingDraft } from './_layout';
 
-const AREAS: { value: TrackingArea; label: string; description?: string }[] = [
-  { value: 'hairline', label: 'Hairline', description: 'Recession at the front or temples' },
-  { value: 'crown', label: 'Crown', description: 'Thinning at the back of the head' },
-  { value: 'overallThinning', label: 'Overall thinning' },
-  { value: 'diffuseThinning', label: 'Diffuse thinning', description: 'Spread across the scalp' },
-  { value: 'shedding', label: 'Shedding' },
-  { value: 'density', label: 'Hair density' },
-  { value: 'transplantRecovery', label: 'Hair transplant recovery' },
-  { value: 'generalChanges', label: 'General hair changes' },
+/**
+ * Labels come from the shared map, so the answers the journey card shows
+ * back months later are worded exactly as the question that set them.
+ */
+const AREAS: { value: TrackingArea; description?: string }[] = [
+  { value: 'hairline', description: 'Recession at the front or temples' },
+  { value: 'crown', description: 'Thinning at the back of the head' },
+  { value: 'overallThinning' },
+  { value: 'diffuseThinning', description: 'Spread across the scalp' },
+  { value: 'shedding' },
+  { value: 'density' },
+  { value: 'transplantRecovery' },
+  { value: 'generalChanges' },
 ];
 
 export default function TrackingStep() {
@@ -39,7 +43,7 @@ export default function TrackingStep() {
         {AREAS.map((area) => (
           <OptionCard
             key={area.value}
-            label={area.label}
+            label={TRACKING_AREA_LABELS[area.value]}
             description={area.description}
             selected={draft.trackingAreas.includes(area.value)}
             onPress={() => toggleArea(area.value)}

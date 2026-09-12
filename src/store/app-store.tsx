@@ -235,11 +235,25 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteSession = useCallback((sessionId: string) => {
-    setData((prev) => ({
-      ...prev,
-      sessions: prev.sessions.filter((s) => s.id !== sessionId),
-      journal: prev.journal.filter((j) => j.sessionId !== sessionId),
-    }));
+    setData((prev) => {
+      const removed = prev.sessions.find((s) => s.id === sessionId);
+      // The journey card points at one of these files. Deleting the
+      // session deletes the file, so a card still holding its URI would
+      // render an empty circle until the user noticed and fixed it.
+      const losesAvatar =
+        prev.profile?.avatarUri !== undefined &&
+        Boolean(removed?.photos.some((p) => p.uri === prev.profile?.avatarUri));
+
+      return {
+        ...prev,
+        profile:
+          losesAvatar && prev.profile
+            ? { ...prev.profile, avatarUri: undefined }
+            : prev.profile,
+        sessions: prev.sessions.filter((s) => s.id !== sessionId),
+        journal: prev.journal.filter((j) => j.sessionId !== sessionId),
+      };
+    });
   }, []);
 
   const addRoutineItem = useCallback(

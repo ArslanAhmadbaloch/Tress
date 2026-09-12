@@ -85,6 +85,39 @@ export type JourneyGoal =
 
 export type Visibility = 'private' | 'followers' | 'public';
 
+/**
+ * Display names for the onboarding answers.
+ *
+ * Kept beside the types rather than in the onboarding screens, because
+ * the journey card shows the same answers back to the user months later
+ * and the two must never drift into different wording.
+ */
+export const TRACKING_AREA_LABELS: Record<TrackingArea, string> = {
+  hairline: 'Hairline',
+  crown: 'Crown',
+  overallThinning: 'Overall thinning',
+  diffuseThinning: 'Diffuse thinning',
+  shedding: 'Shedding',
+  density: 'Hair density',
+  transplantRecovery: 'Transplant recovery',
+  generalChanges: 'General changes',
+};
+
+export const JOURNEY_GOAL_LABELS: Record<JourneyGoal, string> = {
+  trackChanges: 'Track changes over time',
+  monitorProgress: 'Monitor my progress',
+  stayConsistent: 'Stay consistent with my routine',
+  documentTreatment: 'Document a treatment journey',
+  documentTransplant: 'Document transplant recovery',
+  understandLongTerm: 'Understand my long-term changes',
+};
+
+export const VISIBILITY_LABELS: Record<Visibility, string> = {
+  private: 'Private',
+  followers: 'Followers',
+  public: 'Public',
+};
+
 /* ------------------------------------------------------------------ */
 
 export type Profile = {
