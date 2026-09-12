@@ -138,6 +138,8 @@ export type ColorTokens = {
   cardExportBottom: string;
   /** The light that crosses the card's glass. */
   cardRay: string;
+  /** The slow green light that breathes inside it. */
+  cardGlow: string;
 };
 
 export const lightColors: ColorTokens = {
@@ -197,7 +199,10 @@ export const lightColors: ColorTokens = {
   cardPanelEdge: 'rgba(255, 255, 255, 0.78)',
   cardExportTop: '#F4F2ED',
   cardExportBottom: '#E7E3DB',
-  cardRay: '#FFFFFF',
+  /* Green rather than white: on near-white glass a white gleam is not a
+     gleam, and the light in this product has always been the sage. */
+  cardRay: '#CBE7B8',
+  cardGlow: '#9FCB89',
 };
 
 export const darkColors: ColorTokens = {
@@ -268,7 +273,8 @@ export const darkColors: ColorTokens = {
   cardExportTop: '#23272C',
   cardExportBottom: '#14171A',
   /* Dark glass catches less: a bright ray would read as a searchlight. */
-  cardRay: 'rgba(255, 255, 255, 0.42)',
+  cardRay: 'rgba(178, 214, 160, 0.52)',
+  cardGlow: 'rgba(143, 177, 131, 0.9)',
 };
 
 /* ------------------------------------------------------------------ *

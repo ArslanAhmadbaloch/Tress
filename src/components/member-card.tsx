@@ -36,6 +36,7 @@ import Svg, {
   Defs,
   LinearGradient as SvgLinearGradient,
   Path,
+  RadialGradient,
   Stop,
 } from 'react-native-svg';
 
@@ -353,9 +354,11 @@ export function MemberCard({
 
 /** How long a light ray takes to cross the card, and the pause between. */
 const RAY_TRAVEL = 5200;
-const RAY_REST = 3400;
+const RAY_REST = 2600;
 /** How long the frond takes to drift to one side and back. */
 const DRIFT = 11000;
+/** How long each pool of green light takes to brighten and fade. */
+const BREATH = 6400;
 
 /**
  * What makes the card look like an object in a room rather than a picture
@@ -371,6 +374,8 @@ function Ambience({ width, u }: { width: number; u: Unit }) {
   const reduceMotion = useReducedMotion();
   const ray = useSharedValue(0);
   const drift = useSharedValue(0);
+  const breathA = useSharedValue(0.35);
+  const breathB = useSharedValue(0.8);
 
   useEffect(() => {
     if (reduceMotion) return;
@@ -385,7 +390,22 @@ function Ambience({ width, u }: { width: number; u: Unit }) {
     drift.set(
       withRepeat(withTiming(1, { duration: DRIFT, easing: Easing.inOut(Easing.sin) }), -1, true),
     );
-  }, [reduceMotion, ray, drift]);
+    // Out of phase and on different clocks, so the two never peak together
+    // and the card never looks like it is pulsing on a metronome.
+    breathA.set(
+      withRepeat(withTiming(1, { duration: BREATH, easing: Easing.inOut(Easing.sin) }), -1, true),
+    );
+    breathB.set(
+      withDelay(
+        1700,
+        withRepeat(
+          withTiming(0, { duration: BREATH * 1.45, easing: Easing.inOut(Easing.sin) }),
+          -1,
+          true,
+        ),
+      ),
+    );
+  }, [reduceMotion, ray, drift, breathA, breathB]);
 
   const clear = withZeroAlpha(colors.cardRay);
   const travel = width * 1.9;
@@ -407,8 +427,28 @@ function Ambience({ width, u }: { width: number; u: Unit }) {
     return { transform: [{ translateX: t * driftX }, { rotate: `${26 + t * 5}deg` }] };
   });
 
+  const glowA = useAnimatedStyle(() => ({ opacity: 0.3 + 0.45 * breathA.get() }));
+  const glowB = useAnimatedStyle(() => ({ opacity: 0.3 + 0.45 * breathB.get() }));
+  const pool = width * 0.78;
+
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+      {/* Two pools of green light, breathing out of step with each other. */}
+      <Animated.View
+        style={[
+          { position: 'absolute', top: -pool * 0.35, left: -pool * 0.3 },
+          glowA,
+        ]}>
+        <Pool size={pool} />
+      </Animated.View>
+      <Animated.View
+        style={[
+          { position: 'absolute', bottom: -pool * 0.4, right: -pool * 0.32 },
+          glowB,
+        ]}>
+        <Pool size={pool} />
+      </Animated.View>
+
       <Animated.View
         style={[
           {
@@ -417,11 +457,11 @@ function Ambience({ width, u }: { width: number; u: Unit }) {
             bottom: -u(120),
             left: 0,
             width: width * 0.34,
-            opacity: 0.07,
+            opacity: 0.26,
           },
           driftStyle,
         ]}>
-        <LeafShadow width={width * 0.34} height={width * 0.9} />
+        <LeafShadow width={width * 0.34} height={width * 0.9} color={colors.cardGlow} />
       </Animated.View>
 
       <Animated.View
@@ -441,11 +481,31 @@ function Ambience({ width, u }: { width: number; u: Unit }) {
   );
 }
 
+/** A soft round of green light, with no edge of its own. */
+function Pool({ size }: { size: number }) {
+  const { colors } = useTheme();
+  const id = `pool${useId().replace(/[^A-Za-z0-9]/g, '')}`;
+  const glow = splitAlpha(colors.cardGlow);
+
+  return (
+    <Svg width={size} height={size} accessible={false}>
+      <Defs>
+        <RadialGradient id={id} cx="50%" cy="50%" r="50%">
+          <Stop offset="0" stopColor={glow.color} stopOpacity={glow.opacity * 0.42} />
+          <Stop offset="0.55" stopColor={glow.color} stopOpacity={glow.opacity * 0.16} />
+          <Stop offset="1" stopColor={glow.color} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
 /* -------------------------------- float --------------------------------- */
 
 /** How far the card rises and falls, and how far it tips, at rest. */
-const BOB = 5;
-const TIP = 0.7;
+const BOB = 8;
+const TIP = 1.1;
 
 /**
  * The card, floating.

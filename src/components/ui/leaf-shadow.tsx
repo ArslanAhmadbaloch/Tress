@@ -50,8 +50,18 @@ const LEAFLETS = Array.from({ length: 13 }, (_, i) => {
 
 const SPINE_PATH = `M ${SPINE[0].join(' ')} C ${SPINE[1].join(' ')}, ${SPINE[2].join(' ')}, ${SPINE[3].join(' ')}`;
 
-export function LeafShadow({ width, height }: { width: number; height: number }) {
+export function LeafShadow({
+  width,
+  height,
+  /** Overrides the shadow colour, for places where the frond is lit. */
+  color,
+}: {
+  width: number;
+  height: number;
+  color?: string;
+}) {
   const { colors } = useTheme();
+  const ink = color ?? colors.leafShadow;
 
   return (
     <Svg
@@ -68,7 +78,7 @@ export function LeafShadow({ width, height }: { width: number; height: number })
           key={pass.opacity}
           transform={`translate(${pass.dx} ${pass.dy})`}
           opacity={pass.opacity}>
-          <Path d={SPINE_PATH} stroke={colors.leafShadow} strokeWidth={1.1} fill="none" />
+          <Path d={SPINE_PATH} stroke={ink} strokeWidth={1.1} fill="none" />
           {LEAFLETS.map((leaf, i) => (
             <Ellipse
               key={i}
@@ -77,7 +87,7 @@ export function LeafShadow({ width, height }: { width: number; height: number })
               rx={leaf.rx}
               ry={leaf.ry}
               transform={`rotate(${leaf.rotate} ${leaf.cx} ${leaf.cy})`}
-              fill={colors.leafShadow}
+              fill={ink}
             />
           ))}
         </G>
