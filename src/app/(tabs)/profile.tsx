@@ -15,14 +15,16 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { daysBetween, formatDate } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
+import { useAppLock } from '@/store/lock-provider';
 import { consistencyScore } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { JOURNEY_GOAL_LABELS, VISIBILITY_LABELS } from '@/types/domain';
+import { JOURNEY_GOAL_LABELS } from '@/types/domain';
 
 export default function ProfileScreen() {
   const { colors, spacing } = useTheme();
   const router = useRouter();
   const { data } = useAppStore();
+  const lock = useAppLock();
 
   const journey = data.journey;
   if (!journey) return null;
@@ -63,7 +65,7 @@ export default function ProfileScreen() {
             name={name}
             portraitUri={data.profile?.avatarUri}
             startedAt={journey.startedAt}
-            visibility={journey.visibility}
+            locked={lock.state.enabled}
             trackingAreas={journey.trackingAreas}
             goalLabel={goal ? JOURNEY_GOAL_LABELS[goal] : undefined}
             sessionCount={data.sessions.length}
@@ -124,8 +126,8 @@ export default function ProfileScreen() {
           <Separator inset={56} />
           <ProfileRow
             icon="lock"
-            label="Privacy"
-            value={VISIBILITY_LABELS[journey.visibility]}
+            label="App lock"
+            value={lock.state.enabled ? 'On' : 'Off'}
             onPress={() => router.push('/settings')}
           />
           <Separator inset={56} />

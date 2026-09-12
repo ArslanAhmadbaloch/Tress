@@ -32,7 +32,6 @@ import {
   type RoutineItem,
   type RoutineLog,
   type TrackingArea,
-  type Visibility,
 } from '@/types/domain';
 
 const STORAGE_KEY = 'hj.data.v1';
@@ -60,7 +59,6 @@ type AppStore = {
   createJourney: (input: CreateJourneyInput) => void;
   updateJourney: (patch: Partial<Omit<Journey, 'id' | 'profileId'>>) => void;
   updateProfile: (patch: Partial<Omit<Profile, 'id' | 'createdAt'>>) => void;
-  setVisibility: (visibility: Visibility) => void;
 
   addSession: (photos: Omit<Photo, 'id' | 'sessionId'>[], note?: string) => PhotoSession | null;
   updateSessionNote: (sessionId: string, note: string) => void;
@@ -147,7 +145,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         startedAt: input.startedAt,
         trackingAreas: input.trackingAreas,
         goals: input.goals,
-        visibility: 'private',
         updateIntervalDays: 30,
         createdAt: now,
       },
@@ -186,13 +183,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       );
     },
     [],
-  );
-
-  const setVisibility = useCallback(
-    (visibility: Visibility) => {
-      updateJourney({ visibility });
-    },
-    [updateJourney],
   );
 
   const addSession = useCallback(
@@ -354,7 +344,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       createJourney,
       updateJourney,
       updateProfile,
-      setVisibility,
       addSession,
       updateSessionNote,
       deleteSession,
@@ -371,7 +360,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       createJourney,
       updateJourney,
       updateProfile,
-      setVisibility,
       addSession,
       updateSessionNote,
       deleteSession,

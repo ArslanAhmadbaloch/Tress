@@ -83,8 +83,6 @@ export type JourneyGoal =
   | 'documentTransplant'
   | 'understandLongTerm';
 
-export type Visibility = 'private' | 'followers' | 'public';
-
 /**
  * Display names for the onboarding answers.
  *
@@ -112,12 +110,6 @@ export const JOURNEY_GOAL_LABELS: Record<JourneyGoal, string> = {
   understandLongTerm: 'Understand my long-term changes',
 };
 
-export const VISIBILITY_LABELS: Record<Visibility, string> = {
-  private: 'Private',
-  followers: 'Followers',
-  public: 'Public',
-};
-
 /* ------------------------------------------------------------------ */
 
 export type Profile = {
@@ -136,7 +128,6 @@ export type Journey = {
   startedAt: string;
   trackingAreas: TrackingArea[];
   goals: JourneyGoal[];
-  visibility: Visibility;
   /** Days between photo-session reminders. */
   updateIntervalDays: number;
   createdAt: string;
@@ -226,49 +217,6 @@ export type JournalEntry = {
   body: string;
   createdAt: string;
 };
-
-/* ---------------------------- community --------------------------- */
-
-export type CommunityAuthor = {
-  id: string;
-  displayName: string;
-  avatarUri?: string;
-  /** Months elapsed in that author's journey at time of posting. */
-  journeyMonths: number;
-};
-
-export type CommunityPost = {
-  id: string;
-  author: CommunityAuthor;
-  createdAt: string;
-  caption: string;
-  /** Structured progress: what the before and after actually are. */
-  beforeLabel: string;
-  afterLabel: string;
-  beforeUri?: string;
-  afterUri?: string;
-  angle: Angle;
-  trackingAreas: TrackingArea[];
-  /** Voluntarily shared, free text. Never interpreted by the app. */
-  routineSummary?: string;
-  likeCount: number;
-  commentCount: number;
-  likedByMe: boolean;
-  savedByMe: boolean;
-};
-
-export type CommunityFilter =
-  | 'all'
-  | 'justStarting'
-  | 'month1to3'
-  | 'month3to6'
-  | 'month6to12'
-  | 'yearPlus'
-  | 'transplants'
-  | 'hairline'
-  | 'crown'
-  | 'diffuse'
-  | 'womens';
 
 /* ------------------------------------------------------------------ */
 

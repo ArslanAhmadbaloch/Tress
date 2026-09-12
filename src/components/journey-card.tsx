@@ -30,12 +30,7 @@ import { PressableScale } from './ui/pressable-scale';
 import { Text } from './ui/text';
 import { formatDate, formatDuration } from '@/lib/date';
 import { splitAlpha, useTheme, withZeroAlpha } from '@/theme';
-import {
-  TRACKING_AREA_LABELS,
-  VISIBILITY_LABELS,
-  type TrackingArea,
-  type Visibility,
-} from '@/types/domain';
+import { TRACKING_AREA_LABELS, type TrackingArea } from '@/types/domain';
 
 /** Diameter of the photograph itself, excluding the ring around it. */
 const PORTRAIT = 132;
@@ -64,7 +59,8 @@ export type JourneyCardProps = {
   /** The user's chosen picture, from their own captured photos. */
   portraitUri?: string;
   startedAt: string;
-  visibility: Visibility;
+  /** True when a passcode stands between the phone and this card. */
+  locked: boolean;
   trackingAreas: TrackingArea[];
   /** The primary goal, shown as the card's one script line. */
   goalLabel?: string;
@@ -79,7 +75,7 @@ export function JourneyCard({
   name,
   portraitUri,
   startedAt,
-  visibility,
+  locked,
   trackingAreas,
   goalLabel,
   sessionCount,
@@ -137,7 +133,7 @@ export function JourneyCard({
           paddingHorizontal: spacing.xl,
           justifyContent: 'space-between',
         }}>
-        <Header visibility={visibility} />
+        <Header locked={locked} />
 
         <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
           <Portrait uri={portraitUri} name={name} progress={consistency / 100} onPress={onPressPortrait} />
@@ -227,7 +223,7 @@ export function JourneyCard({
 
 /* -------------------------------- header ------------------------------- */
 
-function Header({ visibility }: { visibility: Visibility }) {
+function Header({ locked }: { locked: boolean }) {
   const { colors, spacing, radius } = useTheme();
 
   return (
@@ -253,7 +249,7 @@ function Header({ visibility }: { visibility: Visibility }) {
         }}>
         <Icon name="lock" size={11} color={colors.textSecondary} />
         <Text variant="caption" color="textSecondary">
-          {VISIBILITY_LABELS[visibility]}
+          {locked ? 'Locked' : 'Private'}
         </Text>
       </View>
     </View>

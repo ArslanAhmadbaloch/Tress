@@ -1,11 +1,10 @@
 import Constants from 'expo-constants';
-import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
-  ChoiceRow,
   InfoRow,
   RowDivider,
   SettingsField,
@@ -46,33 +45,24 @@ import {
   scheduleRoutineReminder,
   scheduleUpdateReminder,
 } from '@/lib/notifications';
+import {
+  BIOMETRIC_LABELS,
+  GRACE_DETAIL,
+  GRACE_LABELS,
+  GRACE_PERIODS,
+  clearPasscode,
+  setBiometricsEnabled,
+  setGracePeriod,
+  type GracePeriod,
+} from '@/lib/app-lock';
 import { useAppStore } from '@/store/app-store';
+import { useAppLock } from '@/store/lock-provider';
 import { useTheme, type AppearancePreference } from '@/theme';
-import { VISIBILITY_LABELS, type Visibility } from '@/types/domain';
-import type { IconName } from '@/components/ui/icon';
 
 const APPEARANCE: { value: AppearancePreference; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
-];
-
-const VISIBILITY: { value: Visibility; icon: IconName; description: string }[] = [
-  {
-    value: 'private',
-    icon: 'lock',
-    description: 'Only you can see your journey. Nothing is shared.',
-  },
-  {
-    value: 'followers',
-    icon: 'community',
-    description: 'People you approve can see your journey.',
-  },
-  {
-    value: 'public',
-    icon: 'globe',
-    description: 'Anyone in the community can find your journey.',
-  },
 ];
 
 /** Days between photo-update reminders. */
@@ -88,7 +78,8 @@ export default function SettingsScreen() {
   const { spacing, preference, setPreference } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { data, updateJourney, setVisibility, resetAll } = useAppStore();
+  const { data, updateJourney, resetAll } = useAppStore();
+  const lock = useAppLock();
 
   const [routineReminder, setRoutineReminder] = useState(false);
   const [updateReminder, setUpdateReminder] = useState(false);
@@ -99,6 +90,15 @@ export default function SettingsScreen() {
   useMemo(() => {
     loadCaptureTimer().then(setTimer);
   }, []);
+
+  // The passcode sheet writes to the keychain and closes; this screen has
+  // to re-read on the way back or its toggle would still say "off".
+  const refreshLock = lock.refresh;
+  useFocusEffect(
+    useCallback(() => {
+      refreshLock();
+    }, [refreshLock]),
+  );
 
   // Reading the directory size is synchronous and cheap; recompute it when
   // the session list changes rather than mirroring it into state.
@@ -185,6 +185,46 @@ export default function SettingsScreen() {
   const toggleHaptics = (next: boolean) => {
     setHaptics(next);
     setHapticsEnabled(next);
+  };
+
+  const biometricLabel = BIOMETRIC_LABELS[lock.state.biometric];
+
+  /**
+   * Turning the lock on opens the setup sheet; the toggle only follows once
+   * a passcode actually exists, so backing out of setup leaves it off
+   * rather than claiming a lock that was never set.
+   */
+  const toggleLock = (next: boolean) => {
+    if (next) {
+      router.push('/passcode');
+      return;
+    }
+
+    Alert.alert(
+      'Turn off the passcode?',
+      'Anyone who picks up your phone while it is unlocked will be able to open your journey.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Turn off',
+          style: 'destructive',
+          onPress: async () => {
+            await clearPasscode();
+            await lock.refresh();
+          },
+        },
+      ],
+    );
+  };
+
+  const toggleBiometrics = async (next: boolean) => {
+    setBiometricsEnabled(next);
+    await lock.refresh();
+  };
+
+  const chooseGrace = async (seconds: GracePeriod) => {
+    setGracePeriod(seconds);
+    await lock.refresh();
   };
 
   const confirmDeleteAll = () => {
@@ -310,24 +350,63 @@ export default function SettingsScreen() {
           the phone makes them far easier to repeat.
         </SettingsNote>
 
-        <SectionHeader title="Privacy" />
+        <SectionHeader title="Security" />
         <SettingsGroup>
-          {VISIBILITY.map((option, index) => (
-            <View key={option.value}>
-              {index > 0 ? <RowDivider /> : null}
-              <ChoiceRow
-                icon={option.icon}
-                label={VISIBILITY_LABELS[option.value]}
-                description={option.description}
-                selected={journey.visibility === option.value}
-                onPress={() => setVisibility(option.value)}
+          <ToggleRow
+            icon="lock"
+            label="Require a passcode"
+            detail={
+              lock.state.enabled
+                ? 'Asked for when you open the app.'
+                : 'Six digits, kept in this device’s keychain.'
+            }
+            value={lock.state.enabled}
+            onChange={toggleLock}
+          />
+          {lock.state.enabled ? (
+            <>
+              <RowDivider />
+              <ToggleRow
+                icon="profile"
+                label={`Unlock with ${biometricLabel}`}
+                detail={
+                  lock.state.biometric === 'none'
+                    ? `${biometricLabel} is not set up on this device.`
+                    : 'Your passcode still works whenever it fails.'
+                }
+                value={lock.state.biometricsEnabled}
+                disabled={lock.state.biometric === 'none'}
+                onChange={toggleBiometrics}
               />
-            </View>
-          ))}
+              <RowDivider />
+              <SettingsField
+                icon="clock"
+                label="Lock again"
+                detail={GRACE_DETAIL[lock.state.grace]}>
+                <SegmentedTabs
+                  surface="fill"
+                  options={GRACE_PERIODS.map((seconds) => ({
+                    value: String(seconds),
+                    label: GRACE_LABELS[seconds],
+                  }))}
+                  value={String(lock.state.grace)}
+                  onChange={(next) => chooseGrace(Number(next) as GracePeriod)}
+                />
+              </SettingsField>
+              <RowDivider />
+              <InfoRow
+                icon="pencil"
+                label="Change passcode"
+                onPress={() => router.push({ pathname: '/passcode', params: { mode: 'change' } })}
+              />
+            </>
+          ) : null}
         </SettingsGroup>
-        <SettingsNote icon="lock">
-          Sharing is not built yet. Whichever you pick, nothing leaves this
-          device in this version — the setting is stored for when it does.
+        <SettingsNote icon="info">
+          The passcode keeps other people out of the app. It is not
+          encryption — your photos sit in this app’s own storage, protected
+          by your device passcode, and nothing here can recover the code if
+          you forget it.
         </SettingsNote>
 
         <SectionHeader title="Data" />
