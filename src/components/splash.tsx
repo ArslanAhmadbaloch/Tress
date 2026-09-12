@@ -20,7 +20,6 @@
  * just long enough to read.
  */
 
-import { Image } from 'expo-image';
 import { useEffect, useId } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import Animated, {
@@ -37,56 +36,23 @@ import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
 import { launch } from '@/theme';
 
-const PLATE = require('@/assets/images/splash-plate.jpg');
-const EMBLEM = require('@/assets/images/splash-emblem.png');
-const LINE_ONE = require('@/assets/images/splash-line-one.png');
-const LINE_TWO = require('@/assets/images/splash-line-two.png');
+import {
+  DISC,
+  EMBLEM_TILE,
+  LINE_ONE_TILE,
+  LINE_TWO_TILE,
+  LOCKUP_ASSETS,
+  LockupTile,
+  PLATE_W,
+  Plate,
+  coverRect,
+} from './brand-lockup';
 
 /** Held until these have decoded, so the first frame is the finished plate. */
-export const SPLASH_ASSETS = [PLATE, EMBLEM, LINE_ONE, LINE_TWO];
-
-/** The design's own pixel dimensions; every position below is a fraction of it. */
-const PLATE_W = 853;
-const PLATE_H = 1844;
-
-type Tile = {
-  source: number;
-  /** Top-left corner and width, as fractions of the plate. */
-  left: number;
-  top: number;
-  width: number;
-  /** The tile's own pixel aspect, so it is never stretched. */
-  aspect: number;
-};
-
-/** Printed by scripts/splash-tiles.swift when it cuts the artwork. */
-const EMBLEM_TILE: Tile = {
-  source: EMBLEM,
-  left: 0.26729,
-  top: 0.28254,
-  width: 0.45252,
-  aspect: 386 / 431,
-};
-const LINE_ONE_TILE: Tile = {
-  source: LINE_ONE,
-  left: 0.2755,
-  top: 0.51627,
-  width: 0.45369,
-  aspect: 387 / 70,
-};
-const LINE_TWO_TILE: Tile = {
-  source: LINE_TWO,
-  left: 0.19343,
-  top: 0.55369,
-  width: 0.61782,
-  aspect: 527 / 96,
-};
+export const SPLASH_ASSETS = LOCKUP_ASSETS;
 
 /** How far each line of the wordmark rises into place, in plate pixels. */
 const LINE_RISE = 13;
-
-/** Centre and radius of the mark's disc, for the light that plays on it. */
-const DISC = { x: 0.498, y: 0.42, r: 0.182 };
 
 /* ------------------------------- timing ------------------------------- */
 
@@ -123,16 +89,7 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
   const { width, height } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
 
-  // The rectangle the plate covers on this screen. Cover rather than fit:
-  // the lockup is centred artwork on a much larger field, so cropping the
-  // field costs nothing and letterboxing would break the illusion.
-  const scale = Math.max(width / PLATE_W, height / PLATE_H);
-  const rect = {
-    width: PLATE_W * scale,
-    height: PLATE_H * scale,
-    left: (width - PLATE_W * scale) / 2,
-    top: (height - PLATE_H * scale) / 2,
-  };
+  const rect = coverRect(width, height);
 
   const plate = useSharedValue(0);
   const settle = useSharedValue(0);
@@ -245,17 +202,6 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
     };
   });
 
-  const place = (tile: Tile) => {
-    const w = tile.width * rect.width;
-    return {
-      position: 'absolute' as const,
-      left: rect.left + tile.left * rect.width,
-      top: rect.top + tile.top * rect.height,
-      width: w,
-      height: w / tile.aspect,
-    };
-  };
-
   const centred = (size: number) => ({
     position: 'absolute' as const,
     left: rect.left + DISC.x * rect.width - size / 2,
@@ -276,26 +222,11 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
       ]}>
       <Animated.View style={[StyleSheet.absoluteFill, stageStyle]}>
         <Animated.View style={[StyleSheet.absoluteFill, plateStyle]}>
-          <Image
-            source={PLATE}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            contentPosition="center"
-            transition={0}
-            cachePolicy="memory-disk"
-            accessible={false}
-          />
+          <Plate />
         </Animated.View>
 
-        <Animated.View style={[place(EMBLEM_TILE), emblemStyle]}>
-          <Image
-            source={EMBLEM}
-            style={StyleSheet.absoluteFill}
-            contentFit="fill"
-            transition={0}
-            cachePolicy="memory-disk"
-            accessible={false}
-          />
+        <Animated.View style={emblemStyle}>
+          <LockupTile tile={EMBLEM_TILE} rect={rect} />
         </Animated.View>
 
         {/* Light gathering over the mark, then clearing as it resolves. */}
@@ -308,26 +239,12 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
           <Glow size={sheenSize} inner={0.95} mid={0.3} />
         </Animated.View>
 
-        <Animated.View style={[place(LINE_ONE_TILE), lineOneStyle]}>
-          <Image
-            source={LINE_ONE}
-            style={StyleSheet.absoluteFill}
-            contentFit="fill"
-            transition={0}
-            cachePolicy="memory-disk"
-            accessible={false}
-          />
+        <Animated.View style={lineOneStyle}>
+          <LockupTile tile={LINE_ONE_TILE} rect={rect} />
         </Animated.View>
 
-        <Animated.View style={[place(LINE_TWO_TILE), lineTwoStyle]}>
-          <Image
-            source={LINE_TWO}
-            style={StyleSheet.absoluteFill}
-            contentFit="fill"
-            transition={0}
-            cachePolicy="memory-disk"
-            accessible={false}
-          />
+        <Animated.View style={lineTwoStyle}>
+          <LockupTile tile={LINE_TWO_TILE} rect={rect} />
         </Animated.View>
       </Animated.View>
     </Animated.View>

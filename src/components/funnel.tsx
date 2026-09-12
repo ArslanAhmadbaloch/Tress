@@ -82,6 +82,11 @@ export function FunnelShell({
   footnote,
   /** Centres the content, for the reflective screens between questions. */
   centred = false,
+  /**
+   * Replaces the ground plate and hides the chrome. Used by the first
+   * screen, which is the brand lockup and should carry nothing else.
+   */
+  backdrop,
 }: {
   stepKey: string;
   /** 0-1, or null on screens that are not asking anything. */
@@ -95,13 +100,14 @@ export function FunnelShell({
   onSecondary?: () => void;
   footnote?: string;
   centred?: boolean;
+  backdrop?: ReactNode;
 }) {
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
 
-  return (
-    <Ground variant="plain">
+  const body = (
       <View style={{ flex: 1, paddingTop: insets.top + spacing.sm }}>
+        {backdrop ? null : (
         <View
           style={{
             flexDirection: 'row',
@@ -132,6 +138,7 @@ export function FunnelShell({
 
           {progress === null ? <View style={{ flex: 1 }} /> : <ProgressBar value={progress} />}
         </View>
+        )}
 
         <ScrollView
           key={stepKey}
@@ -169,14 +176,26 @@ export function FunnelShell({
           ) : null}
 
           {footnote ? (
-            <Text variant="caption" color="textTertiary" center>
+            // Secondary rather than tertiary: on the first screen this line
+            // sits over the plate's stone, where tertiary grey disappears.
+            <Text variant="caption" color="textSecondary" center>
               {footnote}
             </Text>
           ) : null}
         </View>
       </View>
-    </Ground>
   );
+
+  if (backdrop) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {backdrop}
+        {body}
+      </View>
+    );
+  }
+
+  return <Ground variant="plain">{body}</Ground>;
 }
 
 function ProgressBar({ value }: { value: number }) {

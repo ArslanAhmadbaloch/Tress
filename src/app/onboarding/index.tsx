@@ -30,8 +30,8 @@ import {
   SubHeading,
   Wash,
 } from '@/components/funnel';
+import { BrandLockup } from '@/components/brand-lockup';
 import { MemberCard } from '@/components/member-card';
-import { GlassOrb } from '@/components/ui/glass-orb';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
@@ -216,42 +216,18 @@ export default function OnboardingFunnel() {
   switch (step) {
     /* ----------------------------- welcome ---------------------------- */
     case 'welcome':
+      /*
+       * The lockup and nothing else — the same artwork the launch
+       * animation just finished assembling, standing still. A person who
+       * has watched it resolve should find it exactly where it settled
+       * rather than meeting a second, differently drawn version of it.
+       */
       return shell({
-        centred: true,
+        backdrop: <BrandLockup />,
         cta: COPY.welcome.cta,
         onCta: next,
         footnote: COPY.welcome.footnote,
-        children: (
-          <>
-            <Wash />
-            <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxxl }}>
-              <Breathe>
-                <GlassOrb size={96} ring={false} emphasis="strong">
-                  <Icon name="leaf" size={40} color={colors.accent} />
-                </GlassOrb>
-              </Breathe>
-            </Rise>
-
-            <Rise index={1}>
-              <Text variant="display" center>
-                {COPY.welcome.title}
-              </Text>
-              <Text variant="display" color="textTertiary" center>
-                {COPY.welcome.titleMuted}
-              </Text>
-            </Rise>
-
-            <Rise index={2}>
-              <Text
-                variant="callout"
-                color="textSecondary"
-                center
-                style={{ marginTop: spacing.xl, paddingHorizontal: spacing.lg }}>
-                {COPY.welcome.body}
-              </Text>
-            </Rise>
-          </>
-        ),
+        children: <View style={{ flex: 1 }} />,
       });
 
     /* ---------------------------- what it means ----------------------- */
