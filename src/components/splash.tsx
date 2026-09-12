@@ -2,11 +2,11 @@
  * The launch animation.
  *
  * The brand lockup was delivered as two renders: an empty plate and the
- * finished composition. `scripts/splash-tiles.swift` cuts the mark, the
- * wordmark and the tagline out of the finished render and feathers them,
- * so each piece can be laid back over the plate at the coordinates it
- * came from and brought up on its own beat. Nothing is re-typeset: what
- * animates is the designer's artwork, pixel for pixel.
+ * finished composition. `scripts/splash-tiles.swift` cuts the mark and
+ * the two lines of the wordmark out of the finished render and feathers
+ * them, so each piece can be laid back over the plate at the coordinates
+ * it came from and brought up on its own beat. Nothing is re-typeset:
+ * what animates is the designer's artwork, pixel for pixel.
  *
  * Everything is positioned in the plate's own coordinate space and then
  * mapped onto whatever rectangle the plate covers on this screen, so the
@@ -15,8 +15,9 @@
  * The sequence is light arriving on a still surface rather than motion
  * for its own sake: the plate settles out of a slight push-in, warm light
  * gathers over the mark and clears as the mark resolves, a soft sheen
- * crosses it, and the words follow. With Reduce Motion on it is a plain
- * cross-fade, held just long enough to read.
+ * crosses it, and the two lines of the phrase settle up into place one
+ * after the other. With Reduce Motion on it is a plain cross-fade, held
+ * just long enough to read.
  */
 
 import { Image } from 'expo-image';
@@ -38,11 +39,11 @@ import { launch } from '@/theme';
 
 const PLATE = require('@/assets/images/splash-plate.jpg');
 const EMBLEM = require('@/assets/images/splash-emblem.png');
-const WORDMARK = require('@/assets/images/splash-wordmark.png');
-const TAGLINE = require('@/assets/images/splash-tagline.png');
+const LINE_ONE = require('@/assets/images/splash-line-one.png');
+const LINE_TWO = require('@/assets/images/splash-line-two.png');
 
 /** Held until these have decoded, so the first frame is the finished plate. */
-export const SPLASH_ASSETS = [PLATE, EMBLEM, WORDMARK, TAGLINE];
+export const SPLASH_ASSETS = [PLATE, EMBLEM, LINE_ONE, LINE_TWO];
 
 /** The design's own pixel dimensions; every position below is a fraction of it. */
 const PLATE_W = 853;
@@ -64,22 +65,25 @@ const EMBLEM_TILE: Tile = {
   left: 0.26729,
   top: 0.28254,
   width: 0.45252,
-  aspect: 386 / 469,
+  aspect: 386 / 431,
 };
-const WORDMARK_TILE: Tile = {
-  source: WORDMARK,
+const LINE_ONE_TILE: Tile = {
+  source: LINE_ONE,
+  left: 0.2755,
+  top: 0.51627,
+  width: 0.45369,
+  aspect: 387 / 70,
+};
+const LINE_TWO_TILE: Tile = {
+  source: LINE_TWO,
   left: 0.19343,
-  top: 0.48861,
+  top: 0.55369,
   width: 0.61782,
-  aspect: 527 / 236,
+  aspect: 527 / 96,
 };
-const TAGLINE_TILE: Tile = {
-  source: TAGLINE,
-  left: 0.22157,
-  top: 0.57809,
-  width: 0.56038,
-  aspect: 478 / 199,
-};
+
+/** How far each line of the wordmark rises into place, in plate pixels. */
+const LINE_RISE = 13;
 
 /** Centre and radius of the mark's disc, for the light that plays on it. */
 const DISC = { x: 0.498, y: 0.42, r: 0.182 };
@@ -91,8 +95,13 @@ const SETTLE = 2200;
 const EMBLEM_IN = { delay: 260, duration: 620 };
 const BLOOM = { delay: 200, rise: 420, fall: 900 };
 const SHEEN = { delay: 560, duration: 1000 };
-const WORDMARK_IN = { delay: 820, duration: 520 };
-const TAGLINE_IN = { delay: 1040, duration: 520 };
+/**
+ * The two lines are separate pieces of artwork and arrive separately,
+ * each settling up into place: the phrase is a sentence with a turn in
+ * it, and reading it in one flash loses that.
+ */
+const LINE_ONE_IN = { delay: 900, duration: 620 };
+const LINE_TWO_IN = { delay: 1160, duration: 620 };
 /**
  * When the lockup starts to clear, measured from the first frame.
  *
@@ -130,8 +139,8 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
   const emblem = useSharedValue(0);
   const bloom = useSharedValue(0);
   const sheen = useSharedValue(0);
-  const wordmark = useSharedValue(0);
-  const tagline = useSharedValue(0);
+  const lineOne = useSharedValue(0);
+  const lineTwo = useSharedValue(0);
   const exit = useSharedValue(1);
 
   useEffect(() => {
@@ -150,8 +159,8 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
       const fade = withTiming(1, { duration: CALM.fade });
       plate.set(fade);
       emblem.set(withTiming(1, { duration: CALM.fade }));
-      wordmark.set(withTiming(1, { duration: CALM.fade }));
-      tagline.set(withTiming(1, { duration: CALM.fade }));
+      lineOne.set(withTiming(1, { duration: CALM.fade }));
+      lineTwo.set(withTiming(1, { duration: CALM.fade }));
       settle.set(1);
       finish();
       return;
@@ -177,20 +186,20 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
     sheen.set(
       withDelay(SHEEN.delay, withTiming(1, { duration: SHEEN.duration, easing: easeInOut })),
     );
-    wordmark.set(
+    lineOne.set(
       withDelay(
-        WORDMARK_IN.delay,
-        withTiming(1, { duration: WORDMARK_IN.duration, easing: easeOut }),
+        LINE_ONE_IN.delay,
+        withTiming(1, { duration: LINE_ONE_IN.duration, easing: easeOut }),
       ),
     );
-    tagline.set(
+    lineTwo.set(
       withDelay(
-        TAGLINE_IN.delay,
-        withTiming(1, { duration: TAGLINE_IN.duration, easing: easeOut }),
+        LINE_TWO_IN.delay,
+        withTiming(1, { duration: LINE_TWO_IN.duration, easing: easeOut }),
       ),
     );
     finish();
-  }, [reduceMotion, onFinish, plate, settle, emblem, bloom, sheen, wordmark, tagline, exit]);
+  }, [reduceMotion, onFinish, plate, settle, emblem, bloom, sheen, lineOne, lineTwo, exit]);
 
   const rootStyle = useAnimatedStyle(() => ({ opacity: exit.get() }));
 
@@ -202,8 +211,18 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
 
   const plateStyle = useAnimatedStyle(() => ({ opacity: plate.get() }));
   const emblemStyle = useAnimatedStyle(() => ({ opacity: emblem.get() }));
-  const wordmarkStyle = useAnimatedStyle(() => ({ opacity: wordmark.get() }));
-  const taglineStyle = useAnimatedStyle(() => ({ opacity: tagline.get() }));
+
+  // Each line settles up into place. The travel is in plate pixels, so it
+  // scales with the artwork rather than being a fixed number of points.
+  const rise = LINE_RISE * (rect.width / PLATE_W);
+  const lineOneStyle = useAnimatedStyle(() => ({
+    opacity: lineOne.get(),
+    transform: [{ translateY: rise * (1 - lineOne.get()) }],
+  }));
+  const lineTwoStyle = useAnimatedStyle(() => ({
+    opacity: lineTwo.get(),
+    transform: [{ translateY: rise * (1 - lineTwo.get()) }],
+  }));
 
   const bloomSize = rect.width * 0.95;
   const bloomStyle = useAnimatedStyle(() => ({
@@ -289,9 +308,9 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
           <Glow size={sheenSize} inner={0.95} mid={0.3} />
         </Animated.View>
 
-        <Animated.View style={[place(WORDMARK_TILE), wordmarkStyle]}>
+        <Animated.View style={[place(LINE_ONE_TILE), lineOneStyle]}>
           <Image
-            source={WORDMARK}
+            source={LINE_ONE}
             style={StyleSheet.absoluteFill}
             contentFit="fill"
             transition={0}
@@ -300,9 +319,9 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
           />
         </Animated.View>
 
-        <Animated.View style={[place(TAGLINE_TILE), taglineStyle]}>
+        <Animated.View style={[place(LINE_TWO_TILE), lineTwoStyle]}>
           <Image
-            source={TAGLINE}
+            source={LINE_TWO}
             style={StyleSheet.absoluteFill}
             contentFit="fill"
             transition={0}
