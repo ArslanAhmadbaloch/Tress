@@ -31,7 +31,7 @@ import { placeholderSeries } from './ui/ring';
 import { CheckGlyph } from './ui/routine-glyphs';
 import { Text } from './ui/text';
 import type { DayCell, MonthPoint, SeriesPoint } from '@/store/selectors';
-import { useTheme } from '@/theme';
+import { typography, useTheme } from '@/theme';
 
 /* ------------------------------ shared ------------------------------ */
 
@@ -118,10 +118,13 @@ export function ScoreCard({
   months,
   onCycleRange,
   onExplain,
+  started,
   style,
 }: {
   value: number;
   delta: number | null;
+  /** False until anything at all has been recorded. */
+  started: boolean;
   points: MonthPoint[];
   months: number;
   onCycleRange: () => void;
@@ -148,7 +151,7 @@ export function ScoreCard({
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel="How consistency is calculated">
-            <Icon name="info" size={16} color={colors.textSecondary} />
+            <Icon name="info" size={15} color={colors.textSecondary} />
           </PressableScale>
         </View>
 
@@ -173,7 +176,7 @@ export function ScoreCard({
             shadow.soft,
           ]}>
           <Text variant="footnote">{`Last ${months} Months`}</Text>
-          <Icon name="chevronDown" size={11} color={colors.text} />
+          <Icon name="chevronDown" size={12} color={colors.text} />
         </PressableScale>
       </View>
 
@@ -184,8 +187,14 @@ export function ScoreCard({
           gap: spacing.md,
           marginTop: spacing.sm,
         }}>
+        {/*
+          Nothing recorded yet reads as an em dash, not as a 48pt zero.
+          The number is accurate either way; a screen that opens on a
+          giant nought tells somebody they have failed at a thing they
+          have not started, which is the opposite of what this app is for.
+        */}
         <Text variant="display" style={{ fontSize: 48, lineHeight: 54 }}>
-          {value}
+          {started ? value : '—'}
         </Text>
         {typeof delta === 'number' && delta !== 0 ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
@@ -208,7 +217,7 @@ export function ScoreCard({
       </View>
 
       <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xs }}>
-        Routine adherence by month
+        {started ? 'Routine adherence by month' : 'Your first tick starts this.'}
       </Text>
 
       <TrendChart points={points} preview={isPreview} />
@@ -636,8 +645,8 @@ export function PhotoStrip({
                 justifyContent: 'center',
                 gap: 4,
               }}>
-              <Icon name="plus" size={16} color={colors.accent} />
-              <Text variant="caption" color="accent" style={{ fontSize: 9, lineHeight: 11 }}>
+              <Icon name="plus" size={15} color={colors.accent} />
+              <Text variant="caption" color="accent" style={{ fontSize: typography.micro.fontSize, lineHeight: 11 }}>
                 Baseline
               </Text>
             </PressableScale>
@@ -655,8 +664,8 @@ export function PhotoStrip({
                   gap: 4,
                   opacity: 0.75,
                 }}>
-                <Icon name="camera" size={13} color={colors.textTertiary} />
-                <Text variant="caption" color="textTertiary" style={{ fontSize: 9, lineHeight: 11 }}>
+                <Icon name="camera" size={12} color={colors.textTertiary} />
+                <Text variant="caption" color="textTertiary" style={{ fontSize: typography.micro.fontSize, lineHeight: 11 }}>
                   Month {m}
                 </Text>
               </View>
@@ -700,14 +709,14 @@ export function PhotoStrip({
                   variant="caption"
                   color="textOnPhoto"
                   numberOfLines={1}
-                  style={{ fontSize: 9, lineHeight: 11 }}>
+                  style={{ fontSize: typography.micro.fontSize, lineHeight: 11 }}>
                   {item.date}
                 </Text>
                 <Text
                   variant="caption"
                   color="textOnPhoto"
                   numberOfLines={1}
-                  style={{ fontSize: 9, lineHeight: 11 }}>
+                  style={{ fontSize: typography.micro.fontSize, lineHeight: 11 }}>
                   {item.label}
                 </Text>
               </View>
@@ -777,7 +786,7 @@ export function KeyMetricsCard({
           {row.trend ? (
             <Icon
               name={row.trend === 'up' ? 'arrowUpRight' : 'arrowDownRight'}
-              size={11}
+              size={12}
               color={row.trend === 'up' ? colors.accent : colors.textTertiary}
             />
           ) : null}
@@ -870,7 +879,7 @@ export function NoteRow({ body, date }: { body: string; date: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
       <GlassOrb size={40} ring={false} tone="neutral">
-        <Icon name="note" size={16} color={colors.text} />
+        <Icon name="note" size={15} color={colors.text} />
       </GlassOrb>
       <View style={{ flex: 1 }}>
         <Text variant="callout" numberOfLines={2}>
@@ -928,7 +937,7 @@ export function NotesCard({
             justifyContent: 'center',
             backgroundColor: colors.backgroundSubtle,
           }}>
-          <Icon name={latest ? 'chevronRight' : 'plus'} size={14} color={colors.text} />
+          <Icon name={latest ? 'chevronRight' : 'plus'} size={15} color={colors.text} />
         </View>
       </PressableScale>
     </Panel>

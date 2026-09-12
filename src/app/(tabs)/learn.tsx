@@ -21,7 +21,7 @@ import {
   type Article,
   type LearnCategory,
 } from '@/features/learn/library';
-import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
+import { MIN_TOUCH_TARGET, useTheme, typography } from '@/theme';
 
 type Filter = 'all' | LearnCategory;
 
@@ -110,9 +110,8 @@ export default function LearnScreen() {
         <ScreenTitle
           eyebrow="Learn & Grow"
           title="Knowledge"
-          titleMuted="for Real Results"
+          titleMuted="worth having."
           subtitle="Evidence-based information. No noise."
-          script="Better Knowledge Healthier Hair"
         />
 
         {/* Search */}
@@ -129,7 +128,7 @@ export default function LearnScreen() {
             borderWidth: 1,
             borderColor: colors.border,
           }}>
-          <Icon name="search" size={17} color={colors.textTertiary} />
+          <Icon name="search" size={18} color={colors.textTertiary} />
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -137,7 +136,7 @@ export default function LearnScreen() {
             placeholderTextColor={colors.textTertiary}
             returnKeyType="search"
             accessibilityLabel="Search the library"
-            style={{ flex: 1, color: colors.text, fontSize: 16 }}
+            style={{ flex: 1, color: colors.text, fontSize: typography.body.fontSize }}
           />
           {searching ? (
             <PressableScale

@@ -163,7 +163,7 @@ export default function ProfilePhotoScreen() {
                               justifyContent: 'center',
                               backgroundColor: colors.accent,
                             }}>
-                            <Icon name="check" size={11} color={colors.textOnAccent} />
+                            <Icon name="check" size={12} color={colors.textOnAccent} />
                           </View>
                         ) : null}
                       </View>

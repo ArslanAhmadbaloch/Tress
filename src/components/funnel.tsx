@@ -130,7 +130,7 @@ export function FunnelShell({
                 justifyContent: 'center',
                 backgroundColor: colors.fill,
               }}>
-              <Icon name="chevronLeft" size={17} color={colors.text} />
+              <Icon name="chevronLeft" size={18} color={colors.text} />
             </PressableScale>
           ) : (
             <View style={{ width: 36, height: 36 }} />
@@ -359,7 +359,7 @@ export function ChoiceRow({
             borderWidth: selected ? 0 : 1.5,
             borderColor: colors.border,
           }}>
-          {selected ? <Icon name="check" size={13} color={colors.textOnAccent} /> : null}
+          {selected ? <Icon name="check" size={12} color={colors.textOnAccent} /> : null}
         </View>
       </PressableScale>
     </Rise>

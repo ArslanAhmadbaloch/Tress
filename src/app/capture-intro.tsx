@@ -84,10 +84,16 @@ export default function CaptureIntroScreen() {
             marginTop: spacing.xs,
             marginBottom: spacing.md,
           }}>
+          {/*
+            Steps back through the angles, and nothing else: on the first
+            angle it is disabled rather than doubling as a second way out.
+            Two controls that both close the screen is one too many.
+          */}
           <CircleButton
             icon="chevronLeft"
-            label={index > 0 ? 'Previous angle' : 'Back'}
-            onPress={() => (index > 0 ? setIndex(index - 1) : router.back())}
+            label="Previous angle"
+            disabled={index === 0}
+            onPress={() => setIndex(Math.max(0, index - 1))}
           />
           <StepDots count={ANGLES.length} active={index} />
           <CircleButton icon="close" label="Close" onPress={() => router.back()} />
@@ -102,7 +108,6 @@ export default function CaptureIntroScreen() {
               ? 'Take 5 clear photos to track your progress from all important angles.'
               : `Last captured ${last ? formatRelative(last.capturedAt) : 'recently'}. Match those conditions as closely as you can.`
           }
-          script="Same Angles Better Results"
         />
 
         {/* The five angles as one set around a front-facing portrait. */}
@@ -307,7 +312,7 @@ export default function CaptureIntroScreen() {
                     },
                     shadow.soft,
                   ]}>
-                  <Icon name="check" size={11} color={colors.accent} />
+                  <Icon name="check" size={12} color={colors.accent} />
                   <Text variant="caption" color="accent">
                     Good example
                   </Text>
@@ -366,7 +371,7 @@ export default function CaptureIntroScreen() {
               },
               shadow.soft,
             ]}>
-            <Icon name="chevronRight" size={13} color={colors.text} />
+            <Icon name="chevronRight" size={12} color={colors.text} />
           </View>
         </PressableScale>
 
@@ -428,17 +433,21 @@ function CircleButton({
   icon,
   label,
   onPress,
+  disabled,
 }: {
   icon: IconName;
   label: string;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   const { colors, shadow } = useTheme();
   return (
     <PressableScale
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled) }}
       style={[
         {
           width: 42,
@@ -450,7 +459,7 @@ function CircleButton({
         },
         shadow.soft,
       ]}>
-      <Icon name={icon} size={16} color={colors.text} />
+      <Icon name={icon} size={15} color={colors.text} />
     </PressableScale>
   );
 }

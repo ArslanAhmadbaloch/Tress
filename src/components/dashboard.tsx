@@ -72,7 +72,7 @@ export function HeaderActions({
           },
           shadow.soft,
         ]}>
-        <Icon name="settings" size={19} color={colors.text} />
+        <Icon name="settings" size={18} color={colors.text} />
       </PressableScale>
 
       <PressableScale
@@ -209,7 +209,7 @@ export function HairProgressCard({
               },
               shadow.soft,
             ]}>
-            <Icon name="chevronRight" size={14} color={colors.text} />
+            <Icon name="chevronRight" size={15} color={colors.text} />
           </View>
         </View>
       </View>
@@ -300,7 +300,7 @@ function Frame({
             justifyContent: 'center',
             gap: spacing.sm,
           }}>
-          <Icon name="camera" size={20} color={colors.textTertiary} />
+          <Icon name="camera" size={18} color={colors.textTertiary} />
           <Text variant="caption" color="textTertiary">
             No photo
           </Text>
@@ -625,7 +625,7 @@ export function JournalCard({
       ]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
         <GlassOrb size={42} ring={false} tone="neutral">
-          <Icon name="pencil" size={17} color={colors.text} />
+          <Icon name="pencil" size={18} color={colors.text} />
         </GlassOrb>
         <View style={{ flex: 1 }}>
           <Text variant="title3">Hair Journal</Text>
@@ -642,7 +642,7 @@ export function JournalCard({
           accessibilityRole="button"
           accessibilityLabel="Write a journal entry">
           <GlassOrb size={38} ring={false}>
-            <Icon name="plus" size={16} color={colors.text} />
+            <Icon name="plus" size={15} color={colors.text} />
           </GlassOrb>
         </PressableScale>
       </View>
@@ -802,7 +802,7 @@ export function LearnCard({
         {/* The same green glass as the Today's Stack icons, so the card's
             way forward reads as part of the same set. */}
         <GlassOrb size={40} ring={false}>
-          <Icon name="arrowRight" size={16} color={colors.text} />
+          <Icon name="arrowRight" size={15} color={colors.text} />
         </GlassOrb>
       </View>
     </PressableScale>

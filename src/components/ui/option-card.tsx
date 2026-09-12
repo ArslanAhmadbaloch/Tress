@@ -66,7 +66,7 @@ export function OptionCard({
           borderWidth: selected ? 0 : 1.5,
           borderColor: colors.border,
         }}>
-        {selected ? <Icon name="check" size={14} color={colors.textOnAccent} /> : null}
+        {selected ? <Icon name="check" size={15} color={colors.textOnAccent} /> : null}
       </View>
     </PressableScale>
   );

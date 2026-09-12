@@ -206,7 +206,7 @@ export default function RoutineScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`Remove ${item.label}`}
                         style={{ padding: spacing.xs }}>
-                        <Icon name="trash" size={16} color={colors.textTertiary} />
+                        <Icon name="trash" size={15} color={colors.textTertiary} />
                       </PressableScale>
                     }
                   />
@@ -328,7 +328,7 @@ export default function RoutineScreen() {
             borderRadius: radius.md,
             backgroundColor: colors.backgroundSubtle,
           }}>
-          <Icon name="info" size={17} color={colors.textTertiary} />
+          <Icon name="info" size={18} color={colors.textTertiary} />
           <Text variant="footnote" color="textSecondary" style={{ flex: 1 }}>
             Hair Journey tracks what you tell it. It does not recommend
             treatments or doses — speak to a qualified healthcare

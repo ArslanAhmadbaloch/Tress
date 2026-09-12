@@ -98,7 +98,7 @@ export function Button({
         <Animated.View
           entering={ZoomIn.springify().damping(12).stiffness(420)}
           exiting={FadeOut.duration(120)}>
-          <Icon name="check" size={20} color={colors[labelColor]} />
+          <Icon name="check" size={18} color={colors[labelColor]} />
         </Animated.View>
       ) : (
         <Animated.View

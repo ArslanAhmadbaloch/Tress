@@ -17,7 +17,7 @@ import { BulbGlyph } from './ui/tab-glyphs';
 import { Text } from './ui/text';
 import { articleImage } from '@/features/learn/images';
 import type { Article, LearnCategory } from '@/features/learn/library';
-import { splitAlpha, useTheme, withZeroAlpha } from '@/theme';
+import { splitAlpha, typography, useTheme, withZeroAlpha } from '@/theme';
 
 export const CATEGORY_ICONS: Record<LearnCategory, IconName> = {
   basics: 'learn',
@@ -141,7 +141,7 @@ export function FeaturedCard({ article, onPress }: { article: Article; onPress: 
             },
             shadow.soft,
           ]}>
-          <Icon name="clock" size={11} color={colors.text} />
+          <Icon name="clock" size={12} color={colors.text} />
           <Text variant="caption">{article.readingMinutes} min read</Text>
         </View>
 
@@ -155,7 +155,7 @@ export function FeaturedCard({ article, onPress }: { article: Article; onPress: 
                 borderRadius: radius.pill,
                 backgroundColor: colors.accentSoft,
               }}>
-              <Text variant="caption" color="accent" style={{ letterSpacing: 1.2, fontSize: 10 }}>
+              <Text variant="caption" color="accent" style={{ letterSpacing: 1.2, fontSize: typography.micro.fontSize }}>
                 FEATURED
               </Text>
             </View>
@@ -181,7 +181,7 @@ export function FeaturedCard({ article, onPress }: { article: Article; onPress: 
             <Text variant="subhead" color="textOnAccent" style={{ fontWeight: '600' }}>
               Read Article
             </Text>
-            <Icon name="arrowRight" size={13} color={colors.textOnAccent} />
+            <Icon name="arrowRight" size={12} color={colors.textOnAccent} />
           </View>
         </View>
       </View>
@@ -249,13 +249,13 @@ export function ArticleListRow({ article, onPress }: { article: Article; onPress
           {article.standfirst}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-          <Icon name="clock" size={11} color={colors.textTertiary} />
+          <Icon name="clock" size={12} color={colors.textTertiary} />
           <Text variant="caption" color="textTertiary">
             {article.readingMinutes} min read
           </Text>
         </View>
       </View>
-      <Icon name="chevronRight" size={14} color={colors.text} />
+      <Icon name="chevronRight" size={15} color={colors.text} />
     </PressableScale>
   );
 }

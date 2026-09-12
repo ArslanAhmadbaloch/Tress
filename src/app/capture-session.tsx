@@ -349,7 +349,7 @@ export default function CaptureSessionScreen() {
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}>
-                    <Icon name="camera" size={16} color={colors.textTertiary} />
+                    <Icon name="camera" size={15} color={colors.textTertiary} />
                   </View>
                 )}
 
@@ -359,7 +359,7 @@ export default function CaptureSessionScreen() {
 
                 <Icon
                   name={shot ? 'checkCircle' : 'circle'}
-                  size={20}
+                  size={18}
                   color={shot ? colors.accent : colors.textTertiary}
                 />
               </PressableScale>
@@ -519,7 +519,7 @@ export default function CaptureSessionScreen() {
               alignItems: 'center',
               justifyContent: 'center',
             }}>
-            <Icon name="close" size={17} color="#fff" />
+            <Icon name="close" size={18} color="#fff" />
           </GlassSurface>
         </PressableScale>
 
@@ -559,7 +559,7 @@ export default function CaptureSessionScreen() {
               alignItems: 'center',
               gap: 5,
             }}>
-            <Icon name="clock" size={16} color={timer ? colors.accent : '#fff'} />
+            <Icon name="clock" size={15} color={timer ? colors.accent : '#fff'} />
             <Text variant="subhead" style={{ color: timer ? colors.accent : '#fff' }}>
               {timer === 0 ? 'Off' : `${timer}s`}
             </Text>
@@ -585,7 +585,7 @@ export default function CaptureSessionScreen() {
               }}>
               <Icon
                 name="photo"
-                size={17}
+                size={18}
                 color={showGhost ? colors.accent : '#fff'}
               />
             </GlassSurface>

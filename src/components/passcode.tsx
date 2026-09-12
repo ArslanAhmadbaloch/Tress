@@ -205,7 +205,7 @@ export function Keypad({
             onPress={onBiometric}>
             <Icon
               name={biometricLabel === 'Touch ID' ? 'phone' : 'profile'}
-              size={26}
+              size={28}
               color={colors.accent}
             />
           </Key>

@@ -11,7 +11,7 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { formatDate, formatMilestone } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
-import { useTheme } from '@/theme';
+import { useTheme, typography } from '@/theme';
 
 export default function JournalScreen() {
   const { colors, spacing, radius } = useTheme();
@@ -104,7 +104,7 @@ export default function JournalScreen() {
               accessibilityLabel="New journal entry"
               style={{
                 color: colors.text,
-                fontSize: 16,
+                fontSize: typography.body.fontSize,
                 lineHeight: 23,
                 minHeight: 110,
                 textAlignVertical: 'top',
@@ -131,15 +131,17 @@ export default function JournalScreen() {
               />
             </View>
           </Card>
-        ) : (
+        ) : data.journal.length > 0 ? (
           <Button label="New entry" icon="plus" onPress={() => setComposing(true)} />
-        )}
+        ) : null}
 
         {data.journal.length === 0 ? (
           <EmptyState
-            icon="note"
+            icon="sparkle"
             title="No entries yet"
             body="Journal entries give your photos context — what changed, what you started, how your hair felt."
+            actionLabel="Write your first"
+            onAction={() => setComposing(true)}
           />
         ) : (
           <>

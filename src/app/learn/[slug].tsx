@@ -208,7 +208,7 @@ export default function ArticleScreen() {
             borderRadius: radius.md,
             backgroundColor: colors.backgroundSubtle,
           }}>
-          <Icon name="info" size={17} color={colors.textTertiary} />
+          <Icon name="info" size={18} color={colors.textTertiary} />
           <Text variant="footnote" color="textSecondary" style={{ flex: 1 }}>
             This is general educational information, not medical advice, and
             it cannot account for your individual circumstances. Speak to a
@@ -262,7 +262,7 @@ function Row({ icon, label }: { icon: 'clock' | 'calendar'; label: string }) {
   const { colors, spacing } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-      <Icon name={icon} size={14} color={colors.textTertiary} />
+      <Icon name={icon} size={15} color={colors.textTertiary} />
       <Text variant="caption" color="textTertiary">
         {label}
       </Text>
@@ -288,7 +288,7 @@ function BackBar({ onBack, inline }: { onBack: () => void; inline?: boolean }) {
           borderWidth: 1,
           borderColor: colors.border,
         }}>
-        <Icon name="chevronLeft" size={16} color={colors.text} />
+        <Icon name="chevronLeft" size={15} color={colors.text} />
       </PressableScale>
     </View>
   );

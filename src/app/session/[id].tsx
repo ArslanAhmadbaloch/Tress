@@ -18,7 +18,7 @@ import { Text } from '@/components/ui/text';
 import { formatDate, formatMilestone } from '@/lib/date';
 import { deletePhotoFiles } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
-import { useTheme } from '@/theme';
+import { useTheme, typography } from '@/theme';
 import { ANGLE_LABELS, type Photo } from '@/types/domain';
 
 export default function SessionDetailScreen() {
@@ -168,7 +168,7 @@ export default function SessionDetailScreen() {
               accessibilityLabel="Journal note"
               style={{
                 color: colors.text,
-                fontSize: 16,
+                fontSize: typography.body.fontSize,
                 lineHeight: 23,
                 minHeight: 110,
                 textAlignVertical: 'top',

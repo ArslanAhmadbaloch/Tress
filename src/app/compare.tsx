@@ -178,7 +178,7 @@ export default function CompareScreen() {
                 gap: spacing.md,
                 padding: spacing.xl,
               }}>
-              <Icon name="photo" size={26} color={colors.textTertiary} />
+              <Icon name="photo" size={28} color={colors.textTertiary} />
               <Text variant="callout" color="textSecondary" center>
                 One of these updates doesn&apos;t include a{' '}
                 {ANGLE_LABELS[angle].toLowerCase()} photo.
@@ -366,8 +366,8 @@ function SliderCompare({
                 flexDirection: 'row',
                 gap: 1,
               }}>
-              <Icon name="chevronLeft" size={11} color="#111" />
-              <Icon name="chevronRight" size={11} color="#111" />
+              <Icon name="chevronLeft" size={12} color="#111" />
+              <Icon name="chevronRight" size={12} color="#111" />
             </View>
           </Animated.View>
 

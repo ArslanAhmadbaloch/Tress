@@ -123,7 +123,7 @@ export default function JourneyScreen() {
       value: adherence === null ? '—' : `${adherence}%`,
     },
     {
-      glyph: <Icon name="camera" size={14} color={colors.text} />,
+      glyph: <Icon name="camera" size={15} color={colors.text} />,
       label: 'Sessions',
       value: `${data.sessions.length}`,
     },
@@ -139,6 +139,7 @@ export default function JourneyScreen() {
     <ScoreCard
       value={score.value}
       delta={score.delta}
+      started={data.sessions.length > 0 || data.routineLogs.length > 0}
       points={history}
       months={months}
       onCycleRange={() => setMonths(RANGES[(RANGES.indexOf(months) + 1) % RANGES.length])}
@@ -154,8 +155,7 @@ export default function JourneyScreen() {
           eyebrow="Your journey"
           title="Track Your"
           titleMuted="Progress"
-          subtitle={'Small steps. Real results.\nA healthier, fuller you tomorrow.'}
-          script="Progress Takes Time"
+          subtitle={'Everything you have recorded,\nin one place.'}
           trailing={
             <HeaderActions
               initial={(name ?? 'Y').charAt(0).toUpperCase()}
@@ -381,7 +381,7 @@ function SessionTimeline({
                       {formatDate(session.capturedAt)}
                     </Text>
                   </View>
-                  <Icon name="chevronRight" size={16} color={colors.textTertiary} />
+                  <Icon name="chevronRight" size={15} color={colors.textTertiary} />
                 </View>
 
                 <View style={{ flexDirection: 'row', gap: 2 }}>

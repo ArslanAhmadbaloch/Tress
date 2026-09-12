@@ -126,8 +126,7 @@ export default function CalendarScreen() {
           eyebrow="Calendar"
           title="Track your"
           titleMuted="consistency"
-          subtitle="Small steps. Real results."
-          script="Discipline Today Denser Hair Tomorrow"
+          subtitle="Every day you showed up."
           trailing={
             <PressableScale
               onPress={() => router.back()}
@@ -276,7 +275,7 @@ export default function CalendarScreen() {
             flexDirection: 'row',
             gap: spacing.md,
           }}>
-          <Icon name="info" size={17} color={colors.textTertiary} />
+          <Icon name="info" size={18} color={colors.textTertiary} />
           <Text variant="footnote" color="textSecondary" style={{ flex: 1 }}>
             Consistency is what makes your timeline readable later — a routine
             followed irregularly is hard to interpret against your photographs.

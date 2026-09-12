@@ -66,7 +66,7 @@ export function SettingsNote({
         marginTop: spacing.md,
         paddingHorizontal: spacing.xs,
       }}>
-      {icon ? <Icon name={icon} size={13} color={colors.textTertiary} /> : null}
+      {icon ? <Icon name={icon} size={12} color={colors.textTertiary} /> : null}
       <Text variant="footnote" color="textSecondary" style={{ flex: 1 }}>
         {children}
       </Text>
@@ -271,7 +271,7 @@ export function InfoRow({
           {value}
         </Text>
       ) : null}
-      {onPress ? <Icon name="chevronRight" size={14} color={colors.textTertiary} /> : null}
+      {onPress ? <Icon name="chevronRight" size={15} color={colors.textTertiary} /> : null}
     </>
   );
 

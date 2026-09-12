@@ -43,6 +43,7 @@ export default function ProfileScreen() {
           eyebrow="Profile"
           title="Your"
           titleMuted="journey"
+          subtitle={'Your card, your journal,\nand everything you have set.'}
           trailing={
             <PressableScale
               onPress={() => router.push('/settings')}
@@ -85,9 +86,7 @@ export default function ProfileScreen() {
           color="textSecondary"
           center
           style={{ marginTop: spacing.md, paddingHorizontal: spacing.xl }}>
-          Tap the card to open it full size and save it. Consistency is how
-          regularly you tick off your stack and take your photos — it says
-          nothing about your hair.
+          Tap to open it full size and save it.
         </Text>
 
         <SectionHeader title="Journal" action="View all" onAction={() => router.push('/journal')} />
@@ -175,7 +174,7 @@ function ProfileRow({
         paddingHorizontal: spacing.lg,
         paddingVertical: spacing.lg,
       }}>
-      <Icon name={icon} size={19} color={colors.textSecondary} />
+      <Icon name={icon} size={18} color={colors.textSecondary} />
       <Text variant="body" style={{ flex: 1 }}>
         {label}
       </Text>

@@ -480,6 +480,16 @@ export const typography = {
     letterSpacing: -0.7,
   },
   /**
+   * Smallest readable step. Chart axes and photo credits only — if a
+   * sentence needs this size to fit, the sentence is too long.
+   */
+  micro: {
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+  },
+  /**
    * Decorative editorial script, for the one motivational phrase a screen
    * is allowed. Never for anything the user has to read to use the app —
    * it is an accent, and it is not especially legible at small sizes.
@@ -561,6 +571,28 @@ export const launch = {
   paper: '#F0E9E3',
   /** Warm light gathering behind the mark, and the sheen crossing it. */
   light: '#FFFDF7',
+} as const;
+
+/* ------------------------------------------------------------------ *
+ * Icon sizing
+ *
+ * Five optical steps. An interface icon picks one of these; anything
+ * larger is a deliberate hero and is sized where it is drawn. Before this
+ * existed the app used twenty-four different icon sizes, which is the kind
+ * of drift nobody can point at but everybody can feel.
+ * ------------------------------------------------------------------ */
+
+export const iconSize = {
+  /** Inside a chip, a caption row, a small badge. */
+  xs: 12,
+  /** The workhorse: list rows, inline affordances. */
+  sm: 15,
+  /** Section actions, toolbar controls. */
+  md: 18,
+  /** A control that is the point of its row. */
+  lg: 22,
+  /** Standalone, with nothing competing. */
+  xl: 28,
 } as const;
 
 /** Hit target floor from the Apple HIG / Material guidance. */

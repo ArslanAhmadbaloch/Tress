@@ -54,7 +54,7 @@ import {
 } from '@/features/onboarding/script';
 import { persistProfilePhoto } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
-import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
+import { MIN_TOUCH_TARGET, useTheme, typography } from '@/theme';
 import {
   HAIR_GOAL_LABELS,
   PREOCCUPATION_STEPS,
@@ -444,7 +444,7 @@ export default function OnboardingFunnel() {
                       justifyContent: 'center',
                       backgroundColor: colors.accent,
                     }}>
-                    <Icon name="check" size={13} color={colors.textOnAccent} />
+                    <Icon name="check" size={12} color={colors.textOnAccent} />
                   </View>
                 </View>
               </Rise>
@@ -745,7 +745,7 @@ export default function OnboardingFunnel() {
                   <Text variant="headline" style={{ flex: 1 }}>
                     {angle}
                   </Text>
-                  <Icon name="camera" size={17} color={colors.textTertiary} />
+                  <Icon name="camera" size={18} color={colors.textTertiary} />
                 </View>
               </Rise>
             ))}
@@ -816,7 +816,7 @@ function FactScreen({ fact, illustration }: { fact: Fact; illustration: ReactNod
           <Text variant="subhead" color="accent" style={{ flexShrink: 1 }}>
             {fact.source}
           </Text>
-          <Icon name="arrowRight" size={13} color={colors.accent} />
+          <Icon name="arrowRight" size={12} color={colors.accent} />
         </PressableScale>
       </Rise>
     </>
@@ -973,7 +973,7 @@ function Field({
         autoFocus={autoFocus}
         keyboardType={keyboardType}
         accessibilityLabel={label}
-        style={{ color: colors.text, fontSize: 17 }}
+        style={{ color: colors.text, fontSize: typography.body.fontSize }}
       />
     </View>
   );
