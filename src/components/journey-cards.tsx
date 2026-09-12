@@ -9,37 +9,28 @@
  */
 
 import { Image } from 'expo-image';
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
 import Svg, {
   Circle,
   Defs,
-  Ellipse,
   G,
   Line,
   LinearGradient,
   Path,
-  RadialGradient,
   Rect,
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
 
 import { GlassOrb } from './ui/glass-orb';
-import { GlassSurface } from './ui/glass-surface';
 import { Icon } from './ui/icon';
 import { PressableScale } from './ui/pressable-scale';
 import { placeholderSeries } from './ui/ring';
 import { CheckGlyph } from './ui/routine-glyphs';
 import { Text } from './ui/text';
 import type { DayCell, MonthPoint, SeriesPoint } from '@/store/selectors';
-import { splitAlpha, useTheme } from '@/theme';
+import { useTheme } from '@/theme';
 
 /* ------------------------------ shared ------------------------------ */
 
@@ -111,122 +102,6 @@ function PanelHeader({
         </PressableScale>
       ) : null}
     </View>
-  );
-}
-
-/* --------------------------- segmented tabs ------------------------- */
-
-const SEG_PAD = 4;
-const SEG_HEIGHT = 44;
-
-/**
- * Section tabs, in the same language as the floating tab bar: a glass
- * pill where the selected item sits in a pool of soft green light rather
- * than on a filled chip. The light glides between items on the app's
- * snappy spring; with Reduce Motion it moves without animating.
- */
-export function SegmentedTabs<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (next: T) => void;
-}) {
-  const { colors, spacing, radius, shadow, motion } = useTheme();
-  const reduceMotion = useReducedMotion();
-  const uid = useId().replace(/[^A-Za-z0-9]/g, '');
-  const [width, setWidth] = useState(0);
-
-  const index = Math.max(0, options.findIndex((o) => o.value === value));
-  const segment = width > 0 ? (width - SEG_PAD * 2) / options.length : 0;
-
-  const x = useSharedValue(0);
-  useEffect(() => {
-    if (!segment) return;
-    const target = index * segment;
-    x.set(reduceMotion ? target : withSpring(target, motion.spring.snappy));
-  }, [index, segment, reduceMotion, x, motion]);
-
-  const glowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
-  const glow = splitAlpha(colors.tabGlow);
-
-  return (
-    <GlassSurface
-      variant="regular"
-      borderRadius={radius.pill}
-      style={[{ marginTop: spacing.lg }, shadow.soft]}>
-      <View
-        accessibilityRole="tablist"
-        onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}
-        style={{ flexDirection: 'row', padding: SEG_PAD }}>
-        {segment > 0 ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              {
-                position: 'absolute',
-                top: SEG_PAD,
-                left: SEG_PAD,
-                width: segment,
-                height: SEG_HEIGHT,
-              },
-              glowStyle,
-            ]}>
-            <Svg width={segment} height={SEG_HEIGHT}>
-              <Defs>
-                <RadialGradient id={`seg${uid}`} cx="50%" cy="50%" r="50%">
-                  <Stop offset="0" stopColor={glow.color} stopOpacity={glow.opacity} />
-                  <Stop offset="0.62" stopColor={glow.color} stopOpacity={glow.opacity * 0.85} />
-                  <Stop offset="1" stopColor={glow.color} stopOpacity={0} />
-                </RadialGradient>
-              </Defs>
-              <Ellipse
-                cx={segment / 2}
-                cy={SEG_HEIGHT / 2}
-                rx={segment / 2}
-                ry={SEG_HEIGHT / 2}
-                fill={`url(#seg${uid})`}
-              />
-            </Svg>
-          </Animated.View>
-        ) : null}
-
-        {options.map((option) => {
-          const selected = option.value === value;
-          return (
-            <PressableScale
-              key={option.value}
-              onPress={() => onChange(option.value)}
-              haptic="light"
-              scaleTo={0.94}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              accessibilityLabel={option.label}
-              style={{
-                flex: 1,
-                height: SEG_HEIGHT,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-              {/* The tab bar's own label style. No shrink-to-fit: inside the
-                  glass pill iOS sizes text on a first, near-zero-width pass
-                  and never grows it back. */}
-              <Text
-                variant="caption"
-                numberOfLines={1}
-                style={{
-                  color: selected ? colors.text : colors.textSecondary,
-                  fontWeight: selected ? '600' : '500',
-                }}>
-                {option.label}
-              </Text>
-            </PressableScale>
-          );
-        })}
-      </View>
-    </GlassSurface>
   );
 }
 

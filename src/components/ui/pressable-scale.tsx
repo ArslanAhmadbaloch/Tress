@@ -22,6 +22,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
+import { hapticsAreEnabled } from '@/lib/device-preferences';
 import { MIN_TOUCH_TARGET, motion } from '@/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -62,7 +63,7 @@ export function PressableScale({
 
   const handlePress = useCallback<NonNullable<PressableProps['onPress']>>(
     (event) => {
-      if (haptic !== 'none') {
+      if (haptic !== 'none' && hapticsAreEnabled()) {
         const style =
           haptic === 'medium'
             ? Haptics.ImpactFeedbackStyle.Medium

@@ -342,8 +342,21 @@ record(
 
 /* 4. Robustness — empty states, permissions, failure paths */
 
+/**
+ * Mapping over a module constant — a fixed set of appearance modes, or
+ * the four reminder intervals — is not a list with an empty case. Only a
+ * map over something that can arrive empty needs one, so the receiver has
+ * to be an ordinary identifier rather than a SCREAMING_SNAKE constant.
+ */
+const mapsOverData = (text) =>
+  [...text.matchAll(/([A-Za-z_$][\w$]*)\s*(?:\.[\w$]+)*\s*\.map\(/g)].some((m) => {
+    const chain = m[0].slice(0, -'.map('.length);
+    const receiver = chain.split('.').pop() ?? '';
+    return !/^[A-Z0-9_]+$/.test(receiver);
+  });
+
 const listScreens = screenFiles.filter(
-  (f) => f.text.includes('.map(') && f.text.includes('ScreenScroll'),
+  (f) => mapsOverData(f.text) && f.text.includes('ScreenScroll'),
 );
 const withEmptyState = listScreens.filter(
   (f) => f.text.includes('EmptyState') || f.text.includes('length === 0'),

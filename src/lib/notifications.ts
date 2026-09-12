@@ -15,7 +15,7 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Platform } from 'react-native';
 
-const ROUTINE_HOUR = 20;
+import { currentReminderHour } from './device-preferences';
 
 /** Expo Go on Android cannot load the notifications module at all. */
 const IS_EXPO_GO =
@@ -83,6 +83,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
   }
 }
 
+/** Fires daily at the hour the user picked in settings. */
 export async function scheduleRoutineReminder(): Promise<boolean> {
   const Notifications = getNotifications();
   if (!Notifications) return false;
@@ -95,7 +96,7 @@ export async function scheduleRoutineReminder(): Promise<boolean> {
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: ROUTINE_HOUR,
+        hour: currentReminderHour(),
         minute: 0,
       },
     });

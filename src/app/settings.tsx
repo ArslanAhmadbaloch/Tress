@@ -1,15 +1,42 @@
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, ScrollView, Switch, View } from 'react-native';
+import { Alert, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  ChoiceRow,
+  InfoRow,
+  RowDivider,
+  SettingsField,
+  SettingsGroup,
+  SettingsNote,
+  ToggleRow,
+} from '@/components/settings-rows';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Icon } from '@/components/ui/icon';
-import { SectionHeader, Separator } from '@/components/ui/layout';
-import { OptionCard } from '@/components/ui/option-card';
-import { PressableScale } from '@/components/ui/pressable-scale';
+import {
+  Screen,
+  ScreenScroll,
+  ScreenTitle,
+  ScrollEdgeEffect,
+  SectionHeader,
+} from '@/components/ui/layout';
+import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Text } from '@/components/ui/text';
+import {
+  CAPTURE_TIMERS,
+  REMINDER_HOURS,
+  REMINDER_HOUR_LABELS,
+  REMINDER_HOUR_TIMES,
+  currentReminderHour,
+  hapticsAreEnabled,
+  loadCaptureTimer,
+  saveCaptureTimer,
+  setHapticsEnabled,
+  setReminderHour,
+  type CaptureTimer,
+  type ReminderHour,
+} from '@/lib/device-preferences';
 import { clearAllPhotos, formatBytes, photoStorageBytes } from '@/lib/photo-storage';
 import {
   cancelAllReminders,
@@ -21,42 +48,57 @@ import {
 } from '@/lib/notifications';
 import { useAppStore } from '@/store/app-store';
 import { useTheme, type AppearancePreference } from '@/theme';
-import type { Visibility } from '@/types/domain';
+import { VISIBILITY_LABELS, type Visibility } from '@/types/domain';
+import type { IconName } from '@/components/ui/icon';
 
 const APPEARANCE: { value: AppearancePreference; label: string }[] = [
-  { value: 'system', label: 'Match system' },
+  { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
 
-const VISIBILITY: { value: Visibility; label: string; description: string }[] = [
+const VISIBILITY: { value: Visibility; icon: IconName; description: string }[] = [
   {
     value: 'private',
-    label: 'Private',
+    icon: 'lock',
     description: 'Only you can see your journey. Nothing is shared.',
   },
   {
     value: 'followers',
-    label: 'Followers',
+    icon: 'community',
     description: 'People you approve can see your journey.',
   },
   {
     value: 'public',
-    label: 'Public',
+    icon: 'globe',
     description: 'Anyone in the community can find your journey.',
   },
 ];
 
+/** Days between photo-update reminders. */
 const INTERVALS = [14, 30, 60, 90];
 
+const TIMER_LABELS: Record<CaptureTimer, string> = {
+  0: 'Off',
+  3: '3 seconds',
+  5: '5 seconds',
+};
+
 export default function SettingsScreen() {
-  const { colors, spacing, radius, preference, setPreference } = useTheme();
+  const { spacing, preference, setPreference } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { data, updateJourney, setVisibility, resetAll } = useAppStore();
 
   const [routineReminder, setRoutineReminder] = useState(false);
   const [updateReminder, setUpdateReminder] = useState(false);
+  const [reminderAt, setReminderAt] = useState<ReminderHour>(currentReminderHour);
+  const [haptics, setHaptics] = useState(hapticsAreEnabled);
+  const [timer, setTimer] = useState<CaptureTimer>(0);
+
+  useMemo(() => {
+    loadCaptureTimer().then(setTimer);
+  }, []);
 
   // Reading the directory size is synchronous and cheap; recompute it when
   // the session list changes rather than mirroring it into state.
@@ -66,8 +108,16 @@ export default function SettingsScreen() {
     [data.sessions.length],
   );
 
+  const version = Constants.expoConfig?.version ?? '1.0.0';
+
   const journey = data.journey;
   if (!journey) return null;
+
+  const permissionRefused = () =>
+    Alert.alert(
+      'Notifications are off',
+      'Turn on notifications for Hair Journey in your device Settings to get reminders.',
+    );
 
   const toggleRoutineReminder = async (next: boolean) => {
     if (!next) {
@@ -79,10 +129,7 @@ export default function SettingsScreen() {
 
     const granted = await requestNotificationPermission();
     if (!granted) {
-      Alert.alert(
-        'Notifications are off',
-        'Turn on notifications for Hair Journey in your device Settings to get reminders.',
-      );
+      permissionRefused();
       return;
     }
     await scheduleRoutineReminder();
@@ -99,14 +146,45 @@ export default function SettingsScreen() {
 
     const granted = await requestNotificationPermission();
     if (!granted) {
-      Alert.alert(
-        'Notifications are off',
-        'Turn on notifications for Hair Journey in your device Settings to get reminders.',
-      );
+      permissionRefused();
       return;
     }
     await scheduleUpdateReminder(journey.updateIntervalDays);
     setUpdateReminder(true);
+  };
+
+  /** Anything already scheduled has to be rebuilt on the new terms. */
+  const reschedule = async () => {
+    if (!routineReminder && !updateReminder) return;
+    await cancelAllReminders();
+    if (routineReminder) await scheduleRoutineReminder();
+    if (updateReminder) await scheduleUpdateReminder(journey.updateIntervalDays);
+  };
+
+  const chooseReminderHour = (hour: ReminderHour) => {
+    setReminderAt(hour);
+    setReminderHour(hour);
+    reschedule();
+  };
+
+  const chooseInterval = (days: number) => {
+    updateJourney({ updateIntervalDays: days });
+    if (updateReminder) {
+      cancelAllReminders().then(() => {
+        if (routineReminder) scheduleRoutineReminder();
+        scheduleUpdateReminder(days);
+      });
+    }
+  };
+
+  const chooseTimer = (seconds: CaptureTimer) => {
+    setTimer(seconds);
+    saveCaptureTimer(seconds);
+  };
+
+  const toggleHaptics = (next: boolean) => {
+    setHaptics(next);
+    setHapticsEnabled(next);
   };
 
   const confirmDeleteAll = () => {
@@ -130,179 +208,163 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingHorizontal: spacing.lg,
-          paddingBottom: insets.bottom + spacing.xxxl,
-        }}>
+    <Screen ground="plain">
+      <ScreenScroll clearsTabBar={false} contentContainerStyle={{ paddingTop: spacing.giant }}>
+        <ScreenTitle eyebrow="Profile" title="Your" titleMuted="settings" />
+
         <SectionHeader title="Appearance" />
-        <View style={{ gap: spacing.sm }}>
-          {APPEARANCE.map((option) => (
-            <OptionCard
-              key={option.value}
-              label={option.label}
-              multi={false}
-              selected={preference === option.value}
-              onPress={() => setPreference(option.value)}
+        <SettingsGroup>
+          <SettingsField
+            icon="sun"
+            label="Theme"
+            detail="Follow your device, or pick one and stay there.">
+            <SegmentedTabs
+              surface="fill"
+              options={APPEARANCE}
+              value={preference}
+              onChange={setPreference}
             />
-          ))}
-        </View>
+          </SettingsField>
+          <RowDivider />
+          <ToggleRow
+            icon="phone"
+            label="Haptic feedback"
+            detail="A small tap when something responds to you."
+            value={haptics}
+            onChange={toggleHaptics}
+          />
+        </SettingsGroup>
 
         <SectionHeader title="Reminders" />
-        <Card padded={false}>
+        <SettingsGroup>
           <ToggleRow
             icon="checkCircle"
             label="Daily routine reminder"
-            detail={
-              remindersUnavailableReason ?? 'A nudge each evening at 8pm'
-            }
+            detail={remindersUnavailableReason ?? REMINDER_HOUR_TIMES[reminderAt]}
             value={routineReminder}
             disabled={!remindersSupported}
             onChange={toggleRoutineReminder}
           />
-          <Separator inset={56} />
+          <RowDivider />
+          <SettingsField icon="clock" label="Time of day">
+            <SegmentedTabs
+              surface="fill"
+              options={REMINDER_HOURS.map((hour) => ({
+                value: String(hour),
+                label: REMINDER_HOUR_LABELS[hour],
+              }))}
+              value={String(reminderAt)}
+              onChange={(next) => chooseReminderHour(Number(next) as ReminderHour)}
+            />
+          </SettingsField>
+          <RowDivider />
           <ToggleRow
             icon="camera"
             label="Photo update reminder"
             detail={
-              remindersUnavailableReason ??
-              `Every ${journey.updateIntervalDays} days`
+              remindersUnavailableReason ?? `Every ${journey.updateIntervalDays} days`
             }
             value={updateReminder}
             disabled={!remindersSupported}
             onChange={toggleUpdateReminder}
           />
-        </Card>
+          <RowDivider />
+          <SettingsField
+            icon="calendar"
+            label="How often"
+            detail="How much time passes before your next set of photos is due.">
+            <SegmentedTabs
+              surface="fill"
+              options={INTERVALS.map((days) => ({
+                value: String(days),
+                label: `${days} days`,
+              }))}
+              value={String(journey.updateIntervalDays)}
+              onChange={(next) => chooseInterval(Number(next))}
+            />
+          </SettingsField>
+        </SettingsGroup>
+        {remindersUnavailableReason ? (
+          <SettingsNote icon="info">{remindersUnavailableReason}</SettingsNote>
+        ) : null}
 
-        <SectionHeader title="Update interval" />
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          {INTERVALS.map((days) => {
-            const active = journey.updateIntervalDays === days;
-            return (
-              <PressableScale
-                key={days}
-                onPress={() => updateJourney({ updateIntervalDays: days })}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={`Every ${days} days`}
-                style={{
-                  flex: 1,
-                  paddingVertical: spacing.md,
-                  borderRadius: radius.md,
-                  alignItems: 'center',
-                  backgroundColor: active ? colors.accent : colors.fill,
-                }}>
-                <Text variant="subhead" color={active ? 'textOnAccent' : 'textSecondary'}>
-                  {days}d
-                </Text>
-              </PressableScale>
-            );
-          })}
-        </View>
+        <SectionHeader title="Capture" />
+        <SettingsGroup>
+          <SettingsField
+            icon="retake"
+            label="Self-timer"
+            detail="A countdown before each shot, so you can get into position.">
+            <SegmentedTabs
+              surface="fill"
+              options={CAPTURE_TIMERS.map((seconds) => ({
+                value: String(seconds),
+                label: TIMER_LABELS[seconds],
+              }))}
+              value={String(timer)}
+              onChange={(next) => chooseTimer(Number(next) as CaptureTimer)}
+            />
+          </SettingsField>
+        </SettingsGroup>
+        <SettingsNote>
+          The top and back angles are shot blind, so a few seconds to settle
+          the phone makes them far easier to repeat.
+        </SettingsNote>
 
         <SectionHeader title="Privacy" />
-        <View style={{ gap: spacing.sm }}>
-          {VISIBILITY.map((option) => (
-            <OptionCard
-              key={option.value}
-              label={option.label}
-              description={option.description}
-              multi={false}
-              selected={journey.visibility === option.value}
-              onPress={() => setVisibility(option.value)}
-            />
+        <SettingsGroup>
+          {VISIBILITY.map((option, index) => (
+            <View key={option.value}>
+              {index > 0 ? <RowDivider /> : null}
+              <ChoiceRow
+                icon={option.icon}
+                label={VISIBILITY_LABELS[option.value]}
+                description={option.description}
+                selected={journey.visibility === option.value}
+                onPress={() => setVisibility(option.value)}
+              />
+            </View>
           ))}
-        </View>
+        </SettingsGroup>
+        <SettingsNote icon="lock">
+          Sharing is not built yet. Whichever you pick, nothing leaves this
+          device in this version — the setting is stored for when it does.
+        </SettingsNote>
 
         <SectionHeader title="Data" />
-        <Card>
-          <View
-            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-            <Icon name="photo" size={19} color={colors.textSecondary} />
-            <View style={{ flex: 1 }}>
-              <Text variant="body">Photos on this device</Text>
-              <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
-                {data.sessions.length} sessions · {formatBytes(storage)}
-              </Text>
-            </View>
-          </View>
-          <Text variant="footnote" color="textTertiary" style={{ marginTop: spacing.md }}>
-            Your photos never leave this device. There is no account and no
-            upload in this version.
-          </Text>
-        </Card>
+        <SettingsGroup>
+          <InfoRow
+            icon="photo"
+            label="Photos on this device"
+            detail={`${data.sessions.length} ${data.sessions.length === 1 ? 'session' : 'sessions'}`}
+            value={formatBytes(storage)}
+          />
+          <RowDivider />
+          <InfoRow icon="info" label="Version" value={version} />
+        </SettingsGroup>
 
         <Button
           label="Delete all my data"
           variant="destructive"
-          style={{ marginTop: spacing.xl }}
+          style={{ marginTop: spacing.lg }}
           onPress={confirmDeleteAll}
         />
 
-        <View
-          style={{
-            marginTop: spacing.xxl,
-            padding: spacing.lg,
-            borderRadius: radius.md,
-            backgroundColor: colors.backgroundSubtle,
-            flexDirection: 'row',
-            gap: spacing.md,
-          }}>
-          <Icon name="info" size={17} color={colors.textTertiary} />
-          <Text variant="footnote" color="textSecondary" style={{ flex: 1 }}>
-            Hair Journey is a tracking and documentation tool. It does not
-            diagnose conditions, recommend treatments or provide medical
-            advice. Always consult a qualified healthcare professional.
-          </Text>
-        </View>
-      </ScrollView>
-    </View>
-  );
-}
-
-function ToggleRow({
-  icon,
-  label,
-  detail,
-  value,
-  disabled,
-  onChange,
-}: {
-  icon: 'checkCircle' | 'camera';
-  label: string;
-  detail: string;
-  value: boolean;
-  disabled?: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  const { colors, spacing } = useTheme();
-
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.md,
-        padding: spacing.lg,
-        opacity: disabled ? 0.55 : 1,
-      }}>
-      <Icon name={icon} size={19} color={colors.textSecondary} />
-      <View style={{ flex: 1 }}>
-        <Text variant="body">{label}</Text>
-        <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
-          {detail}
+        <Text
+          variant="footnote"
+          color="textSecondary"
+          style={{ marginTop: spacing.xxl, paddingHorizontal: spacing.xs }}>
+          Hair Journey is a tracking and documentation tool. It does not
+          diagnose conditions, recommend treatments or provide medical advice.
+          Always consult a qualified healthcare professional.
         </Text>
-      </View>
-      <Switch
-        value={value}
-        disabled={disabled}
-        onValueChange={onChange}
-        trackColor={{ true: colors.accent, false: colors.fill }}
-        accessibilityLabel={label}
-        accessibilityState={{ disabled: Boolean(disabled), checked: value }}
-      />
-    </View>
+      </ScreenScroll>
+
+      {/*
+        The back control floats over the content on a transparent header,
+        so the content has to dissolve before it reaches it — otherwise a
+        card scrolls up behind the chevron and the two read as one shape.
+      */}
+      <ScrollEdgeEffect height={insets.top + spacing.huge} />
+    </Screen>
   );
 }

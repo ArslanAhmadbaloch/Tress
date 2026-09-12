@@ -14,7 +14,6 @@ import {
   Panel,
   PhotoStrip,
   ScoreCard,
-  SegmentedTabs,
   type Milestone,
   type MetricRow,
 } from '@/components/journey-cards';
@@ -24,6 +23,7 @@ import { EmptyState, Screen, ScreenScroll, ScreenTitle, Separator } from '@/comp
 import { BarsGlyph, StrandGlyph } from '@/components/ui/metric-glyphs';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { RoutineGlyph } from '@/components/ui/routine-glyphs';
+import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Text } from '@/components/ui/text';
 import { addDays, daysBetween, formatDate, formatDateShort, formatMilestone } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
@@ -166,7 +166,12 @@ export default function JourneyScreen() {
           }
         />
 
-        <SegmentedTabs options={TABS} value={tab} onChange={setTab} />
+        <SegmentedTabs
+          options={TABS}
+          value={tab}
+          onChange={setTab}
+          style={{ marginTop: spacing.lg }}
+        />
 
         {tab === 'overview' ? (
           <>

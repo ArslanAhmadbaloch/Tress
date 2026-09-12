@@ -2,7 +2,6 @@ import { CameraView, useCameraPermissions, type CameraCapturedPicture } from 'ex
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, Dimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +21,12 @@ import { GlassGroup, GlassSurface } from '@/components/ui/glass-surface';
 import { Icon } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
+import {
+  CAPTURE_TIMERS,
+  loadCaptureTimer,
+  saveCaptureTimer,
+  type CaptureTimer,
+} from '@/lib/device-preferences';
 import { persistCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
@@ -32,11 +37,6 @@ import {
   ANGLE_LABELS,
   type Angle,
 } from '@/types/domain';
-
-/** Self-timer choices, in seconds; 0 fires immediately. */
-const TIMER_SETTINGS = [0, 3, 5] as const;
-type TimerSetting = (typeof TIMER_SETTINGS)[number];
-const TIMER_KEY = 'hj.captureTimer';
 
 const SHUTTER_SIZE = 78;
 
@@ -74,26 +74,22 @@ export default function CaptureSessionScreen() {
    * choice is remembered, because it is a habit rather than a per-shot
    * decision.
    */
-  const [timer, setTimer] = useState<TimerSetting>(0);
+  const [timer, setTimer] = useState<CaptureTimer>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(TIMER_KEY)
-      .then((stored) => {
-        const value = Number(stored);
-        if (TIMER_SETTINGS.includes(value as TimerSetting)) setTimer(value as TimerSetting);
-      })
-      .catch(() => undefined);
+    loadCaptureTimer().then(setTimer);
     return () => {
       if (countdownRef.current) clearTimeout(countdownRef.current);
     };
   }, []);
 
   const cycleTimer = () => {
-    const next = TIMER_SETTINGS[(TIMER_SETTINGS.indexOf(timer) + 1) % TIMER_SETTINGS.length];
+    const next =
+      CAPTURE_TIMERS[(CAPTURE_TIMERS.indexOf(timer) + 1) % CAPTURE_TIMERS.length];
     setTimer(next);
-    AsyncStorage.setItem(TIMER_KEY, String(next)).catch(() => undefined);
+    saveCaptureTimer(next);
   };
 
   const previous = latestSession(data);

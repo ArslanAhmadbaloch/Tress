@@ -13,6 +13,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplash, SPLASH_ASSETS } from '@/components/splash';
+import { loadDevicePreferences } from '@/lib/device-preferences';
 import { AppStoreProvider, useAppStore } from '@/store/app-store';
 import { ThemeProvider, useTheme } from '@/theme';
 
@@ -36,7 +37,9 @@ function Navigation() {
   const [launching, setLaunching] = useState(true);
 
   useEffect(() => {
-    Asset.loadAsync(SPLASH_ASSETS)
+    // Device preferences ride along: they are read from the same store and
+    // must be in place before anything can read a default instead.
+    Promise.all([Asset.loadAsync(SPLASH_ASSETS), loadDevicePreferences()])
       // A splash that cannot load its own artwork must not trap the app.
       .catch(() => undefined)
       .finally(() => setArtworkLoaded(true));
@@ -96,7 +99,17 @@ function Navigation() {
         />
         <Stack.Screen
           name="settings"
-          options={{ headerShown: true, headerTitle: 'Settings' }}
+          // Transparent chrome: the screen carries its own editorial title
+          // over the ground plate, the way every other screen does, and the
+          // system back control floats above it.
+          options={{
+            headerShown: true,
+            headerTitle: '',
+            headerTransparent: true,
+            // Without this the control is labelled with the route it returns
+            // to, which here is the tab group, and reads "(tabs)".
+            headerBackButtonDisplayMode: 'minimal',
+          }}
         />
         <Stack.Screen
           name="routine"
