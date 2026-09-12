@@ -109,7 +109,9 @@ export default function HomeScreen() {
           title={`${greeting()},`}
           titleMuted={name ? `${name}.` : 'friend.'}
           subtitle={'Small steps today.\nA healthier, fuller you tomorrow.'}
-          script="Better Hair Healthier You"
+          // The one place the script appears, and it says what the
+          // lockup says. Two versions of a brand line is one too many.
+          script={'Better Hair.\nConfident You.'}
           trailing={
             <HeaderActions
               initial={(name ?? 'Y').charAt(0).toUpperCase()}

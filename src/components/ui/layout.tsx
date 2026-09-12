@@ -244,11 +244,13 @@ export function ScreenTitle({
               variant="script"
               color="textSecondary"
               accessible={false}
-              numberOfLines={3}
+              numberOfLines={2}
               style={{
                 transform: [{ rotate: '-6deg' }],
                 marginTop: trailing ? spacing.xl : spacing.lg,
-                width: 128,
+                // Wide enough for the brand line to break where it is
+                // written to break — after "Better Hair." and nowhere else.
+                width: 140,
                 textAlign: 'right',
               }}>
               {script}
