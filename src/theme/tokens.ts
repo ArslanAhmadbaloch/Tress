@@ -498,6 +498,23 @@ export const motion = {
   pressScale: 0.97,
 } as const;
 
+/* ------------------------------------------------------------------ *
+ * Launch
+ *
+ * The splash is the brand lockup exactly as it was designed: one fixed
+ * light composition in both appearances. The plate, the mark and their
+ * shadows are a single photograph, and veiling it for dark mode would
+ * only muddy the artwork — the exit cross-fade is what carries a
+ * dark-mode user into the dark app.
+ * ------------------------------------------------------------------ */
+
+export const launch = {
+  /** The plate's own paper, so the screen opens on its colour. */
+  paper: '#F0E9E3',
+  /** Warm light gathering behind the mark, and the sheen crossing it. */
+  light: '#FFFDF7',
+} as const;
+
 /** Hit target floor from the Apple HIG / Material guidance. */
 export const MIN_TOUCH_TARGET = 44;
 

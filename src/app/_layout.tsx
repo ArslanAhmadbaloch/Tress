@@ -5,12 +5,14 @@ import {
   ThemeProvider as NavThemeProvider,
 } from 'expo-router';
 import { Parisienne_400Regular, useFonts } from '@expo-google-fonts/parisienne';
+import { Asset } from 'expo-asset';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AnimatedSplash, SPLASH_ASSETS } from '@/components/splash';
 import { AppStoreProvider, useAppStore } from '@/store/app-store';
 import { ThemeProvider, useTheme } from '@/theme';
 
@@ -27,11 +29,27 @@ function Navigation() {
   // app — `error` counts as resolved and the fallback face is used.
   const [fontsLoaded, fontError] = useFonts({ Parisienne_400Regular });
 
-  const ready = themeReady && isLoaded && (fontsLoaded || Boolean(fontError));
+  // The launch animation opens on the finished plate, so its artwork has
+  // to be decoded before the native splash hands over — otherwise the
+  // first frame is an empty screen.
+  const [artworkLoaded, setArtworkLoaded] = useState(false);
+  const [launching, setLaunching] = useState(true);
+
+  useEffect(() => {
+    Asset.loadAsync(SPLASH_ASSETS)
+      // A splash that cannot load its own artwork must not trap the app.
+      .catch(() => undefined)
+      .finally(() => setArtworkLoaded(true));
+  }, []);
+
+  const ready =
+    themeReady && isLoaded && artworkLoaded && (fontsLoaded || Boolean(fontError));
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
   }, [ready]);
+
+  const endLaunch = useCallback(() => setLaunching(false), []);
 
   // Holding the splash until storage resolves avoids a flash of the
   // onboarding screen for users who already have a journey.
@@ -52,7 +70,8 @@ function Navigation() {
 
   return (
     <NavThemeProvider value={navTheme}>
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      {/* The launch plate is light in both appearances. */}
+      <StatusBar style={!launching && scheme === 'dark' ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -98,6 +117,13 @@ function Navigation() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
       </Stack>
+
+      {/*
+        The app mounts underneath the launch animation rather than after
+        it, so the first screen is already laid out and settled by the
+        time the splash clears.
+      */}
+      {launching ? <AnimatedSplash onFinish={endLaunch} /> : null}
     </NavThemeProvider>
   );
 }
