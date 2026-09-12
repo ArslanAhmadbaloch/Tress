@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Alert, Dimensions, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Alert, Dimensions, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   FadeIn,
@@ -27,6 +27,7 @@ import {
   saveCaptureTimer,
   type CaptureTimer,
 } from '@/lib/device-preferences';
+import { useBackOrHome } from '@/lib/navigation';
 import { persistCapture, shrinkCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
@@ -50,6 +51,7 @@ export default function CaptureSessionScreen() {
   const { colors, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const leave = useBackOrHome();
   const { data, addSession } = useAppStore();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -261,7 +263,7 @@ export default function CaptureSessionScreen() {
 
   const confirmExit = useCallback(() => {
     if (shots.length === 0 && !pending) {
-      router.back();
+      leave();
       return;
     }
 
@@ -274,11 +276,11 @@ export default function CaptureSessionScreen() {
       'The photos you have taken so far will not be saved.',
       [
         { text: 'Keep capturing', style: 'cancel', onPress: () => setConfirming(false) },
-        { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+        { text: 'Discard', style: 'destructive', onPress: leave },
       ],
       { onDismiss: () => setConfirming(false) },
     );
-  }, [shots.length, pending, router]);
+  }, [shots.length, pending, leave]);
 
   /* --------------------------- permissions -------------------------- */
 
@@ -301,7 +303,7 @@ export default function CaptureSessionScreen() {
       <PermissionGate
         canAskAgain={permission.canAskAgain}
         onRequest={requestPermission}
-        onCancel={() => router.back()}
+        onCancel={leave}
       />
     );
   }
@@ -326,7 +328,16 @@ export default function CaptureSessionScreen() {
           retake it before saving.
         </Text>
 
-        <View style={{ marginTop: spacing.xl, gap: spacing.sm, flex: 1 }}>
+        {/*
+          Scrolls. Five rows, a title and two buttons fit a large phone and
+          not a small one, and as a fixed column the rows simply overflowed
+          the space and painted over the buttons — so the way to save your
+          photos was underneath the list of them.
+        */}
+        <ScrollView
+          style={{ flex: 1, marginTop: spacing.xl }}
+          contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}
+          showsVerticalScrollIndicator={false}>
           {ANGLES.map((a) => {
             const shot = shots.find((s) => s.angle === a);
             return (
@@ -382,7 +393,7 @@ export default function CaptureSessionScreen() {
               </PressableScale>
             );
           })}
-        </View>
+        </ScrollView>
 
         <View style={{ gap: spacing.sm }}>
           <Button

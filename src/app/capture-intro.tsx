@@ -14,6 +14,7 @@ import { BulbGlyph } from '@/components/ui/tab-glyphs';
 import { Text } from '@/components/ui/text';
 import { ANGLE_EXAMPLES, CAPTURE_PORTRAIT } from '@/features/capture/examples';
 import { formatRelative } from '@/lib/date';
+import { useBackOrHome } from '@/lib/navigation';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
 import { useTheme } from '@/theme';
@@ -47,6 +48,7 @@ const ORBIT_OFFSETS = [0, -62, 62, -128, 128];
 export default function CaptureIntroScreen() {
   const { colors, spacing, radius, shadow } = useTheme();
   const router = useRouter();
+  const leave = useBackOrHome();
   const { width } = useWindowDimensions();
   const { data } = useAppStore();
 
@@ -96,7 +98,7 @@ export default function CaptureIntroScreen() {
             onPress={() => setIndex(Math.max(0, index - 1))}
           />
           <StepDots count={ANGLES.length} active={index} />
-          <CircleButton icon="close" label="Close" onPress={() => router.back()} />
+          <CircleButton icon="close" label="Close" onPress={leave} />
         </View>
 
         <ScreenTitle

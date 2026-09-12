@@ -16,6 +16,7 @@ import {
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { formatDate, formatMilestone } from '@/lib/date';
+import { useBackOrHome } from '@/lib/navigation';
 import { deletePhotoFiles } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { useTheme, typography } from '@/theme';
@@ -26,6 +27,7 @@ export default function SessionDetailScreen() {
   const { colors, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const leave = useBackOrHome();
   const { data, updateSessionNote, deleteSession } = useAppStore();
 
   const session = data.sessions.find((s) => s.id === id);
@@ -46,7 +48,7 @@ export default function SessionDetailScreen() {
             variant="secondary"
             block={false}
             style={{ marginTop: 20 }}
-            onPress={() => router.back()}
+            onPress={leave}
           />
         </View>
       </Screen>
@@ -75,7 +77,7 @@ export default function SessionDetailScreen() {
               session.photos.flatMap((p) => [p.uri, p.thumbnailUri]),
             );
             deleteSession(session.id);
-            router.back();
+            leave();
           },
         },
       ],
