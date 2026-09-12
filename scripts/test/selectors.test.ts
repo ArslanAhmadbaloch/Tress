@@ -12,6 +12,7 @@ import { test } from 'node:test';
 
 import { routineSeedsFor } from '@/features/onboarding/script';
 import { formatMilestone, toDateKey } from '@/lib/date';
+import { isProfilePhoto, profilePhotoName } from '@/lib/photo-names';
 import {
   adherencePercent,
   consistencyScore,
@@ -234,6 +235,47 @@ test('milestone: later sessions read in weeks, months and years', () => {
   assert.equal(formatMilestone(start, daysAgo(390).toISOString(), false), 'Week 1');
   assert.equal(formatMilestone(start, daysAgo(280).toISOString(), false), 'Month 3');
   assert.equal(formatMilestone(start, daysAgo(35).toISOString(), false), 'Year 1');
+});
+
+/* --------------------------- portrait deletion ------------------------- */
+
+/**
+ * The guard on a file delete. A session frame is the one thing in the photo
+ * directory the user cannot retake, so this is tested as a whitelist: if it
+ * ever answers true for a capture, that capture gets deleted.
+ */
+test('portraits: only our own card portraits are deletable', () => {
+  const dir = 'file:///data/Documents/photos/';
+
+  assert.equal(isProfilePhoto(`${dir}profile_1700000000000.jpg`), true);
+  assert.equal(isProfilePhoto(`${dir}profile.jpg`), true, 'the pre-timestamp name');
+
+  // Whatever the writer produces, the guard must recognise it back.
+  assert.equal(isProfilePhoto(dir + profilePhotoName()), true);
+});
+
+test('portraits: two portraits written apart do not share a name', () => {
+  // The point of the timestamp: same path plus different bytes is exactly
+  // what an image cache cannot see, and the card kept the replaced photo.
+  assert.notEqual(profilePhotoName(1), profilePhotoName(2));
+});
+
+test('portraits: a session frame is never deletable', () => {
+  const dir = 'file:///data/Documents/photos/';
+
+  for (const name of [
+    'ses_abc123_crown.jpg',
+    'ses_abc123_crown_thumb.jpg',
+    'ses_profile_crown.jpg',
+    'baseline_hairline.jpg',
+    'myprofile_1700000000000.jpg',
+  ]) {
+    assert.equal(
+      isProfilePhoto(dir + name),
+      false,
+      `${name} is not a card portrait and must survive`,
+    );
+  }
 });
 
 /* ---------------------------- routine seeding -------------------------- */

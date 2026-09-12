@@ -224,7 +224,9 @@ export default function OnboardingFunnel() {
 
     try {
       // The picker hands back a cache file the OS may clear; keep our own.
-      set({ avatarUri: await persistProfilePhoto(result.assets[0].uri) });
+      // Passing the current one lets "choose a different photo" replace it
+      // rather than leave the first behind.
+      set({ avatarUri: await persistProfilePhoto(result.assets[0].uri, answers.avatarUri) });
       next();
     } catch {
       Alert.alert('That photo could not be saved', 'Try another, or skip for now.');

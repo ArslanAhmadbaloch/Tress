@@ -16,6 +16,7 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 
+import { isProfilePhoto, profilePhotoName } from '@/lib/photo-names';
 import type { Angle } from '@/types/domain';
 
 /** Long edge of the stored image. Plenty for full-screen comparison. */
@@ -140,11 +141,30 @@ export async function persistCapture(
  *
  * The picker hands back a file in a cache the OS may clear at any point,
  * and this one has to outlive that: it is on their card.
+ *
+ * Each one gets its own filename. Writing every portrait to `profile.jpg`
+ * meant the second one a person chose had the same URI as the first with
+ * different bytes behind it — and an image cache that keys on the URI has
+ * no way to know, so the card kept showing the photo they had just
+ * replaced. The old file is removed here instead.
  */
-export async function persistProfilePhoto(sourceUri: string): Promise<string> {
-  const saved = await renderInto(sourceUri, 'profile.jpg', 640, FULL_QUALITY);
+export async function persistProfilePhoto(
+  sourceUri: string,
+  /** The portrait being replaced, so its file does not linger. */
+  previousUri?: string,
+): Promise<string> {
+  const saved = await renderInto(sourceUri, profilePhotoName(), 640, FULL_QUALITY);
+
+  // Only ever delete a portrait we wrote. The previous one may be a
+  // session photograph the user picked off their own timeline, and
+  // deleting that would take a progress photo with it.
+  if (previousUri && previousUri !== saved.uri && isProfilePhoto(previousUri)) {
+    deletePhotoFiles([previousUri]);
+  }
+
   return saved.uri;
 }
+
 
 /** Remove a photo and its thumbnail. Missing files are not an error. */
 export function deletePhotoFiles(uris: (string | undefined)[]): void {
