@@ -53,8 +53,9 @@ export default function StartStep() {
       startedAt: draft.startedAt,
       routineLabels: draft.routineLabels,
     });
-    // Replace so the back gesture can't return into onboarding.
-    router.replace('/');
+    // Replace so the back gesture can't return into onboarding. The card
+    // is what they get for finishing, and it carries on into the app.
+    router.replace({ pathname: '/card', params: { welcome: '1' } });
   };
 
   return (

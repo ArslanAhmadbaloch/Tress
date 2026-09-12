@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
-import { View } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
 
-import { JourneyCard } from '@/components/journey-card';
+import { MemberCard } from '@/components/member-card';
 import { Card } from '@/components/ui/card';
 import { Icon, type IconName } from '@/components/ui/icon';
 import {
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
-import { daysBetween, formatDate } from '@/lib/date';
+import { formatDate } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import { useAppLock } from '@/store/lock-provider';
 import { consistencyScore } from '@/store/selectors';
@@ -22,6 +22,7 @@ import { JOURNEY_GOAL_LABELS } from '@/types/domain';
 
 export default function ProfileScreen() {
   const { colors, spacing } = useTheme();
+  const { width } = useWindowDimensions();
   const router = useRouter();
   const { data } = useAppStore();
   const lock = useAppLock();
@@ -32,8 +33,9 @@ export default function ProfileScreen() {
   const name = data.profile?.displayName?.trim() || 'You';
   const consistency = consistencyScore(data).value;
   // Day one counts as a tracked day; a journey started today reads "1".
-  const daysTracked = daysBetween(journey.startedAt) + 1;
   const goal = journey.goals[0];
+  // The card is drawn at its design size, never stretched to the screen.
+  const cardWidth = Math.min(340, width - spacing.lg * 2);
 
   return (
     <Screen>
@@ -60,28 +62,30 @@ export default function ProfileScreen() {
           }
         />
 
-        <View style={{ marginTop: spacing.sm }}>
-          <JourneyCard
+        <PressableScale
+          onPress={() => router.push('/card')}
+          scaleTo={0.985}
+          accessibilityRole="button"
+          accessibilityLabel="Your journey card. Opens it full size, where you can save it."
+          style={{ marginTop: spacing.sm, alignItems: 'center' }}>
+          <MemberCard
             name={name}
+            goalLabel={goal ? JOURNEY_GOAL_LABELS[goal] : undefined}
             portraitUri={data.profile?.avatarUri}
             startedAt={journey.startedAt}
-            locked={lock.state.enabled}
-            trackingAreas={journey.trackingAreas}
-            goalLabel={goal ? JOURNEY_GOAL_LABELS[goal] : undefined}
-            sessionCount={data.sessions.length}
-            daysTracked={daysTracked}
             consistency={consistency}
-            onPressPortrait={() => router.push('/profile-photo')}
+            width={cardWidth}
           />
-        </View>
+        </PressableScale>
 
         <Text
           variant="caption"
           color="textSecondary"
           center
           style={{ marginTop: spacing.md, paddingHorizontal: spacing.xl }}>
-          Consistency is how regularly you tick off your stack and take your
-          photos — it says nothing about your hair.
+          Tap the card to open it full size and save it. Consistency is how
+          regularly you tick off your stack and take your photos — it says
+          nothing about your hair.
         </Text>
 
         <SectionHeader title="Journal" action="View all" onAction={() => router.push('/journal')} />

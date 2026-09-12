@@ -121,6 +121,21 @@ export type ColorTokens = {
   leafShadow: string;
   /** The edge of each guide cover, firm enough to tell the books apart. */
   coverEdge: string;
+
+  /*
+   * The membership card. Drawn glass rather than the live material: it is
+   * content, not chrome, and it has to survive being exported to a PNG,
+   * where a backdrop blur has nothing behind it to sample.
+   */
+  cardTop: string;
+  cardBottom: string;
+  cardEdge: string;
+  /** The inset panels the card's figures sit in. */
+  cardPanel: string;
+  cardPanelEdge: string;
+  /** The field an exported card is laid on, so the PNG is not transparent. */
+  cardExportTop: string;
+  cardExportBottom: string;
 };
 
 export const lightColors: ColorTokens = {
@@ -172,6 +187,14 @@ export const lightColors: ColorTokens = {
   tabGlow: '#D6EDCB',
   leafShadow: '#4E6448',
   coverEdge: 'rgba(22, 23, 26, 0.16)',
+
+  cardTop: 'rgba(255, 255, 255, 0.88)',
+  cardBottom: 'rgba(255, 255, 255, 0.66)',
+  cardEdge: 'rgba(255, 255, 255, 0.92)',
+  cardPanel: 'rgba(255, 255, 255, 0.62)',
+  cardPanelEdge: 'rgba(255, 255, 255, 0.78)',
+  cardExportTop: '#F4F2ED',
+  cardExportBottom: '#E7E3DB',
 };
 
 export const darkColors: ColorTokens = {
@@ -233,6 +256,14 @@ export const darkColors: ColorTokens = {
   /* A shadow is darker than the paper it falls on, in both themes. */
   leafShadow: '#000000',
   coverEdge: 'rgba(255, 255, 255, 0.22)',
+
+  cardTop: 'rgba(255, 255, 255, 0.12)',
+  cardBottom: 'rgba(255, 255, 255, 0.05)',
+  cardEdge: 'rgba(255, 255, 255, 0.18)',
+  cardPanel: 'rgba(255, 255, 255, 0.07)',
+  cardPanelEdge: 'rgba(255, 255, 255, 0.11)',
+  cardExportTop: '#23272C',
+  cardExportBottom: '#14171A',
 };
 
 /* ------------------------------------------------------------------ *
@@ -317,16 +348,22 @@ export const fontFamily = Platform.select({
     sans: 'system-ui',
     rounded: 'ui-rounded',
     mono: 'ui-monospace',
+    /* The membership card's voice. A warm old-style serif, which is what
+       the design uses for the name and the phrase; the interface stays on
+       the system face everywhere else. */
+    serif: 'Palatino',
   },
   default: {
     sans: 'normal',
     rounded: 'normal',
     mono: 'monospace',
+    serif: 'serif',
   },
   web: {
     sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     rounded: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     mono: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    serif: 'Palatino, "Palatino Linotype", Georgia, serif',
   },
 })!;
 

@@ -45,7 +45,8 @@
         {
           "faceIDPermission": "Hair Journey uses Face ID to unlock your journey."
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,
