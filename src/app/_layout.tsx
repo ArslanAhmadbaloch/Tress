@@ -5,7 +5,21 @@ import {
   ThemeProvider as NavThemeProvider,
   useRouter,
 } from 'expo-router';
-import { Parisienne_400Regular, useFonts } from '@expo-google-fonts/parisienne';
+import {
+  Lora_400Regular,
+  Lora_400Regular_Italic,
+  Lora_600SemiBold,
+} from '@expo-google-fonts/lora';
+import { Parisienne_400Regular } from '@expo-google-fonts/parisienne';
+/*
+  From expo-font, not from the @expo-google-fonts package that also
+  exports a `useFonts`. The convenience copy in those packages has no
+  mounted guard and always starts `loaded` at false, so on a re-mount
+  where the faces are already cached it resolves inside the first render
+  and React warns about a state update on a component that has not
+  mounted. This one checks what is already loaded and guards the update.
+*/
+import { useFonts } from 'expo-font';
 import { Asset } from 'expo-asset';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -35,9 +49,21 @@ function Navigation() {
   const { isLoaded, resetAll } = useAppStore();
   const lock = useAppLock();
   const router = useRouter();
-  // The script accent is decorative, so a failed load must not block the
-  // app — `error` counts as resolved and the fallback face is used.
-  const [fontsLoaded, fontError] = useFonts({ Parisienne_400Regular });
+  /*
+    The script accent is decorative, so a failed load must not block the
+    app — `error` counts as resolved and the fallback face is used.
+
+    Lora is the serif, and it is only loaded because Android has no
+    Palatino: the platform falls back to Noto Serif, which is a visibly
+    different face on the membership card. iOS names Palatino and never
+    reads these, but loading them on both keeps one code path.
+  */
+  const [fontsLoaded, fontError] = useFonts({
+    Parisienne_400Regular,
+    Lora_400Regular,
+    Lora_400Regular_Italic,
+    Lora_600SemiBold,
+  });
 
   // The launch animation opens on the finished plate, so its artwork has
   // to be decoded before the native splash hands over — otherwise the

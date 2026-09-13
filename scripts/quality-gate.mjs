@@ -450,6 +450,62 @@ record(
   '',
 );
 
+/* 6. Android parity — the platform that gets tested second */
+
+/**
+ * Three things that were all silently wrong the first time this app was
+ * run on Android, and that no amount of reading the iOS screens catches.
+ */
+const tokensText = readFileSync(join(SRC, 'theme', 'tokens.ts'), 'utf8');
+
+// A bundled family gives Android no weights and no italic of its own, so
+// every serif style the app uses has to be a named face.
+const serifFaces =
+  /serif:\s*'Lora_/.test(tokensText) &&
+  /serifItalic:\s*'Lora_.*Italic'/.test(tokensText) &&
+  /serifSemibold:\s*'Lora_/.test(tokensText);
+
+const serifLoaded = readFileSync(join(SRC, 'app', '_layout.tsx'), 'utf8');
+const serifRegistered =
+  ['Lora_400Regular', 'Lora_400Regular_Italic', 'Lora_600SemiBold'].every((f) =>
+    serifLoaded.includes(f),
+  );
+
+record(
+  'Android',
+  1,
+  'The serif is bundled and every cut it uses is named and loaded',
+  serifFaces && serifRegistered,
+  serifFaces ? 'A face is declared but never loaded at launch' : 'Android would fall back to Noto Serif',
+);
+
+// Elevation is a distance, not a blur radius. The defaults that look
+// right beside a 26pt iOS shadow are roughly half its radius.
+const elevations = [...tokensText.matchAll(/elevation:\s*(\d+)/g)].map((m) => Number(m[1]));
+record(
+  'Android',
+  1,
+  'Shadow tokens carry an elevation deep enough to read',
+  elevations.length >= 2 && Math.max(...elevations) >= 10,
+  elevations.length ? `Deepest elevation is ${Math.max(...elevations)}` : 'No elevation set at all',
+);
+
+// An iOS-only native module reached without a platform guard is a crash
+// on Android, and neither tsc nor the linter can see it.
+const IOS_ONLY = ['expo-symbols', 'expo-glass-effect'];
+const unguarded = FILES.filter((f) => {
+  if (!IOS_ONLY.some((m) => f.text.includes(`from '${m}'`))) return false;
+  return !/Platform\.OS === 'ios'|isLiquidGlassAvailable/.test(f.text);
+}).map((f) => f.rel);
+
+record(
+  'Android',
+  1,
+  'iOS-only modules are only reached behind a platform check',
+  unguarded.length === 0,
+  unguarded.length ? `Unguarded: ${unguarded.join(', ')}` : '',
+);
+
 /* 6. Product safety — the medical guardrail is not optional here */
 
 const safetyCopy = FILES.filter(

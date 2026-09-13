@@ -363,25 +363,71 @@ export const fontFamily = Platform.select({
        the design uses for the name and the phrase; the interface stays on
        the system face everywhere else. */
     serif: 'Palatino',
+    serifItalic: 'Palatino',
+    serifSemibold: 'Palatino',
   },
   default: {
     sans: 'normal',
     rounded: 'normal',
     mono: 'monospace',
-    serif: 'serif',
+    /*
+      Android has no Palatino, and the generic `serif` alias resolves to
+      Noto Serif — a different face with different proportions, on the
+      membership card, which is the one artefact somebody keeps and looks
+      at. So the serif is bundled here.
+
+      Three named faces rather than one plus `fontWeight`/`fontStyle`:
+      Android does not synthesise a bundled family's weights or its
+      italic, and asking it to gives you the regular face back with no
+      warning. Every serif style the app uses has its own entry.
+    */
+    serif: 'Lora_400Regular',
+    serifItalic: 'Lora_400Regular_Italic',
+    serifSemibold: 'Lora_600SemiBold',
   },
   web: {
     sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     rounded: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     mono: 'ui-monospace, SFMono-Regular, Menlo, monospace',
     serif: 'Palatino, "Palatino Linotype", Georgia, serif',
+    serifItalic: 'Palatino, "Palatino Linotype", Georgia, serif',
+    serifSemibold: 'Palatino, "Palatino Linotype", Georgia, serif',
   },
+})!;
+
+/**
+ * The serif's italic and semibold cuts, as whole style objects.
+ *
+ * The two platforms want opposite things and there is no single spelling
+ * that works on both. iOS takes one family name and synthesises the cut
+ * from `fontStyle` / `fontWeight`. Android resolves a bundled font by
+ * exact file name, and setting either of those alongside one makes it
+ * look for a variant of that file, fail to find it, and fall back to the
+ * system sans — silently, and in italic that is very easy to miss.
+ *
+ * So each platform gets the spelling it understands, in one place.
+ */
+export const serifItalicStyle = Platform.select({
+  ios: { fontFamily: 'Palatino', fontStyle: 'italic' as const },
+  default: { fontFamily: fontFamily.serifItalic },
+  web: { fontFamily: fontFamily.serifItalic, fontStyle: 'italic' as const },
+})!;
+
+export const serifSemiboldStyle = Platform.select({
+  ios: { fontFamily: 'Palatino', fontWeight: '600' as const },
+  default: { fontFamily: fontFamily.serifSemibold },
+  web: { fontFamily: fontFamily.serifSemibold, fontWeight: '600' as const },
 })!;
 
 type TypeStyle = {
   fontSize: number;
   lineHeight: number;
-  fontWeight:
+  /**
+   * Optional only because the serif variant leaves it off on Android,
+   * where naming the semibold file and also asking for weight 600 makes
+   * the platform fall back to the system sans.
+   */
+  fontWeight?:
     | '100'
     | '200'
     | '300'
@@ -504,9 +550,8 @@ export const typography = {
   question: {
     fontSize: 33,
     lineHeight: 41,
-    fontWeight: '600',
     letterSpacing: -0.3,
-    fontFamily: fontFamily.serif,
+    ...serifSemiboldStyle,
   },
   /**
    * Decorative editorial script, for the one motivational phrase a screen
@@ -537,7 +582,10 @@ export const shadow = {
       shadowRadius: 14,
       shadowOffset: { width: 0, height: 6 },
     },
-    android: { elevation: 2 },
+    // Elevation is a distance, not a blur radius: matching iOS by eye
+    // takes roughly half the shadowRadius. At elevation 2 these surfaces
+    // sat flat on the page next to the same screen on iOS.
+    android: { elevation: 4 },
     default: {},
   })!,
   lifted: Platform.select({
@@ -547,7 +595,7 @@ export const shadow = {
       shadowRadius: 26,
       shadowOffset: { width: 0, height: 12 },
     },
-    android: { elevation: 6 },
+    android: { elevation: 13 },
     default: {},
   })!,
 } as const;

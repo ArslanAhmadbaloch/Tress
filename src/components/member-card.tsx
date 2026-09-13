@@ -45,7 +45,7 @@ import { LeafShadow } from './ui/leaf-shadow';
 import { Text } from './ui/text';
 import { MEMBER_SINCE } from '@/features/content/belonging';
 import { daysBetween } from '@/lib/date';
-import { fontFamily, splitAlpha, useTheme, withZeroAlpha } from '@/theme';
+import { fontFamily, serifItalicStyle, splitAlpha, useTheme, withZeroAlpha } from '@/theme';
 
 const MARK = require('@/assets/images/app-mark.jpg');
 
@@ -223,8 +223,7 @@ export function MemberCard({
 
             <Text
               style={{
-                fontFamily: fontFamily.serif,
-                fontStyle: 'italic',
+                ...serifItalicStyle,
                 fontSize: u(14),
                 lineHeight: u(20),
                 color: colors.textSecondary,
@@ -336,8 +335,7 @@ export function MemberCard({
             <Text
               style={{
                 flex: 1,
-                fontFamily: fontFamily.serif,
-                fontStyle: 'italic',
+                ...serifItalicStyle,
                 fontSize: u(13.5),
                 lineHeight: u(19),
                 color: colors.textSecondary,

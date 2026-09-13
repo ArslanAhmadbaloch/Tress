@@ -75,8 +75,20 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const [purchaseState, setPurchaseState] = useState<TransactionState>({ kind: 'idle' });
   const [restoreState, setRestoreState] = useState<TransactionState>({ kind: 'idle' });
 
+  /*
+    Set on the way in as well as cleared on the way out. A ref that is
+    only ever set to false stays false after the first unmount, so a
+    provider that remounts — a fast refresh, a navigator dropping and
+    rebuilding the tree — would silently discard the cached entitlement
+    and the tester flag it had just read.
+  */
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {

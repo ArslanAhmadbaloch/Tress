@@ -138,7 +138,9 @@ const ICONS: Record<IconName, IconSpec> = {
   arrowDownRight: { sf: 'arrow.down.right', md: 'trending-down' },
   // Routine item glyphs: the reference distinguishes topical, tablet,
   // capsule and drink so a five-item list is scannable without reading.
-  follicle: { sf: 'drop.triangle', md: 'hair-dryer-outline' },
+  // Not a hair dryer. The only row using this is "Hair transplant", and
+  // a dryer beside it reads as styling rather than a procedure.
+  follicle: { sf: 'drop.triangle', md: 'seed-outline' },
   bottle: { sf: 'eyedropper', md: 'bottle-tonic-outline' },
   capsule: { sf: 'pill', md: 'pill' },
   glass: { sf: 'cup.and.saucer', md: 'cup-outline' },
