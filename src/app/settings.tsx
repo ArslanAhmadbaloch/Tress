@@ -23,17 +23,13 @@ import {
 import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Text } from '@/components/ui/text';
 import {
-  CAPTURE_TIMERS,
   REMINDER_HOURS,
   REMINDER_HOUR_LABELS,
   REMINDER_HOUR_TIMES,
   currentReminderHour,
   hapticsAreEnabled,
-  loadCaptureTimer,
-  saveCaptureTimer,
   setHapticsEnabled,
   setReminderHour,
-  type CaptureTimer,
   type ReminderHour,
 } from '@/lib/device-preferences';
 import { clearAllPhotos, formatBytes, photoStorageBytes } from '@/lib/photo-storage';
@@ -69,11 +65,6 @@ const APPEARANCE: { value: AppearancePreference; label: string }[] = [
 /** Days between photo-update reminders. */
 const INTERVALS = [14, 30, 60, 90];
 
-const TIMER_LABELS: Record<CaptureTimer, string> = {
-  0: 'Off',
-  3: '3 seconds',
-  5: '5 seconds',
-};
 
 export default function SettingsScreen() {
   const { spacing, preference, setPreference } = useTheme();
@@ -86,10 +77,8 @@ export default function SettingsScreen() {
   const [updateReminder, setUpdateReminder] = useState(false);
   const [reminderAt, setReminderAt] = useState<ReminderHour>(currentReminderHour);
   const [haptics, setHaptics] = useState(hapticsAreEnabled);
-  const [timer, setTimer] = useState<CaptureTimer>(0);
 
   useMemo(() => {
-    loadCaptureTimer().then(setTimer);
   }, []);
 
   // The passcode sheet writes to the keychain and closes; this screen has
@@ -178,10 +167,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const chooseTimer = (seconds: CaptureTimer) => {
-    setTimer(seconds);
-    saveCaptureTimer(seconds);
-  };
 
   const toggleHaptics = (next: boolean) => {
     setHaptics(next);
@@ -332,27 +317,6 @@ export default function SettingsScreen() {
           <SettingsNote icon="info">{remindersUnavailableReason}</SettingsNote>
         ) : null}
 
-        <SectionHeader title="Capture" />
-        <SettingsGroup>
-          <SettingsField
-            icon="retake"
-            label="Self-timer"
-            detail="A countdown before each shot, so you can get into position.">
-            <SegmentedTabs
-              surface="fill"
-              options={CAPTURE_TIMERS.map((seconds) => ({
-                value: String(seconds),
-                label: TIMER_LABELS[seconds],
-              }))}
-              value={String(timer)}
-              onChange={(next) => chooseTimer(Number(next) as CaptureTimer)}
-            />
-          </SettingsField>
-        </SettingsGroup>
-        <SettingsNote>
-          The top and back angles are shot blind, so a few seconds to settle
-          the phone makes them far easier to repeat.
-        </SettingsNote>
 
         <SectionHeader title="Security" />
         <SettingsGroup>

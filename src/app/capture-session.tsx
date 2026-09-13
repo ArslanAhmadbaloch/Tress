@@ -2,7 +2,7 @@ import { CameraView, useCameraPermissions, type CameraCapturedPicture } from 'ex
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, Dimensions, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -22,17 +22,12 @@ import { Icon } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import {
-  CAPTURE_TIMERS,
-  loadCaptureTimer,
-  saveCaptureTimer,
-  type CaptureTimer,
 } from '@/lib/device-preferences';
 import { useBackOrHome } from '@/lib/navigation';
 import { CaptureRing } from '@/components/capture-ring';
 import { useSteadiness } from '@/features/capture/use-steadiness';
 import { persistCapture, shrinkCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
-import { latestSession } from '@/store/selectors';
 import { motion, useTheme } from '@/theme';
 import {
   ANGLES,
@@ -57,7 +52,7 @@ export default function CaptureSessionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const leave = useBackOrHome();
-  const { data, addSession } = useAppStore();
+  const { addSession } = useAppStore();
 
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
@@ -72,45 +67,25 @@ export default function CaptureSessionScreen() {
   const [pending, setPending] = useState<CameraCapturedPicture | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [showGhost, setShowGhost] = useState(true);
   /** True while a system alert is up, so the capture session can pause. */
   const [confirming, setConfirming] = useState(false);
   const [phase, setPhase] = useState<'capture' | 'summary'>('capture');
 
-  /*
-   * Self-timer. The top and back angles are shot blind — the screen faces
-   * away — so a delay lets the user settle the phone before it fires. The
-   * choice is remembered, because it is a habit rather than a per-shot
-   * decision.
-   */
-  const [timer, setTimer] = useState<CaptureTimer>(0);
   /** Hands-free: settle the phone and it counts itself down. */
   const [autoCapture, setAutoCapture] = useState(true);
   const [countdown, setCountdown] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    loadCaptureTimer().then(setTimer);
     return () => {
       if (countdownRef.current) clearTimeout(countdownRef.current);
     };
   }, []);
 
-  const cycleTimer = () => {
-    const next =
-      CAPTURE_TIMERS[(CAPTURE_TIMERS.indexOf(timer) + 1) % CAPTURE_TIMERS.length];
-    setTimer(next);
-    saveCaptureTimer(next);
-  };
 
-  const previous = latestSession(data);
   const angle = ANGLES[index];
   const guidance = ANGLE_GUIDANCE[angle];
 
-  const ghostUri = useMemo(
-    () => previous?.photos.find((p) => p.angle === angle)?.uri,
-    [previous, angle],
-  );
 
   /* ----------------------------- shutter ---------------------------- */
 
@@ -234,16 +209,15 @@ export default function CaptureSessionScreen() {
 
   /** Shutter: fires now, starts the countdown, or cancels a running one. */
   const onShutter = useCallback(() => {
+    // Mid-countdown the shutter is a stop button: the hands-free count is
+    // running and tapping it means "not yet", not "again".
     if (countdown !== null) {
       cancelCountdown();
       return;
     }
-    if (timer === 0) {
-      capture();
-      return;
-    }
-    runCountdown(timer);
-  }, [countdown, timer, capture, cancelCountdown, runCountdown]);
+    capture();
+  }, [countdown, capture, cancelCountdown]);
+
 
   /* --------------------------- hands free --------------------------- */
 
@@ -486,6 +460,8 @@ export default function CaptureSessionScreen() {
 
   const { width } = Dimensions.get('window');
   const guideWidth = width * 0.62;
+  /** The ring's diameter; the instruction is sized against it. */
+  const RING = guideWidth * 1.18;
   // High in the frame, just under the top bar: where a face sits when the
   // phone is held at arm's length, rather than in the middle of the screen.
   const guideTop = insets.top + 64 + spacing.lg;
@@ -545,14 +521,6 @@ export default function CaptureSessionScreen() {
       {/* Alignment guide + ghost of the previous session */}
       {!pending ? (
         <View pointerEvents="none" style={{ position: 'absolute', inset: 0 }}>
-          {ghostUri && showGhost ? (
-            <Image
-              source={{ uri: ghostUri }}
-              style={{ position: 'absolute', inset: 0, opacity: 0.28 }}
-              contentFit="cover"
-            />
-          ) : null}
-
           <View
             style={{
               position: 'absolute',
@@ -563,7 +531,7 @@ export default function CaptureSessionScreen() {
             }}>
             <View style={{ alignItems: 'center', justifyContent: 'center' }}>
               <CaptureRing
-                size={guideWidth * 1.18}
+                size={RING}
                 total={ANGLES.length}
                 done={shots.length}
                 current={index}
@@ -582,7 +550,13 @@ export default function CaptureSessionScreen() {
                 style={[
                   {
                     position: 'absolute',
-                    paddingHorizontal: spacing.xl,
+                    // Held inside the ring rather than laid across it.
+                    // A line of text running out past the circle on both
+                    // sides reads as something that overflowed, and the
+                    // ring stops looking like it contains anything.
+                    width: RING * 0.72,
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   },
                   instructionStyle,
                 ]}>
@@ -727,58 +701,7 @@ export default function CaptureSessionScreen() {
           </PressableScale>
         ) : null}
 
-        <PressableScale
-          onPress={cycleTimer}
-          haptic="light"
-          disabled={countdown !== null}
-          accessibilityRole="button"
-          accessibilityLabel={`Self-timer, ${timer === 0 ? 'off' : `${timer} seconds`}`}
-          accessibilityHint="Changes between off, 3 seconds and 5 seconds"
-          style={{ borderRadius: 20, overflow: 'hidden' }}>
-          <GlassSurface
-            borderRadius={20}
-            variant="clear"
-            over="dark"
-            style={{
-              height: 40,
-              paddingHorizontal: spacing.md,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 5,
-            }}>
-            <Icon name="clock" size={15} color={timer ? colors.accent : '#fff'} />
-            <Text variant="subhead" style={{ color: timer ? colors.accent : '#fff' }}>
-              {timer === 0 ? 'Off' : `${timer}s`}
-            </Text>
-          </GlassSurface>
-        </PressableScale>
 
-        {ghostUri ? (
-          <PressableScale
-            hitSlop={2}
-            onPress={() => setShowGhost((v) => !v)}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: showGhost }}
-            accessibilityLabel="Overlay previous photo"
-            style={{ borderRadius: 20, overflow: 'hidden' }}>
-            <GlassSurface
-              borderRadius={20}
-              variant="clear"
-              over="dark"
-              style={{
-                width: 40,
-                height: 40,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-              <Icon
-                name="photo"
-                size={18}
-                color={showGhost ? colors.accent : '#fff'}
-              />
-            </GlassSurface>
-          </PressableScale>
-        ) : null}
       </GlassGroup>
 
       {/* Angle guide: low in the frame, in the clear space between the head
@@ -851,10 +774,8 @@ export default function CaptureSessionScreen() {
               accessibilityRole="button"
               accessibilityLabel={
                 countdown !== null
-                  ? 'Cancel timer'
-                  : timer
-                    ? `Capture ${ANGLE_LABELS[angle]} in ${timer} seconds`
-                    : `Capture ${ANGLE_LABELS[angle]}`
+                  ? 'Cancel countdown'
+                  : `Capture ${ANGLE_LABELS[angle]}`
               }
               style={{
                 width: 78,
