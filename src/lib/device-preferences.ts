@@ -13,12 +13,30 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const TIMER_KEY = 'hj.captureTimer';
 const HAPTICS_KEY = 'hj.haptics';
 const REMINDER_HOUR_KEY = 'hj.reminderHour';
 
 /* ----------------------------- capture timer ---------------------------- */
 
 /** Seconds of countdown before the shutter fires. Zero is off. */
+export const CAPTURE_TIMERS = [0, 3, 5] as const;
+export type CaptureTimer = (typeof CAPTURE_TIMERS)[number];
+
+export async function loadCaptureTimer(): Promise<CaptureTimer> {
+  try {
+    const stored = Number(await AsyncStorage.getItem(TIMER_KEY));
+    return CAPTURE_TIMERS.includes(stored as CaptureTimer)
+      ? (stored as CaptureTimer)
+      : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function saveCaptureTimer(seconds: CaptureTimer): void {
+  AsyncStorage.setItem(TIMER_KEY, String(seconds)).catch(() => undefined);
+}
 
 /* -------------------------------- haptics ------------------------------- */
 

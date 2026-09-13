@@ -23,6 +23,12 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import {
 } from '@/lib/device-preferences';
+import {
+  CAPTURE_TIMERS,
+  loadCaptureTimer,
+  saveCaptureTimer,
+  type CaptureTimer,
+} from '@/lib/device-preferences';
 import { useBackOrHome } from '@/lib/navigation';
 import { CaptureRing } from '@/components/capture-ring';
 import { useSteadiness } from '@/features/capture/use-steadiness';
@@ -43,9 +49,6 @@ type Shot = {
   /** Cache URI from the camera, before it is persisted. */
   tempUri: string;
 };
-
-/** Seconds between the phone settling and the shutter. */
-const AUTO_CAPTURE_SECONDS = 3;
 
 export default function CaptureSessionScreen() {
   const { colors, spacing, radius } = useTheme();
@@ -71,12 +74,18 @@ export default function CaptureSessionScreen() {
   const [confirming, setConfirming] = useState(false);
   const [phase, setPhase] = useState<'capture' | 'summary'>('capture');
 
-  /** Hands-free: settle the phone and it counts itself down. */
-  const [autoCapture, setAutoCapture] = useState(true);
+  /*
+   * Self-timer. The top and back angles are shot blind — the screen faces
+   * away — so a delay lets the phone be settled before it fires. The
+   * choice is remembered, because it is a habit rather than a per-shot
+   * decision.
+   */
+  const [timer, setTimer] = useState<CaptureTimer>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    loadCaptureTimer().then(setTimer);
     return () => {
       if (countdownRef.current) clearTimeout(countdownRef.current);
     };
@@ -208,6 +217,11 @@ export default function CaptureSessionScreen() {
   );
 
   /** Shutter: fires now, starts the countdown, or cancels a running one. */
+  const chooseTimer = (seconds: CaptureTimer) => {
+    setTimer(seconds);
+    saveCaptureTimer(seconds);
+  };
+
   const onShutter = useCallback(() => {
     // Mid-countdown the shutter is a stop button: the hands-free count is
     // running and tapping it means "not yet", not "again".
@@ -215,45 +229,27 @@ export default function CaptureSessionScreen() {
       cancelCountdown();
       return;
     }
-    capture();
-  }, [countdown, capture, cancelCountdown]);
+    if (timer === 0) {
+      capture();
+      return;
+    }
+    runCountdown(timer);
+  }, [countdown, timer, capture, cancelCountdown, runCountdown]);
 
 
-  /* --------------------------- hands free --------------------------- */
-
-  // Only while the camera is actually up for a shot: not over the
-  // summary, not behind an alert, and not once a frame is waiting to be
-  // accepted.
-  const watching =
+  /*
+   * Motion, used for one thing only: knowing when to get out of the way.
+   *
+   * It drove an automatic shutter once — settle the phone and it fired —
+   * and taking the photo out of the user's hands turned out to be worse
+   * than the problem it solved. The self-timer does that job, on purpose
+   * and when asked. This is now just the signal that the phone has been
+   * picked up, so the instruction can stop covering the shot.
+   */
+  const framing =
     phase === 'capture' && !pending && !confirming && permission?.granted === true;
 
-  const { moving, steady, unavailable: noSensor } = useSteadiness(
-    watching && autoCapture,
-  );
-
-  /**
-   * Settle the phone and it takes the photo.
-   *
-   * This is the answer to the two angles shot blind — the top and the
-   * back, where the screen is facing away and the shutter is somewhere
-   * under your thumb. It knows the phone has stopped, which is a real
-   * thing to know; it does not know where your head is pointing, which
-   * is why the framing is still yours to judge.
-   */
-  useEffect(() => {
-    if (!watching || !autoCapture || noSensor) return;
-    if (!steady || countdown !== null) return;
-    const start = setTimeout(() => runCountdown(AUTO_CAPTURE_SECONDS), 0);
-    return () => clearTimeout(start);
-  }, [watching, autoCapture, noSensor, steady, countdown, runCountdown]);
-
-  // Picking the phone up again cancels the count, rather than firing at
-  // whatever it happens to be pointing at.
-  useEffect(() => {
-    if (!moving || countdown === null) return;
-    const stop = setTimeout(cancelCountdown, 0);
-    return () => clearTimeout(stop);
-  }, [moving, countdown, cancelCountdown]);
+  const { moving } = useSteadiness(framing);
 
   /** The instruction fades out the moment the phone is disturbed. */
   const instructionFade = useSharedValue(1);
@@ -536,7 +532,7 @@ export default function CaptureSessionScreen() {
                 done={shots.length}
                 current={index}
                 countdownProgress={
-                  countdown === null ? null : countdown / AUTO_CAPTURE_SECONDS
+                  countdown === null || timer === 0 ? null : countdown / timer
                 }
               />
 
@@ -566,14 +562,6 @@ export default function CaptureSessionScreen() {
                   style={{ color: '#fff' }}>
                   {guidance.instruction}
                 </Text>
-                {autoCapture && !noSensor ? (
-                  <Text
-                    variant="footnote"
-                    center
-                    style={{ color: 'rgba(255,255,255,0.7)', marginTop: spacing.sm }}>
-                    Hold still and it takes itself
-                  </Text>
-                ) : null}
               </Animated.View>
             </View>
           </View>
@@ -664,42 +652,52 @@ export default function CaptureSessionScreen() {
           ))}
         </View>
 
-        {/* Hands-free. Hidden where there is no sensor to drive it —
-            a control that cannot do anything is worse than no control. */}
-        {!noSensor ? (
-          <PressableScale
-            onPress={() => setAutoCapture((on) => !on)}
-            haptic="light"
-            disabled={countdown !== null}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: autoCapture }}
-            accessibilityLabel="Capture when steady"
-            accessibilityHint="Takes the photo on its own once the phone stops moving"
-            style={{ borderRadius: 20, overflow: 'hidden' }}>
-            <GlassSurface
-              borderRadius={20}
-              variant="clear"
-              over="dark"
-              style={{
-                height: 40,
-                paddingHorizontal: spacing.md,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 5,
-              }}>
-              <Icon
-                name="target"
-                size={15}
-                color={autoCapture ? colors.accent : '#fff'}
-              />
-              <Text
-                variant="subhead"
-                style={{ color: autoCapture ? colors.accent : '#fff' }}>
-                Auto
-              </Text>
-            </GlassSurface>
-          </PressableScale>
-        ) : null}
+        {/*
+          The timer, as two taps rather than a cycle. It was one pill you
+          pressed repeatedly to walk Off → 3 → 5, which means finding the
+          setting you want by overshooting it; both are on the bar now,
+          and pressing the lit one puts it back to off.
+        */}
+        {CAPTURE_TIMERS.filter((seconds) => seconds > 0).map((seconds) => {
+          const active = timer === seconds;
+          return (
+            <PressableScale
+              key={seconds}
+              onPress={() => chooseTimer(active ? 0 : seconds)}
+              haptic="light"
+              disabled={countdown !== null}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: active }}
+              accessibilityLabel={`${seconds} second self-timer`}
+              accessibilityHint={
+                active ? 'Turns the self-timer off' : 'Counts down before the shot'
+              }
+              style={{ borderRadius: 20, overflow: 'hidden' }}>
+              <GlassSurface
+                borderRadius={20}
+                variant="clear"
+                over="dark"
+                style={{
+                  height: 40,
+                  paddingHorizontal: spacing.md,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
+                }}>
+                <Icon
+                  name="clock"
+                  size={15}
+                  color={active ? colors.accent : '#fff'}
+                />
+                <Text
+                  variant="subhead"
+                  style={{ color: active ? colors.accent : '#fff' }}>
+                  {seconds}s
+                </Text>
+              </GlassSurface>
+            </PressableScale>
+          );
+        })}
 
 
       </GlassGroup>
