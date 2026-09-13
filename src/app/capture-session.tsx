@@ -28,6 +28,8 @@ import {
   type CaptureTimer,
 } from '@/lib/device-preferences';
 import { useBackOrHome } from '@/lib/navigation';
+import { CaptureRing } from '@/components/capture-ring';
+import { useSteadiness } from '@/features/capture/use-steadiness';
 import { persistCapture, shrinkCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
@@ -46,6 +48,9 @@ type Shot = {
   /** Cache URI from the camera, before it is persisted. */
   tempUri: string;
 };
+
+/** Seconds between the phone settling and the shutter. */
+const AUTO_CAPTURE_SECONDS = 3;
 
 export default function CaptureSessionScreen() {
   const { colors, spacing, radius } = useTheme();
@@ -79,6 +84,8 @@ export default function CaptureSessionScreen() {
    * decision.
    */
   const [timer, setTimer] = useState<CaptureTimer>(0);
+  /** Hands-free: settle the phone and it counts itself down. */
+  const [autoCapture, setAutoCapture] = useState(true);
   const [countdown, setCountdown] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -187,6 +194,44 @@ export default function CaptureSessionScreen() {
     setCountdown(null);
   }, []);
 
+  /**
+   * Runs a countdown, then captures.
+   *
+   * Shared by the shutter and by settling the phone, so a hands-free
+   * capture is the same three seconds and the same haptic ticks as one
+   * you started yourself — the only difference is what began it.
+   */
+  const runCountdown = useCallback(
+    (seconds: number) => {
+      let remaining = seconds;
+      const announce = (n: number) => {
+        setCountdown(n);
+        Haptics.selectionAsync().catch(() => undefined);
+        AccessibilityInfo.announceForAccessibility(String(n));
+      };
+      const tick = () => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          countdownRef.current = null;
+          setCountdown(null);
+          // The shutter itself gets a heavier tap than the ticks, so the
+          // blind angles can be felt rather than watched.
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
+            () => undefined,
+          );
+          capture();
+          return;
+        }
+        announce(remaining);
+        countdownRef.current = setTimeout(tick, 1000);
+      };
+
+      announce(remaining);
+      countdownRef.current = setTimeout(tick, 1000);
+    },
+    [capture],
+  );
+
   /** Shutter: fires now, starts the countdown, or cancels a running one. */
   const onShutter = useCallback(() => {
     if (countdown !== null) {
@@ -197,28 +242,57 @@ export default function CaptureSessionScreen() {
       capture();
       return;
     }
+    runCountdown(timer);
+  }, [countdown, timer, capture, cancelCountdown, runCountdown]);
 
-    let remaining: number = timer;
-    const announce = (n: number) => {
-      setCountdown(n);
-      Haptics.selectionAsync().catch(() => undefined);
-      AccessibilityInfo.announceForAccessibility(String(n));
-    };
-    const tick = () => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        countdownRef.current = null;
-        setCountdown(null);
-        capture();
-        return;
-      }
-      announce(remaining);
-      countdownRef.current = setTimeout(tick, 1000);
-    };
+  /* --------------------------- hands free --------------------------- */
 
-    announce(remaining);
-    countdownRef.current = setTimeout(tick, 1000);
-  }, [countdown, timer, capture, cancelCountdown]);
+  // Only while the camera is actually up for a shot: not over the
+  // summary, not behind an alert, and not once a frame is waiting to be
+  // accepted.
+  const watching =
+    phase === 'capture' && !pending && !confirming && permission?.granted === true;
+
+  const { moving, steady, unavailable: noSensor } = useSteadiness(
+    watching && autoCapture,
+  );
+
+  /**
+   * Settle the phone and it takes the photo.
+   *
+   * This is the answer to the two angles shot blind — the top and the
+   * back, where the screen is facing away and the shutter is somewhere
+   * under your thumb. It knows the phone has stopped, which is a real
+   * thing to know; it does not know where your head is pointing, which
+   * is why the framing is still yours to judge.
+   */
+  useEffect(() => {
+    if (!watching || !autoCapture || noSensor) return;
+    if (!steady || countdown !== null) return;
+    const start = setTimeout(() => runCountdown(AUTO_CAPTURE_SECONDS), 0);
+    return () => clearTimeout(start);
+  }, [watching, autoCapture, noSensor, steady, countdown, runCountdown]);
+
+  // Picking the phone up again cancels the count, rather than firing at
+  // whatever it happens to be pointing at.
+  useEffect(() => {
+    if (!moving || countdown === null) return;
+    const stop = setTimeout(cancelCountdown, 0);
+    return () => clearTimeout(stop);
+  }, [moving, countdown, cancelCountdown]);
+
+  /** The instruction fades out the moment the phone is disturbed. */
+  const instructionFade = useSharedValue(1);
+  useEffect(() => {
+    const to = moving ? 0 : 1;
+    instructionFade.set(
+      reduceMotion ? to : withTiming(to, { duration: moving ? 180 : 360 }),
+    );
+  }, [moving, reduceMotion, instructionFade]);
+
+  const instructionStyle = useAnimatedStyle(() => ({
+    opacity: instructionFade.get(),
+  }));
 
   /* ------------------------------ save ------------------------------ */
 
@@ -487,16 +561,47 @@ export default function CaptureSessionScreen() {
               right: 0,
               alignItems: 'center',
             }}>
-            <View
-              style={{
-                width: guideWidth,
-                height: guideWidth * 1.32,
-                borderRadius: guideWidth,
-                borderWidth: 2,
-                borderColor: 'rgba(255,255,255,0.55)',
-                borderStyle: 'dashed',
-              }}
-            />
+            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+              <CaptureRing
+                size={guideWidth * 1.18}
+                total={ANGLES.length}
+                done={shots.length}
+                current={index}
+                countdownProgress={
+                  countdown === null ? null : countdown / AUTO_CAPTURE_SECONDS
+                }
+              />
+
+              {/*
+                The instruction sits where the face goes, and leaves the
+                moment the phone is picked up — by then it has been read,
+                and what it is covering is the thing being framed.
+              */}
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  {
+                    position: 'absolute',
+                    paddingHorizontal: spacing.xl,
+                  },
+                  instructionStyle,
+                ]}>
+                <Text
+                  variant="headline"
+                  center
+                  style={{ color: '#fff' }}>
+                  {guidance.instruction}
+                </Text>
+                {autoCapture && !noSensor ? (
+                  <Text
+                    variant="footnote"
+                    center
+                    style={{ color: 'rgba(255,255,255,0.7)', marginTop: spacing.sm }}>
+                    Hold still and it takes itself
+                  </Text>
+                ) : null}
+              </Animated.View>
+            </View>
           </View>
         </View>
       ) : null}
@@ -585,6 +690,43 @@ export default function CaptureSessionScreen() {
           ))}
         </View>
 
+        {/* Hands-free. Hidden where there is no sensor to drive it —
+            a control that cannot do anything is worse than no control. */}
+        {!noSensor ? (
+          <PressableScale
+            onPress={() => setAutoCapture((on) => !on)}
+            haptic="light"
+            disabled={countdown !== null}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: autoCapture }}
+            accessibilityLabel="Capture when steady"
+            accessibilityHint="Takes the photo on its own once the phone stops moving"
+            style={{ borderRadius: 20, overflow: 'hidden' }}>
+            <GlassSurface
+              borderRadius={20}
+              variant="clear"
+              over="dark"
+              style={{
+                height: 40,
+                paddingHorizontal: spacing.md,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+              }}>
+              <Icon
+                name="target"
+                size={15}
+                color={autoCapture ? colors.accent : '#fff'}
+              />
+              <Text
+                variant="subhead"
+                style={{ color: autoCapture ? colors.accent : '#fff' }}>
+                Auto
+              </Text>
+            </GlassSurface>
+          </PressableScale>
+        ) : null}
+
         <PressableScale
           onPress={cycleTimer}
           haptic="light"
@@ -662,14 +804,11 @@ export default function CaptureSessionScreen() {
               paddingHorizontal: spacing.lg,
               alignItems: 'center',
             }}>
+            {/* Which angle, and nothing else. The instruction itself now
+                sits inside the ring, where the framing is happening; two
+                copies of it meant reading the same sentence twice. */}
             <Text variant="overline" style={{ color: '#fff', opacity: 0.7 }}>
               {`Angle ${index + 1} of ${ANGLES.length} · ${ANGLE_LABELS[angle]}`}
-            </Text>
-            <Text
-              variant="subhead"
-              numberOfLines={2}
-              style={{ color: '#fff', marginTop: 4, textAlign: 'center' }}>
-              {guidance.instruction}
             </Text>
           </GlassSurface>
         </Animated.View>

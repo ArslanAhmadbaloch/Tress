@@ -54,6 +54,12 @@
           "recordAudioAndroid": false
         }
       ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Hair Journey uses motion to tell when your phone is steady, so it can take the photo for you."
+        }
+      ],
       "expo-font",
       "expo-asset",
       "expo-secure-store",
