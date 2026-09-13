@@ -20,6 +20,8 @@ import {
 
 import { toDateKey } from '@/lib/date';
 import {
+  doseCount,
+  dosesTaken,
   EMPTY_DATA,
   SCHEMA_VERSION,
   type AppData,
@@ -71,8 +73,13 @@ type AppStore = {
   deleteSession: (sessionId: string) => void;
 
   addRoutineItem: (input: Omit<RoutineItem, 'id' | 'journeyId' | 'createdAt'>) => void;
+  updateRoutineItem: (
+    itemId: string,
+    patch: Partial<Omit<RoutineItem, 'id' | 'journeyId' | 'createdAt'>>,
+  ) => void;
   archiveRoutineItem: (itemId: string) => void;
-  toggleRoutineToday: (itemId: string) => void;
+  /** Records one more dose for today, wrapping back to none when full. */
+  advanceRoutineToday: (itemId: string) => void;
 
   addJournalEntry: (body: string, sessionId?: string) => void;
   deleteJournalEntry: (entryId: string) => void;
@@ -279,20 +286,35 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const toggleRoutineToday = useCallback((itemId: string) => {
+  /**
+   * Records one more dose of an item for today.
+   *
+   * A single-dose item behaves exactly as the old toggle did: on, then
+   * off. Something taken twice a day fills once per tap and, once both
+   * are in, the next tap clears the day — so a mis-tap is undone the same
+   * way it was made, without a separate gesture to learn.
+   */
+  const advanceRoutineToday = useCallback((itemId: string) => {
     const date = toDateKey();
 
     setData((prev) => {
+      const item = prev.routineItems.find((i) => i.id === itemId);
+      const total = item ? doseCount(item) : 1;
+
       const existing = prev.routineLogs.find(
         (log) => log.routineItemId === itemId && log.date === date,
       );
+
+      const taken = dosesTaken(existing, total);
+      const next = taken >= total ? 0 : taken + 1;
+      const now = new Date().toISOString();
 
       if (existing) {
         return {
           ...prev,
           routineLogs: prev.routineLogs.map((log) =>
             log === existing
-              ? { ...log, completed: !log.completed, loggedAt: new Date().toISOString() }
+              ? { ...log, doses: next, completed: next >= total, loggedAt: now }
               : log,
           ),
         };
@@ -302,12 +324,47 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         id: makeId('log'),
         routineItemId: itemId,
         date,
-        completed: true,
-        loggedAt: new Date().toISOString(),
+        doses: next,
+        completed: next >= total,
+        loggedAt: now,
       };
       return { ...prev, routineLogs: [...prev.routineLogs, log] };
     });
   }, []);
+
+  /**
+   * Edit an item in place.
+   *
+   * Changing the doses a day rewrites today's log so the row cannot show
+   * three of two: the count is clamped, and the day stops counting as
+   * complete if the bar just moved above what has been taken.
+   */
+  const updateRoutineItem = useCallback(
+    (
+      itemId: string,
+      patch: Partial<Omit<RoutineItem, 'id' | 'journeyId' | 'createdAt'>>,
+    ) => {
+      const date = toDateKey();
+
+      setData((prev) => {
+        const items = prev.routineItems.map((item) =>
+          item.id === itemId ? { ...item, ...patch } : item,
+        );
+        const updated = items.find((i) => i.id === itemId);
+        if (!updated) return prev;
+
+        const total = doseCount(updated);
+        const routineLogs = prev.routineLogs.map((log) => {
+          if (log.routineItemId !== itemId || log.date !== date) return log;
+          const taken = dosesTaken(log, total);
+          return { ...log, doses: taken, completed: taken >= total };
+        });
+
+        return { ...prev, routineItems: items, routineLogs };
+      });
+    },
+    [],
+  );
 
   const addJournalEntry = useCallback((body: string, sessionId?: string) => {
     const trimmed = body.trim();
@@ -350,7 +407,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       deleteSession,
       addRoutineItem,
       archiveRoutineItem,
-      toggleRoutineToday,
+      advanceRoutineToday,
+      updateRoutineItem,
       addJournalEntry,
       deleteJournalEntry,
       resetAll,
@@ -366,7 +424,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       deleteSession,
       addRoutineItem,
       archiveRoutineItem,
-      toggleRoutineToday,
+      advanceRoutineToday,
+      updateRoutineItem,
       addJournalEntry,
       deleteJournalEntry,
       resetAll,

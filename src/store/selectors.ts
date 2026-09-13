@@ -6,7 +6,13 @@
  */
 
 import { addDays, daysBetween, toDateKey } from '@/lib/date';
-import type { AppData, PhotoSession, RoutineItem } from '@/types/domain';
+import {
+  doseCount,
+  dosesTaken,
+  type AppData,
+  type PhotoSession,
+  type RoutineItem,
+} from '@/types/domain';
 
 export function activeRoutineItems(data: AppData): RoutineItem[] {
   return data.routineItems.filter((item) => !item.archivedAt);
@@ -21,13 +27,48 @@ export function completedOn(data: AppData, date: string): Set<string> {
   return done;
 }
 
+/**
+ * Doses taken today, per item.
+ *
+ * Separate from `completedOn`, which stays all-or-nothing because that is
+ * what a streak is made of: a day only counts once every dose is in.
+ */
+export function dosesOn(data: AppData, date: string): Map<string, number> {
+  const taken = new Map<string, number>();
+  const totals = new Map(
+    activeRoutineItems(data).map((item) => [item.id, doseCount(item)]),
+  );
+
+  for (const log of data.routineLogs) {
+    if (log.date !== date) continue;
+    const total = totals.get(log.routineItemId);
+    if (total === undefined) continue;
+    taken.set(log.routineItemId, dosesTaken(log, total));
+  }
+
+  return taken;
+}
+
+/**
+ * Today, counted in doses rather than items.
+ *
+ * Someone on a twice-daily topical has four things to do across three
+ * items, and "1 of 3" would have called them a third done after one of
+ * four. The streak still turns on whole items; this is the bar on the
+ * screen, and it should move when you actually do something.
+ */
 export function todayProgress(data: AppData): { done: number; total: number } {
   const items = activeRoutineItems(data);
-  const done = completedOn(data, toDateKey());
-  return {
-    done: items.filter((item) => done.has(item.id)).length,
-    total: items.length,
-  };
+  const taken = dosesOn(data, toDateKey());
+
+  let done = 0;
+  let total = 0;
+  for (const item of items) {
+    total += doseCount(item);
+    done += taken.get(item.id) ?? 0;
+  }
+
+  return { done, total };
 }
 
 /**

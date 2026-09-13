@@ -15,6 +15,7 @@ import { formatMilestone, toDateKey } from '@/lib/date';
 import { isProfilePhoto, profilePhotoName } from '@/lib/photo-names';
 import {
   adherencePercent,
+  dosesOn,
   longestStreak,
   routineItemStats,
   consistencyScore,
@@ -24,7 +25,14 @@ import {
   todayProgress,
   weekProgress,
 } from '@/store/selectors';
-import { EMPTY_DATA, SCHEMA_VERSION, type AppData, type RoutineItem } from '@/types/domain';
+import {
+  doseCount,
+  dosesTaken,
+  EMPTY_DATA,
+  SCHEMA_VERSION,
+  type AppData,
+  type RoutineItem,
+} from '@/types/domain';
 
 /* ------------------------------ fixtures ------------------------------- */
 
@@ -82,6 +90,104 @@ function completeOn(data: AppData, itemId: string, days: number[]): AppData {
     ],
   };
 }
+
+/** An item taken `doses` times a day. */
+function multiDose(id: string, createdDaysAgo: number, doses: number): RoutineItem {
+  return { ...item(id, createdDaysAgo), dosesPerDay: doses };
+}
+
+/** Records `doses` of `itemId` on the given day, out of `total`. */
+function takeDoses(
+  data: AppData,
+  itemId: string,
+  day: number,
+  doses: number,
+  total: number,
+): AppData {
+  return {
+    ...data,
+    routineLogs: [
+      ...data.routineLogs,
+      {
+        id: `log_${itemId}_${day}`,
+        routineItemId: itemId,
+        date: toDateKey(daysAgo(day)),
+        doses,
+        completed: doses >= total,
+        loggedAt: daysAgo(day).toISOString(),
+      },
+    ],
+  };
+}
+
+/* -------------------------------- doses --------------------------------- */
+
+test('doses: an item without a count is taken once a day', () => {
+  assert.equal(doseCount(item('a', 0)), 1);
+  assert.equal(doseCount({ dosesPerDay: undefined }), 1);
+});
+
+test('doses: the count is clamped to something a day can hold', () => {
+  assert.equal(doseCount({ dosesPerDay: 0 }), 1);
+  assert.equal(doseCount({ dosesPerDay: -3 }), 1);
+  assert.equal(doseCount({ dosesPerDay: 99 }), 4);
+  assert.equal(doseCount({ dosesPerDay: Number.NaN }), 1);
+});
+
+test('doses: a log from before doses existed still reads as complete', () => {
+  // The shape every log on disk has today: completed, with no count.
+  assert.equal(dosesTaken({ completed: true }, 2), 2);
+  assert.equal(dosesTaken({ completed: false }, 2), 0);
+  assert.equal(dosesTaken(undefined, 2), 0);
+});
+
+test('doses: a count is never read back higher than the item allows', () => {
+  // Someone drops a topical from twice a day to once after taking both.
+  assert.equal(dosesTaken({ completed: true, doses: 2 }, 1), 1);
+});
+
+test('doses: half a twice-daily item is not a completed day', () => {
+  const base = journeyWith(10, [multiDose('a', 10, 2)]);
+
+  const half = takeDoses(base, 'a', 0, 1, 2);
+  assert.equal(currentStreak(half), 0, 'one of two doses is not the day done');
+
+  const full = takeDoses(base, 'a', 0, 2, 2);
+  assert.equal(currentStreak(full), 1);
+});
+
+test('doses: today is counted in doses, not in items', () => {
+  let data = journeyWith(10, [multiDose('a', 10, 2), item('b', 10)]);
+  data = takeDoses(data, 'a', 0, 1, 2);
+
+  assert.deepEqual(
+    todayProgress(data),
+    { done: 1, total: 3 },
+    'one of three doses, not one of two items',
+  );
+
+  data = takeDoses(data, 'b', 0, 1, 1);
+  assert.deepEqual(todayProgress(data), { done: 2, total: 3 });
+});
+
+test('doses: dosesOn reports what is in for each item', () => {
+  let data = journeyWith(10, [multiDose('a', 10, 3), item('b', 10)]);
+  data = takeDoses(data, 'a', 0, 2, 3);
+
+  const taken = dosesOn(data, toDateKey());
+  assert.equal(taken.get('a'), 2);
+  assert.equal(taken.get('b'), undefined, 'nothing logged is nothing taken');
+});
+
+test('doses: a part-done day does not count toward adherence', () => {
+  // Adherence and streak both turn on whole items, so half a dose
+  // schedule must not read as half a day kept.
+  const base = journeyWith(1, [multiDose('a', 1, 2)]);
+  const half = takeDoses(base, 'a', 0, 1, 2);
+
+  assert.equal(adherencePercent(half), 0);
+  assert.equal(adherencePercent(takeDoses(base, 'a', 0, 2, 2)), 50, 'one of the two days');
+});
 
 /* ------------------------------- streak -------------------------------- */
 

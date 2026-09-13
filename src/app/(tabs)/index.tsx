@@ -36,7 +36,7 @@ import { useAppStore } from '@/store/app-store';
 import {
   activeRoutineItems,
   baselineSession,
-  completedOn,
+  dosesOn,
   consistencyScore,
   currentStreak,
   latestSession,
@@ -73,7 +73,7 @@ type Explainer = 'consistency' | 'streak' | 'photos' | null;
 export default function HomeScreen() {
   const { colors, spacing } = useTheme();
   const router = useRouter();
-  const { data, toggleRoutineToday } = useAppStore();
+  const { data, advanceRoutineToday } = useAppStore();
 
   const [explain, setExplain] = useState<Explainer>(null);
 
@@ -90,7 +90,7 @@ export default function HomeScreen() {
   const streak = currentStreak(data);
   const due = nextUpdate(data);
   const items = activeRoutineItems(data);
-  const doneToday = completedOn(data, toDateKey());
+  const takenToday = dosesOn(data, toDateKey());
   const today = todayProgress(data);
 
   const totalPhotos = data.sessions.reduce((n, s) => n + s.photos.length, 0);
@@ -238,8 +238,8 @@ export default function HomeScreen() {
                 ) : null}
                 <StackRow
                   item={item}
-                  done={doneToday.has(item.id)}
-                  onToggle={() => toggleRoutineToday(item.id)}
+                  taken={takenToday.get(item.id) ?? 0}
+                  onToggle={() => advanceRoutineToday(item.id)}
                 />
               </View>
             ))}

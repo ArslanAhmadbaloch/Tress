@@ -17,10 +17,13 @@ import { CheckGlyph, RoutineGlyph } from './ui/routine-glyphs';
 import { Text } from './ui/text';
 import { routineIconFor } from '@/features/routine/icons';
 import { spacing, useTheme } from '@/theme';
-import { TIME_OF_DAY_LABELS, type RoutineItem } from '@/types/domain';
+import { doseCount, TIME_OF_DAY_LABELS, type RoutineItem } from '@/types/domain';
 
 const ORB = 38;
 const CHECK = 30;
+
+/** Pips shrink as they multiply, so four still fit beside the text. */
+const PIP_SIZE: Record<number, number> = { 1: CHECK, 2: 26, 3: 22, 4: 20 };
 
 /** Where a row's text begins, so separators can start under it. */
 export const STACK_TEXT_INSET = spacing.lg + ORB + spacing.md;
@@ -40,18 +43,24 @@ export function stackSubtitle(
 
 export function StackRow({
   item,
-  done,
+  taken,
   onToggle,
   accessory,
 }: {
   item: RoutineItem;
-  done: boolean;
+  /** Doses in for today. One tap adds one. */
+  taken: number;
   onToggle: () => void;
   /** Extra control before the check, e.g. remove on the routine screen. */
   accessory?: ReactNode;
 }) {
   const { colors } = useTheme();
   const subtitle = stackSubtitle(item);
+
+  const total = doseCount(item);
+  const filled = Math.min(total, Math.max(0, taken));
+  const done = filled >= total;
+  const pip = PIP_SIZE[total] ?? 20;
 
   return (
     <PressableScale
@@ -60,8 +69,12 @@ export function StackRow({
       scaleTo={0.995}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: done }}
-      accessibilityLabel={item.label}
-      accessibilityHint={subtitle}
+      accessibilityLabel={
+        total === 1 ? item.label : `${item.label}, ${filled} of ${total} doses`
+      }
+      accessibilityHint={
+        total === 1 ? subtitle : 'Tap to record a dose'
+      }
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -91,28 +104,40 @@ export function StackRow({
       {accessory}
 
       {/* Ticking something off is the one moment in the app worth
-          celebrating, so it gets the pop and the burst. */}
-      <View style={{ width: CHECK, height: CHECK }}>
-        <Burst active={done} size={CHECK * 2.1} />
-        <Pop active={done}>
-          {done ? (
-            <GlassOrb size={CHECK} ring={false}>
-              <CheckGlyph size={15} />
-            </GlassOrb>
-          ) : (
-            <View
-              style={{
-                width: CHECK,
-                height: CHECK,
-                borderRadius: CHECK / 2,
-                borderWidth: 1.5,
-                borderColor: colors.fillSelected,
-                backgroundColor: colors.surface,
-              }}
-            />
-          )}
-        </Pop>
+          celebrating, so it gets the pop and the burst — once the day is
+          actually done, not on every dose along the way. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+        {Array.from({ length: total }, (_, i) => {
+          const lit = i < filled;
+          // The burst belongs to the pip that finishes the day.
+          const last = i === total - 1;
+
+          return (
+            <View key={i} style={{ width: pip, height: pip }}>
+              {last ? <Burst active={done} size={pip * 2.1} /> : null}
+              <Pop active={lit}>
+                {lit ? (
+                  <GlassOrb size={pip} ring={false}>
+                    <CheckGlyph size={pip * 0.5} />
+                  </GlassOrb>
+                ) : (
+                  <View
+                    style={{
+                      width: pip,
+                      height: pip,
+                      borderRadius: pip / 2,
+                      borderWidth: 1.5,
+                      borderColor: colors.fillSelected,
+                      backgroundColor: colors.surface,
+                    }}
+                  />
+                )}
+              </Pop>
+            </View>
+          );
+        })}
       </View>
+
     </PressableScale>
   );
 }

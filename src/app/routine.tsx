@@ -18,15 +18,20 @@ import { toDateKey } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import {
   activeRoutineItems,
-  completedOn,
+  dosesOn,
   todayProgress,
 } from '@/store/selectors';
 import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
 import {
+  DOSE_LABELS,
+  DOSE_OPTIONS,
+  doseCount,
+  MAX_DOSES_PER_DAY,
   ROUTINE_ICONS,
   ROUTINE_ICON_LABELS,
   TIME_OF_DAY_LABELS,
   type RoutineIcon,
+  type RoutineItem,
   type RoutineTimeOfDay,
 } from '@/types/domain';
 
@@ -43,12 +48,20 @@ export default function RoutineScreen() {
   const { colors, spacing, radius, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { data, addRoutineItem, archiveRoutineItem, toggleRoutineToday } =
-    useAppStore();
+  const {
+    data,
+    addRoutineItem,
+    updateRoutineItem,
+    archiveRoutineItem,
+    advanceRoutineToday,
+  } = useAppStore();
 
   const [name, setName] = useState('');
   const [detail, setDetail] = useState('');
   const [time, setTime] = useState<RoutineTimeOfDay>('morning');
+  // Always starts at once a day. How often something is taken is a dosing
+  // decision, and the app is in no position to guess it for anybody.
+  const [doses, setDoses] = useState(1);
   // Null until the user picks one: until then the icon follows what they
   // type, so "Collagen" lands on the cup without an extra tap.
   const [chosenIcon, setChosenIcon] = useState<RoutineIcon | null>(null);
@@ -57,7 +70,7 @@ export default function RoutineScreen() {
   const icon = chosenIcon ?? inferRoutineIcon(`${name} ${detail}`);
 
   const items = activeRoutineItems(data);
-  const done = completedOn(data, toDateKey());
+  const taken = dosesOn(data, toDateKey());
   const progress = todayProgress(data);
 
   const canAdd = name.trim().length > 0;
@@ -65,6 +78,12 @@ export default function RoutineScreen() {
   const [added, setAdded] = useState(false);
   /** The form is a second job, so it stays closed while a stack exists. */
   const [adding, setAdding] = useState(false);
+
+  /** 1× → 2× → 3× → 4× → 1×, so the whole range is one control. */
+  const cycleDoses = (item: RoutineItem) => {
+    const next = doseCount(item) >= MAX_DOSES_PER_DAY ? 1 : doseCount(item) + 1;
+    updateRoutineItem(item.id, { dosesPerDay: next });
+  };
 
   const add = () => {
     const label = name.trim();
@@ -75,9 +94,11 @@ export default function RoutineScreen() {
       icon,
       cadence: 'daily',
       timeOfDay: time,
+      dosesPerDay: doses,
     });
     setName('');
     setDetail('');
+    setDoses(1);
     setChosenIcon(null);
   };
 
@@ -190,18 +211,49 @@ export default function RoutineScreen() {
                   ) : null}
                   <StackRow
                     item={item}
-                    done={done.has(item.id)}
-                    onToggle={() => toggleRoutineToday(item.id)}
+                    taken={taken.get(item.id) ?? 0}
+                    onToggle={() => advanceRoutineToday(item.id)}
                     accessory={
-                      <PressableScale
-                        onPress={() => confirmRemove(item.id, item.label)}
-                        haptic="none"
-                        hitSlop={10}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Remove ${item.label}`}
-                        style={{ padding: spacing.xs }}>
-                        <Icon name="trash" size={15} color={colors.textTertiary} />
-                      </PressableScale>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: spacing.xs,
+                        }}>
+                        {/* Cycles 1× → 4× → 1×. Here rather than on Home,
+                            because this is the screen for editing the
+                            stack and Home is the screen for doing it. */}
+                        <PressableScale
+                          onPress={() => cycleDoses(item)}
+                          haptic="light"
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${item.label}: ${DOSE_LABELS[doseCount(item)]}. Tap to change.`}
+                          style={{
+                            paddingHorizontal: spacing.sm,
+                            paddingVertical: 3,
+                            borderRadius: radius.pill,
+                            backgroundColor:
+                              doseCount(item) > 1 ? colors.accentSoft : colors.backgroundSubtle,
+                          }}>
+                          <Text
+                            variant="caption"
+                            color={doseCount(item) > 1 ? 'accent' : 'textTertiary'}
+                            style={{ fontWeight: '600' }}>
+                            {doseCount(item)}×
+                          </Text>
+                        </PressableScale>
+
+                        <PressableScale
+                          onPress={() => confirmRemove(item.id, item.label)}
+                          haptic="none"
+                          hitSlop={10}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${item.label}`}
+                          style={{ padding: spacing.xs }}>
+                          <Icon name="trash" size={15} color={colors.textTertiary} />
+                        </PressableScale>
+                      </View>
                     }
                   />
                 </View>
@@ -282,6 +334,39 @@ export default function RoutineScreen() {
                   }}>
                   <Text variant="subhead" color={selected ? 'accent' : 'textSecondary'}>
                     {TIME_OF_DAY_LABELS[t]}
+                  </Text>
+                </PressableScale>
+              );
+            })}
+          </View>
+
+          <Text variant="subhead" color="textSecondary" style={{ marginTop: spacing.lg }}>
+            Times a day
+          </Text>
+          <View
+            accessibilityRole="radiogroup"
+            style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+            {DOSE_OPTIONS.map((n) => {
+              const selected = n === doses;
+              return (
+                <PressableScale
+                  key={n}
+                  onPress={() => setDoses(n)}
+                  haptic="light"
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={DOSE_LABELS[n]}
+                  style={{
+                    flex: 1,
+                    alignItems: 'center',
+                    paddingVertical: spacing.sm + 2,
+                    borderRadius: radius.pill,
+                    backgroundColor: selected ? colors.accentSoft : colors.backgroundSubtle,
+                    borderWidth: 1,
+                    borderColor: selected ? colors.accentBorder : 'transparent',
+                  }}>
+                  <Text variant="subhead" color={selected ? 'accent' : 'textSecondary'}>
+                    {n}×
                   </Text>
                 </PressableScale>
               );

@@ -364,6 +364,15 @@ export type RoutineItem = {
   icon?: RoutineIcon;
   cadence: RoutineCadence;
   timeOfDay?: RoutineTimeOfDay;
+  /**
+   * Times a day this is taken. Absent means once, which is what every
+   * item was before doses existed.
+   *
+   * The app never sets this above one on anybody's behalf. How often a
+   * treatment is taken is a dosing decision, and the only honest source
+   * for it is whoever prescribed it.
+   */
+  dosesPerDay?: number;
   createdAt: string;
   archivedAt?: string;
 };
@@ -374,9 +383,52 @@ export type RoutineLog = {
   routineItemId: string;
   /** YYYY-MM-DD in the device's local time. */
   date: string;
+  /** True once every dose for the day is in. */
   completed: boolean;
+  /**
+   * Doses taken that day. Absent on logs written before doses existed, so
+   * read it through `dosesTaken`, which falls back to `completed`.
+   */
+  doses?: number;
   loggedAt: string;
 };
+
+/** The most doses a day the app will track. */
+export const MAX_DOSES_PER_DAY = 4;
+
+export const DOSE_OPTIONS = [1, 2, 3, 4];
+
+export const DOSE_LABELS: Record<number, string> = {
+  1: 'Once a day',
+  2: 'Twice a day',
+  3: 'Three times a day',
+  4: 'Four times a day',
+};
+
+/** Doses a day for an item, clamped and defaulting to one. */
+export function doseCount(item: Pick<RoutineItem, 'dosesPerDay'>): number {
+  const n = item.dosesPerDay ?? 1;
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(MAX_DOSES_PER_DAY, Math.max(1, Math.round(n)));
+}
+
+/**
+ * Doses recorded by a log, out of `total`.
+ *
+ * Logs written before doses existed only say completed or not, so those
+ * read as all-or-nothing. Clamped, because `total` can drop after the
+ * fact if someone changes an item from three times a day to one.
+ */
+export function dosesTaken(
+  log: Pick<RoutineLog, 'doses' | 'completed'> | undefined,
+  total: number,
+): number {
+  if (!log) return 0;
+  if (typeof log.doses === 'number' && Number.isFinite(log.doses)) {
+    return Math.min(total, Math.max(0, Math.round(log.doses)));
+  }
+  return log.completed ? total : 0;
+}
 
 export type JournalEntry = {
   id: string;

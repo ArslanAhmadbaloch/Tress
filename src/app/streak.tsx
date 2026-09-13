@@ -43,7 +43,7 @@ import {
   type RoutineItemStat,
 } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { TIME_OF_DAY_LABELS } from '@/types/domain';
+import { DOSE_LABELS, doseCount, TIME_OF_DAY_LABELS } from '@/types/domain';
 
 export default function StreakScreen() {
   const { colors, spacing, radius } = useTheme();
@@ -197,6 +197,9 @@ function ItemRow({ stat }: { stat: RoutineItemStat }) {
   const doneToday = lastDone === toDateKey();
 
   const timeOfDay = item.timeOfDay ? TIME_OF_DAY_LABELS[item.timeOfDay] : null;
+  // Only worth saying when it is not the default; "Once a day" on every
+  // row is noise.
+  const doses = doseCount(item) > 1 ? DOSE_LABELS[doseCount(item)] : null;
 
   return (
     <Card padded={false}>
@@ -220,9 +223,9 @@ function ItemRow({ stat }: { stat: RoutineItemStat }) {
               ? 'Started today'
               : `Started ${formatDate(item.createdAt)} · ${formatRelative(started.toISOString())}`}
           </Text>
-          {item.detail || timeOfDay ? (
+          {item.detail || timeOfDay || doses ? (
             <Text variant="caption" color="textTertiary" style={{ marginTop: 1 }}>
-              {[item.detail, timeOfDay].filter(Boolean).join(' · ')}
+              {[item.detail, timeOfDay, doses].filter(Boolean).join(' · ')}
             </Text>
           ) : null}
         </View>
