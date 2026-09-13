@@ -21,7 +21,6 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -453,82 +452,6 @@ export function Scale({
 
 /* --------------------------------- facts -------------------------------- */
 
-/**
- * A fact card.
- *
- * Placed where a third question would otherwise go. The point is to hand
- * something over rather than take something: three screens in, the app has
- * asked a lot and given nothing, and this is where that turns around.
- */
-export function FactBody({
-  eyebrow,
-  headline,
-  body,
-  footnote,
-  source,
-  children,
-}: {
-  eyebrow: string;
-  headline: string;
-  body: string[];
-  footnote?: string;
-  /** Where the claim comes from, as a line the reader can check. */
-  source?: string;
-  /** The illustration above the words. */
-  children?: ReactNode;
-}) {
-  const { colors, spacing, radius } = useTheme();
-
-  return (
-    <>
-      {children ? <Rise index={0}>{children}</Rise> : null}
-
-      <Rise index={1} style={{ marginTop: spacing.xl }}>
-        <Text
-          variant="caption"
-          color="accent"
-          style={{ letterSpacing: 1.6, marginBottom: spacing.sm }}>
-          {eyebrow.toUpperCase()}
-        </Text>
-        <Text variant="title2">{headline}</Text>
-      </Rise>
-
-      {body.map((paragraph, i) => (
-        <Rise key={paragraph} index={2 + i} style={{ marginTop: spacing.lg }}>
-          <Text variant="body" color="textSecondary">
-            {paragraph}
-          </Text>
-        </Rise>
-      ))}
-
-      {footnote ? (
-        <Rise index={2 + body.length} style={{ marginTop: spacing.xl }}>
-          <View
-            style={{
-              padding: spacing.lg,
-              borderRadius: radius.md,
-              backgroundColor: colors.accentSoft,
-              borderWidth: 1,
-              borderColor: colors.accentBorder,
-            }}>
-            <Text variant="subhead" color="accent">
-              {footnote}
-            </Text>
-          </View>
-        </Rise>
-      ) : null}
-
-      {source ? (
-        <Rise index={3 + body.length} style={{ marginTop: spacing.lg }}>
-          <Text variant="caption" color="textTertiary">
-            {source}
-          </Text>
-        </Rise>
-      ) : null}
-    </>
-  );
-}
-
 /* ------------------------------ decoration ------------------------------ */
 
 /**
@@ -612,22 +535,4 @@ export function PlanFact({
       </View>
     </Rise>
   );
-}
-
-/** The pulse under a fact card's illustration, so the screen is not static. */
-export function Breathe({ children }: { children: ReactNode }) {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    t.set(withTiming(1, { duration: 2600 }));
-  }, [reduceMotion, t]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: 0.75 + 0.25 * t.get(),
-    transform: [{ scale: 0.97 + 0.03 * t.get() }],
-  }));
-
-  return <Animated.View style={style}>{children}</Animated.View>;
 }

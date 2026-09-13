@@ -43,16 +43,16 @@ export type StepId =
   | 'you'
   | 'meaning'
   | 'goal'
-  | 'factGradual'
+  | 'caseOne'
   | 'story'
   | 'impact'
-  | 'factFeelings'
+  | 'caseTwo'
   | 'approach'
   | 'medication'
   | 'products'
   | 'system'
   | 'cadence'
-  | 'factCause'
+  | 'howItHelps'
   | 'photo'
   | 'card'
   | 'plan'
@@ -69,16 +69,18 @@ export const STEPS: StepId[] = [
   'you',
   'meaning',
   'goal',
-  'factGradual',
+  // The breaks between question blocks. They used to be explainers;
+  // they are now one person's pair each, and then what the app does.
+  'caseOne',
   'story',
   'impact',
-  'factFeelings',
+  'caseTwo',
   'approach',
   'medication',
   'products',
   'system',
   'cadence',
-  'factCause',
+  'howItHelps',
   'photo',
   'card',
   'plan',
@@ -89,14 +91,15 @@ export const STEPS: StepId[] = [
 /**
  * Steps that do not count toward the progress indicator.
  *
- * The three fact cards and the reveals are not being asked anything, and a
- * bar that advances while someone reads makes reading feel like a cost.
+ * The two case studies, the what-it-does card and the reveals are not
+ * asking anything, and a bar that advances while somebody reads makes
+ * reading feel like a cost.
  */
 export const UNCOUNTED: StepId[] = [
   'welcome',
-  'factGradual',
-  'factFeelings',
-  'factCause',
+  'caseOne',
+  'caseTwo',
+  'howItHelps',
   'system',
   'card',
   'plan',

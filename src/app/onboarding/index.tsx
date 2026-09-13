@@ -14,13 +14,11 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, TextInput, View, useWindowDimensions } from 'react-native';
 
 import {
-  Breathe,
   ChoiceRow,
-  FactBody,
   FunnelShell,
   PlanFact,
   PlanLine,
@@ -31,6 +29,7 @@ import {
   Wash,
 } from '@/components/funnel';
 import { BrandLockup } from '@/components/brand-lockup';
+import { CaseStudyCard } from '@/components/case-study-card';
 import { CardFloat, MemberCard } from '@/components/member-card';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
@@ -41,7 +40,14 @@ import {
   WELCOME_BODY,
   welcomeTitle,
 } from '@/features/content/belonging';
-import { FACTS, type Fact } from '@/features/onboarding/facts';
+import { CASE_STUDIES, type CaseStudy } from '@/features/onboarding/case-studies';
+import {
+  HELP_BEATS,
+  HELP_FIGURES,
+  HELP_FOOTNOTE,
+  HELP_SUBTITLE,
+  HELP_TITLE,
+} from '@/features/onboarding/how-it-helps';
 import { productOptions, type CustomProduct } from '@/features/onboarding/products';
 import {
   APPROACH_CHOICES,
@@ -371,26 +377,34 @@ export default function OnboardingFunnel() {
         ),
       });
 
-    /* ------------------------------- facts ---------------------------- */
-    case 'factGradual':
+    /* ---------------------------- case studies ------------------------ */
+    /*
+      The breaks between question blocks. They were explainers; they are
+      now somebody's pair, because a person halfway through a form about
+      their hair would rather see where this goes than read a page about
+      follicle counts. Both cards carry their own disclosure — these are
+      illustrations, and the app records change rather than causing it.
+    */
+    case 'caseOne':
       return shell({
-        cta: FACTS.gradual.cta,
+        cta: 'Continue',
         onCta: next,
-        children: <FactScreen fact={FACTS.gradual} illustration={<Timeline />} />,
+        children: <CaseStudyScreen study={CASE_STUDIES[0]} />,
       });
 
-    case 'factFeelings':
+    case 'caseTwo':
       return shell({
-        cta: FACTS.feelings.cta,
+        cta: 'Continue',
         onCta: next,
-        children: <FactScreen fact={FACTS.feelings} illustration={<Arc />} />,
+        children: <CaseStudyScreen study={CASE_STUDIES[1]} />,
       });
 
-    case 'factCause':
+    /* ---------------------------- what it does ------------------------ */
+    case 'howItHelps':
       return shell({
-        cta: FACTS.cause.cta,
+        cta: 'Continue',
         onCta: next,
-        children: <FactScreen fact={FACTS.cause} illustration={<Strands />} />,
+        children: <HowItHelpsScreen />,
       });
 
     /* ------------------------------- story ---------------------------- */
@@ -1109,134 +1123,114 @@ function Choices<T extends string>({
   );
 }
 
-function FactScreen({ fact, illustration }: { fact: Fact; illustration: ReactNode }) {
-  const router = useRouter();
-  const { colors, spacing } = useTheme();
+/**
+ * One person's pair, between two blocks of questions.
+ *
+ * The headline is about the habit rather than the hair, because the habit
+ * is the only half of this the app has anything to do with.
+ */
+function CaseStudyScreen({ study }: { study: CaseStudy }) {
+  const { spacing } = useTheme();
 
   return (
     <>
       <Wash />
-      <FactBody
-        eyebrow={fact.eyebrow}
-        headline={fact.headline}
-        body={[...fact.body]}
-        footnote={fact.footnote}>
-        {illustration}
-      </FactBody>
+      <Rise index={0}>
+        <Text variant="title3">{study.headline}</Text>
+      </Rise>
 
-      <Rise index={6} style={{ marginTop: spacing.lg }}>
-        <PressableScale
-          onPress={() => router.push({ pathname: '/learn/[slug]', params: { slug: fact.slug } })}
-          haptic="none"
-          accessibilityRole="button"
-          accessibilityLabel="Read the full guide"
-          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-          <Text variant="subhead" color="accent" style={{ flexShrink: 1 }}>
-            {fact.source}
-          </Text>
-          <Icon name="arrowRight" size={12} color={colors.accent} />
-        </PressableScale>
+      <Rise index={1} style={{ marginTop: spacing.xl }}>
+        <CaseStudyCard study={study} />
       </Rise>
     </>
   );
 }
 
-/** Four frames of the same head, a month apart: the change you cannot see. */
-function Timeline() {
-  const { colors, spacing } = useTheme();
+/**
+ * What the app does, in the last break before the camera.
+ *
+ * Four things it does and three figures about itself. No outcome numbers:
+ * there is no cohort to count, and a made-up percentage on this screen
+ * would be a claim about somebody's hair — see how-it-helps.ts.
+ */
+function HowItHelpsScreen() {
+  const { colors, spacing, radius } = useTheme();
 
   return (
-    <Breathe>
-      <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' }}>
-        {[0, 1, 2, 3].map((i) => (
-          <View key={i} style={{ flex: 1, alignItems: 'center', gap: spacing.xs }}>
+    <>
+      <Wash />
+      <Rise index={0}>
+        <Text variant="title2">{HELP_TITLE}</Text>
+        <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
+          {HELP_SUBTITLE}
+        </Text>
+      </Rise>
+
+      <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
+        {HELP_BEATS.map((beat, i) => (
+          <Rise key={beat.title} index={1 + i}>
             <View
               style={{
-                width: '100%',
-                aspectRatio: 0.82,
-                borderRadius: 14,
-                backgroundColor: colors.accentSoft,
+                flexDirection: 'row',
+                gap: spacing.md,
+                padding: spacing.lg,
+                borderRadius: radius.md,
+                backgroundColor: colors.surface,
                 borderWidth: 1,
-                borderColor: colors.accentBorder,
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                overflow: 'hidden',
+                borderColor: colors.border,
               }}>
               <View
                 style={{
-                  width: '62%',
-                  height: `${46 + i * 9}%`,
-                  borderTopLeftRadius: 40,
-                  borderTopRightRadius: 40,
-                  backgroundColor: colors.accent,
-                  opacity: 0.22 + i * 0.14,
-                }}
-              />
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.accentSoft,
+                }}>
+                <Icon name={beat.icon} size={16} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1, gap: spacing.xs }}>
+                <Text variant="subhead">{beat.title}</Text>
+                <Text variant="footnote" color="textSecondary">
+                  {beat.body}
+                </Text>
+              </View>
             </View>
-            <Text variant="caption" color="textTertiary">
-              {i === 0 ? 'Now' : `+${i * 2}m`}
-            </Text>
-          </View>
+          </Rise>
         ))}
       </View>
-    </Breathe>
-  );
-}
 
-/** Concern → Clarity → Consistency → Progress, as a settling arc. */
-function Arc() {
-  const { colors, spacing } = useTheme();
-  const stages = ['Concern', 'Clarity', 'Consistency', 'Progress'];
-
-  return (
-    <View style={{ gap: spacing.sm }}>
-      {stages.map((stage, i) => (
-        <View key={stage} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-          <View
-            style={{
-              height: 10,
-              width: `${22 + i * 22}%`,
-              borderRadius: 5,
-              backgroundColor: colors.accent,
-              opacity: 0.25 + i * 0.2,
-            }}
-          />
-          <Text variant="footnote" color={i === stages.length - 1 ? 'accent' : 'textSecondary'}>
-            {stage}
-          </Text>
+      {/* Three things about the product, each checkable by opening it. */}
+      <Rise index={1 + HELP_BEATS.length} style={{ marginTop: spacing.xl }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            padding: spacing.lg,
+            borderRadius: radius.md,
+            backgroundColor: colors.accentSoft,
+            borderWidth: 1,
+            borderColor: colors.accentBorder,
+          }}>
+          {HELP_FIGURES.map((figure) => (
+            <View key={figure.label} style={{ flex: 1, gap: 2 }}>
+              <Text variant="title3" color="accent">
+                {figure.value}
+              </Text>
+              <Text variant="caption" color="textSecondary">
+                {figure.label}
+              </Text>
+            </View>
+          ))}
         </View>
-      ))}
-    </View>
-  );
-}
+      </Rise>
 
-/** Many strands, all different: causes that look alike from outside. */
-function Strands() {
-  const { colors, spacing } = useTheme();
-
-  return (
-    <Breathe>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'flex-end',
-          gap: spacing.xs,
-          height: 96,
-        }}>
-        {Array.from({ length: 14 }, (_, i) => (
-          <View
-            key={i}
-            style={{
-              flex: 1,
-              height: `${42 + ((i * 37) % 58)}%`,
-              borderRadius: 6,
-              backgroundColor: colors.accent,
-              opacity: 0.18 + ((i * 13) % 5) * 0.12,
-            }}
-          />
-        ))}
-      </View>
-    </Breathe>
+      <Rise index={2 + HELP_BEATS.length} style={{ marginTop: spacing.lg }}>
+        <Text variant="footnote" color="textTertiary">
+          {HELP_FOOTNOTE}
+        </Text>
+      </Rise>
+    </>
   );
 }
 
