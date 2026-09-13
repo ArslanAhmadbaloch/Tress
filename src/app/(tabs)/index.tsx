@@ -28,7 +28,6 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import {
   formatDate,
-  formatMilestone,
   formatRelative,
   toDateKey,
 } from '@/lib/date';
@@ -44,6 +43,7 @@ import {
   sessionHistory,
   todayProgress,
   weeklyAdherenceHistory,
+  sessionLabel,
 } from '@/store/selectors';
 import { useTheme } from '@/theme';
 import { type Angle } from '@/types/domain';
@@ -130,8 +130,8 @@ export default function HomeScreen() {
           <HairProgressCard
             beforeUri={baseline.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri}
             afterUri={latest.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri}
-            beforeLabel={formatMilestone(journey.startedAt, baseline.capturedAt, baseline.isBaseline)}
-            afterLabel={formatMilestone(journey.startedAt, latest.capturedAt, latest.isBaseline)}
+            beforeLabel={sessionLabel(journey.startedAt, baseline)}
+            afterLabel={sessionLabel(journey.startedAt, latest)}
             beforeDate={formatDate(baseline.capturedAt)}
             afterDate={formatDate(latest.capturedAt)}
             onPress={() => router.push('/compare')}

@@ -15,9 +15,8 @@ import { EmptyState } from '@/components/ui/layout';
 import { Icon } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
-import { formatMilestone } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
-import { sessionsChronological } from '@/store/selectors';
+import { sessionsChronological, sessionLabel } from '@/store/selectors';
 import { concentricRadius, useTheme } from '@/theme';
 import { ANGLES, ANGLE_LABELS, type Angle } from '@/types/domain';
 
@@ -188,18 +187,18 @@ export default function CompareScreen() {
             <SliderCompare
               beforeUri={beforePhoto.uri}
               afterUri={afterPhoto.uri}
-              beforeLabel={formatMilestone(journey.startedAt, before.capturedAt, before.isBaseline)}
-              afterLabel={formatMilestone(journey.startedAt, after.capturedAt, after.isBaseline)}
+              beforeLabel={sessionLabel(journey.startedAt, before)}
+              afterLabel={sessionLabel(journey.startedAt, after)}
             />
           ) : (
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               <SidePanel
                 uri={beforePhoto.uri}
-                label={formatMilestone(journey.startedAt, before.capturedAt, before.isBaseline)}
+                label={sessionLabel(journey.startedAt, before)}
               />
               <SidePanel
                 uri={afterPhoto.uri}
-                label={formatMilestone(journey.startedAt, after.capturedAt, after.isBaseline)}
+                label={sessionLabel(journey.startedAt, after)}
                 highlighted
               />
             </View>
@@ -488,7 +487,7 @@ function SessionPicker({
               scaleTo={0.96}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={`${title.toLowerCase()}: ${formatMilestone(startedAt, session.capturedAt, session.isBaseline)}`}
+              accessibilityLabel={`${title.toLowerCase()}: ${sessionLabel(startedAt, session)}`}
               style={{ alignItems: 'center', width: 62 }}>
               <View
                 style={{
@@ -514,7 +513,7 @@ function SessionPicker({
                 center
                 numberOfLines={1}
                 style={{ marginTop: 4 }}>
-                {formatMilestone(startedAt, session.capturedAt, session.isBaseline)}
+                {sessionLabel(startedAt, session)}
               </Text>
             </PressableScale>
           );

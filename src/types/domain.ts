@@ -321,6 +321,15 @@ export type PhotoSession = {
   capturedAt: string;
   /** True for the very first session, which anchors every comparison. */
   isBaseline: boolean;
+  /**
+   * What the user calls this update. Absent means the automatic milestone
+   * — "Baseline", "Month 3" — which is what every update starts as.
+   *
+   * Only the name is theirs to set. The date stays the date the shutter
+   * fired, because the whole product rests on when a photograph was
+   * actually taken, and a record you can backdate is not a record.
+   */
+  title?: string;
   photos: Photo[];
   note?: string;
 };

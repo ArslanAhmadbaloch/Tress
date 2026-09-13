@@ -25,7 +25,7 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { RoutineGlyph } from '@/components/ui/routine-glyphs';
 import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Text } from '@/components/ui/text';
-import { addDays, daysBetween, formatDate, formatDateShort, formatMilestone } from '@/lib/date';
+import { addDays, daysBetween, formatDate, formatDateShort } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import {
   adherencePercent,
@@ -37,6 +37,7 @@ import {
   sessionsChronological,
   weeklyAdherenceSeries,
   weeklyJournalCounts,
+  sessionLabel,
 } from '@/store/selectors';
 import { useTheme } from '@/theme';
 import { ANGLE_LABELS, type AppData, type PhotoSession } from '@/types/domain';
@@ -101,7 +102,7 @@ export default function JourneyScreen() {
       id: session.id,
       thumbnailUri: photo?.thumbnailUri ?? photo?.uri,
       date: formatDateShort(session.capturedAt),
-      label: formatMilestone(journey.startedAt, session.capturedAt, session.isBaseline),
+      label: sessionLabel(journey.startedAt, session),
     };
   });
 
@@ -361,7 +362,7 @@ function SessionTimeline({
                 onPress={() => router.push(`/session/${session.id}`)}
                 scaleTo={0.985}
                 accessibilityRole="button"
-                accessibilityLabel={`${formatMilestone(startedAt, session.capturedAt, session.isBaseline)}, ${formatDate(session.capturedAt)}`}
+                accessibilityLabel={`${sessionLabel(startedAt, session)}, ${formatDate(session.capturedAt)}`}
                 style={{
                   backgroundColor: colors.surface,
                   borderRadius: radius.card,
@@ -378,7 +379,7 @@ function SessionTimeline({
                     paddingBottom: spacing.md,
                   }}>
                   <View style={{ flex: 1 }}>
-                    <Text variant="title3">{formatMilestone(startedAt, session.capturedAt, session.isBaseline)}</Text>
+                    <Text variant="title3">{sessionLabel(startedAt, session)}</Text>
                     <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
                       {formatDate(session.capturedAt)}
                     </Text>

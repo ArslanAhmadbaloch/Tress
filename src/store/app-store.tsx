@@ -70,6 +70,8 @@ type AppStore = {
 
   addSession: (photos: Omit<Photo, 'id' | 'sessionId'>[], note?: string) => PhotoSession | null;
   updateSessionNote: (sessionId: string, note: string) => void;
+  /** Renames an update. An empty title restores the automatic milestone. */
+  renameSession: (sessionId: string, title: string) => void;
   deleteSession: (sessionId: string) => void;
 
   addRoutineItem: (input: Omit<RoutineItem, 'id' | 'journeyId' | 'createdAt'>) => void;
@@ -228,6 +230,18 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       ...prev,
       sessions: prev.sessions.map((s) =>
         s.id === sessionId ? { ...s, note: note.trim() || undefined } : s,
+      ),
+    }));
+  }, []);
+
+  const renameSession = useCallback((sessionId: string, title: string) => {
+    const trimmed = title.trim();
+    setData((prev) => ({
+      ...prev,
+      sessions: prev.sessions.map((session) =>
+        session.id === sessionId
+          ? { ...session, title: trimmed || undefined }
+          : session,
       ),
     }));
   }, []);
@@ -404,6 +418,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updateProfile,
       addSession,
       updateSessionNote,
+      renameSession,
       deleteSession,
       addRoutineItem,
       archiveRoutineItem,
@@ -421,6 +436,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updateProfile,
       addSession,
       updateSessionNote,
+      renameSession,
       deleteSession,
       addRoutineItem,
       archiveRoutineItem,

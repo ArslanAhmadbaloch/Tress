@@ -24,9 +24,10 @@ import { Icon } from '@/components/ui/icon';
 import { EmptyState, SectionHeader } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
-import { formatDate, formatMilestone } from '@/lib/date';
+import { formatDate } from '@/lib/date';
 import { persistProfilePhoto } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
+import { sessionLabel } from '@/store/selectors';
 import { useTheme } from '@/theme';
 import { ANGLE_LABELS } from '@/types/domain';
 
@@ -200,7 +201,7 @@ export default function ProfilePhotoScreen() {
                   marginBottom: spacing.sm,
                 }}>
                 <Text variant="subhead">
-                  {startedAt ? formatMilestone(startedAt, session.capturedAt, session.isBaseline) : 'Session'}
+                  {startedAt ? sessionLabel(startedAt, session) : 'Session'}
                 </Text>
                 <Text variant="caption" color="textTertiary">
                   {formatDate(session.capturedAt)}

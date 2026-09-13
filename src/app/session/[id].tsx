@@ -19,6 +19,7 @@ import { formatDate, formatMilestone } from '@/lib/date';
 import { useBackOrHome } from '@/lib/navigation';
 import { deletePhotoFiles } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
+import { sessionLabel } from '@/store/selectors';
 import { useTheme, typography } from '@/theme';
 import { ANGLE_LABELS, type Photo } from '@/types/domain';
 
@@ -28,11 +29,13 @@ export default function SessionDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const leave = useBackOrHome();
-  const { data, updateSessionNote, deleteSession } = useAppStore();
+  const { data, updateSessionNote, renameSession, deleteSession } = useAppStore();
 
   const session = data.sessions.find((s) => s.id === id);
   const [viewing, setViewing] = useState<Photo | null>(null);
   const [editingNote, setEditingNote] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState(session?.note ?? '');
 
   if (!session || !data.journey) {
@@ -56,7 +59,18 @@ export default function SessionDetailScreen() {
   }
 
   const journey = data.journey;
-  const milestone = formatMilestone(journey.startedAt, session.capturedAt, session.isBaseline);
+  const milestone = sessionLabel(journey.startedAt, session);
+  /** What it would be called with no name of its own. */
+  const autoLabel = formatMilestone(
+    journey.startedAt,
+    session.capturedAt,
+    session.isBaseline,
+  );
+
+  const saveTitle = () => {
+    renameSession(session.id, titleDraft);
+    setEditingTitle(false);
+  };
 
   const saveNote = () => {
     updateSessionNote(session.id, noteDraft);
@@ -89,10 +103,71 @@ export default function SessionDetailScreen() {
       <ScreenScroll
         clearsTabBar={false}
         contentContainerStyle={{ paddingTop: insets.top + 56 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        {editingTitle ? (
+          // Renaming the update, not re-dating it. The date below stays
+          // exactly as it was: it is when the shutter fired, and a record
+          // whose dates can be edited is not a record.
+          <View style={{ gap: spacing.sm }}>
+            <TextInput
+              value={titleDraft}
+              onChangeText={setTitleDraft}
+              placeholder={autoLabel}
+              placeholderTextColor={colors.textTertiary}
+              autoFocus
+              maxLength={40}
+              returnKeyType="done"
+              onSubmitEditing={saveTitle}
+              accessibilityLabel="Name for this update"
+              style={{
+                color: colors.text,
+                fontSize: typography.title2.fontSize,
+                fontWeight: '700',
+                paddingVertical: spacing.xs,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.accent,
+              }}
+            />
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <Button
+                label="Cancel"
+                variant="secondary"
+                size="md"
+                onPress={() => setEditingTitle(false)}
+                style={{ flex: 1 }}
+              />
+              <Button label="Save" size="md" onPress={saveTitle} style={{ flex: 1 }} />
+            </View>
+            {session.title ? (
+              <PressableScale
+                onPress={() => {
+                  renameSession(session.id, '');
+                  setEditingTitle(false);
+                }}
+                hitSlop={8}
+                haptic="none"
+                accessibilityRole="button"
+                accessibilityLabel={`Use the automatic name, ${autoLabel}`}
+                style={{ paddingVertical: spacing.xs }}>
+                <Text variant="footnote" color="textSecondary">
+                  Use {autoLabel} instead
+                </Text>
+              </PressableScale>
+            ) : null}
+          </View>
+        ) : (
+        <PressableScale
+          onPress={() => {
+            setTitleDraft(session.title ?? '');
+            setEditingTitle(true);
+          }}
+          scaleTo={0.99}
+          accessibilityRole="button"
+          accessibilityLabel={`${milestone}. Tap to rename this update.`}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
           <Text variant="title1" accessibilityRole="header">
             {milestone}
           </Text>
+          <Icon name="pencil" size={15} color={colors.textTertiary} />
           {session.isBaseline ? (
             <View
               style={{
@@ -106,7 +181,8 @@ export default function SessionDetailScreen() {
               </Text>
             </View>
           ) : null}
-        </View>
+        </PressableScale>
+        )}
         <Text variant="callout" color="textSecondary" style={{ marginTop: 2 }}>
           {formatDate(session.capturedAt)}
         </Text>
@@ -187,16 +263,31 @@ export default function SessionDetailScreen() {
               <Button label="Save" size="md" onPress={saveNote} style={{ flex: 1 }} />
             </View>
           </Card>
-        ) : session.note ? (
-          <Card>
-            <Text variant="body">{session.note}</Text>
-          </Card>
         ) : (
-          <Card tone="subtle">
-            <Text variant="callout" color="textSecondary">
-              No note on this update yet.
-            </Text>
-          </Card>
+          // The box is the control. Putting the only way in on a small
+          // "Add" at the far end of a header made writing feel like a
+          // command you had to find; tapping the empty space where the
+          // words go is what everyone tries first.
+          <PressableScale
+            onPress={() => {
+              setNoteDraft(session.note ?? '');
+              setEditingNote(true);
+            }}
+            scaleTo={0.995}
+            accessibilityRole="button"
+            accessibilityLabel={
+              session.note ? `Journal note: ${session.note}. Tap to edit.` : 'Write a journal note'
+            }>
+            <Card tone={session.note ? 'surface' : 'subtle'}>
+              {session.note ? (
+                <Text variant="body">{session.note}</Text>
+              ) : (
+                <Text variant="callout" color="textTertiary">
+                  How did your hair feel this month? Any changes you noticed?
+                </Text>
+              )}
+            </Card>
+          </PressableScale>
         )}
 
         <SectionHeader title="Routine at the time" />

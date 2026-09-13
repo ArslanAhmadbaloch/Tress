@@ -9,8 +9,9 @@ import { Icon } from '@/components/ui/icon';
 import { EmptyState, SectionHeader } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
-import { formatDate, formatMilestone } from '@/lib/date';
+import { formatDate } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
+import { sessionLabel } from '@/store/selectors';
 import { useTheme, typography } from '@/theme';
 
 export default function JournalScreen() {
@@ -174,7 +175,7 @@ export default function JournalScreen() {
                       <Text variant="caption" color="textTertiary">
                         {formatDate(entry.createdAt)}
                         {session && journey
-                          ? ` · ${formatMilestone(journey.startedAt, session.capturedAt, session.isBaseline)}`
+                          ? ` · ${sessionLabel(journey.startedAt, session)}`
                           : ''}
                       </Text>
                       <PressableScale

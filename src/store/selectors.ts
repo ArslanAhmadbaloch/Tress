@@ -5,7 +5,7 @@
  * agree on what "adherence" or "next update" means.
  */
 
-import { addDays, daysBetween, toDateKey } from '@/lib/date';
+import { addDays, daysBetween, formatMilestone, toDateKey } from '@/lib/date';
 import {
   doseCount,
   dosesTaken,
@@ -660,4 +660,21 @@ export function routineItemStats(data: AppData): RoutineItemStat[] {
 
     return { item, daysTracked, daysDone, streak, adherence, lastDone };
   });
+}
+
+/**
+ * What an update is called.
+ *
+ * The user's own name for it if they gave one, otherwise the milestone
+ * the date works out to. Every screen reads it through here so a renamed
+ * update is renamed everywhere — the timeline, the comparison pickers,
+ * the picture chooser — rather than in whichever screen remembered.
+ */
+export function sessionLabel(
+  startedAt: string,
+  session: Pick<PhotoSession, 'title' | 'capturedAt' | 'isBaseline'>,
+): string {
+  const named = session.title?.trim();
+  if (named) return named;
+  return formatMilestone(startedAt, session.capturedAt, session.isBaseline);
 }
