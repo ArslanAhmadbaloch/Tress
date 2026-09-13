@@ -108,6 +108,7 @@ export default function PasscodeScreen() {
       }}>
       <View style={{ alignItems: 'flex-end', paddingHorizontal: spacing.lg }}>
         <PressableScale
+          hitSlop={5}
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Cancel"

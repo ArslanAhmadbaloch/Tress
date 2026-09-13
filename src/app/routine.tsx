@@ -150,6 +150,7 @@ export default function RoutineScreen() {
           Routine
         </Text>
         <PressableScale
+          hitSlop={5}
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Close"

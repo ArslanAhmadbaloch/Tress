@@ -50,6 +50,7 @@ export default function ProfileScreen() {
         */}
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: spacing.sm }}>
           <PressableScale
+            hitSlop={3}
             onPress={() => router.push('/settings')}
             accessibilityRole="button"
             accessibilityLabel="Settings"

@@ -275,6 +275,7 @@ function BackBar({ onBack, inline }: { onBack: () => void; inline?: boolean }) {
   return (
     <View style={inline ? undefined : { padding: 16 }}>
       <PressableScale
+        hitSlop={4}
         onPress={onBack}
         accessibilityRole="button"
         accessibilityLabel="Back"

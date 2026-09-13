@@ -158,6 +158,7 @@ function Navigation() {
         />
         <Stack.Screen name="calendar" />
         <Stack.Screen name="streak" />
+        <Stack.Screen name="privacy" />
         <Stack.Screen name="learn/[slug]" />
         <Stack.Screen
           name="journal"

@@ -95,6 +95,7 @@ export default function CalendarScreen() {
           subtitle="Every day you showed up."
           trailing={
             <PressableScale
+              hitSlop={4}
               onPress={() => router.back()}
               accessibilityRole="button"
               accessibilityLabel="Close"
@@ -355,6 +356,7 @@ function MonthArrow({
 
   return (
     <PressableScale
+      hitSlop={5}
       onPress={onPress}
       disabled={disabled}
       haptic="light"

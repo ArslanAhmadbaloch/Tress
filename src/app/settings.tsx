@@ -418,6 +418,13 @@ export default function SettingsScreen() {
             value={formatBytes(storage)}
           />
           <RowDivider />
+          <InfoRow
+            icon="shield"
+            label="Privacy"
+            detail="What is stored, and where"
+            onPress={() => router.push('/privacy')}
+          />
+          <RowDivider />
           <InfoRow icon="info" label="Version" value={version} />
         </SettingsGroup>
 

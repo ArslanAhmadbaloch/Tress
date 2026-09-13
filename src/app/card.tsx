@@ -165,6 +165,7 @@ export default function CardScreen() {
             marginBottom: spacing.sm,
           }}>
           <PressableScale
+            hitSlop={5}
             onPress={() => (isWelcome ? router.replace('/') : router.back())}
             accessibilityRole="button"
             accessibilityLabel={isWelcome ? 'Continue to the app' : 'Close'}

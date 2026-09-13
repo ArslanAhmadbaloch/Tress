@@ -445,6 +445,7 @@ function CircleButton({
   const { colors, shadow } = useTheme();
   return (
     <PressableScale
+      hitSlop={1}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"

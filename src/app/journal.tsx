@@ -70,6 +70,7 @@ export default function JournalScreen() {
           Journal
         </Text>
         <PressableScale
+          hitSlop={5}
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Close"

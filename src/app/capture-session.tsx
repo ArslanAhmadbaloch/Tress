@@ -534,6 +534,7 @@ export default function CaptureSessionScreen() {
           gap: spacing.md,
         }}>
         <PressableScale
+          hitSlop={2}
           onPress={confirmExit}
           accessibilityRole="button"
           accessibilityLabel="Close capture"
@@ -597,6 +598,7 @@ export default function CaptureSessionScreen() {
 
         {ghostUri ? (
           <PressableScale
+            hitSlop={2}
             onPress={() => setShowGhost((v) => !v)}
             accessibilityRole="switch"
             accessibilityState={{ checked: showGhost }}

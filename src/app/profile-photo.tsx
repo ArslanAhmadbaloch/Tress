@@ -107,6 +107,7 @@ export default function ProfilePhotoScreen() {
           Your picture
         </Text>
         <PressableScale
+          hitSlop={5}
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Close"

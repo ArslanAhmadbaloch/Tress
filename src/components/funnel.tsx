@@ -118,6 +118,7 @@ export function FunnelShell({
           }}>
           {onBack ? (
             <PressableScale
+              hitSlop={4}
               onPress={onBack}
               haptic="none"
               accessibilityRole="button"

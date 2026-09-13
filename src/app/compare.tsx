@@ -244,6 +244,7 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
         {title}
       </Text>
       <PressableScale
+        hitSlop={5}
         onPress={onClose}
         accessibilityRole="button"
         accessibilityLabel="Close"

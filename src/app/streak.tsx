@@ -64,6 +64,7 @@ export default function StreakScreen() {
           subtitle="When you started each one, and how it has gone since."
           trailing={
             <PressableScale
+              hitSlop={4}
               onPress={() => router.back()}
               accessibilityRole="button"
               accessibilityLabel="Close"
