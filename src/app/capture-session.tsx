@@ -31,6 +31,7 @@ import {
 } from '@/lib/device-preferences';
 import { useBackOrHome } from '@/lib/navigation';
 import { CaptureRing } from '@/components/capture-ring';
+import { BASELINE_THANKS } from '@/features/content/belonging';
 import { useHairContent } from '@/features/content/use-hair-content';
 import { useSteadiness } from '@/features/capture/use-steadiness';
 import { persistCapture, shrinkCapture } from '@/lib/photo-storage';
@@ -55,7 +56,9 @@ export default function CaptureSessionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const leave = useBackOrHome();
-  const { addSession } = useAppStore();
+  const { data, addSession } = useAppStore();
+  /** Their very first set, which is the one worth acknowledging. */
+  const isBaseline = data.sessions.length === 0;
 
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
@@ -365,9 +368,13 @@ export default function CaptureSessionScreen() {
           paddingHorizontal: spacing.lg,
         }}>
         <Text variant="title1" accessibilityRole="header">
-          Your update
+          {isBaseline ? 'That’s your baseline' : 'Your update'}
         </Text>
         <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
+          {/* Photographing your own head five ways, feeling self-conscious
+              about it, is the hard part of this product. Saying so once —
+              on the first set only — costs a line and is true. */}
+          {isBaseline ? `${BASELINE_THANKS} ` : ''}
           {shots.length} of {ANGLES.length} angles captured. Tap any angle to
           retake it before saving.
         </Text>

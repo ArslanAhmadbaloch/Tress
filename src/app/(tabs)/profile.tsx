@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
+import { CARD_NOTE } from '@/features/content/belonging';
 import { formatDate } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import { useAppLock } from '@/store/lock-provider';
@@ -90,7 +91,7 @@ export default function ProfileScreen() {
           color="textSecondary"
           center
           style={{ marginTop: spacing.md, paddingHorizontal: spacing.xl }}>
-          Tap to open it full size and save it.
+          {CARD_NOTE}
         </Text>
 
         <SectionHeader title="Journal" action="View all" onAction={() => router.push('/journal')} />

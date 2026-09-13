@@ -43,6 +43,7 @@ import Svg, {
 import { Icon } from './ui/icon';
 import { LeafShadow } from './ui/leaf-shadow';
 import { Text } from './ui/text';
+import { MEMBER_SINCE } from '@/features/content/belonging';
 import { daysBetween } from '@/lib/date';
 import { fontFamily, splitAlpha, useTheme, withZeroAlpha } from '@/theme';
 
@@ -242,7 +243,7 @@ export function MemberCard({
             <Rule u={u} />
             <Figure u={u} icon="leaf" value="Active" label="Journey" />
             <Rule u={u} />
-            <Figure u={u} icon="calendar" value={startedLabel} label="Started" />
+            <Figure u={u} icon="calendar" value={startedLabel} label={MEMBER_SINCE} />
           </View>
         </Panel>
 

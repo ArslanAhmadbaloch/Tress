@@ -36,6 +36,11 @@ import { Icon, type IconName } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { ProductRow } from '@/components/product-row';
+import {
+  PLAN_THANKS,
+  WELCOME_BODY,
+  welcomeTitle,
+} from '@/features/content/belonging';
 import { FACTS, type Fact } from '@/features/onboarding/facts';
 import { productOptions, type CustomProduct } from '@/features/onboarding/products';
 import {
@@ -870,15 +875,19 @@ export default function OnboardingFunnel() {
           <>
             <Wash />
             <Rise index={0}>
-              <Text variant="title2" center>
-                {COPY.card.title}
+              {/* The moment somebody joins. Thanks first: they have just
+                  answered a page of questions about something they are
+                  worried about, and that comes before anything is shown
+                  to them. */}
+              <Text variant="subhead" center>
+                {welcomeTitle(answers.name)}
               </Text>
               <Text
-                variant="callout"
+                variant="footnote"
                 color="textSecondary"
                 center
                 style={{ marginTop: spacing.xs, marginBottom: spacing.xl }}>
-                {COPY.card.subtitle}
+                {WELCOME_BODY}
               </Text>
             </Rise>
 
@@ -910,6 +919,15 @@ export default function OnboardingFunnel() {
               title={`Your journey is ready,`}
               muted={`${answers.name.trim() || 'You'}.`}
             />
+
+            <Rise index={1}>
+              <Text
+                variant="callout"
+                color="textSecondary"
+                style={{ marginTop: -spacing.md, marginBottom: spacing.xl }}>
+                {PLAN_THANKS}
+              </Text>
+            </Rise>
 
             <View style={{ gap: spacing.sm }}>
               <PlanFact label="Your goal" value={goalLabel ?? 'Still deciding'} index={2} />

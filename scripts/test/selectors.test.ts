@@ -10,6 +10,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import {
+  BASELINE_THANKS,
+  CARD_NOTE,
+  MEMBER_SINCE,
+  PLAN_THANKS,
+  WELCOME_BODY,
+  welcomeTitle,
+} from '@/features/content/belonging';
 import { hairContent } from '@/features/content/hair-content';
 import { productOptions } from '@/features/onboarding/products';
 import {
@@ -130,6 +138,34 @@ function takeDoses(
     ],
   };
 }
+
+/* ------------------------------ belonging ------------------------------- */
+
+test('belonging: the welcome uses their name, and reads without one', () => {
+  assert.equal(welcomeTitle('Arslan'), 'Welcome to the family, Arslan.');
+  assert.equal(welcomeTitle('  Sara '), 'Welcome to the family, Sara.');
+  assert.equal(welcomeTitle(''), 'Welcome to the family.');
+  assert.equal(welcomeTitle('   '), 'Welcome to the family.');
+});
+
+test('belonging: nothing claims a community that does not exist', () => {
+  // There is no feed and no other members to meet. A line implying
+  // otherwise sends somebody looking for a room that is not there.
+  const lines = [
+    welcomeTitle('Sara'),
+    WELCOME_BODY,
+    PLAN_THANKS,
+    CARD_NOTE,
+    MEMBER_SINCE,
+    BASELINE_THANKS,
+  ];
+  const claimsPeople =
+    /\b(community|others|other members|people like you|share|feed|friends|group)\b/i;
+
+  for (const line of lines) {
+    assert.ok(!claimsPeople.test(line), `"${line}" implies a community the app has not got`);
+  }
+});
 
 /* -------------------------------- funnel -------------------------------- */
 
