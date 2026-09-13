@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
@@ -15,6 +15,7 @@ import { Text } from '@/components/ui/text';
 import { ANGLE_EXAMPLES, CAPTURE_PORTRAIT } from '@/features/capture/examples';
 import { formatRelative } from '@/lib/date';
 import { useBackOrHome } from '@/lib/navigation';
+import { usePremium } from '@/features/subscription/provider';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
 import { useTheme } from '@/theme';
@@ -51,6 +52,7 @@ export default function CaptureIntroScreen() {
   const leave = useBackOrHome();
   const { width } = useWindowDimensions();
   const { data } = useAppStore();
+  const { isPremium } = usePremium();
 
   const [index, setIndex] = useState(0);
   const [showTips, setShowTips] = useState(false);
@@ -58,6 +60,13 @@ export default function CaptureIntroScreen() {
 
   const last = latestSession(data);
   const isBaseline = data.sessions.length === 0;
+
+  // Every route into the camera passes through this screen, so this is
+  // the only place capture has to be gated — a new entry point added
+  // later cannot slip past it.
+  useEffect(() => {
+    if (!isPremium) router.replace('/paywall');
+  }, [isPremium, router]);
   const angle = ANGLES[index];
   const label = ANGLE_LABELS[angle];
 

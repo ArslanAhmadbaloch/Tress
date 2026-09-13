@@ -19,6 +19,7 @@ import { clearPasscode } from '@/lib/app-lock';
 import { loadDevicePreferences } from '@/lib/device-preferences';
 import { cancelAllReminders } from '@/lib/notifications';
 import { clearAllPhotos } from '@/lib/photo-storage';
+import { SubscriptionProvider } from '@/features/subscription/provider';
 import { AppStoreProvider, useAppStore } from '@/store/app-store';
 import { AppLockProvider, useAppLock } from '@/store/lock-provider';
 import { ThemeProvider, useTheme } from '@/theme';
@@ -159,6 +160,13 @@ function Navigation() {
         <Stack.Screen name="calendar" />
         <Stack.Screen name="streak" />
         <Stack.Screen name="privacy" />
+        <Stack.Screen name="terms" />
+        {/* The paywall is a page sheet: it arrives over what you were
+            doing, and returns you to it rather than replacing it. */}
+        <Stack.Screen
+          name="paywall"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
         <Stack.Screen name="learn/[slug]" />
         <Stack.Screen
           name="journal"
@@ -203,9 +211,11 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AppStoreProvider>
-            <AppLockProvider>
-              <Navigation />
-            </AppLockProvider>
+            <SubscriptionProvider>
+              <AppLockProvider>
+                <Navigation />
+              </AppLockProvider>
+            </SubscriptionProvider>
           </AppStoreProvider>
         </ThemeProvider>
       </SafeAreaProvider>

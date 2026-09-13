@@ -15,6 +15,8 @@ import { ProgressBar } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
 import { inferRoutineIcon } from '@/features/routine/icons';
 import { toDateKey } from '@/lib/date';
+import { usePremiumGate } from '@/features/subscription/gate';
+import { usePremium } from '@/features/subscription/provider';
 import { useAppStore } from '@/store/app-store';
 import {
   activeRoutineItems,
@@ -78,6 +80,8 @@ export default function RoutineScreen() {
   const [added, setAdded] = useState(false);
   /** The form is a second job, so it stays closed while a stack exists. */
   const [adding, setAdding] = useState(false);
+  const { isPremium } = usePremium();
+  const gate = usePremiumGate();
 
   /** 1× → 2× → 3× → 4× → 1×, so the whole range is one control. */
   const cycleDoses = (item: RoutineItem) => {
@@ -88,6 +92,7 @@ export default function RoutineScreen() {
   const add = () => {
     const label = name.trim();
     if (!label) return;
+    if (!isPremium) return;
     addRoutineItem({
       label,
       detail: detail.trim() || undefined,
@@ -273,7 +278,37 @@ export default function RoutineScreen() {
           Open by default only when there is nothing to tick off. With a
           stack on screen, adding is the second job, not the first.
         */}
-        {items.length > 0 && !adding ? (
+        {!isPremium ? (
+          // Free: the stack they already have stays theirs to tick off —
+          // it is their record, and taking it away to sell it back would
+          // be a worse product and a worse thing to do. What Premium adds
+          // is building on it.
+          <PressableScale
+            onPress={() => gate('buildStack', () => setAdding(true))}
+            scaleTo={0.99}
+            accessibilityRole="button"
+            accessibilityLabel="Add to your stack. Premium required."
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.md,
+              marginTop: spacing.xl,
+              padding: spacing.lg,
+              borderRadius: radius.md,
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}>
+            <Icon name="lock" size={18} color={colors.accent} />
+            <View style={{ flex: 1 }}>
+              <Text variant="body">Add to your stack</Text>
+              <Text variant="footnote" color="textSecondary" style={{ marginTop: 1 }}>
+                Keep your treatments and routine in one place with Premium.
+              </Text>
+            </View>
+            <Icon name="chevronRight" size={15} color={colors.textTertiary} />
+          </PressableScale>
+        ) : items.length > 0 && !adding ? (
           <Button
             label="Add a task"
             icon="plus"

@@ -55,6 +55,7 @@ import {
   setGracePeriod,
   type GracePeriod,
 } from '@/lib/app-lock';
+import { SubscriptionStatus } from '@/components/subscription/subscription-status';
 import { useAppStore } from '@/store/app-store';
 import { useAppLock } from '@/store/lock-provider';
 import { useTheme, type AppearancePreference } from '@/theme';
@@ -251,6 +252,9 @@ export default function SettingsScreen() {
     <Screen ground="plain">
       <ScreenScroll clearsTabBar={false} contentContainerStyle={{ paddingTop: spacing.giant }}>
         <ScreenTitle eyebrow="Profile" title="Your" titleMuted="settings" />
+
+        <SectionHeader title="Subscription" />
+        <SubscriptionStatus />
 
         <SectionHeader title="Appearance" />
         <SettingsGroup>
