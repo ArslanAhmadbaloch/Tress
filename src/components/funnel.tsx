@@ -29,6 +29,7 @@ import { Button } from './ui/button';
 import { GlassOrb } from './ui/glass-orb';
 import { Icon, type IconName } from './ui/icon';
 import { Ground } from './ui/ground';
+import { FunnelAmbience } from './funnel-ambience';
 import { PressableScale } from './ui/pressable-scale';
 import { Text } from './ui/text';
 import { motion, useTheme, withZeroAlpha } from '@/theme';
@@ -107,6 +108,11 @@ export function FunnelShell({
 
   const body = (
       <View style={{ flex: 1, paddingTop: insets.top + spacing.sm }}>
+        {/* The ground the questions sit in. Behind everything, and only
+            where the funnel draws its own chrome — the first screen is
+            the brand lockup and carries its own backdrop. */}
+        {backdrop ? null : <FunnelAmbience />}
+
         {backdrop ? null : (
         <View
           style={{
@@ -247,11 +253,11 @@ export function StepTitle({
   return (
     <>
       <Rise index={index}>
-        <Text variant="title1" accessibilityRole="header">
+        <Text variant="question" accessibilityRole="header">
           {title}
         </Text>
         {muted ? (
-          <Text variant="title1" color="textTertiary" accessible={false}>
+          <Text variant="question" color="textTertiary" accessible={false}>
             {muted}
           </Text>
         ) : null}

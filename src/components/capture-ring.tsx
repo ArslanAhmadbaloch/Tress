@@ -25,14 +25,21 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, G } from 'react-native-svg';
 
+import { useTheme } from '@/theme';
+
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 /** Gap between segments, in degrees. */
 const GAP = 5;
 
+/*
+ * Chrome over a live camera, which is real black rather than a themed
+ * surface — so the track and the completed arcs are stated in white
+ * directly, the way the rest of the capture screen states its own. The
+ * accent is not: sage is a brand colour and comes from the theme.
+ */
 const TRACK = 'rgba(255,255,255,0.22)';
 const DONE = 'rgba(255,255,255,0.9)';
-const ACTIVE = '#A8C99A';
 
 export function CaptureRing({
   size,
@@ -52,6 +59,8 @@ export function CaptureRing({
   countdownProgress?: number | null;
   stroke?: number;
 }) {
+  const { colors } = useTheme();
+  const active = colors.accent;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const segment = 360 / total;
@@ -75,7 +84,7 @@ export function CaptureRing({
                 cx={size / 2}
                 cy={size / 2}
                 r={radius}
-                stroke={isDone ? DONE : isCurrent ? ACTIVE : TRACK}
+                stroke={isDone ? DONE : isCurrent ? active : TRACK}
                 strokeWidth={isCurrent ? stroke + 1 : stroke}
                 strokeLinecap="round"
                 fill="none"

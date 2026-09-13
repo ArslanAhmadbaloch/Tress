@@ -257,7 +257,6 @@ export const COPY = {
     titleMuted: 'A Confident You.',
     body: 'Your journey starts with understanding where you are today.',
     cta: 'Begin My Journey',
-    footnote: 'Private by design',
   },
   meaning: {
     title: 'What would better hair mean to you{name}?',

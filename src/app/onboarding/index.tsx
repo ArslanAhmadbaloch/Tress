@@ -322,7 +322,6 @@ export default function OnboardingFunnel() {
         backdrop: <BrandLockup />,
         cta: COPY.welcome.cta,
         onCta: next,
-        footnote: COPY.welcome.footnote,
         children: <View style={{ flex: 1 }} />,
       });
 

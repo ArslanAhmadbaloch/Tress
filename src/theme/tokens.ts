@@ -490,6 +490,25 @@ export const typography = {
     letterSpacing: 0.1,
   },
   /**
+   * The funnel's asking voice.
+   *
+   * The old-style serif the membership card already speaks in, borrowed
+   * for the questions because they are the one place in the app that is a
+   * conversation rather than an interface. The sans is right for a
+   * dashboard reading numbers back at you; it makes "what would better
+   * hair mean to you" sound like a form field.
+   *
+   * Unlike `script` this is a reading face, so it carries the whole
+   * question at a size that holds three lines without crowding.
+   */
+  question: {
+    fontSize: 33,
+    lineHeight: 41,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+    fontFamily: fontFamily.serif,
+  },
+  /**
    * Decorative editorial script, for the one motivational phrase a screen
    * is allowed. Never for anything the user has to read to use the app —
    * it is an accent, and it is not especially legible at small sizes.
