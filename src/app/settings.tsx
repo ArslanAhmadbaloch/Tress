@@ -61,7 +61,6 @@ import { useAppLock } from '@/store/lock-provider';
 import { useTheme, type AppearancePreference } from '@/theme';
 
 const APPEARANCE: { value: AppearancePreference; label: string }[] = [
-  { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
@@ -261,7 +260,7 @@ export default function SettingsScreen() {
           <SettingsField
             icon="sun"
             label="Theme"
-            detail="Follow your device, or pick one and stay there.">
+            detail="Light unless you choose otherwise. It stays where you put it.">
             <SegmentedTabs
               surface="fill"
               options={APPEARANCE}

@@ -1,12 +1,20 @@
 /**
  * Theme provider.
  *
- * Owns the resolved colour scheme for the whole app. The user can pin
- * light or dark, or follow the system; the choice is persisted so the
- * app opens in the appearance they left it in.
+ * Owns the resolved colour scheme for the whole app.
+ *
+ * Light unless somebody chooses otherwise — the app does not follow the
+ * device. Everything here is built on warm paper and photographs judged
+ * against it, and a phone set to dark at sunset would hand a first-time
+ * user a version of the app nobody chose for them, with their own photos
+ * looking different from the ones they took last week.
+ *
+ * The choice is persisted, so the app opens in the appearance it was left
+ * in. Anyone whose stored preference predates this reads as light.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Appearance } from 'react-native';
 import {
   createContext,
   useCallback,
@@ -16,7 +24,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useColorScheme as useSystemColorScheme } from 'react-native';
 
 import {
   darkColors,
@@ -32,7 +39,7 @@ import {
 
 export * from './tokens';
 
-export type AppearancePreference = 'light' | 'dark' | 'system';
+export type AppearancePreference = 'light' | 'dark';
 export type ResolvedScheme = 'light' | 'dark';
 
 export type Theme = {
@@ -71,9 +78,8 @@ function buildTheme(scheme: ResolvedScheme): Theme {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const systemScheme = useSystemColorScheme();
   const [preference, setPreferenceState] =
-    useState<AppearancePreference>('system');
+    useState<AppearancePreference>('light');
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
@@ -82,11 +88,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((stored) => {
         if (cancelled) return;
-        if (stored === 'light' || stored === 'dark' || stored === 'system') {
+        // 'system' was a third option once; anything unrecognised, that
+        // included, falls through to the light default.
+        if (stored === 'light' || stored === 'dark') {
           setPreferenceState(stored);
         }
       })
-      // A failed read is not worth surfacing — we simply follow the system.
+      // A failed read is not worth surfacing — light is the default.
       .catch(() => undefined)
       .finally(() => {
         if (!cancelled) setIsReady(true);
@@ -102,8 +110,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, next).catch(() => undefined);
   }, []);
 
-  const scheme: ResolvedScheme =
-    preference === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : preference;
+  const scheme: ResolvedScheme = preference;
+
+  /*
+   * Tell the OS as well, so the parts of the interface this app does not
+   * draw come along. Alerts, action sheets and the keyboard take their
+   * appearance from the system, and without this they would follow the
+   * device while everything around them followed the setting — a dark
+   * "Discard this update?" over a light app, on a phone set to dark at
+   * dusk.
+   */
+  useEffect(() => {
+    Appearance.setColorScheme(scheme);
+  }, [scheme]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
