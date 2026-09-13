@@ -11,17 +11,20 @@
  * the top of a head; a centred crop of a portrait frame takes the hair
  * off the very picture whose subject is the hair.
  *
- * Usage:  swift scripts/case-studies.swift "<Male form folder>"
+ * Usage:  swift scripts/case-studies.swift "<folder>" male|female
+ *
+ * Both delivered sets share the layout, so both go through the same cut.
  */
 
 import AppKit
 
 let args = CommandLine.arguments
-guard args.count > 1 else {
-  FileHandle.standardError.write("usage: case-studies.swift <folder>\n".data(using: .utf8)!)
+guard args.count > 2 else {
+  FileHandle.standardError.write("usage: case-studies.swift <folder> male|female\n".data(using: .utf8)!)
   exit(2)
 }
 let source = args[1]
+let set = args[2]
 let out = "assets/images"
 
 /** Width of each half in the delivered pair, seam excluded. */
@@ -39,10 +42,21 @@ struct Pair {
   let name: String
 }
 
-let pairs: [Pair] = [
-  Pair(file: "1", name: "case-daniel"),
-  Pair(file: "2", name: "case-marco"),
+let sets: [String: [Pair]] = [
+  "male": [
+    Pair(file: "1", name: "case-daniel"),
+    Pair(file: "2", name: "case-marco"),
+  ],
+  "female": [
+    Pair(file: "1", name: "case-leila"),
+    Pair(file: "2", name: "case-hannah"),
+  ],
 ]
+
+guard let pairs = sets[set] else {
+  FileHandle.standardError.write("unknown set \(set); expected male or female\n".data(using: .utf8)!)
+  exit(2)
+}
 
 func load(_ path: String) -> CGImage? {
   guard let data = NSData(contentsOfFile: path),
@@ -74,7 +88,7 @@ func resized(_ image: CGImage, width: Int) -> CGImage? {
   return ctx.makeImage()
 }
 
-print("Cutting the case-study pairs…")
+print("Cutting the \(set) case-study pairs…")
 
 for pair in pairs {
   guard let image = load("\(source)/\(pair.file).png") else {

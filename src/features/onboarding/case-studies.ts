@@ -1,5 +1,10 @@
 /**
- * The two journeys shown in the funnel, and what they are allowed to say.
+ * The journeys shown in the funnel, and what they are allowed to say.
+ *
+ * Two per set, chosen by who is holding the phone, for the same reason as
+ * the reference photographs in features/content/hair-content.ts: a woman
+ * worried about her part does not see herself in a crown shot, and a
+ * funnel that shows her one has told her this app is not for her.
  *
  * ── These are illustrations, not customers ────────────────────────────
  * Nobody has used this app for nine months, because it has not existed
@@ -26,6 +31,8 @@
  * — sets taken, entries written — and never what their hair did.
  */
 
+import type { Gender } from '@/types/domain';
+
 export type CaseStudy = {
   id: string;
   /** First name only. Invented, like the rest of it. */
@@ -45,7 +52,7 @@ export type CaseStudy = {
   stats: { value: string; label: string }[];
 };
 
-export const CASE_STUDIES: CaseStudy[] = [
+const MALE: CaseStudy[] = [
   {
     id: 'daniel',
     name: 'Daniel',
@@ -83,3 +90,53 @@ export const CASE_STUDIES: CaseStudy[] = [
     ],
   },
 ];
+
+/**
+ * The same shape, about the things the female funnel actually asks after.
+ *
+ * Not a crown that filled in: a part somebody kept photographing in the
+ * same place, in the same light, until there was something to compare
+ * against that was not last spring's memory of it.
+ */
+const FEMALE: CaseStudy[] = [
+  {
+    id: 'leila',
+    name: 'Leila',
+    age: 24,
+    span: '8 months',
+    headline: 'Eight months, the same five angles.',
+    beforeLabel: 'Month 0',
+    afterLabel: 'Month 8',
+    before: require('@/assets/images/case-leila-before.jpg'),
+    after: require('@/assets/images/case-leila-after.jpg'),
+    story:
+      'She photographed the same five angles at the end of every month, part in the same place and the light from the same window, and wrote a line underneath each set. Any two months running looked identical to her. The first and the last did not.',
+    stats: [
+      { value: '8', label: 'Photo sets' },
+      { value: '34', label: 'Journal entries' },
+      { value: '0', label: 'Months missed' },
+    ],
+  },
+  {
+    id: 'hannah',
+    name: 'Hannah',
+    age: 38,
+    span: '10 months',
+    headline: 'Ten months she couldn’t see day to day.',
+    beforeLabel: 'Month 0',
+    afterLabel: 'Month 10',
+    before: require('@/assets/images/case-hannah-before.jpg'),
+    after: require('@/assets/images/case-hannah-after.jpg'),
+    story:
+      'She started because she could not tell whether her part had widened or she had been looking at it too hard. Ten months of photographs taken the same way gave her something to check against that was not her memory of last spring.',
+    stats: [
+      { value: '10', label: 'Photo sets' },
+      { value: '47', label: 'Journal entries' },
+      { value: '5', label: 'Angles each time' },
+    ],
+  },
+];
+
+export function caseStudies(gender: Gender): CaseStudy[] {
+  return gender === 'female' ? FEMALE : MALE;
+}

@@ -40,7 +40,7 @@ import {
   WELCOME_BODY,
   welcomeTitle,
 } from '@/features/content/belonging';
-import { CASE_STUDIES, type CaseStudy } from '@/features/onboarding/case-studies';
+import { caseStudies, type CaseStudy } from '@/features/onboarding/case-studies';
 import {
   HELP_BEATS,
   HELP_FIGURES,
@@ -406,14 +406,14 @@ export default function OnboardingFunnel() {
       return shell({
         cta: 'Continue',
         onCta: next,
-        children: <CaseStudyScreen study={CASE_STUDIES[0]} />,
+        children: <CaseStudyScreen study={caseStudies(answers.gender)[0]} />,
       });
 
     case 'caseTwo':
       return shell({
         cta: 'Continue',
         onCta: next,
-        children: <CaseStudyScreen study={CASE_STUDIES[1]} />,
+        children: <CaseStudyScreen study={caseStudies(answers.gender)[1]} />,
       });
 
     /* ---------------------------- what it does ------------------------ */

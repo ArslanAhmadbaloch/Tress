@@ -19,6 +19,7 @@ import {
   welcomeTitle,
 } from '@/features/content/belonging';
 import { hairContent } from '@/features/content/hair-content';
+import { caseStudies } from '@/features/onboarding/case-studies';
 import { productOptions } from '@/features/onboarding/products';
 import {
   funnelContent,
@@ -317,6 +318,44 @@ test('stack: treatments come before hair care', () => {
   });
 
   assert.deepEqual(seeds.map((s) => s.label), ['Finasteride (oral)', 'Shampoo']);
+});
+
+test('funnel: each gender gets its own pair of journeys', () => {
+  const male = caseStudies('male');
+  const female = caseStudies('female');
+
+  assert.equal(male.length, 2);
+  assert.equal(female.length, 2);
+  assert.notDeepEqual(
+    male.map((c) => c.id),
+    female.map((c) => c.id),
+    'a woman worried about her part should not be shown a crown shot',
+  );
+
+  for (const study of [...male, ...female]) {
+    assert.notEqual(study.before, study.after, 'the pair is two photographs');
+    assert.ok(study.headline.length > 0 && study.story.length > 0);
+    assert.equal(study.stats.length, 3);
+  }
+});
+
+test('funnel: no journey credits the app with the change in the photographs', () => {
+  // The app records; it does not treat. A story that says otherwise is
+  // selling a drug this app does not have.
+  const claims =
+    /\b(thanks to|because of) (the|this) app\b|\bthe app (grew|regrew|restored|fixed|caused)\b|\bresults? (from|with) (the|this) app\b/i;
+
+  for (const study of [...caseStudies('male'), ...caseStudies('female')]) {
+    assert.ok(!claims.test(study.story), `${study.id} credits the app`);
+    assert.ok(!claims.test(study.headline), `${study.id} credits the app`);
+    // Counts describe what the person did, never what their hair did.
+    for (const stat of study.stats) {
+      assert.ok(
+        !/%|percent|thicker|fuller|denser|regrow/i.test(`${stat.value} ${stat.label}`),
+        `${study.id} measures hair rather than habit`,
+      );
+    }
+  }
 });
 
 test('stack: the male routine list leads with minoxidil and finasteride', () => {
