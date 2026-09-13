@@ -73,7 +73,12 @@ export type TrackingArea =
   | 'shedding'
   | 'density'
   | 'transplantRecovery'
-  | 'generalChanges';
+  | 'generalChanges'
+  /* The ways it tends to show up on longer hair. */
+  | 'widerPart'
+  | 'ponytail'
+  | 'edges'
+  | 'breakage';
 
 /**
  * What better hair would mean to them.
@@ -107,7 +112,10 @@ export type HairGoal =
   | 'shedding'
   | 'overall'
   | 'routineWorking'
-  | 'unsure';
+  | 'unsure'
+  | 'narrowerPart'
+  | 'fullerPonytail'
+  | 'lessBreakage';
 
 /** When they first noticed something changing. */
 export type Onset =
@@ -126,7 +134,10 @@ export type Trigger =
   | 'styling'
   | 'shower'
   | 'future'
-  | 'none';
+  | 'none'
+  | 'parting'
+  | 'tyingUp'
+  | 'brushing';
 
 /** What they are already doing. Recorded, never judged or recommended. */
 export type Approach =
@@ -157,6 +168,8 @@ export type Medication =
   | 'dutasteride'
   | 'spironolactone'
   | 'ketoconazole'
+  | 'iron'
+  | 'hormonal'
   | 'other'
   | 'none';
 
@@ -197,6 +210,10 @@ export const TRACKING_AREA_LABELS: Record<TrackingArea, string> = {
   density: 'Hair density',
   transplantRecovery: 'Transplant recovery',
   generalChanges: 'General changes',
+  widerPart: 'My part looks wider',
+  ponytail: 'My ponytail feels thinner',
+  edges: 'My edges or temples',
+  breakage: 'Breakage and damage',
 };
 
 export const MOTIVATION_LABELS: Record<Motivation, string> = {
@@ -217,6 +234,9 @@ export const HAIR_GOAL_LABELS: Record<HairGoal, string> = {
   overall: 'Better-looking overall hair',
   routineWorking: 'Knowing whether my routine is working',
   unsure: "I'm not sure yet",
+  narrowerPart: 'A part that looks less wide',
+  fullerPonytail: 'A fuller ponytail',
+  lessBreakage: 'Less breakage',
 };
 
 export const ONSET_LABELS: Record<Onset, string> = {
@@ -236,6 +256,9 @@ export const TRIGGER_LABELS: Record<Trigger, string> = {
   shower: 'Seeing my hair after showering',
   future: 'Thinking about the future',
   none: "It doesn't really bother me",
+  parting: 'Parting my hair',
+  tyingUp: 'Tying it up',
+  brushing: 'Brushing or washing it',
 };
 
 export const APPROACH_LABELS: Record<Approach, string> = {
@@ -264,6 +287,8 @@ export const MEDICATION_LABELS: Record<Medication, string> = {
   dutasteride: 'Dutasteride',
   spironolactone: 'Spironolactone',
   ketoconazole: 'Ketoconazole shampoo',
+  iron: 'Iron or ferritin supplement',
+  hormonal: 'Hormonal medication',
   other: 'Something else',
   none: 'Nothing right now',
 };

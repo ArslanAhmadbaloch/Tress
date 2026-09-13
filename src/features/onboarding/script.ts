@@ -39,6 +39,7 @@ import type {
 
 export type StepId =
   | 'welcome'
+  | 'you'
   | 'meaning'
   | 'goal'
   | 'factGradual'
@@ -51,7 +52,6 @@ export type StepId =
   | 'cadence'
   | 'factCause'
   | 'photo'
-  | 'name'
   | 'card'
   | 'plan'
   | 'future'
@@ -60,6 +60,11 @@ export type StepId =
 /** The order people move through. Progress is measured against it. */
 export const STEPS: StepId[] = [
   'welcome',
+  // Who they are comes first now. It decides which reference photographs
+  // and which questions the rest of the funnel uses, and asking a person
+  // their name before asking how their hair makes them feel is simply the
+  // right order for that conversation.
+  'you',
   'meaning',
   'goal',
   'factGradual',
@@ -72,7 +77,6 @@ export const STEPS: StepId[] = [
   'cadence',
   'factCause',
   'photo',
-  'name',
   'card',
   'plan',
   'future',
@@ -118,7 +122,7 @@ export const MEANING_CHOICES: Choice<Motivation>[] = [
   { value: 'other', label: 'Something else' },
 ];
 
-export const GOAL_CHOICES: Choice<HairGoal>[] = [
+const MALE_GOALS: Choice<HairGoal>[] = [
   { value: 'fullness', label: 'More fullness' },
   { value: 'hairline', label: 'A stronger-looking hairline' },
   { value: 'crown', label: 'More density at the crown' },
@@ -138,7 +142,7 @@ export const ONSET_CHOICES: Choice<Onset>[] = [
 ];
 
 /** "What do you notice most?" — the same areas the app tracks. */
-export const AREA_CHOICES: Choice<TrackingArea>[] = [
+const MALE_AREAS: Choice<TrackingArea>[] = [
   { value: 'hairline', label: 'Hairline' },
   { value: 'crown', label: 'Crown' },
   { value: 'overallThinning', label: 'Overall thinning' },
@@ -147,7 +151,7 @@ export const AREA_CHOICES: Choice<TrackingArea>[] = [
   { value: 'generalChanges', label: 'Something else' },
 ];
 
-export const TRIGGER_CHOICES: Choice<Trigger>[] = [
+const MALE_TRIGGERS: Choice<Trigger>[] = [
   { value: 'mirror', label: 'Looking in the mirror' },
   { value: 'photos', label: 'Taking photos' },
   { value: 'lighting', label: 'Bright lighting' },
@@ -181,7 +185,7 @@ export const APPROACH_CHOICES: Choice<Approach>[] = [
  * who ticked "Topical treatments" and then named minoxidil gets one item
  * rather than two saying the same thing.
  */
-export const MEDICATION_CHOICES: (Choice<Medication> & { covers?: Approach })[] = [
+const MALE_MEDICATIONS: (Choice<Medication> & { covers?: Approach })[] = [
   { value: 'minoxidilTopical', label: 'Minoxidil (topical)', detail: 'Liquid or foam', icon: 'bottle', covers: 'topical' },
   { value: 'finasterideOral', label: 'Finasteride (oral)', icon: 'pill', covers: 'prescription' },
   { value: 'minoxidilOral', label: 'Minoxidil (oral)', icon: 'pill', covers: 'prescription' },
@@ -253,12 +257,12 @@ export const COPY = {
     footnote: 'Private by design',
   },
   meaning: {
-    title: 'What would better hair mean to you?',
+    title: 'What would better hair mean to you{name}?',
     subtitle: 'There’s no right answer. Choose what matters most to you.',
     cta: 'Continue',
   },
   goal: {
-    title: 'Imagine six months from now.',
+    title: 'Imagine six months from now{name}.',
     subtitle:
       'You look in the mirror and feel good about what you see. What would make you happiest?',
     cta: "That's My Goal",
@@ -271,7 +275,7 @@ export const COPY = {
     cta: 'Continue',
   },
   impact: {
-    title: 'How often does your hair cross your mind?',
+    title: 'How often does your hair cross your mind{name}?',
     scaleLow: 'Rarely',
     scaleHigh: 'Often',
     second: 'Which moments bother you most?',
@@ -311,12 +315,13 @@ export const COPY = {
     cta: 'Add My Photo',
     skip: 'Skip for now',
   },
-  name: {
-    title: 'What should we call you?',
-    second: 'And how old are you?',
-    genderPrompt: 'Which examples should we show you?',
+  you: {
+    title: 'First, who are we doing this for?',
+    genderPrompt: 'Your hair',
     genderHint:
-      'This only picks the reference photos in the capture guide. Nothing else changes.',
+      'This sets the examples you are shown and the questions we ask. You can change it later.',
+    nameLabel: 'And what should we call you?',
+    second: 'How old are you?',
     ageHint: 'Optional. It goes on your card and nowhere else.',
     cta: 'Continue',
   },
@@ -399,6 +404,8 @@ export const MEDICATION_SEEDS: Record<
   dutasteride: { label: 'Dutasteride', icon: 'pill', timeOfDay: 'anytime' },
   spironolactone: { label: 'Spironolactone', icon: 'pill', timeOfDay: 'anytime' },
   ketoconazole: { label: 'Ketoconazole shampoo', icon: 'drop', timeOfDay: 'anytime' },
+  iron: { label: 'Iron supplement', icon: 'capsule', timeOfDay: 'anytime' },
+  hormonal: { label: 'Hormonal medication', icon: 'pill', timeOfDay: 'anytime' },
 };
 
 export type RoutineSeed = { label: string; icon: RoutineIcon; timeOfDay: RoutineTimeOfDay };
@@ -433,7 +440,7 @@ export function routineSeedsFor({
   }
 
   const covered = new Set(
-    MEDICATION_CHOICES.filter((c) => named.includes(c.value as never))
+    MALE_MEDICATIONS.filter((c) => named.includes(c.value as never))
       .map((c) => c.covers)
       .filter((a) => a !== undefined),
   );
@@ -445,4 +452,141 @@ export function routineSeedsFor({
   }
 
   return seeds;
+}
+
+/* ------------------------------- female -------------------------------- */
+
+/**
+ * The same conversation, about a different experience of it.
+ *
+ * Thinning on longer hair tends to announce itself differently: a part
+ * that widens, a ponytail that needs another turn of the band, shedding
+ * that collects in a brush. Asking a woman whether her hairline is
+ * receding is asking about somebody else's hair, and the answer she gives
+ * is the one she has been given room to give.
+ *
+ * What does not change is the register. These are still questions about
+ * how it feels and when it is noticed, because that is what someone
+ * opening this app is actually carrying. Nothing here asks after a cause,
+ * and nothing implies the app can find one.
+ */
+const FEMALE_GOALS: Choice<HairGoal>[] = [
+  { value: 'fullness', label: 'More fullness on top' },
+  { value: 'narrowerPart', label: 'A part that looks less wide' },
+  { value: 'fullerPonytail', label: 'A fuller ponytail' },
+  { value: 'shedding', label: 'Less shedding' },
+  { value: 'lessBreakage', label: 'Less breakage' },
+  { value: 'overall', label: 'Hair that feels like mine again' },
+  { value: 'routineWorking', label: 'Knowing whether my routine is working' },
+  { value: 'unsure', label: "I'm not sure yet" },
+];
+
+const FEMALE_AREAS: Choice<TrackingArea>[] = [
+  { value: 'widerPart', label: 'My part looks wider' },
+  { value: 'overallThinning', label: 'Thinning across the top' },
+  { value: 'ponytail', label: 'My ponytail feels thinner' },
+  { value: 'shedding', label: 'How much comes out' },
+  { value: 'edges', label: 'My edges or temples' },
+  { value: 'breakage', label: 'Breakage and damage' },
+  { value: 'generalChanges', label: 'Something else' },
+];
+
+const FEMALE_TRIGGERS: Choice<Trigger>[] = [
+  { value: 'parting', label: 'Parting my hair' },
+  { value: 'tyingUp', label: 'Tying it up' },
+  { value: 'brushing', label: 'Brushing or washing it' },
+  { value: 'lighting', label: 'Bright lighting' },
+  { value: 'photos', label: 'Taking photos' },
+  { value: 'mirror', label: 'Looking in the mirror' },
+  { value: 'future', label: 'Thinking about the future' },
+  { value: 'none', label: "It doesn't really bother me" },
+];
+
+/**
+ * What women are most often already using.
+ *
+ * A different list because different things are prescribed, not because
+ * the app has a view about any of them. Dutasteride comes off it — it is
+ * very rarely given to women, and a list you scan is a list you answer
+ * honestly — and anything missing goes in under "Something else".
+ */
+const FEMALE_MEDICATIONS: (Choice<Medication> & { covers?: Approach })[] = [
+  { value: 'minoxidilTopical', label: 'Minoxidil (topical)', detail: 'Liquid or foam', icon: 'bottle', covers: 'topical' },
+  { value: 'minoxidilOral', label: 'Minoxidil (oral)', icon: 'pill', covers: 'prescription' },
+  { value: 'spironolactone', label: 'Spironolactone', icon: 'pill', covers: 'prescription' },
+  { value: 'hormonal', label: 'Hormonal medication', icon: 'pill', covers: 'prescription' },
+  { value: 'iron', label: 'Iron or ferritin supplement', icon: 'capsule', covers: 'supplements' },
+  { value: 'finasterideOral', label: 'Finasteride (oral)', icon: 'pill', covers: 'prescription' },
+  { value: 'ketoconazole', label: 'Ketoconazole shampoo', icon: 'drop', covers: 'haircare' },
+  { value: 'other', label: 'Something else', detail: 'Type it in', icon: 'help' },
+  { value: 'none', label: 'Nothing right now', icon: 'circle' },
+];
+
+/** Wording that differs, over the shared copy. */
+const FEMALE_COPY = {
+  goal: {
+    subtitle:
+      'You look in the mirror and feel good about what you see. What would make you happiest?',
+  },
+  story: {
+    title: 'When did you first notice something changing?',
+    second: 'Where do you notice it most?',
+  },
+  approach: {
+    title: 'What are you doing for your hair right now?',
+  },
+  medication: {
+    otherPlaceholder: 'e.g. Rosemary oil',
+  },
+};
+
+export type FunnelContent = {
+  goals: Choice<HairGoal>[];
+  areas: Choice<TrackingArea>[];
+  triggers: Choice<Trigger>[];
+  medications: (Choice<Medication> & { covers?: Approach })[];
+  /** Copy for the steps whose wording differs. */
+  story: { title: string; second: string };
+};
+
+/**
+ * The question set for whoever is answering.
+ *
+ * Read in the funnel from the gender already chosen, so changing that
+ * answer changes the questions underneath it on the next render — which
+ * is the point of asking it first.
+ */
+export function funnelContent(gender: Gender): FunnelContent {
+  if (gender === 'female') {
+    return {
+      goals: FEMALE_GOALS,
+      areas: FEMALE_AREAS,
+      triggers: FEMALE_TRIGGERS,
+      medications: FEMALE_MEDICATIONS,
+      story: { title: FEMALE_COPY.story.title, second: FEMALE_COPY.story.second },
+    };
+  }
+  return {
+    goals: MALE_GOALS,
+    areas: MALE_AREAS,
+    triggers: MALE_TRIGGERS,
+    medications: MALE_MEDICATIONS,
+    story: { title: COPY.story.title, second: COPY.story.second },
+  };
+}
+
+/**
+ * Puts the person's name into a line written with a `{name}` slot.
+ *
+ * The slot carries its own comma, so the name arrives as ", Arslan" and a
+ * blank one takes the punctuation with it — the sentence reads either way
+ * rather than ending up with a stray comma or a name jammed onto a word.
+ *
+ * Used on three screens and not on all of them: a funnel that says your
+ * name in every heading stops sounding like it is talking to you and
+ * starts sounding like a mail merge.
+ */
+export function withName(line: string, name: string): string {
+  const trimmed = name.trim();
+  return line.replace('{name}', trimmed ? `, ${trimmed}` : '');
 }

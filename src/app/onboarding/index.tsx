@@ -37,22 +37,20 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { FACTS, type Fact } from '@/features/onboarding/facts';
 import {
-  AREA_CHOICES,
   APPROACH_CHOICES,
   ASKS_MEDICATION,
   CADENCE_CHOICES,
   CONSISTENCY_CHOICES,
   COPY,
+  funnelContent,
   GENDER_CHOICES,
-  GOAL_CHOICES,
   MEANING_CHOICES,
-  MEDICATION_CHOICES,
   MEDICATION_EXCLUSIVE,
   NEEDS_SYSTEM,
   ONSET_CHOICES,
   routineSeedsFor,
+  withName,
   STEPS,
-  TRIGGER_CHOICES,
   UNCOUNTED,
   type Choice,
 } from '@/features/onboarding/script';
@@ -250,6 +248,11 @@ export default function OnboardingFunnel() {
     />
   );
 
+  /* The question set follows the answer given on the first screen. */
+  const content = funnelContent(answers.gender);
+  /** Puts their name into the headings written with a slot for it. */
+  const named = (line: string) => withName(line, answers.name);
+
   const goalLabel = answers.goal ? HAIR_GOAL_LABELS[answers.goal] : undefined;
   const cardWidth = Math.min(320, width - spacing.lg * 2 - spacing.xl);
 
@@ -278,7 +281,7 @@ export default function OnboardingFunnel() {
         ctaDisabled: answers.motivations.length === 0,
         children: (
           <>
-            <StepTitle title={COPY.meaning.title} subtitle={COPY.meaning.subtitle} />
+            <StepTitle title={named(COPY.meaning.title)} subtitle={COPY.meaning.subtitle} />
             <Choices
               choices={MEANING_CHOICES}
               multi
@@ -299,9 +302,9 @@ export default function OnboardingFunnel() {
         footnote: answers.goal ? COPY.goal.settle : undefined,
         children: (
           <>
-            <StepTitle title={COPY.goal.title} subtitle={COPY.goal.subtitle} />
+            <StepTitle title={named(COPY.goal.title)} subtitle={COPY.goal.subtitle} />
             <Choices
-              choices={GOAL_CHOICES}
+              choices={content.goals}
               multi={false}
               selected={answers.goal ? [answers.goal] : []}
               onToggle={(v) => set({ goal: v })}
@@ -341,7 +344,7 @@ export default function OnboardingFunnel() {
         ctaDisabled: answers.noticed === null || answers.areas.length === 0,
         children: (
           <>
-            <StepTitle title={COPY.story.title} />
+            <StepTitle title={content.story.title} />
             <Choices
               choices={ONSET_CHOICES}
               multi={false}
@@ -352,9 +355,9 @@ export default function OnboardingFunnel() {
 
             {answers.noticed ? (
               <>
-                <SubHeading text={COPY.story.second} />
+                <SubHeading text={content.story.second} />
                 <Choices
-                  choices={AREA_CHOICES}
+                  choices={content.areas}
                   multi
                   selected={answers.areas}
                   onToggle={(v) => set({ areas: toggle(answers.areas, v) })}
@@ -373,7 +376,7 @@ export default function OnboardingFunnel() {
         ctaDisabled: answers.preoccupation === null,
         children: (
           <>
-            <StepTitle title={COPY.impact.title} />
+            <StepTitle title={named(COPY.impact.title)} />
             <Scale
               steps={PREOCCUPATION_STEPS}
               value={answers.preoccupation}
@@ -387,7 +390,7 @@ export default function OnboardingFunnel() {
               <>
                 <SubHeading text={COPY.impact.second} />
                 <Choices
-                  choices={TRIGGER_CHOICES}
+                  choices={content.triggers}
                   multi
                   selected={answers.triggers}
                   onToggle={(v) => set({ triggers: toggle(answers.triggers, v) })}
@@ -448,7 +451,7 @@ export default function OnboardingFunnel() {
               subtitle={COPY.medication.subtitle}
             />
             <Choices
-              choices={MEDICATION_CHOICES}
+              choices={content.medications}
               multi
               selected={answers.medications}
               onToggle={(v) => set({ medications: toggleMedication(answers.medications, v) })}
@@ -456,7 +459,7 @@ export default function OnboardingFunnel() {
             />
 
             {answers.medications.includes('other') ? (
-              <Rise index={2 + MEDICATION_CHOICES.length}>
+              <Rise index={2 + content.medications.length}>
                 <View style={{ marginTop: spacing.lg }}>
                   <Field
                     value={answers.medicationNote}
@@ -607,27 +610,48 @@ export default function OnboardingFunnel() {
         ),
       });
 
-    /* -------------------------------- name ---------------------------- */
-    case 'name':
+    /* --------------------------------- you ---------------------------- */
+    case 'you':
       return shell({
-        cta: COPY.name.cta,
+        cta: COPY.you.cta,
         onCta: next,
         ctaDisabled: answers.name.trim().length === 0,
         children: (
           <>
-            <StepTitle title={COPY.name.title} />
-            <Rise index={1}>
+            <StepTitle title={COPY.you.title} />
+
+            {/*
+              Gender leads, because everything after this screen is drawn
+              from it: which reference photographs are shown, and which
+              questions the funnel asks. Asked plainly — it decides what
+              the app shows, not what it thinks of anybody.
+            */}
+            <SubHeading text={COPY.you.genderPrompt} index={1} />
+            <Rise index={2}>
+              <Choices
+                choices={GENDER_CHOICES}
+                multi={false}
+                selected={[answers.gender]}
+                onToggle={(gender) => set({ gender })}
+                from={2}
+              />
+              <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
+                {COPY.you.genderHint}
+              </Text>
+            </Rise>
+
+            <SubHeading text={COPY.you.nameLabel} index={4} />
+            <Rise index={5}>
               <Field
                 value={answers.name}
                 onChange={(name) => set({ name })}
                 placeholder="Your name"
                 label="Your name"
-                autoFocus
               />
             </Rise>
 
-            <SubHeading text={COPY.name.second} index={2} />
-            <Rise index={3}>
+            <SubHeading text={COPY.you.second} index={6} />
+            <Rise index={7}>
               <Field
                 value={answers.age}
                 onChange={(age) => set({ age: age.replace(/[^0-9]/g, '').slice(0, 3) })}
@@ -636,24 +660,7 @@ export default function OnboardingFunnel() {
                 keyboardType="number-pad"
               />
               <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
-                {COPY.name.ageHint}
-              </Text>
-            </Rise>
-
-            {/* Asked here rather than on a screen of its own: it belongs
-                with the other two facts about the person, and it is not
-                worth a step of the funnel. */}
-            <SubHeading text={COPY.name.genderPrompt} index={4} />
-            <Rise index={5}>
-              <Choices
-                choices={GENDER_CHOICES}
-                multi={false}
-                selected={[answers.gender]}
-                onToggle={(gender) => set({ gender })}
-                from={5}
-              />
-              <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
-                {COPY.name.genderHint}
+                {COPY.you.ageHint}
               </Text>
             </Rise>
           </>

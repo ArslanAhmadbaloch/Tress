@@ -11,7 +11,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { hairContent } from '@/features/content/hair-content';
-import { routineSeedsFor } from '@/features/onboarding/script';
+import {
+  funnelContent,
+  routineSeedsFor,
+  STEPS,
+  withName,
+} from '@/features/onboarding/script';
 import { formatMilestone, toDateKey } from '@/lib/date';
 import { isProfilePhoto, profilePhotoName } from '@/lib/photo-names';
 import {
@@ -122,6 +127,67 @@ function takeDoses(
     ],
   };
 }
+
+/* -------------------------------- funnel -------------------------------- */
+
+test('funnel: who you are is asked before anything about hair', () => {
+  // Everything after it is drawn from the answer, so it cannot come later.
+  assert.ok(STEPS.indexOf('you') < STEPS.indexOf('meaning'));
+  assert.ok(STEPS.indexOf('you') < STEPS.indexOf('goal'));
+  assert.ok(STEPS.indexOf('you') < STEPS.indexOf('story'));
+  assert.ok(STEPS.indexOf('you') < STEPS.indexOf('medication'));
+  assert.equal(STEPS.indexOf('you'), 1, 'it follows the welcome and nothing else');
+});
+
+test('funnel: the question sets actually differ', () => {
+  const male = funnelContent('male');
+  const female = funnelContent('female');
+
+  const values = (list: { value: string }[]) => list.map((c) => c.value).join();
+  assert.notEqual(values(male.goals), values(female.goals));
+  assert.notEqual(values(male.areas), values(female.areas));
+  assert.notEqual(values(male.triggers), values(female.triggers));
+  assert.notEqual(values(male.medications), values(female.medications));
+});
+
+test('funnel: the female set asks about hair a woman has', () => {
+  const female = funnelContent('female');
+  const areas = female.areas.map((c) => c.value);
+
+  assert.ok(areas.includes('widerPart'));
+  assert.ok(areas.includes('ponytail'));
+  assert.ok(
+    !areas.includes('hairline'),
+    'a receding hairline is a male pattern question',
+  );
+  assert.ok(
+    female.medications.some((m) => m.value === 'spironolactone'),
+    'commonly prescribed to women, and missing from the list they see',
+  );
+  assert.ok(
+    !female.medications.some((m) => m.value === 'dutasteride'),
+    'very rarely given to women; "something else" covers it',
+  );
+});
+
+test('funnel: the male set is untouched', () => {
+  const male = funnelContent('male');
+  assert.deepEqual(
+    male.areas.map((c) => c.value),
+    ['hairline', 'crown', 'overallThinning', 'shedding', 'density', 'generalChanges'],
+  );
+  assert.ok(male.medications.some((m) => m.value === 'dutasteride'));
+});
+
+test('funnel: a name goes into the heading, and its absence leaves no scar', () => {
+  const line = 'What would better hair mean to you{name}?';
+  assert.equal(withName(line, 'Arslan'), 'What would better hair mean to you, Arslan?');
+  assert.equal(withName(line, '  '), 'What would better hair mean to you?');
+  assert.equal(
+    withName('Imagine six months from now{name}.', 'Sara'),
+    'Imagine six months from now, Sara.',
+  );
+});
 
 /* ----------------------------- reference set ---------------------------- */
 
