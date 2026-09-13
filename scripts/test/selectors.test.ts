@@ -319,6 +319,63 @@ test('stack: treatments come before hair care', () => {
   assert.deepEqual(seeds.map((s) => s.label), ['Finasteride (oral)', 'Shampoo']);
 });
 
+test('stack: the male routine list leads with minoxidil and finasteride', () => {
+  // Somebody on minoxidil who never ticked "prescription medication" used
+  // to finish the funnel with a stack of shampoo and no minoxidil in it.
+  const male = productOptions('male');
+  const treatments = male.filter((o) => o.treatment).map((o) => o.id);
+
+  assert.deepEqual(treatments, ['minoxidil', 'finasteride']);
+  assert.deepEqual(male.slice(0, 2).map((o) => o.id), treatments);
+
+  // A name, not an instruction: no dose, no detail, just every day.
+  for (const id of treatments) {
+    const option = male.find((o) => o.id === id);
+    assert.equal(option?.defaultTimesPerWeek, 7);
+    assert.ok(/^[A-Z][a-z]+$/.test(option?.label ?? ''), 'the label is a bare name');
+  }
+
+  assert.ok(
+    !productOptions('female').some((o) => o.treatment),
+    'the female list was not asked for and its medications differ',
+  );
+});
+
+test('stack: a treatment ticked in both places is still one row', () => {
+  // Minoxidil named on the medication step and ticked again on the routine
+  // step is one bottle. The caller drops the second; this is the contract
+  // it is dropping it against.
+  const both = routineSeedsFor({
+    approaches: ['topical'],
+    medications: ['minoxidilTopical'],
+    treatments: [],
+    treatmentCovers: ['topical'],
+    products: [{ label: 'Shampoo', icon: 'drop', timeOfDay: 'anytime', timesPerWeek: 2 }],
+  });
+
+  assert.deepEqual(both.map((s) => s.label), ['Minoxidil (topical)', 'Shampoo']);
+});
+
+test('stack: a named treatment replaces the generic row it stands in for', () => {
+  const seeds = routineSeedsFor({
+    approaches: ['topical', 'haircare'],
+    treatments: [{ label: 'Minoxidil', icon: 'dropper', timeOfDay: 'anytime', timesPerWeek: 7 }],
+    treatmentCovers: ['topical'],
+  });
+
+  assert.deepEqual(seeds.map((s) => s.label), ['Minoxidil', 'Hair-care routine']);
+});
+
+test('stack: a routine-step treatment leads the hair care under it', () => {
+  const seeds = routineSeedsFor({
+    approaches: [],
+    treatments: [{ label: 'Finasteride', icon: 'pill', timeOfDay: 'anytime', timesPerWeek: 7 }],
+    products: [{ label: 'Shampoo', icon: 'drop', timeOfDay: 'anytime', timesPerWeek: 3 }],
+  });
+
+  assert.deepEqual(seeds.map((s) => s.label), ['Finasteride', 'Shampoo']);
+});
+
 test('stack: the product lists differ and every default is a real frequency', () => {
   const male = productOptions('male');
   const female = productOptions('female');

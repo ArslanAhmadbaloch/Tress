@@ -12,9 +12,23 @@
  * a view on, and every one of them is adjustable before it is saved and
  * afterwards. The defaults are simply the most common answer, so most
  * people change nothing and nobody is told what to do.
+ *
+ * ── Minoxidil and finasteride are on the male list ────────────────────
+ * The funnel also has a medication step, and it is deliberately hidden
+ * from anybody who says they are doing nothing yet, on the grounds that a
+ * list of drugs put in front of that person reads as a suggestion. That
+ * still holds for the medication step, which asks what you take.
+ *
+ * This step asks what you already use, and for most men tracking hair
+ * loss the answer starts with one of these two bottles. Leaving them off
+ * the routine list meant somebody on minoxidil who had not ticked
+ * "prescription medication" or "topical treatments" earlier could finish
+ * the whole funnel with a stack of shampoo and no minoxidil in it. So
+ * they are here, with no dose, no detail line and no default beyond
+ * "every day" — the label is a name, not an instruction.
  */
 
-import type { Gender, RoutineIcon } from '@/types/domain';
+import type { Approach, Gender, Medication, RoutineIcon } from '@/types/domain';
 
 export type ProductOption = {
   id: string;
@@ -22,6 +36,23 @@ export type ProductOption = {
   icon: RoutineIcon;
   /** Times a week. Seven is daily. */
   defaultTimesPerWeek: number;
+  /**
+   * Named medications this is the same bottle as.
+   *
+   * Somebody who ticked Minoxidil (topical) on the medication step and
+   * Minoxidil here means one bottle, not two rows to tick every morning.
+   */
+  covers?: Medication[];
+  /**
+   * The generic approach this replaces. "Topical treatment" is the row we
+   * add when we could not name the bottle; once it is named, it goes.
+   */
+  coversApproach?: Approach;
+  /**
+   * Treatments lead the stack, ahead of hair care. They are the rows
+   * somebody is anxious about keeping up.
+   */
+  treatment?: boolean;
 };
 
 /** Used by both, in the order most people would tick them. */
@@ -32,7 +63,32 @@ const SHARED: ProductOption[] = [
   { id: 'scalpMassage', label: 'Scalp massage', icon: 'drop', defaultTimesPerWeek: 7 },
 ];
 
+/**
+ * The treatments first, then the hair care.
+ *
+ * Order is the whole argument for putting them here: on the screen this
+ * is a list of what somebody already uses, and these are the first two
+ * things a man in this app is using.
+ */
 const MALE_PRODUCTS: ProductOption[] = [
+  {
+    id: 'minoxidil',
+    label: 'Minoxidil',
+    icon: 'dropper',
+    defaultTimesPerWeek: 7,
+    covers: ['minoxidilTopical', 'minoxidilOral'],
+    coversApproach: 'topical',
+    treatment: true,
+  },
+  {
+    id: 'finasteride',
+    label: 'Finasteride',
+    icon: 'pill',
+    defaultTimesPerWeek: 7,
+    covers: ['finasterideOral', 'finasterideTopical'],
+    coversApproach: 'prescription',
+    treatment: true,
+  },
   ...SHARED,
   { id: 'styling', label: 'Styling product', icon: 'dropper', defaultTimesPerWeek: 7 },
   { id: 'dermaroller', label: 'Dermaroller', icon: 'dropper', defaultTimesPerWeek: 1 },

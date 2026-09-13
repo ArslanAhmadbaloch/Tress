@@ -196,17 +196,34 @@ export default function OnboardingFunnel() {
 
   /* ------------------------ committing the journey ---------------------- */
 
-  /** The ticked products and anything typed in, as routine seeds. */
+  /**
+   * The ticked products and anything typed in, as routine seeds.
+   *
+   * Split, because the routine list now carries minoxidil and finasteride
+   * and those are not hair care: they lead the stack, and either of them
+   * may already have been named on the medication step. A bottle ticked
+   * in both places is still one bottle, so the one here drops.
+   */
   const productSeeds = () => {
     const options = productOptions(answers.gender);
-    const chosen = options
-      .filter((option) => answers.products[option.id] !== undefined)
-      .map((option) => ({
-        label: option.label,
-        icon: option.icon,
-        timeOfDay: 'anytime' as const,
-        timesPerWeek: answers.products[option.id],
-      }));
+    const ticked = options.filter((option) => answers.products[option.id] !== undefined);
+
+    const asSeed = (option: (typeof options)[number]) => ({
+      label: option.label,
+      icon: option.icon,
+      timeOfDay: 'anytime' as const,
+      timesPerWeek: answers.products[option.id],
+    });
+
+    const alreadyNamed = (option: (typeof options)[number]) =>
+      option.covers?.some((m) => answers.medications.includes(m)) ?? false;
+
+    const treatments = ticked.filter((o) => o.treatment && !alreadyNamed(o)).map(asSeed);
+    const care = ticked.filter((o) => !o.treatment).map(asSeed);
+
+    const treatmentCovers = ticked
+      .filter((o) => o.treatment)
+      .flatMap((o) => o.coversApproach ?? []);
 
     const typed = answers.customProducts.map((product) => ({
       label: product.label,
@@ -215,7 +232,7 @@ export default function OnboardingFunnel() {
       timesPerWeek: product.timesPerWeek,
     }));
 
-    return [...chosen, ...typed];
+    return { treatments, treatmentCovers, products: [...care, ...typed] };
   };
 
   /**
@@ -231,7 +248,7 @@ export default function OnboardingFunnel() {
       approaches: answers.approaches,
       medications: answers.medications,
       medicationNote: answers.medicationNote.trim(),
-      products: productSeeds(),
+      ...productSeeds(),
     });
 
   const commit = () => {

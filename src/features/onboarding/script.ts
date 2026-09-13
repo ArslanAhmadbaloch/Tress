@@ -445,11 +445,23 @@ export function routineSeedsFor({
   approaches,
   medications = [],
   medicationNote = '',
+  treatments = [],
+  treatmentCovers = [],
   products = [],
 }: {
   approaches: Approach[];
   medications?: Medication[];
   medicationNote?: string;
+  /**
+   * Treatments ticked on the routine step, already deduplicated against
+   * the medication step by whoever collected them.
+   */
+  treatments?: RoutineSeed[];
+  /**
+   * Approaches those treatments make redundant. "Topical treatment" is a
+   * fallback for a bottle we could not name; once it is named, it goes.
+   */
+  treatmentCovers?: Approach[];
   /** Hair care, already carrying the frequency the user set. */
   products?: RoutineSeed[];
 }): RoutineSeed[] {
@@ -458,6 +470,10 @@ export function routineSeedsFor({
   );
 
   const seeds: RoutineSeed[] = named.map((m) => MEDICATION_SEEDS[m]);
+
+  // Straight after the named ones, for the same reason they lead: these
+  // are the rows somebody worries about having missed.
+  seeds.push(...treatments);
 
   const note = medicationNote.trim();
   if (medications.includes('other') && note) {
@@ -469,6 +485,11 @@ export function routineSeedsFor({
       .map((c) => c.covers)
       .filter((a) => a !== undefined),
   );
+
+  // Minoxidil ticked on the routine step is the topical treatment: the
+  // generic row was a fallback for what we could not name, and now it
+  // has a name.
+  for (const approach of treatmentCovers) covered.add(approach);
 
   for (const approach of approaches) {
     if (covered.has(approach)) continue;
