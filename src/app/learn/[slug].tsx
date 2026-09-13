@@ -13,6 +13,7 @@ import {
   SectionHeader,
   Separator,
 } from '@/components/ui/layout';
+import { BackButton } from '@/components/ui/back-button';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import {
@@ -44,7 +45,7 @@ export default function ArticleScreen() {
   if (!article) {
     return (
       <Screen>
-        <BackBar onBack={() => router.back()} />
+        <BackButton padded onPress={() => router.back()} />
         <EmptyState
           icon="learn"
           title="Article not found"
@@ -63,7 +64,7 @@ export default function ArticleScreen() {
   return (
     <Screen edges={[]} ground="plain">
       <ScreenScroll contentContainerStyle={{ paddingTop: insets.top + spacing.sm }}>
-        <BackBar onBack={() => router.back()} inline />
+        <BackButton onPress={() => router.back()} />
 
         {/* The article's picture: a related photograph, or a drawn cover. */}
         <ArticleCover
@@ -228,7 +229,7 @@ function FaqScreen() {
   return (
     <Screen edges={[]} ground="plain">
       <ScreenScroll contentContainerStyle={{ paddingTop: insets.top + spacing.sm }}>
-        <BackBar onBack={() => router.back()} inline />
+        <BackButton onPress={() => router.back()} />
 
         <Text
           variant="caption"
@@ -270,27 +271,3 @@ function Row({ icon, label }: { icon: 'clock' | 'calendar'; label: string }) {
   );
 }
 
-function BackBar({ onBack, inline }: { onBack: () => void; inline?: boolean }) {
-  const { colors } = useTheme();
-  return (
-    <View style={inline ? undefined : { padding: 16 }}>
-      <PressableScale
-        hitSlop={4}
-        onPress={onBack}
-        accessibilityRole="button"
-        accessibilityLabel="Back"
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 18,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}>
-        <Icon name="chevronLeft" size={15} color={colors.text} />
-      </PressableScale>
-    </View>
-  );
-}

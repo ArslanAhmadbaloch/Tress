@@ -13,6 +13,7 @@ import {
   SectionHeader,
   Separator,
 } from '@/components/ui/layout';
+import { BackButton } from '@/components/ui/back-button';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { formatDate, formatMilestone } from '@/lib/date';
@@ -102,7 +103,11 @@ export default function SessionDetailScreen() {
     <Screen edges={[]}>
       <ScreenScroll
         clearsTabBar={false}
-        contentContainerStyle={{ paddingTop: insets.top + 56 }}>
+        contentContainerStyle={{ paddingTop: insets.top + spacing.sm }}>
+        <View style={{ marginBottom: spacing.md }}>
+          <BackButton onPress={leave} />
+        </View>
+
         {editingTitle ? (
           // Renaming the update, not re-dating it. The date below stays
           // exactly as it was: it is when the shutter fired, and a record

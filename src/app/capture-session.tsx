@@ -429,29 +429,26 @@ export default function CaptureSessionScreen() {
         <CameraView
           ref={cameraRef}
           /*
-            Un-mirrored, both on screen and in the file.
+            What you see is what gets saved.
 
-            A photograph labelled "Left Side" has to be the left side, or
-            every comparison built on it is quietly reversed — so the
-            stored image is true optics, never a mirror image.
+            iOS mirrors the front-camera preview, and the `mirror` prop
+            does not change that — set true or false the viewfinder is
+            pixel-identical, so it only ever reaches the captured file.
+            Leaving it false wrote the file as true optics while the
+            preview showed a mirror, and every shot came out flipped from
+            the thing that had just been composed.
 
-            iOS mirrors the front-camera preview by default, and the
-            `mirror` prop does not change that: setting it true and false
-            gives a pixel-identical preview, so it only reaches the
-            captured file. That left the viewfinder showing a mirror and
-            the saved photo showing the truth, which is what made an
-            update look flipped from the thing you had just composed.
-            Flipping the preview back here is the only lever that works.
-
-            The simulator's synthetic camera is not mirrored to begin
-            with, so this makes its preview look reversed. That is the
-            cost of matching the device, which is the one that matters.
+            So the file is mirrored to match the preview. The cost is that
+            it is a mirror image: "Left Side" frames the left side as its
+            owner sees it in a mirror, not as a camera would record it.
+            Comparisons stay sound because every photo is mirrored the
+            same way; what matters is that they are all treated alike.
           */
-          style={{ flex: 1, transform: [{ scaleX: -1 }] }}
+          style={{ flex: 1 }}
           facing="front"
           mode="picture"
           active={!confirming}
-          mirror={false}
+          mirror={true}
         />
       )}
 

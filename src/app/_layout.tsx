@@ -129,7 +129,10 @@ function Navigation() {
         />
         <Stack.Screen
           name="session/[id]"
-          options={{ headerShown: true, headerTitle: '', headerTransparent: true }}
+          // The screen draws its own back control. The native one is
+          // captioned with the route it returns to, which here is the tab
+          // group, and reads "(tabs)".
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="compare"
