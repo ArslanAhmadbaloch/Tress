@@ -20,10 +20,16 @@ import { spacing, useTheme } from '@/theme';
 import { doseCount, TIME_OF_DAY_LABELS, type RoutineItem } from '@/types/domain';
 
 const ORB = 38;
-const CHECK = 30;
 
-/** Pips shrink as they multiply, so four still fit beside the text. */
-const PIP_SIZE: Record<number, number> = { 1: CHECK, 2: 26, 3: 22, 4: 20 };
+/**
+ * One size for every dose box, whatever the count.
+ *
+ * They were scaled down as they multiplied, so a once-a-day item sat
+ * beside a twice-a-day one wearing a visibly bigger circle — which reads
+ * as the two meaning different things when they mean exactly the same.
+ * Four at this size still clear the label on the narrowest row.
+ */
+const CHECK = 26;
 
 /** Where a row's text begins, so separators can start under it. */
 export const STACK_TEXT_INSET = spacing.lg + ORB + spacing.md;
@@ -60,7 +66,7 @@ export function StackRow({
   const total = doseCount(item);
   const filled = Math.min(total, Math.max(0, taken));
   const done = filled >= total;
-  const pip = PIP_SIZE[total] ?? 20;
+
 
   return (
     <PressableScale
@@ -113,19 +119,19 @@ export function StackRow({
           const last = i === total - 1;
 
           return (
-            <View key={i} style={{ width: pip, height: pip }}>
-              {last ? <Burst active={done} size={pip * 2.1} /> : null}
+            <View key={i} style={{ width: CHECK, height: CHECK }}>
+              {last ? <Burst active={done} size={CHECK * 2.1} /> : null}
               <Pop active={lit}>
                 {lit ? (
-                  <GlassOrb size={pip} ring={false}>
-                    <CheckGlyph size={pip * 0.5} />
+                  <GlassOrb size={CHECK} ring={false}>
+                    <CheckGlyph size={13} />
                   </GlassOrb>
                 ) : (
                   <View
                     style={{
-                      width: pip,
-                      height: pip,
-                      borderRadius: pip / 2,
+                      width: CHECK,
+                      height: CHECK,
+                      borderRadius: CHECK / 2,
                       borderWidth: 1.5,
                       borderColor: colors.fillSelected,
                       backgroundColor: colors.surface,
