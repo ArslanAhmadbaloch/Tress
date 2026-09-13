@@ -23,6 +23,7 @@
  */
 
 import { inferRoutineIcon } from '@/features/routine/icons';
+import { GENDER_LABELS } from '@/types/domain';
 import type {
   Approach,
   Gender,
@@ -224,8 +225,8 @@ export const ASKS_MEDICATION: Approach[] = [
  * it is read back.
  */
 export const GENDER_CHOICES: Choice<Gender>[] = [
-  { value: 'male', label: 'Man' },
-  { value: 'female', label: 'Woman' },
+  { value: 'male', label: GENDER_LABELS.male },
+  { value: 'female', label: GENDER_LABELS.female },
 ];
 
 export const CONSISTENCY_CHOICES: Choice<SelfConsistency>[] = [

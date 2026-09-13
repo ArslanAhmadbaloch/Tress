@@ -187,8 +187,8 @@ export type Medication =
 export type Gender = 'male' | 'female';
 
 export const GENDER_LABELS: Record<Gender, string> = {
-  male: 'Man',
-  female: 'Woman',
+  male: 'Male',
+  female: 'Female',
 };
 
 /** How consistent they feel they have been. Their own estimate. */
