@@ -26,6 +26,7 @@ import {
   SCHEMA_VERSION,
   type AppData,
   type JournalEntry,
+  type Gender,
   type Journey,
   type Photo,
   type PhotoSession,
@@ -53,6 +54,7 @@ function makeId(prefix: string): string {
 export type CreateJourneyInput = {
   displayName: string;
   age?: number;
+  gender?: Gender;
   avatarUri?: string;
   journey: Omit<Journey, 'id' | 'profileId' | 'createdAt'>;
   /** Seeded from what they said they are already doing. */
@@ -153,6 +155,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         id: profileId,
         displayName: input.displayName.trim() || 'You',
         age: input.age,
+        gender: input.gender,
         avatarUri: input.avatarUri,
         createdAt: now,
       },

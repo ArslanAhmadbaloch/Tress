@@ -29,6 +29,7 @@ import { PressableScale } from './ui/pressable-scale';
 import { placeholderSeries, Sparkline } from './ui/ring';
 import { AnimatedNumber } from './ui/stat';
 import { Text } from './ui/text';
+import { useHairContent } from '@/features/content/use-hair-content';
 import { ARTICLES } from '@/features/learn/library';
 import { formatDate, formatRelative, toDateKey } from '@/lib/date';
 import { spacing, useTheme } from '@/theme';
@@ -105,10 +106,6 @@ export function HeaderActions({
 
 /* ---------------------------- progress card --------------------------- */
 
-/** Sample photographs from the design kit, shown only as a labelled example. */
-const EXAMPLE_BEFORE = require('@/assets/images/example-before.jpg');
-const EXAMPLE_AFTER = require('@/assets/images/example-after.jpg');
-
 type FrameSource = number | { uri: string };
 
 /**
@@ -151,14 +148,17 @@ export function HairProgressCard({
   onPress: () => void;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
+  // Sample photographs from the design kit, shown only as a labelled
+  // example, and matched to whose head the user is photographing.
+  const sample = useHairContent().progress;
 
   const before: FrameSource | undefined = example
-    ? EXAMPLE_BEFORE
+    ? sample.before
     : beforeUri
       ? { uri: beforeUri }
       : undefined;
   const after: FrameSource | undefined = example
-    ? EXAMPLE_AFTER
+    ? sample.after
     : afterUri
       ? { uri: afterUri }
       : undefined;

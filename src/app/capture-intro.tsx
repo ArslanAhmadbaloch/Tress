@@ -12,14 +12,14 @@ import { Screen, ScreenScroll, ScreenTitle } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { BulbGlyph } from '@/components/ui/tab-glyphs';
 import { Text } from '@/components/ui/text';
-import { ANGLE_EXAMPLES, CAPTURE_PORTRAIT } from '@/features/capture/examples';
+import { useHairContent } from '@/features/content/use-hair-content';
 import { formatRelative } from '@/lib/date';
 import { useBackOrHome } from '@/lib/navigation';
 import { usePremium } from '@/features/subscription/provider';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { ANGLES, ANGLE_GUIDANCE, ANGLE_LABELS } from '@/types/domain';
+import { ANGLES, ANGLE_LABELS } from '@/types/domain';
 
 /**
  * Guided 5-angle capture — the step before the camera.
@@ -53,6 +53,7 @@ export default function CaptureIntroScreen() {
   const { width } = useWindowDimensions();
   const { data } = useAppStore();
   const { isPremium } = usePremium();
+  const content = useHairContent();
 
   const [index, setIndex] = useState(0);
   const [showTips, setShowTips] = useState(false);
@@ -158,7 +159,7 @@ export default function CaptureIntroScreen() {
             {/* A fixed front-facing portrait: the person the five angles
                 are taken of. The selected angle shows in the step card. */}
             <Image
-              source={CAPTURE_PORTRAIT}
+              source={content.portrait}
               style={{ flex: 1, borderRadius: centre / 2 }}
               contentFit="cover"
               accessible={false}
@@ -212,7 +213,7 @@ export default function CaptureIntroScreen() {
                       shadow.soft,
                     ]}>
                     <Image
-                      source={ANGLE_EXAMPLES[a]}
+                      source={content.angles[a].example}
                       style={{ flex: 1, borderRadius: SAT_RING / 2 }}
                       contentFit="cover"
                       accessible={false}
@@ -269,7 +270,7 @@ export default function CaptureIntroScreen() {
                 {label} View
               </Text>
               <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.xs }}>
-                {ANGLE_GUIDANCE[angle].instruction}
+                {content.angles[angle].instruction}
               </Text>
               <PressableScale
                 onPress={() => setShowExample(true)}
@@ -294,7 +295,7 @@ export default function CaptureIntroScreen() {
             {/* Fixed height so the tag anchors to the photo, not the column. */}
             <View style={{ width: 112, height: 122 }}>
               <Image
-                source={ANGLE_EXAMPLES[angle]}
+                source={content.angles[angle].example}
                 style={{
                   width: 112,
                   height: 122,
@@ -397,7 +398,7 @@ export default function CaptureIntroScreen() {
           body="A comparison is only as good as the consistency between sessions. Match these every time."
           points={[
             ...CONDITIONS,
-            ...ANGLE_GUIDANCE[angle].tips.map((tip) => `${label}: ${tip}`),
+            ...content.angles[angle].tips.map((tip) => `${label}: ${tip}`),
             ...(last
               ? ['During capture you can overlay your previous photo to line the shot up']
               : []),
@@ -424,7 +425,7 @@ export default function CaptureIntroScreen() {
             backgroundColor: colors.photoScrim,
           }}>
           <Image
-            source={ANGLE_EXAMPLES[angle]}
+            source={content.angles[angle].example}
             style={{ width: '100%', aspectRatio: 0.84, borderRadius: radius.lg }}
             contentFit="cover"
             accessibilityLabel={`Example ${label} photo`}

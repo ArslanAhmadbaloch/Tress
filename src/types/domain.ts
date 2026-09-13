@@ -160,6 +160,24 @@ export type Medication =
   | 'other'
   | 'none';
 
+/**
+ * Which reference photographs to show.
+ *
+ * It decides nothing about the person's hair and nothing about what the
+ * app records — only whose head appears in the examples of framing, and
+ * the wording alongside them. Somebody photographing their own crown is
+ * better served by an example that looks like them.
+ *
+ * Absent means male, because that is the set the app shipped with and an
+ * existing journey should not change under anybody.
+ */
+export type Gender = 'male' | 'female';
+
+export const GENDER_LABELS: Record<Gender, string> = {
+  male: 'Man',
+  female: 'Woman',
+};
+
 /** How consistent they feel they have been. Their own estimate. */
 export type SelfConsistency = 'very' | 'mostly' | 'onOff' | 'forget' | 'notStarted';
 
@@ -268,6 +286,8 @@ export type Profile = {
   displayName: string;
   /** Asked at the end of onboarding, and optional. Shown on their card. */
   age?: number;
+  /** Chooses the reference imagery. See `Gender`. */
+  gender?: Gender;
   /** Local file URI or remote URL; undefined renders initials. */
   avatarUri?: string;
   bio?: string;

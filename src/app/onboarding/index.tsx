@@ -43,6 +43,7 @@ import {
   CADENCE_CHOICES,
   CONSISTENCY_CHOICES,
   COPY,
+  GENDER_CHOICES,
   GOAL_CHOICES,
   MEANING_CHOICES,
   MEDICATION_CHOICES,
@@ -63,6 +64,7 @@ import {
   PREOCCUPATION_STEPS,
   TRACKING_AREA_LABELS,
   type Approach,
+  type Gender,
   type HairGoal,
   type Medication,
   type Motivation,
@@ -87,6 +89,7 @@ type Answers = {
   avatarUri?: string;
   name: string;
   age: string;
+  gender: Gender;
 };
 
 const EMPTY: Answers = {
@@ -103,6 +106,8 @@ const EMPTY: Answers = {
   intervalDays: 30,
   name: '',
   age: '',
+  // The set the app shipped with, so skipping the question changes nothing.
+  gender: 'male',
 };
 
 /** Toggle membership of a multi-select answer. */
@@ -171,6 +176,7 @@ export default function OnboardingFunnel() {
     createJourney({
       displayName: answers.name,
       age: Number.isFinite(age) && age > 0 && age < 120 ? age : undefined,
+      gender: answers.gender,
       avatarUri: answers.avatarUri,
       journey: {
         // Today is the baseline, whatever they have been doing until now.
@@ -631,6 +637,23 @@ export default function OnboardingFunnel() {
               />
               <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
                 {COPY.name.ageHint}
+              </Text>
+            </Rise>
+
+            {/* Asked here rather than on a screen of its own: it belongs
+                with the other two facts about the person, and it is not
+                worth a step of the funnel. */}
+            <SubHeading text={COPY.name.genderPrompt} index={4} />
+            <Rise index={5}>
+              <Choices
+                choices={GENDER_CHOICES}
+                multi={false}
+                selected={[answers.gender]}
+                onToggle={(gender) => set({ gender })}
+                from={5}
+              />
+              <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
+                {COPY.name.genderHint}
               </Text>
             </Rise>
           </>

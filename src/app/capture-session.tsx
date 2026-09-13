@@ -31,13 +31,13 @@ import {
 } from '@/lib/device-preferences';
 import { useBackOrHome } from '@/lib/navigation';
 import { CaptureRing } from '@/components/capture-ring';
+import { useHairContent } from '@/features/content/use-hair-content';
 import { useSteadiness } from '@/features/capture/use-steadiness';
 import { persistCapture, shrinkCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { motion, useTheme } from '@/theme';
 import {
   ANGLES,
-  ANGLE_GUIDANCE,
   ANGLE_LABELS,
   type Angle,
 } from '@/types/domain';
@@ -93,7 +93,7 @@ export default function CaptureSessionScreen() {
 
 
   const angle = ANGLES[index];
-  const guidance = ANGLE_GUIDANCE[angle];
+  const guidance = useHairContent().angles[angle];
 
 
   /* ----------------------------- shutter ---------------------------- */

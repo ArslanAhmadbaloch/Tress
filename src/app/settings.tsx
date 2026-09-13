@@ -59,6 +59,7 @@ import { SubscriptionStatus } from '@/components/subscription/subscription-statu
 import { useAppStore } from '@/store/app-store';
 import { useAppLock } from '@/store/lock-provider';
 import { useTheme, type AppearancePreference } from '@/theme';
+import { GENDER_LABELS, type Gender } from '@/types/domain';
 
 const APPEARANCE: { value: AppearancePreference; label: string }[] = [
   { value: 'light', label: 'Light' },
@@ -67,6 +68,11 @@ const APPEARANCE: { value: AppearancePreference; label: string }[] = [
 
 /** Days between photo-update reminders. */
 const INTERVALS = [14, 30, 60, 90];
+
+const GENDERS: { value: Gender; label: string }[] = [
+  { value: 'male', label: GENDER_LABELS.male },
+  { value: 'female', label: GENDER_LABELS.female },
+];
 
 const TIMER_LABELS: Record<CaptureTimer, string> = {
   0: 'Off',
@@ -78,7 +84,7 @@ export default function SettingsScreen() {
   const { spacing, preference, setPreference } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { data, updateJourney, resetAll } = useAppStore();
+  const { data, updateJourney, updateProfile, resetAll } = useAppStore();
   const lock = useAppLock();
 
   const [routineReminder, setRoutineReminder] = useState(false);
@@ -254,6 +260,25 @@ export default function SettingsScreen() {
 
         <SectionHeader title="Subscription" />
         <SubscriptionStatus />
+
+        <SectionHeader title="Reference photos" />
+        <SettingsGroup>
+          <SettingsField
+            icon="camera"
+            label="Examples"
+            detail="Whose photos the capture guide shows you.">
+            <SegmentedTabs
+              surface="fill"
+              options={GENDERS}
+              value={data.profile?.gender ?? 'male'}
+              onChange={(next) => updateProfile({ gender: next as Gender })}
+            />
+          </SettingsField>
+        </SettingsGroup>
+        <SettingsNote icon="info">
+          This only changes the example photographs and the wording beside
+          them. Your own photos are untouched.
+        </SettingsNote>
 
         <SectionHeader title="Appearance" />
         <SettingsGroup>

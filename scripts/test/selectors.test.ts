@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { hairContent } from '@/features/content/hair-content';
 import { routineSeedsFor } from '@/features/onboarding/script';
 import { formatMilestone, toDateKey } from '@/lib/date';
 import { isProfilePhoto, profilePhotoName } from '@/lib/photo-names';
@@ -26,6 +27,8 @@ import {
   weekProgress,
 } from '@/store/selectors';
 import {
+  ANGLE_GUIDANCE,
+  ANGLES,
   doseCount,
   dosesTaken,
   EMPTY_DATA,
@@ -119,6 +122,68 @@ function takeDoses(
     ],
   };
 }
+
+/* ----------------------------- reference set ---------------------------- */
+
+test('content: a profile with no gender gets the set the app shipped with', () => {
+  assert.deepEqual(hairContent(undefined), hairContent('male'));
+});
+
+test('content: every angle has an example and words of its own', () => {
+  for (const gender of ['male', 'female'] as const) {
+    const content = hairContent(gender);
+    for (const angle of ANGLES) {
+      const item = content.angles[angle];
+      assert.ok(item.example, `${gender}/${angle} has no example image`);
+      assert.ok(item.instruction.length > 0, `${gender}/${angle} has no instruction`);
+      assert.ok(item.tips.length > 0, `${gender}/${angle} has no tips`);
+    }
+    assert.ok(content.portrait, `${gender} has no portrait`);
+    assert.ok(content.progress.before && content.progress.after);
+  }
+});
+
+test('content: the two sets share no image', () => {
+  // A single shared require would mean one of them is showing the other's
+  // reference photograph, which is the whole failure this exists to avoid.
+  const male = hairContent('male');
+  const female = hairContent('female');
+
+  const ids = (c: ReturnType<typeof hairContent>) => [
+    c.portrait,
+    c.progress.before,
+    c.progress.after,
+    ...ANGLES.map((a) => c.angles[a].example),
+  ];
+
+  const overlap = ids(male).filter((id) => ids(female).includes(id));
+  assert.deepEqual(overlap, [], 'the male and female sets share an image');
+});
+
+test('content: the male wording is still the wording it shipped with', () => {
+  const male = hairContent('male');
+  for (const angle of ANGLES) {
+    assert.equal(
+      male.angles[angle].instruction,
+      ANGLE_GUIDANCE[angle].instruction,
+      `${angle} drifted from the guidance it shipped with`,
+    );
+    assert.deepEqual(male.angles[angle].tips, ANGLE_GUIDANCE[angle].tips);
+  }
+});
+
+test('content: the female wording differs, and claims nothing medical', () => {
+  const female = hairContent('female');
+  const banned = /diagnos|detect|treat|cure|regrow|restore your hair|loss is/i;
+
+  let differences = 0;
+  for (const angle of ANGLES) {
+    const line = female.angles[angle].instruction;
+    assert.ok(!banned.test(line), `${angle}: "${line}" reads as a medical claim`);
+    if (line !== ANGLE_GUIDANCE[angle].instruction) differences += 1;
+  }
+  assert.ok(differences > 0, 'the female set is just a copy of the male one');
+});
 
 /* -------------------------------- doses --------------------------------- */
 

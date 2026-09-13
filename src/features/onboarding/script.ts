@@ -25,6 +25,7 @@
 import { inferRoutineIcon } from '@/features/routine/icons';
 import type {
   Approach,
+  Gender,
   HairGoal,
   Medication,
   Motivation,
@@ -210,6 +211,19 @@ export const ASKS_MEDICATION: Approach[] = [
   'clinic',
 ];
 
+/**
+ * Chooses whose head appears in the examples, and nothing else.
+ *
+ * Asked plainly rather than dressed up, because the honest reason is
+ * mundane: the app has two sets of reference photographs and wants to
+ * show the right one. It does not change what is recorded or how any of
+ * it is read back.
+ */
+export const GENDER_CHOICES: Choice<Gender>[] = [
+  { value: 'male', label: 'Man' },
+  { value: 'female', label: 'Woman' },
+];
+
 export const CONSISTENCY_CHOICES: Choice<SelfConsistency>[] = [
   { value: 'very', label: 'Very consistent' },
   { value: 'mostly', label: 'Mostly consistent' },
@@ -300,6 +314,9 @@ export const COPY = {
   name: {
     title: 'What should we call you?',
     second: 'And how old are you?',
+    genderPrompt: 'Which examples should we show you?',
+    genderHint:
+      'This only picks the reference photos in the capture guide. Nothing else changes.',
     ageHint: 'Optional. It goes on your card and nowhere else.',
     cta: 'Continue',
   },
