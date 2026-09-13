@@ -35,7 +35,9 @@ import { CardFloat, MemberCard } from '@/components/member-card';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
+import { ProductRow } from '@/components/product-row';
 import { FACTS, type Fact } from '@/features/onboarding/facts';
+import { productOptions, type CustomProduct } from '@/features/onboarding/products';
 import {
   APPROACH_CHOICES,
   ASKS_MEDICATION,
@@ -54,6 +56,7 @@ import {
   UNCOUNTED,
   type Choice,
 } from '@/features/onboarding/script';
+import { inferRoutineIcon } from '@/features/routine/icons';
 import { persistProfilePhoto } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { MIN_TOUCH_TARGET, useTheme, typography } from '@/theme';
@@ -82,6 +85,10 @@ type Answers = {
   approaches: Approach[];
   medications: Medication[];
   medicationNote: string;
+  /** Ticked products, mapped to how often each happens. */
+  products: Record<string, number>;
+  customProducts: CustomProduct[];
+  productDraft: string;
   consistency: SelfConsistency | null;
   intervalDays: number;
   avatarUri?: string;
@@ -100,6 +107,9 @@ const EMPTY: Answers = {
   approaches: [],
   medications: [],
   medicationNote: '',
+  products: {},
+  customProducts: [],
+  productDraft: '',
   consistency: null,
   intervalDays: 30,
   name: '',
@@ -166,6 +176,44 @@ export default function OnboardingFunnel() {
 
   /* ------------------------ committing the journey ---------------------- */
 
+  /** The ticked products and anything typed in, as routine seeds. */
+  const productSeeds = () => {
+    const options = productOptions(answers.gender);
+    const chosen = options
+      .filter((option) => answers.products[option.id] !== undefined)
+      .map((option) => ({
+        label: option.label,
+        icon: option.icon,
+        timeOfDay: 'anytime' as const,
+        timesPerWeek: answers.products[option.id],
+      }));
+
+    const typed = answers.customProducts.map((product) => ({
+      label: product.label,
+      icon: inferRoutineIcon(product.label),
+      timeOfDay: 'anytime' as const,
+      timesPerWeek: product.timesPerWeek,
+    }));
+
+    return [...chosen, ...typed];
+  };
+
+  /**
+   * The stack these answers build.
+   *
+   * Both the plan screen's preview and the commit read this, because they
+   * had drifted: the preview was built from a second call that had not
+   * been given the products, so it told somebody their routine was empty
+   * on the screen right before it was created with four things on it.
+   */
+  const seeds = () =>
+    routineSeedsFor({
+      approaches: answers.approaches,
+      medications: answers.medications,
+      medicationNote: answers.medicationNote.trim(),
+      products: productSeeds(),
+    });
+
   const commit = () => {
     const age = Number.parseInt(answers.age, 10);
 
@@ -191,11 +239,7 @@ export default function OnboardingFunnel() {
         selfConsistency: answers.consistency ?? undefined,
         updateIntervalDays: answers.intervalDays,
       },
-      routineSeeds: routineSeedsFor({
-        approaches: answers.approaches,
-        medications: answers.medications,
-        medicationNote: note,
-      }),
+      routineSeeds: seeds(),
     });
   };
 
@@ -475,6 +519,138 @@ export default function OnboardingFunnel() {
         ),
       });
 
+    /* ------------------------------ products -------------------------- */
+    case 'products': {
+      const options = productOptions(answers.gender);
+      const chosen = Object.keys(answers.products).length + answers.customProducts.length;
+
+      const toggleProduct = (id: string, fallback: number) => {
+        const next = { ...answers.products };
+        if (next[id] === undefined) next[id] = fallback;
+        else delete next[id];
+        set({ products: next });
+      };
+
+      const addTyped = () => {
+        const label = answers.productDraft.trim();
+        if (!label) return;
+        set({
+          customProducts: [
+            ...answers.customProducts,
+            { id: `${Date.now()}`, label, timesPerWeek: 7 },
+          ],
+          productDraft: '',
+        });
+      };
+
+      return shell({
+        cta: COPY.products.cta,
+        onCta: next,
+        // Never required. A stack somebody was pushed into is a stack they
+        // abandon in a fortnight.
+        secondary: chosen === 0 ? COPY.products.skip : undefined,
+        onSecondary: chosen === 0 ? next : undefined,
+        children: (
+          <>
+            <StepTitle title={COPY.products.title} subtitle={COPY.products.subtitle} />
+
+            <View style={{ gap: spacing.sm }}>
+              {options.map((option, i) => (
+                <Rise key={option.id} index={2 + i}>
+                  <ProductRow
+                    label={option.label}
+                    icon={option.icon}
+                    selected={answers.products[option.id] !== undefined}
+                    timesPerWeek={
+                      answers.products[option.id] ?? option.defaultTimesPerWeek
+                    }
+                    onToggle={() => toggleProduct(option.id, option.defaultTimesPerWeek)}
+                    onFrequency={(times) =>
+                      set({ products: { ...answers.products, [option.id]: times } })
+                    }
+                  />
+                </Rise>
+              ))}
+
+              {answers.customProducts.map((product) => (
+                <ProductRow
+                  key={product.id}
+                  label={product.label}
+                  icon={inferRoutineIcon(product.label)}
+                  selected
+                  timesPerWeek={product.timesPerWeek}
+                  onToggle={() =>
+                    set({
+                      customProducts: answers.customProducts.filter(
+                        (p) => p.id !== product.id,
+                      ),
+                    })
+                  }
+                  onRemove={() =>
+                    set({
+                      customProducts: answers.customProducts.filter(
+                        (p) => p.id !== product.id,
+                      ),
+                    })
+                  }
+                  onFrequency={(times) =>
+                    set({
+                      customProducts: answers.customProducts.map((p) =>
+                        p.id === product.id ? { ...p, timesPerWeek: times } : p,
+                      ),
+                    })
+                  }
+                />
+              ))}
+            </View>
+
+            {/* Whatever the list missed. Most routines have something on
+                them that no catalogue would guess. */}
+            <SubHeading text={COPY.products.second} index={2 + options.length} />
+            <Rise index={3 + options.length}>
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <Field
+                    value={answers.productDraft}
+                    onChange={(productDraft) => set({ productDraft })}
+                    placeholder={COPY.products.addPlaceholder}
+                    label={COPY.products.addLabel}
+                    onSubmit={addTyped}
+                  />
+                </View>
+                <PressableScale
+                  onPress={addTyped}
+                  disabled={answers.productDraft.trim().length === 0}
+                  accessibilityRole="button"
+                  accessibilityLabel={COPY.products.addCta}
+                  style={{
+                    width: MIN_TOUCH_TARGET + 12,
+                    height: MIN_TOUCH_TARGET + 12,
+                    borderRadius: radius.md,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor:
+                      answers.productDraft.trim().length === 0
+                        ? colors.fill
+                        : colors.accent,
+                  }}>
+                  <Icon
+                    name="plus"
+                    size={18}
+                    color={
+                      answers.productDraft.trim().length === 0
+                        ? colors.textTertiary
+                        : colors.textOnAccent
+                    }
+                  />
+                </PressableScale>
+              </View>
+            </Rise>
+          </>
+        ),
+      });
+    }
+
     /* ------------------------------- system --------------------------- */
     case 'system':
       return shell({
@@ -742,11 +918,7 @@ export default function OnboardingFunnel() {
                 // The real stack, not a paraphrase of it: this line is the
                 // last thing they see before the app builds it.
                 value={
-                  routineSeedsFor({
-                    approaches: answers.approaches,
-                    medications: answers.medications,
-                    medicationNote: answers.medicationNote,
-                  })
+                  seeds()
                     .map((seed) => seed.label)
                     .join(' · ') || 'Add one whenever you like'
                 }
@@ -1048,6 +1220,7 @@ function Field({
   label,
   autoFocus,
   keyboardType,
+  onSubmit,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -1055,6 +1228,8 @@ function Field({
   label: string;
   autoFocus?: boolean;
   keyboardType?: 'number-pad';
+  /** Return on the keyboard, for a field whose job is to add a row. */
+  onSubmit?: () => void;
 }) {
   const { colors, spacing, radius } = useTheme();
   const [text, setText] = useState(value);
@@ -1082,6 +1257,8 @@ function Field({
         placeholderTextColor={colors.textTertiary}
         autoCapitalize={keyboardType === 'number-pad' ? 'none' : 'words'}
         autoFocus={autoFocus}
+        returnKeyType={onSubmit ? 'done' : undefined}
+        onSubmitEditing={onSubmit}
         keyboardType={keyboardType}
         accessibilityLabel={label}
         style={{ color: colors.text, fontSize: typography.body.fontSize }}

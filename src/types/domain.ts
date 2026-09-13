@@ -381,6 +381,46 @@ export type PhotoSession = {
 
 export type RoutineCadence = 'daily' | 'weekly';
 
+/** How often something is done, as the routine screen offers it. */
+export const FREQUENCY_OPTIONS = [7, 1, 2, 3, 4, 5] as const;
+
+export const FREQUENCY_LABELS: Record<number, string> = {
+  7: 'Every day',
+  1: 'Once a week',
+  2: 'Twice a week',
+  3: '3 times a week',
+  4: '4 times a week',
+  5: '5 times a week',
+  6: '6 times a week',
+};
+
+/**
+ * How many times a week an item is meant to happen.
+ *
+ * Daily is seven, which is what makes the rest of the arithmetic work
+ * without a special case: a weekly item is simply one with a smaller
+ * target, and every number derived from the routine can divide by seven
+ * rather than branching on a kind.
+ *
+ * Anything unrecognised reads as daily, because that is what every item
+ * was before frequency existed.
+ */
+export function weeklyTarget(
+  item: Pick<RoutineItem, 'cadence' | 'timesPerWeek'>,
+): number {
+  if (item.cadence !== 'weekly') return 7;
+  const n = item.timesPerWeek ?? 1;
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(6, Math.max(1, Math.round(n)));
+}
+
+/** True for something expected every day, which gates the daily streak. */
+export function isDailyItem(
+  item: Pick<RoutineItem, 'cadence' | 'timesPerWeek'>,
+): boolean {
+  return weeklyTarget(item) >= 7;
+}
+
 /**
  * The glyph a routine item is shown with. Purely a visual cue so a list
  * is scannable without reading; it carries no meaning about the item.
@@ -417,6 +457,11 @@ export type RoutineItem = {
    */
   icon?: RoutineIcon;
   cadence: RoutineCadence;
+  /**
+   * Times a week, when the cadence is weekly. Absent on everything that
+   * predates frequency, all of which was daily.
+   */
+  timesPerWeek?: number;
   timeOfDay?: RoutineTimeOfDay;
   /**
    * Times a day this is taken. Absent means once, which is what every

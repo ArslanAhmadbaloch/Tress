@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { hairContent } from '@/features/content/hair-content';
+import { productOptions } from '@/features/onboarding/products';
 import {
   funnelContent,
   routineSeedsFor,
@@ -36,6 +37,8 @@ import {
   ANGLES,
   doseCount,
   dosesTaken,
+  FREQUENCY_OPTIONS,
+  weeklyTarget,
   EMPTY_DATA,
   SCHEMA_VERSION,
   type AppData,
@@ -249,6 +252,102 @@ test('content: the female wording differs, and claims nothing medical', () => {
     if (line !== ANGLE_GUIDANCE[angle].instruction) differences += 1;
   }
   assert.ok(differences > 0, 'the female set is just a copy of the male one');
+});
+
+/* -------------------------------- stack --------------------------------- */
+
+test('stack: products carry their frequency into the seeds', () => {
+  const seeds = routineSeedsFor({
+    approaches: [],
+    products: [
+      { label: 'Shampoo', icon: 'drop', timeOfDay: 'anytime', timesPerWeek: 2 },
+      { label: 'Scalp serum', icon: 'dropper', timeOfDay: 'anytime', timesPerWeek: 7 },
+    ],
+  });
+
+  assert.deepEqual(
+    seeds.map((s) => [s.label, s.timesPerWeek]),
+    [['Shampoo', 2], ['Scalp serum', 7]],
+  );
+});
+
+test('stack: treatments come before hair care', () => {
+  // What somebody is anxious to keep up should be the first row each
+  // morning, not below the conditioner.
+  const seeds = routineSeedsFor({
+    approaches: [],
+    medications: ['finasterideOral'],
+    products: [{ label: 'Shampoo', icon: 'drop', timeOfDay: 'anytime', timesPerWeek: 2 }],
+  });
+
+  assert.deepEqual(seeds.map((s) => s.label), ['Finasteride (oral)', 'Shampoo']);
+});
+
+test('stack: the product lists differ and every default is a real frequency', () => {
+  const male = productOptions('male');
+  const female = productOptions('female');
+
+  assert.notDeepEqual(male.map((p) => p.id), female.map((p) => p.id));
+  assert.ok(female.length > male.length, 'the female routine is usually longer');
+
+  for (const option of [...male, ...female]) {
+    assert.ok(
+      FREQUENCY_OPTIONS.includes(option.defaultTimesPerWeek as never),
+      `${option.id} defaults to a frequency the picker cannot show`,
+    );
+  }
+});
+
+/* ------------------------------ frequency ------------------------------- */
+
+/** An item done `times` a week rather than every day. */
+function weekly(id: string, createdDaysAgo: number, times: number): RoutineItem {
+  return { ...item(id, createdDaysAgo), cadence: 'weekly', timesPerWeek: times };
+}
+
+test('frequency: anything without one is daily, as everything used to be', () => {
+  assert.equal(weeklyTarget(item('a', 0)), 7);
+  assert.equal(weeklyTarget({ cadence: 'daily' }), 7);
+  assert.equal(weeklyTarget({ cadence: 'weekly', timesPerWeek: 2 }), 2);
+  // A weekly item with no count is once; nonsense is clamped, not trusted.
+  assert.equal(weeklyTarget({ cadence: 'weekly' }), 1);
+  assert.equal(weeklyTarget({ cadence: 'weekly', timesPerWeek: 99 }), 6);
+  assert.equal(weeklyTarget({ cadence: 'weekly', timesPerWeek: 0 }), 1);
+});
+
+test('frequency: a weekly item never breaks the daily streak', () => {
+  // Shampoo twice a week, alongside something daily that is being kept.
+  let data = journeyWith(10, [item('daily', 10), weekly('shampoo', 10, 2)]);
+  data = completeOn(data, 'daily', [0, 1, 2]);
+
+  assert.equal(
+    currentStreak(data),
+    3,
+    'the five days shampoo was never due are not days it was missed',
+  );
+});
+
+test('frequency: a routine of only weekly items has no daily streak to give', () => {
+  const data = completeOn(journeyWith(10, [weekly('a', 10, 2)]), 'a', [0, 1]);
+  assert.equal(currentStreak(data), 0, 'there is no day it could have completed');
+});
+
+test('frequency: adherence expects a weekly item only as often as it is due', () => {
+  // Once a week for four weeks, done every time: kept perfectly.
+  const days = [0, 7, 14, 21];
+  const data = completeOn(journeyWith(27, [weekly('a', 27, 1)]), 'a', days);
+
+  const kept = adherencePercent(data, 28);
+  assert.ok(
+    kept !== null && kept >= 95,
+    `once a week, done every week, should read as kept — got ${kept}`,
+  );
+});
+
+test('frequency: a daily-only routine reads exactly as it did before', () => {
+  // The regression that matters: weighting must reduce to the old sum.
+  const data = completeOn(journeyWith(3, [item('a', 3)]), 'a', [0, 2]);
+  assert.equal(adherencePercent(data), 50);
 });
 
 /* -------------------------------- doses --------------------------------- */

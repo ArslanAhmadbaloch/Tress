@@ -58,7 +58,10 @@ export type CreateJourneyInput = {
   avatarUri?: string;
   journey: Omit<Journey, 'id' | 'profileId' | 'createdAt'>;
   /** Seeded from what they said they are already doing. */
-  routineSeeds: Pick<RoutineItem, 'label' | 'icon' | 'timeOfDay'>[];
+  routineSeeds: Pick<
+    RoutineItem,
+    'label' | 'icon' | 'timeOfDay' | 'timesPerWeek'
+  >[];
 };
 
 type AppStore = {
@@ -169,7 +172,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         ...seed,
         id: makeId('rti'),
         journeyId,
-        cadence: 'daily' as const,
+        // Seven times a week is daily; anything less is a weekly target.
+        cadence:
+          seed.timesPerWeek === undefined || seed.timesPerWeek >= 7
+            ? ('daily' as const)
+            : ('weekly' as const),
         createdAt: now,
       })),
       onboardingCompletedAt: now,

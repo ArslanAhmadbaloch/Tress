@@ -9,6 +9,8 @@ import { addDays, daysBetween, formatMilestone, toDateKey } from '@/lib/date';
 import {
   doseCount,
   dosesTaken,
+  isDailyItem,
+  weeklyTarget,
   type AppData,
   type PhotoSession,
   type RoutineItem,
@@ -16,6 +18,18 @@ import {
 
 export function activeRoutineItems(data: AppData): RoutineItem[] {
   return data.routineItems.filter((item) => !item.archivedAt);
+}
+
+/**
+ * The items a day is judged on.
+ *
+ * Only things meant to happen every day. A twice-weekly shampoo is not
+ * missed on the five days it was never due, and counting it as missed
+ * would hold somebody's streak at zero for following their routine
+ * exactly as they set it.
+ */
+export function dailyRoutineItems(data: AppData): RoutineItem[] {
+  return activeRoutineItems(data).filter(isDailyItem);
 }
 
 /** Items ticked off for a given local day. */
@@ -110,7 +124,11 @@ export function adherencePercent(
     for (const item of items) {
       // An item can't be missed before it existed.
       if (daysBetween(item.createdAt, day.toISOString()) < 0) continue;
-      expected += 1;
+      // A daily item is expected once a day; a twice-weekly one is
+      // expected two-sevenths of a day. Everything divides by seven, so
+      // a routine of only daily items gives exactly the figure it always
+      // did — weight 1, the way it was written before frequency existed.
+      expected += weeklyTarget(item) / 7;
       if (doneThatDay.has(item.id)) completed += 1;
     }
   }
@@ -121,7 +139,7 @@ export function adherencePercent(
 
 /** Consecutive days, ending today or yesterday, with everything ticked. */
 export function currentStreak(data: AppData): number {
-  const items = activeRoutineItems(data);
+  const items = dailyRoutineItems(data);
   if (items.length === 0) return 0;
 
   let streak = 0;
@@ -544,7 +562,7 @@ export function dayState(data: AppData, date: Date): DayState {
   if (daysBetween(iso) < 0) return 'future';
   if (daysBetween(data.journey.startedAt, iso) < 0) return 'before';
 
-  const items = activeRoutineItems(data).filter(
+  const items = dailyRoutineItems(data).filter(
     (item) => daysBetween(item.createdAt, iso) >= 0,
   );
   if (items.length === 0) return 'before';

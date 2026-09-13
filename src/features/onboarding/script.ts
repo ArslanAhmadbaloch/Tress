@@ -49,6 +49,7 @@ export type StepId =
   | 'factFeelings'
   | 'approach'
   | 'medication'
+  | 'products'
   | 'system'
   | 'cadence'
   | 'factCause'
@@ -74,6 +75,7 @@ export const STEPS: StepId[] = [
   'factFeelings',
   'approach',
   'medication',
+  'products',
   'system',
   'cadence',
   'factCause',
@@ -298,6 +300,17 @@ export const COPY = {
     skip: 'Prefer not to say',
     cta: 'Continue',
   },
+  products: {
+    title: 'What does your hair routine look like?',
+    subtitle:
+      'Tick what you already use and set how often. It becomes your stack — you can change any of it later.',
+    second: 'Anything else?',
+    addPlaceholder: 'e.g. Rice water rinse',
+    addLabel: 'Add your own',
+    addCta: 'Add',
+    skip: 'I’ll set this up later',
+    cta: 'Continue',
+  },
   system: {
     title: 'You don’t need more willpower.',
     titleMuted: 'You need a system that’s easier to follow.',
@@ -409,7 +422,13 @@ export const MEDICATION_SEEDS: Record<
   hormonal: { label: 'Hormonal medication', icon: 'pill', timeOfDay: 'anytime' },
 };
 
-export type RoutineSeed = { label: string; icon: RoutineIcon; timeOfDay: RoutineTimeOfDay };
+export type RoutineSeed = {
+  label: string;
+  icon: RoutineIcon;
+  timeOfDay: RoutineTimeOfDay;
+  /** Times a week. Absent is daily, which is what seeds used to be. */
+  timesPerWeek?: number;
+};
 
 /**
  * Everything the funnel's answers put in the stack, in the order it appears.
@@ -424,10 +443,13 @@ export function routineSeedsFor({
   approaches,
   medications = [],
   medicationNote = '',
+  products = [],
 }: {
   approaches: Approach[];
   medications?: Medication[];
   medicationNote?: string;
+  /** Hair care, already carrying the frequency the user set. */
+  products?: RoutineSeed[];
 }): RoutineSeed[] {
   const named = medications.filter(
     (m): m is keyof typeof MEDICATION_SEEDS => m in MEDICATION_SEEDS,
@@ -451,6 +473,10 @@ export function routineSeedsFor({
     const seed = ROUTINE_SEEDS[approach];
     if (seed) seeds.push(seed);
   }
+
+  // Hair care last: the treatments are the things somebody is anxious to
+  // keep up, and they should be the first rows on the stack each morning.
+  seeds.push(...products);
 
   return seeds;
 }

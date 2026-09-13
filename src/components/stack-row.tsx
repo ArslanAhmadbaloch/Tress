@@ -17,7 +17,13 @@ import { CheckGlyph, RoutineGlyph } from './ui/routine-glyphs';
 import { Text } from './ui/text';
 import { routineIconFor } from '@/features/routine/icons';
 import { spacing, useTheme } from '@/theme';
-import { doseCount, TIME_OF_DAY_LABELS, type RoutineItem } from '@/types/domain';
+import {
+  doseCount,
+  FREQUENCY_LABELS,
+  TIME_OF_DAY_LABELS,
+  weeklyTarget,
+  type RoutineItem,
+} from '@/types/domain';
 
 const ORB = 38;
 
@@ -34,17 +40,25 @@ const CHECK = 26;
 /** Where a row's text begins, so separators can start under it. */
 export const STACK_TEXT_INSET = spacing.lg + ORB + spacing.md;
 
-/** "5% — Morning", "Morning", or just the note — whichever exists. */
+/**
+ * "5% — Morning", "Twice a week", or just the note — whichever exists.
+ *
+ * Frequency only appears when it is not daily. A row that says "Every
+ * day" under every item is a row of noise, but a shampoo that is only
+ * meant to happen twice a week has to say so, or an unticked box looks
+ * like a day missed rather than a day it was never due.
+ */
 export function stackSubtitle(
-  item: Pick<RoutineItem, 'detail' | 'timeOfDay'>,
+  item: Pick<RoutineItem, 'detail' | 'timeOfDay' | 'cadence' | 'timesPerWeek'>,
 ): string | undefined {
   const time =
     item.timeOfDay && item.timeOfDay !== 'anytime'
       ? TIME_OF_DAY_LABELS[item.timeOfDay]
       : undefined;
-  const detail = item.detail?.trim();
-  if (detail && time) return `${detail} — ${time}`;
-  return detail || time;
+  const target = weeklyTarget(item);
+  const frequency = target < 7 ? FREQUENCY_LABELS[target] : undefined;
+
+  return [item.detail?.trim(), frequency, time].filter(Boolean).join(' · ') || undefined;
 }
 
 export function StackRow({
