@@ -15,6 +15,8 @@ import { formatMilestone, toDateKey } from '@/lib/date';
 import { isProfilePhoto, profilePhotoName } from '@/lib/photo-names';
 import {
   adherencePercent,
+  longestStreak,
+  routineItemStats,
   consistencyScore,
   currentStreak,
   dailyCompletion,
@@ -363,6 +365,89 @@ test('seeds: an unanswered medication question changes nothing', () => {
     before.map((s) => s.label),
     ['Prescription medication'],
   );
+});
+
+/* --------------------------- per-item history --------------------------- */
+
+test('item stats: counts the days it existed and the days it was done', () => {
+  const data = completeOn(journeyWith(10, [item('a', 5)]), 'a', [0, 1, 2]);
+  const [stat] = routineItemStats(data);
+
+  assert.equal(stat.daysTracked, 6, 'added five days ago, counting today');
+  assert.equal(stat.daysDone, 3);
+  assert.equal(stat.streak, 3);
+  assert.equal(stat.adherence, 50, 'three of the six days it has existed');
+});
+
+test('item stats: an unfinished today is not counted against it', () => {
+  // Done yesterday and the day before, nothing yet today.
+  const data = completeOn(journeyWith(10, [item('a', 5)]), 'a', [1, 2]);
+  const [stat] = routineItemStats(data);
+
+  assert.equal(stat.streak, 2, 'the run survives a day that is not over');
+  assert.equal(
+    stat.adherence,
+    40,
+    'two of the five days that have finished, not two of six',
+  );
+});
+
+test('item stats: something added today reports no percentage yet', () => {
+  const [stat] = routineItemStats(journeyWith(10, [item('a', 0)]));
+
+  assert.equal(stat.daysTracked, 1);
+  assert.equal(stat.streak, 0);
+  assert.equal(
+    stat.adherence,
+    null,
+    'a bare 0% on the day you start reads as a failure it has not earned',
+  );
+});
+
+test('item stats: a gap ends that item\'s run but not its total', () => {
+  const data = completeOn(journeyWith(20, [item('a', 9)]), 'a', [0, 1, 3, 4]);
+  const [stat] = routineItemStats(data);
+
+  assert.equal(stat.streak, 2);
+  assert.equal(stat.daysDone, 4);
+});
+
+test('item stats: each item is scored on its own history', () => {
+  let data = journeyWith(30, [item('old', 20), item('new', 2)]);
+  data = completeOn(data, 'old', [0]);
+  data = completeOn(data, 'new', [0, 1, 2]);
+
+  const stats = routineItemStats(data);
+  assert.deepEqual(
+    stats.map((s) => s.item.id),
+    ['old', 'new'],
+    'oldest first, so the list reads as the order things were taken up',
+  );
+
+  const [old, fresh] = stats;
+  assert.equal(old.daysTracked, 21);
+  assert.equal(old.daysDone, 1);
+  assert.equal(fresh.daysTracked, 3);
+  assert.equal(fresh.daysDone, 3);
+  assert.equal(fresh.adherence, 100, 'the newer item is not dragged down by the older');
+});
+
+test('item stats: a day logged before the item existed does not count', () => {
+  // Should not happen, but the store is a plain object on disk.
+  const data = completeOn(journeyWith(30, [item('a', 2)]), 'a', [0, 10]);
+  const [stat] = routineItemStats(data);
+
+  assert.equal(stat.daysDone, 1, 'only the day inside its own lifetime');
+});
+
+/* ------------------------------ longest run ----------------------------- */
+
+test('longest streak: the best complete run, not the current one', () => {
+  // Three in a row a while back, nothing since.
+  const data = completeOn(journeyWith(5, [item('a', 5)]), 'a', [1, 2, 3]);
+
+  assert.equal(longestStreak(data), 3);
+  assert.equal(currentStreak(data), 3, 'still running: today is not over');
 });
 
 /* --------------------------- consistency delta ------------------------- */

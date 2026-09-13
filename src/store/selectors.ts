@@ -484,3 +484,139 @@ export function dailyCompletion(data: AppData, days = 28): DayCell[] {
   }
   return out;
 }
+
+/* ------------------------------- streaks -------------------------------- */
+
+export type DayState = 'complete' | 'partial' | 'missed' | 'future' | 'before';
+
+/**
+ * How one day went: every item done, some, none, or a day that cannot be
+ * judged at all — still to come, or before the journey began.
+ *
+ * Items only count from the day they were added, so a task started in March
+ * cannot retroactively spoil February.
+ */
+export function dayState(data: AppData, date: Date): DayState {
+  if (!data.journey) return 'before';
+
+  const iso = date.toISOString();
+  if (daysBetween(iso) < 0) return 'future';
+  if (daysBetween(data.journey.startedAt, iso) < 0) return 'before';
+
+  const items = activeRoutineItems(data).filter(
+    (item) => daysBetween(item.createdAt, iso) >= 0,
+  );
+  if (items.length === 0) return 'before';
+
+  const done = completedOn(data, toDateKey(date));
+  const hit = items.filter((item) => done.has(item.id)).length;
+
+  if (hit === items.length) return 'complete';
+  if (hit > 0) return 'partial';
+  return 'missed';
+}
+
+/** Longest run of fully complete days across the whole journey. */
+export function longestStreak(data: AppData): number {
+  if (!data.journey) return 0;
+
+  const total = daysBetween(data.journey.startedAt) + 1;
+  let best = 0;
+  let run = 0;
+
+  const cursor = new Date(data.journey.startedAt);
+  for (let i = 0; i < Math.min(total, 800); i += 1) {
+    if (dayState(data, cursor) === 'complete') {
+      run += 1;
+      best = Math.max(best, run);
+    } else {
+      run = 0;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return best;
+}
+
+export type RoutineItemStat = {
+  item: RoutineItem;
+  /** Days since it was added, counting the day it was added as one. */
+  daysTracked: number;
+  /** Days it has actually been ticked off. */
+  daysDone: number;
+  /** Consecutive days up to today; today may still be pending. */
+  streak: number;
+  /**
+   * Share of the days it could have been done, 0-100. Null on the day it
+   * was added, before it has been ticked — there is nothing to average yet
+   * and a bare 0% would read as a failure on day one.
+   */
+  adherence: number | null;
+  /** Date key of the last day it was ticked, if ever. */
+  lastDone: string | null;
+};
+
+/**
+ * Per-item history: what each thing in the stack is, when it started, and
+ * how it has gone since.
+ *
+ * The dashboard's streak is a single number across everything, which
+ * answers "am I keeping up" but not "since when" or "which one am I
+ * dropping". This is that second question, and it is the one worth asking
+ * when a treatment takes months to show anything: the date you began is
+ * the only fixed point you have to measure from.
+ *
+ * Oldest first, so the list reads as the order things were taken up.
+ */
+export function routineItemStats(data: AppData): RoutineItemStat[] {
+  const items = [...activeRoutineItems(data)].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+  if (items.length === 0) return [];
+
+  const doneByItem = new Map<string, Set<string>>();
+  for (const log of data.routineLogs) {
+    if (!log.completed) continue;
+    let set = doneByItem.get(log.routineItemId);
+    if (!set) {
+      set = new Set<string>();
+      doneByItem.set(log.routineItemId, set);
+    }
+    set.add(log.date);
+  }
+
+  const todayKey = toDateKey();
+
+  return items.map((item) => {
+    const done = doneByItem.get(item.id) ?? new Set<string>();
+    const startKey = toDateKey(new Date(item.createdAt));
+
+    // Date keys sort lexically, so a string compare is a date compare.
+    let daysDone = 0;
+    let lastDone: string | null = null;
+    for (const key of done) {
+      if (key < startKey) continue;
+      daysDone += 1;
+      if (lastDone === null || key > lastDone) lastDone = key;
+    }
+
+    const daysTracked = Math.max(1, daysBetween(item.createdAt) + 1);
+
+    let streak = 0;
+    const cursor = new Date();
+    for (let offset = 0; offset < 400; offset += 1) {
+      if (daysBetween(item.createdAt, cursor.toISOString()) < 0) break;
+      if (done.has(toDateKey(cursor))) streak += 1;
+      // Today is allowed to be unfinished; any earlier gap ends the run.
+      else if (offset > 0) break;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    // Today only counts against you once it is done; the day is not over.
+    const elapsed = daysTracked - (done.has(todayKey) ? 0 : 1);
+    const adherence =
+      elapsed > 0 ? Math.round((daysDone / elapsed) * 100) : null;
+
+    return { item, daysTracked, daysDone, streak, adherence, lastDone };
+  });
+}

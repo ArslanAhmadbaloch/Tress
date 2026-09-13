@@ -157,6 +157,7 @@ function Navigation() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen name="calendar" />
+        <Stack.Screen name="streak" />
         <Stack.Screen name="learn/[slug]" />
         <Stack.Screen
           name="journal"

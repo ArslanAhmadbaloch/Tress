@@ -184,7 +184,10 @@ export default function HomeScreen() {
             ring={Math.min(1, streak / STREAK_TARGET)}
             history={adherenceHistory}
             seed="streak"
-            onPress={() => router.push('/calendar')}
+            // Consistency opens the calendar; this opens the stack behind
+            // the number. Two tiles that led to the same screen made one
+            // of them look broken.
+            onPress={() => router.push('/streak')}
             onExplain={() => setExplain('streak')}
           />
           <MetricTile
@@ -387,6 +390,8 @@ const EXPLAINERS: Record<
     points: [
       'Today does not break a streak until the day ends',
       'Items only count from the day you added them',
+      'Every item has to be ticked, so one missed task holds the whole day',
+      'Opening this tile shows each item, when you started it and how it has gone',
       'The ring fills against a 30-day mark',
       TREND_NOTE,
     ],

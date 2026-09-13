@@ -4,20 +4,28 @@ import { View } from 'react-native';
 
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
-import { Screen, ScreenScroll, ScreenTitle } from '@/components/ui/layout';
+import {
+  EmptyState,
+  Screen,
+  ScreenScroll,
+  ScreenTitle,
+} from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { AnimatedNumber } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
-import { daysBetween, toDateKey } from '@/lib/date';
+import { toDateKey } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
 import {
   activeRoutineItems,
   adherencePercent,
-  completedOn,
   currentStreak,
+  dayState,
+  longestStreak,
+  type DayState,
 } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import type { AppData } from '@/types/domain';
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /**
  * The consistency page.
@@ -26,52 +34,6 @@ import type { AppData } from '@/types/domain';
  * showing up?" and nothing else. The daily checklist deliberately lives on
  * Home — putting it here too would turn a calm page into a dashboard.
  */
-
-type DayState = 'complete' | 'partial' | 'missed' | 'future' | 'before';
-
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function dayState(data: AppData, date: Date): DayState {
-  if (!data.journey) return 'before';
-
-  const iso = date.toISOString();
-  if (daysBetween(iso) < 0) return 'future';
-  if (daysBetween(data.journey.startedAt, iso) < 0) return 'before';
-
-  const items = activeRoutineItems(data).filter(
-    (item) => daysBetween(item.createdAt, iso) >= 0,
-  );
-  if (items.length === 0) return 'before';
-
-  const done = completedOn(data, toDateKey(date));
-  const hit = items.filter((item) => done.has(item.id)).length;
-
-  if (hit === items.length) return 'complete';
-  if (hit > 0) return 'partial';
-  return 'missed';
-}
-
-/** Longest run of fully complete days across the whole journey. */
-function longestStreak(data: AppData): number {
-  if (!data.journey) return 0;
-
-  const total = daysBetween(data.journey.startedAt) + 1;
-  let best = 0;
-  let run = 0;
-
-  const cursor = new Date(data.journey.startedAt);
-  for (let i = 0; i < Math.min(total, 800); i += 1) {
-    if (dayState(data, cursor) === 'complete') {
-      run += 1;
-      best = Math.max(best, run);
-    } else {
-      run = 0;
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return best;
-}
 
 export default function CalendarScreen() {
   const { colors, spacing, radius } = useTheme();
@@ -119,6 +81,10 @@ export default function CalendarScreen() {
   const todayKey = toDateKey();
   const isCurrentMonth = monthOffset === 0;
 
+  // With nothing to tick off, every square is a day you could not have
+  // completed. A grid of misses is a worse answer than saying so.
+  const hasRoutine = activeRoutineItems(data).length > 0;
+
   return (
     <Screen ground="arch">
       <ScreenScroll>
@@ -146,6 +112,16 @@ export default function CalendarScreen() {
             </PressableScale>
           }
         />
+
+        {!hasRoutine ? (
+          <EmptyState
+            icon="plus"
+            title="Nothing to track yet"
+            body="Add what you are doing for your hair and these days start filling in as you tick them off."
+            actionLabel="Add routine"
+            onAction={() => router.push('/routine')}
+          />
+        ) : null}
 
         {/* Three quiet numbers above the calendar. */}
         <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg }}>
