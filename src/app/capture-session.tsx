@@ -428,11 +428,29 @@ export default function CaptureSessionScreen() {
       ) : (
         <CameraView
           ref={cameraRef}
-          style={{ flex: 1 }}
+          /*
+            Un-mirrored, both on screen and in the file.
+
+            A photograph labelled "Left Side" has to be the left side, or
+            every comparison built on it is quietly reversed — so the
+            stored image is true optics, never a mirror image.
+
+            iOS mirrors the front-camera preview by default, and the
+            `mirror` prop does not change that: setting it true and false
+            gives a pixel-identical preview, so it only reaches the
+            captured file. That left the viewfinder showing a mirror and
+            the saved photo showing the truth, which is what made an
+            update look flipped from the thing you had just composed.
+            Flipping the preview back here is the only lever that works.
+
+            The simulator's synthetic camera is not mirrored to begin
+            with, so this makes its preview look reversed. That is the
+            cost of matching the device, which is the one that matters.
+          */
+          style={{ flex: 1, transform: [{ scaleX: -1 }] }}
           facing="front"
           mode="picture"
           active={!confirming}
-          // Mirroring off so left/right temples map to the real side.
           mirror={false}
         />
       )}
