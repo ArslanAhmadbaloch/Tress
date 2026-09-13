@@ -87,6 +87,14 @@ type Answers = {
   medicationNote: string;
   /** Ticked products, mapped to how often each happens. */
   products: Record<string, number>;
+  /**
+   * The frequency last chosen for a product, kept even after it is
+   * unticked. Without it, unticking threw the choice away and ticking
+   * again silently restored the catalogue default — so somebody who set
+   * shampoo to four times a week, tapped the row again, and tapped back
+   * got two, with nothing on screen saying it had changed.
+   */
+  productFrequency: Record<string, number>;
   customProducts: CustomProduct[];
   productDraft: string;
   consistency: SelfConsistency | null;
@@ -108,6 +116,7 @@ const EMPTY: Answers = {
   medications: [],
   medicationNote: '',
   products: {},
+  productFrequency: {},
   customProducts: [],
   productDraft: '',
   consistency: null,
@@ -526,10 +535,21 @@ export default function OnboardingFunnel() {
 
       const toggleProduct = (id: string, fallback: number) => {
         const next = { ...answers.products };
-        if (next[id] === undefined) next[id] = fallback;
-        else delete next[id];
+        if (next[id] === undefined) {
+          // Ticking again gives back what they chose last time, not the
+          // default they had already overridden.
+          next[id] = answers.productFrequency[id] ?? fallback;
+        } else {
+          delete next[id];
+        }
         set({ products: next });
       };
+
+      const chooseFrequency = (id: string, times: number) =>
+        set({
+          products: { ...answers.products, [id]: times },
+          productFrequency: { ...answers.productFrequency, [id]: times },
+        });
 
       const addTyped = () => {
         const label = answers.productDraft.trim();
@@ -565,9 +585,7 @@ export default function OnboardingFunnel() {
                       answers.products[option.id] ?? option.defaultTimesPerWeek
                     }
                     onToggle={() => toggleProduct(option.id, option.defaultTimesPerWeek)}
-                    onFrequency={(times) =>
-                      set({ products: { ...answers.products, [option.id]: times } })
-                    }
+                    onFrequency={(times) => chooseFrequency(option.id, times)}
                   />
                 </Rise>
               ))}
