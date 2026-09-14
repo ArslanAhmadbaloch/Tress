@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Apple signing key — never commit
+*.p8

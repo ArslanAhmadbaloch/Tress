@@ -12,13 +12,10 @@
       }
     },
     "internal": {
-      "distribution": "internal",
+      "distribution": "store",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_HJ_TESTER_BUILD": "1"
-      },
-      "ios": {
-        "simulator": false
       }
     },
     "preview": {
