@@ -24,10 +24,10 @@ import { join } from 'node:path';
  * The address on the support page and in the store listings.
  *
  * Deliberately not a personal inbox: it goes on a public App Store
- * product page and it will be scraped. Replace it once the domain
- * exists — a forwarding alias is fine, it does not need its own mailbox.
+ * product page and it will be scraped. A forwarding alias on the domain
+ * is enough — it does not need a mailbox of its own.
  */
-const SUPPORT_EMAIL = 'support@example.com';
+const SUPPORT_EMAIL = 'support@tresshaircare.com';
 
 const SRC = join(process.cwd(), 'src', 'app');
 const OUT = join(process.cwd(), 'site');
