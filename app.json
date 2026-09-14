@@ -25,6 +25,12 @@
       "package": "com.tress.app",
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
+      ],
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -83,6 +89,13 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "primaryColor": "#2F8E78"
+    "primaryColor": "#2F8E78",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e1c02635-1f03-4d45-93d6-a3431f748730"
+      }
+    },
+    "owner": "arslanbaloch1"
   }
 }

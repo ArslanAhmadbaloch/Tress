@@ -36,8 +36,8 @@ export type PlanConfig = {
   currency: string;
 };
 
-const MONTHLY_AMOUNT = 12.99;
-const YEARLY_AMOUNT = 89.99;
+const MONTHLY_AMOUNT = 7.99;
+const YEARLY_AMOUNT = 49.99;
 const CURRENCY = 'USD';
 
 /** Approximate formatter for the design-time defaults only. */
