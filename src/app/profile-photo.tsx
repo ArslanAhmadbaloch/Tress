@@ -61,8 +61,8 @@ export default function ProfilePhotoScreen() {
       Alert.alert(
         'Photos are not available',
         permission.canAskAgain
-          ? 'Hair Journey needs permission to open your photo library.'
-          : 'Turn on photo access for Hair Journey in your device Settings, then try again.',
+          ? 'Tress needs permission to open your photo library.'
+          : 'Turn on photo access for Tress in your device Settings, then try again.',
       );
       return;
     }

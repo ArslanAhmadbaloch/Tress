@@ -48,7 +48,7 @@ export function SubscriptionStatus() {
         />
         <View style={{ flex: 1 }}>
           <Text variant="headline">
-            {entitlement.isPremium ? 'Premium' : 'Hair Journey Premium'}
+            {entitlement.isPremium ? 'Premium' : 'Tress Premium'}
           </Text>
           <Text variant="footnote" color="textSecondary" style={{ marginTop: 1 }}>
             {isTester

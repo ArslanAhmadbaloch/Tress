@@ -24,7 +24,7 @@ import { useTheme } from '@/theme';
 const SECTIONS: { title: string; body: string }[] = [
   {
     title: 'What we collect',
-    body: 'Nothing. Hair Journey has no account, no sign-in and no server. We cannot see your data because it is never sent to us.',
+    body: 'Nothing. Tress has no account, no sign-in and no server. We cannot see your data because it is never sent to us.',
   },
   {
     title: 'Where your data lives',
@@ -36,7 +36,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Artificial intelligence',
-    body: 'None. Hair Journey does not send your photographs or anything else to an AI service. It does not assess your hair, diagnose anything, or generate advice — it stores what you record and shows it back to you.',
+    body: 'None. Tress does not send your photographs or anything else to an AI service. It does not assess your hair, diagnose anything, or generate advice — it stores what you record and shows it back to you.',
   },
   {
     title: 'Analytics and tracking',
@@ -56,7 +56,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Children',
-    body: 'Hair Journey is not directed at children under 13.',
+    body: 'Tress is not directed at children under 13.',
   },
 ];
 
@@ -113,7 +113,7 @@ export default function PrivacyScreen() {
           variant="footnote"
           color="textTertiary"
           style={{ marginTop: spacing.xxl, marginBottom: spacing.lg }}>
-          Hair Journey is a tracking and documentation tool. It is not a
+          Tress is a tracking and documentation tool. It is not a
           medical device and does not provide medical advice.
         </Text>
       </ScreenScroll>

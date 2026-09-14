@@ -68,7 +68,7 @@ func write(_ image: CGImage, to path: String) {
 let source = load(args[1])
 guard let face = source.cropping(to: CROP) else { exit(1) }
 
-print("Generating Hair Journey icons…")
+print("Generating Tress icons…")
 
 // iOS: full-bleed, opaque, square. The OS applies its own mask, so this
 // file must carry no transparency and no rounding of its own.

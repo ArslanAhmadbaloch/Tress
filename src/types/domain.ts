@@ -1,5 +1,5 @@
 /**
- * Hair Journey domain model.
+ * Tress domain model.
  *
  * Shaped so it can move to Supabase without a rewrite: every entity has
  * a string id and ISO-8601 timestamps, and relationships are by id

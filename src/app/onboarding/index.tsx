@@ -294,7 +294,7 @@ export default function OnboardingFunnel() {
     if (!permission.granted) {
       Alert.alert(
         'Photos are not available',
-        'Hair Journey needs permission to open your photo library. You can turn it on in your device Settings, or skip this for now.',
+        'Tress needs permission to open your photo library. You can turn it on in your device Settings, or skip this for now.',
       );
       return;
     }

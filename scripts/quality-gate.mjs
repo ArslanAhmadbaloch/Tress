@@ -1,5 +1,5 @@
 /**
- * Hair Journey quality gate.
+ * Tress quality gate.
  *
  *   node scripts/quality-gate.mjs
  *
@@ -575,7 +575,7 @@ const DIM = '\x1b[2m';
 const BOLD = '\x1b[1m';
 const OFF = '\x1b[0m';
 
-console.log(`\n${BOLD}Hair Journey — quality gate${OFF}\n`);
+console.log(`\n${BOLD}Tress — quality gate${OFF}\n`);
 
 for (const [dimension, d] of byDimension) {
   const pct = ((d.earned / d.total) * 10).toFixed(1);

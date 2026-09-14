@@ -295,7 +295,7 @@ export const COPY = {
   medication: {
     title: 'Are you using anything for your hair?',
     subtitle:
-      'Tick whatever you already use and it goes straight into your routine. Nothing here is a suggestion — Hair Journey doesn’t advise on treatments or doses.',
+      'Tick whatever you already use and it goes straight into your routine. Nothing here is a suggestion — Tress doesn’t advise on treatments or doses.',
     otherLabel: 'What are you using?',
     otherPlaceholder: 'e.g. Rosemary oil',
     footnote: 'Stays on this device. You can change it any time.',

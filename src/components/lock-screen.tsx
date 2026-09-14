@@ -60,7 +60,7 @@ export function LockScreen({
   const label = BIOMETRIC_LABELS[lock.biometric];
 
   const promptBiometric = useCallback(async () => {
-    const ok = await authenticateBiometric('Unlock Hair Journey');
+    const ok = await authenticateBiometric('Unlock Tress');
     if (ok) onUnlock();
   }, [onUnlock]);
 
@@ -127,7 +127,7 @@ export function LockScreen({
             paddingBottom: insets.bottom + spacing.lg,
           }}>
           <PasscodeScene
-            title="Hair Journey"
+            title="Tress"
             subtitle="Enter your passcode"
             message={error ? 'That passcode is not right.' : undefined}
             filled={entry.length}

@@ -141,7 +141,7 @@ export function BrandLockup() {
       pointerEvents="none"
       accessible
       accessibilityRole="image"
-      accessibilityLabel="Hair Journey. Better hair, a confident you."
+      accessibilityLabel="Tress. Better hair, a confident you."
       style={StyleSheet.absoluteFill}>
       <Plate />
       <LockupTile tile={EMBLEM_TILE} rect={rect} />

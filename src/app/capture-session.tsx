@@ -854,8 +854,8 @@ function PermissionGate({
       </Text>
       <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.md }}>
         {canAskAgain
-          ? 'Hair Journey needs the camera to take your progress photos. They are saved to this device only — nothing is uploaded.'
-          : 'Camera access is currently turned off. You can turn it back on for Hair Journey in your device Settings, under Privacy.'}
+          ? 'Tress needs the camera to take your progress photos. They are saved to this device only — nothing is uploaded.'
+          : 'Camera access is currently turned off. You can turn it back on for Tress in your device Settings, under Privacy.'}
       </Text>
 
       <View style={{ marginTop: spacing.xxl, gap: spacing.sm }}>

@@ -51,7 +51,7 @@ const yearlySaving = MONTHLY_AMOUNT * 12 - YEARLY_AMOUNT;
 export const PLANS: Record<PlanId, PlanConfig> = {
   yearly: {
     id: 'yearly',
-    productId: 'hairjourney_premium_yearly',
+    productId: 'tress_premium_yearly',
     period: 'year',
     formattedPrice: usd(YEARLY_AMOUNT),
     formattedMonthlyEquivalent: usd(yearlyPerMonth),
@@ -61,7 +61,7 @@ export const PLANS: Record<PlanId, PlanConfig> = {
   },
   monthly: {
     id: 'monthly',
-    productId: 'hairjourney_premium_monthly',
+    productId: 'tress_premium_monthly',
     period: 'month',
     formattedPrice: usd(MONTHLY_AMOUNT),
     formattedMonthlyEquivalent: null,

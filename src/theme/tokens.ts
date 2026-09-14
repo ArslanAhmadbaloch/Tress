@@ -1,5 +1,5 @@
 /**
- * Hair Journey — design tokens.
+ * Tress — design tokens.
  *
  * One source of truth for colour, type, spacing, radius, depth and motion.
  * Screens and components must never hard-code a raw colour or pixel value;

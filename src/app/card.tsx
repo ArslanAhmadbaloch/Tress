@@ -56,7 +56,7 @@ const EXPORT_MARGIN = 26;
  * the share sheet would otherwise show the user as the name of their
  * keepsake.
  */
-const EXPORT_NAME = 'Hair Journey Card.png';
+const EXPORT_NAME = 'Tress Card.png';
 
 export default function CardScreen() {
   const { colors, spacing, radius } = useTheme();
@@ -133,7 +133,7 @@ export default function CardScreen() {
       await Sharing.shareAsync(named.uri, {
         mimeType: 'image/png',
         UTI: 'public.png',
-        dialogTitle: 'Your Hair Journey card',
+        dialogTitle: 'Your Tress card',
       });
     } catch {
       Alert.alert(

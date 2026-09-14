@@ -105,7 +105,7 @@ export default function HomeScreen() {
     <Screen>
       <ScreenScroll>
         <ScreenTitle
-          eyebrow="Hair Journey"
+          eyebrow="Tress"
           title={`${greeting()},`}
           titleMuted={name ? `${name}.` : 'friend.'}
           // No subtitle: the script beside it already carries the warm

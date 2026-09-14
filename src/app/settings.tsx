@@ -122,7 +122,7 @@ export default function SettingsScreen() {
   const permissionRefused = () =>
     Alert.alert(
       'Notifications are off',
-      'Turn on notifications for Hair Journey in your device Settings to get reminders.',
+      'Turn on notifications for Tress in your device Settings to get reminders.',
     );
 
   const toggleRoutineReminder = async (next: boolean) => {
@@ -467,7 +467,7 @@ export default function SettingsScreen() {
           variant="footnote"
           color="textSecondary"
           style={{ marginTop: spacing.xxl, paddingHorizontal: spacing.xs }}>
-          Hair Journey is a tracking and documentation tool. It does not
+          Tress is a tracking and documentation tool. It does not
           diagnose conditions, recommend treatments or provide medical advice.
           Always consult a qualified healthcare professional.
         </Text>

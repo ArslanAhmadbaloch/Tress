@@ -238,7 +238,7 @@ export default function LearnScreen() {
         )}
 
         <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xl }}>
-          Educational information only. Hair Journey does not diagnose
+          Educational information only. Tress does not diagnose
           conditions or recommend treatments — speak to a qualified
           healthcare professional about anything medical.
         </Text>

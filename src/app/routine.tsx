@@ -459,7 +459,7 @@ export default function RoutineScreen() {
           }}>
           <Icon name="info" size={18} color={colors.textTertiary} />
           <Text variant="footnote" color="textSecondary" style={{ flex: 1 }}>
-            Hair Journey tracks what you tell it. It does not recommend
+            Tress tracks what you tell it. It does not recommend
             treatments or doses — speak to a qualified healthcare
             professional about anything medical.
           </Text>

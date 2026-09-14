@@ -155,7 +155,7 @@ export function MemberCard({
                 color: colors.text,
                 letterSpacing: u(0.2),
               }}>
-              Hair Journey
+              Tress
             </Text>
           </View>
 

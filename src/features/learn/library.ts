@@ -288,7 +288,7 @@ export const FAQS: { question: string; answer: string }[] = [
       'No. It stores them, organises them by date and angle, and puts them side by side so you can judge for yourself. It does not measure density, count hairs, or assess your hair in any way.',
   },
   {
-    question: 'Can Hair Journey tell me if a treatment is working?',
+    question: 'Can Tress tell me if a treatment is working?',
     answer:
       'No. It can show you what your hair looked like at two points in time and what routine you recorded in between. Interpreting that — especially anything medical — is a conversation for a qualified professional.',
   },

@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "My Hair Journey",
-    "slug": "hair-journey",
+    "name": "Tress",
+    "slug": "tress",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "hairjourney",
+    "scheme": "tress",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#F7F6F3",
     "ios": {
-      "bundleIdentifier": "com.hairjourney.app",
+      "bundleIdentifier": "com.tress.app",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -22,7 +22,7 @@
         "backgroundImage": "./assets/images/android-icon-background.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.hairjourney.app",
+      "package": "com.tress.app",
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ]
@@ -49,7 +49,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Hair Journey uses the camera to take your progress photos. They are saved on this device and never uploaded.",
+          "cameraPermission": "Tress uses the camera to take your progress photos. They are saved on this device and never uploaded.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -57,7 +57,7 @@
       [
         "expo-sensors",
         {
-          "motionPermission": "Hair Journey uses motion to tell when your phone is steady, so it can take the photo for you."
+          "motionPermission": "Tress uses motion to tell when your phone is steady, so it can take the photo for you."
         }
       ],
       "expo-font",
@@ -66,14 +66,14 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Hair Journey uses Face ID to unlock your journey."
+          "faceIDPermission": "Tress uses Face ID to unlock your journey."
         }
       ],
       "expo-sharing",
       [
         "expo-image-picker",
         {
-          "photosPermission": "Hair Journey uses a photo of you on your journey card. It stays on this device."
+          "photosPermission": "Tress uses a photo of you on your journey card. It stays on this device."
         }
       ],
       "expo-image",

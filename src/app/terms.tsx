@@ -22,7 +22,7 @@ import { useTheme } from '@/theme';
 
 const SECTIONS: { title: string; body: string }[] = [
   {
-    title: 'What Hair Journey is',
+    title: 'What Tress is',
     body: 'A tool for photographing and recording your own hair over time. It stores what you give it and shows it back to you. It is not a medical device, it does not diagnose anything, and nothing in it is medical advice. For anything clinical, speak to a qualified healthcare professional.',
   },
   {
