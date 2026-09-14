@@ -91,6 +91,28 @@ const CSS = `
   .serif { font-family: Palatino, "Palatino Linotype", Georgia, serif; font-style: italic; color: var(--sage); }
   ul { padding-left: 1.1rem; }
   li { margin-bottom: .5rem; }
+
+  /* Landing page only. */
+  .hero { text-align: center; padding: 1rem 0 2.5rem; }
+  .emblem {
+    width: 108px; height: 108px; margin: 0 auto 1.25rem; display: block;
+    border-radius: 26px; object-fit: cover; background: #f4f2ef;
+    box-shadow: 0 10px 30px rgba(22,23,26,.10);
+  }
+  .wordmark { font-size: 2.6rem; line-height: 1; margin: 0 0 .5rem; letter-spacing: -.03em; }
+  .tagline { font-family: Palatino, "Palatino Linotype", Georgia, serif; font-style: italic;
+             color: var(--sage); font-size: 1.15rem; margin: 0; }
+  .hero .lede { margin: 1.5rem auto 0; max-width: 30rem; }
+  .cards { display: grid; gap: .75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+  .cards li {
+    margin: 0; padding: 1rem 1.15rem; border: 1px solid var(--line); border-radius: 14px;
+  }
+  .cards b { display: block; margin-bottom: .2rem; }
+  .cards span { color: var(--quiet); font-size: .95rem; }
+  .note {
+    border-left: 3px solid var(--sage); padding: .1rem 0 .1rem 1rem; margin: 1rem 0;
+  }
+  @media (min-width: 34rem) { .cards { grid-template-columns: 1fr 1fr; } }
 `;
 
 const NAV = `<footer>
@@ -105,6 +127,7 @@ function shell({ title, body, updated }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escape(title)} · Tress</title>
 <meta name="description" content="Tress is a haircare journal. Photograph your hair from the same angles over time, keep notes beside the photos, and track what you use. Everything stays on your device.">
+<meta name="google-site-verification" content="FuAsE26ui9Salq2xd-daBHT_fqomWNRGpcV-im-ErSM">
 <style>${CSS}</style>
 </head>
 <body>
@@ -185,31 +208,36 @@ const terms = page({
  */
 const home = shell({
   title: 'Tress — Haircare Journal',
-  body: `  <h1>Your hair, month by month.</h1>
-  <p class="lede">Tress is a haircare journal. Photograph your hair from the same
-  five angles over time, write a line beside each set, and keep track of what you
-  are actually using.</p>
-
-  <p class="serif">Better Hair. A Confident You.</p>
+  body: `  <div class="hero">
+    <img class="emblem" src="/emblem.png" alt="">
+    <h1 class="wordmark">Tress</h1>
+    <p class="tagline">Better Hair. A Confident You.</p>
+    <p class="lede">A haircare journal. Photograph your hair from the same five angles
+    over time, write a line beside each set, and keep track of what you are actually
+    using.</p>
+  </div>
 
   <h2>What it does</h2>
-  <ul>
-    <li><strong>Five angles, framed the same way.</strong> Guides line each shot up
-    with the last, so what you compare next month is your hair rather than where you
-    happened to stand.</li>
-    <li><strong>Any two months, side by side.</strong> Change spread over months is
-    invisible day to day and obvious across a slider.</li>
-    <li><strong>A line beside every set.</strong> What you changed, how the month
-    went. The part you will not remember in March.</li>
-    <li><strong>Your stack, ticked not planned.</strong> Whatever you already use,
-    in one list, with the days you actually did it.</li>
+  <ul class="cards">
+    <li><b>Five angles, framed the same way</b><span>Guides line each shot up with the
+    last, so what you compare next month is your hair rather than where you happened
+    to stand.</span></li>
+    <li><b>Any two months, side by side</b><span>Change spread over months is invisible
+    day to day and obvious across a slider.</span></li>
+    <li><b>A line beside every set</b><span>What you changed, how the month went. The
+    part you will not remember in March.</span></li>
+    <li><b>Your stack, ticked not planned</b><span>Whatever you already use, in one
+    list, with the days you actually did it.</span></li>
   </ul>
 
   <h2>Your photographs stay yours</h2>
-  <p>There is no account, no sign-in and no server. Your photographs, notes and
-  routine are stored in the app&rsquo;s private storage on your own device. They are
-  not uploaded, not analysed, and not shared with anyone. We could not see them if
-  we wanted to, because they never reach us.</p>
+  <div class="note">
+    <p>There is no account, no sign-in and no server. Your photographs, notes and
+    routine live in the app&rsquo;s private storage on your own device. They are not
+    uploaded, not analysed, and not shared with anyone.</p>
+    <p style="margin:0">We could not see them if we wanted to, because they never
+    reach us.</p>
+  </div>
 
   <h2>What it is not</h2>
   <p>Tress is a tracking and documentation tool. It is not a medical device, it does
@@ -218,8 +246,8 @@ const home = shell({
   professional.</p>
 
   <h2>Coming to the App Store</h2>
-  <p>Tress is in preparation for release. If you have a question in the meantime,
-  the <a href="/support.html">support page</a> has the address.</p>`,
+  <p>Tress is in preparation for release. Questions in the meantime go to the
+  <a href="/support.html">support page</a>.</p>`,
 });
 
 /* ------------------------------ support ------------------------------- */
@@ -259,12 +287,16 @@ const support = shell({
   healthcare professional.</p>`,
 });
 
+writeFileSync(
+  join(OUT, 'google691387681f6abca7.html'),
+  'google-site-verification: google691387681f6abca7.html\n',
+);
 writeFileSync(join(OUT, 'index.html'), home);
 writeFileSync(join(OUT, 'support.html'), support);
 writeFileSync(join(OUT, 'privacy.html'), privacy);
 writeFileSync(join(OUT, 'terms.html'), terms);
 
-for (const f of ['index.html', 'support.html', 'privacy.html', 'terms.html']) {
+for (const f of ['index.html', 'support.html', 'privacy.html', 'terms.html', 'google691387681f6abca7.html']) {
   console.log(`site/${f}`);
 }
 if (SUPPORT_EMAIL.includes('example')) {

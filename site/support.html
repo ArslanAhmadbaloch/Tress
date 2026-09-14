@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Support · Tress</title>
 <meta name="description" content="Tress is a haircare journal. Photograph your hair from the same angles over time, keep notes beside the photos, and track what you use. Everything stays on your device.">
+<meta name="google-site-verification" content="FuAsE26ui9Salq2xd-daBHT_fqomWNRGpcV-im-ErSM">
 <style>
   :root { color-scheme: light dark; --ink:#16171a; --paper:#f0eee9; --sage:#6c7360; --quiet:#7a7d78; --line:rgba(22,23,26,.1); }
   @media (prefers-color-scheme: dark) {
@@ -29,6 +30,28 @@
   .serif { font-family: Palatino, "Palatino Linotype", Georgia, serif; font-style: italic; color: var(--sage); }
   ul { padding-left: 1.1rem; }
   li { margin-bottom: .5rem; }
+
+  /* Landing page only. */
+  .hero { text-align: center; padding: 1rem 0 2.5rem; }
+  .emblem {
+    width: 108px; height: 108px; margin: 0 auto 1.25rem; display: block;
+    border-radius: 26px; object-fit: cover; background: #f4f2ef;
+    box-shadow: 0 10px 30px rgba(22,23,26,.10);
+  }
+  .wordmark { font-size: 2.6rem; line-height: 1; margin: 0 0 .5rem; letter-spacing: -.03em; }
+  .tagline { font-family: Palatino, "Palatino Linotype", Georgia, serif; font-style: italic;
+             color: var(--sage); font-size: 1.15rem; margin: 0; }
+  .hero .lede { margin: 1.5rem auto 0; max-width: 30rem; }
+  .cards { display: grid; gap: .75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+  .cards li {
+    margin: 0; padding: 1rem 1.15rem; border: 1px solid var(--line); border-radius: 14px;
+  }
+  .cards b { display: block; margin-bottom: .2rem; }
+  .cards span { color: var(--quiet); font-size: .95rem; }
+  .note {
+    border-left: 3px solid var(--sage); padding: .1rem 0 .1rem 1rem; margin: 1rem 0;
+  }
+  @media (min-width: 34rem) { .cards { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
 <body>

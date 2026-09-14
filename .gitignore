@@ -44,3 +44,8 @@ example
 
 # Apple signing key — never commit
 *.p8
+tress-site.zip
+
+# Signing material — private keys, never commit
+.signing/
+credentials.json

@@ -16,7 +16,8 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_HJ_TESTER_BUILD": "1"
-      }
+      },
+      "credentialsSource": "local"
     },
     "preview": {
       "distribution": "internal",
@@ -29,6 +30,14 @@
       "autoIncrement": true,
       "ios": {
         "resourceClass": "m-medium"
+      },
+      "credentialsSource": "local"
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6811865170"
       }
     }
   }
