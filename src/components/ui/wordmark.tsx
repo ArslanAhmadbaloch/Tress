@@ -17,6 +17,7 @@
 
 import { useEffect } from 'react';
 import { View } from 'react-native';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -62,21 +63,29 @@ export function Wordmark({ label = 'Tress' }: { label?: string }) {
 
   return (
     <View style={{ marginBottom: spacing.xs }}>
+      {/*
+        A radial gradient, not a filled rounded rectangle. The first
+        version painted a solid sage block behind the letters, which read
+        as a highlighted pill rather than as light — obvious the moment it
+        was on a screen, invisible in the code.
+      */}
       <Animated.View
         pointerEvents="none"
         style={[
-          {
-            position: 'absolute',
-            left: -10,
-            right: 0,
-            top: -4,
-            bottom: -4,
-            borderRadius: 12,
-            backgroundColor: colors.accent,
-          },
+          { position: 'absolute', left: -16, right: -16, top: -12, bottom: -12 },
           halo,
-        ]}
-      />
+        ]}>
+        <Svg width="100%" height="100%">
+          <Defs>
+            <RadialGradient id="wordmarkGlow" cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor={colors.accent} stopOpacity={0.55} />
+              <Stop offset="0.55" stopColor={colors.accent} stopOpacity={0.22} />
+              <Stop offset="1" stopColor={colors.accent} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#wordmarkGlow)" />
+        </Svg>
+      </Animated.View>
       <Animated.View style={mark}>
         <Text
           variant="caption"

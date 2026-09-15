@@ -184,7 +184,15 @@ function TabItem({
       }}>
       {/* The selected tab sits in a pool of soft green light rather than a
           filled chip, so the bar stays white and calm. */}
-      <Animated.View style={glow}>
+      {/*
+        The wrapper has to fill the item, not wrap the glow. TabGlow
+        centres itself with `left: 50%`, which resolves against its
+        parent — so an auto-sized animated wrapper silently moved the
+        light off to one side. Caught by looking at it, not by a test.
+      */}
+      <Animated.View
+        pointerEvents="none"
+        style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, glow]}>
         <TabGlow />
       </Animated.View>
       <Pop active={active}>
