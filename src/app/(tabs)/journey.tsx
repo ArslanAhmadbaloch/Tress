@@ -18,10 +18,10 @@ import {
   type MetricRow,
 } from '@/components/journey-cards';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { EmptyState, Screen, ScreenScroll, ScreenTitle, Separator } from '@/components/ui/layout';
 import { BarsGlyph, StrandGlyph } from '@/components/ui/metric-glyphs';
-import { PressableScale } from '@/components/ui/pressable-scale';
 import { RoutineGlyph } from '@/components/ui/routine-glyphs';
 import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Text } from '@/components/ui/text';
@@ -42,12 +42,19 @@ import {
 import { useTheme } from '@/theme';
 import { ANGLE_LABELS, type AppData, type PhotoSession } from '@/types/domain';
 
-type Tab = 'overview' | 'photos' | 'measurements' | 'journal';
+/*
+  "Trends", not "Measurements". Everything on that tab counts what the
+  person did — routine ticked, photos taken, entries written. Calling
+  those measurements implied the app was measuring hair, which it does
+  not do here, and the word was also the one label too long for the
+  segmented control.
+*/
+type Tab = 'overview' | 'photos' | 'trends' | 'journal';
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'overview', label: 'Overview' },
   { value: 'photos', label: 'Photos' },
-  { value: 'measurements', label: 'Measurements' },
+  { value: 'trends', label: 'Trends' },
   { value: 'journal', label: 'Journal' },
 ];
 
@@ -108,7 +115,7 @@ export default function JourneyScreen() {
 
   const metrics: MetricRow[] = [
     {
-      glyph: <BarsGlyph size={15} />,
+      glyph: <BarsGlyph size={17} />,
       label: 'Consistency',
       value: `${score.value}`,
       trend:
@@ -119,17 +126,17 @@ export default function JourneyScreen() {
           : undefined,
     },
     {
-      glyph: <RoutineGlyph icon="drop" size={15} />,
+      glyph: <RoutineGlyph icon="drop" size={17} />,
       label: 'Routine',
       value: adherence === null ? '—' : `${adherence}%`,
     },
     {
-      glyph: <Icon name="camera" size={15} color={colors.text} />,
+      glyph: <Icon name="camera" size={16} color={colors.text} />,
       label: 'Sessions',
       value: `${data.sessions.length}`,
     },
     {
-      glyph: <StrandGlyph size={16} />,
+      glyph: <StrandGlyph size={18} />,
       label: 'Days tracked',
       value: `${daysBetween(journey.startedAt) + 1}`,
     },
@@ -147,18 +154,24 @@ export default function JourneyScreen() {
       months={months}
       onCycleRange={() => setMonths(RANGES[(RANGES.indexOf(months) + 1) % RANGES.length])}
       onExplain={() => setExplain(true)}
-      style={{ marginTop: spacing.md }}
+      style={{ marginTop: spacing.lg }}
     />
   );
 
   return (
     <Screen>
       <ScreenScroll>
+        {/*
+          No subtitle. "Everything you have recorded, in one place" was
+          describing the screen to somebody already looking at it, and it
+          cost a line of the first screenful before any of their data.
+          Sentence case, like the other screens: a heading in Title Case
+          reads as a poster, and this is a page.
+        */}
         <ScreenTitle
           eyebrow="Your journey"
-          title="Track Your"
-          titleMuted="Progress"
-          subtitle={'Everything you have recorded,\nin one place.'}
+          title="Track your"
+          titleMuted="progress"
           trailing={
             <HeaderActions
               initial={(name ?? 'Y').charAt(0).toUpperCase()}
@@ -173,9 +186,15 @@ export default function JourneyScreen() {
           options={TABS}
           value={tab}
           onChange={setTab}
-          style={{ marginTop: spacing.lg }}
+          style={{ marginTop: spacing.md }}
         />
 
+        {/*
+          Sixteen points between cards, up from twelve. Each card is now a
+          floating object rather than an outlined panel, and floating
+          objects need a little more ground between them or their shadows
+          run together into one grey band.
+        */}
         {tab === 'overview' ? (
           <>
             {scoreCard}
@@ -184,16 +203,14 @@ export default function JourneyScreen() {
               onOpen={(id) => router.push(`/session/${id}`)}
               onCapture={() => router.push('/capture-intro')}
               onSeeAll={() => setTab('photos')}
-              style={{ marginTop: spacing.md }}
+              style={{ marginTop: spacing.lg }}
             />
-            <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
-              <KeyMetricsCard
-                rows={metrics}
-                onDetails={() => router.push('/calendar')}
-                style={{ flex: 1 }}
-              />
-              <MilestonesCard items={milestonesFor(data)} style={{ flex: 1 }} />
-            </View>
+            <KeyMetricsCard
+              rows={metrics}
+              onDetails={() => router.push('/calendar')}
+              style={{ marginTop: spacing.lg }}
+            />
+            <MilestonesCard items={milestonesFor(data)} style={{ marginTop: spacing.lg }} />
             <NotesCard
               latest={
                 latestNote
@@ -202,7 +219,7 @@ export default function JourneyScreen() {
               }
               onOpen={() => router.push('/journal')}
               onSeeAll={() => setTab('journal')}
-              style={{ marginTop: spacing.md }}
+              style={{ marginTop: spacing.lg }}
             />
           </>
         ) : null}
@@ -225,7 +242,7 @@ export default function JourneyScreen() {
           )
         ) : null}
 
-        {tab === 'measurements' ? (
+        {tab === 'trends' ? (
           <>
             {/* Consistency lives on Overview; here, the series behind it. */}
             <BarChartCard
@@ -235,9 +252,9 @@ export default function JourneyScreen() {
               max={100}
               format={(v) => `${v}%`}
               preview={weekly.every((p) => p.value === null)}
-              style={{ marginTop: spacing.md }}
+              style={{ marginTop: spacing.lg }}
             />
-            <CheckInGrid days={checkIns} style={{ marginTop: spacing.md }} />
+            <CheckInGrid days={checkIns} style={{ marginTop: spacing.lg }} />
             <BarChartCard
               title="Photo sessions"
               caption="Sessions captured each month"
@@ -245,7 +262,7 @@ export default function JourneyScreen() {
               max={2}
               format={(v) => `${v}`}
               preview={data.sessions.length === 0}
-              style={{ marginTop: spacing.md }}
+              style={{ marginTop: spacing.lg }}
             />
             <BarChartCard
               title="Hair Journal"
@@ -254,7 +271,7 @@ export default function JourneyScreen() {
               max={3}
               format={(v) => `${v}`}
               preview={data.journal.length === 0}
-              style={{ marginTop: spacing.md }}
+              style={{ marginTop: spacing.lg }}
             />
           </>
         ) : null}
@@ -270,9 +287,9 @@ export default function JourneyScreen() {
             />
           ) : (
             <>
-              <Panel style={{ marginTop: spacing.md, gap: spacing.md }}>
+              <Panel style={{ marginTop: spacing.lg, gap: spacing.lg }}>
                 {data.journal.map((entry, i) => (
-                  <View key={entry.id} style={{ gap: spacing.md }}>
+                  <View key={entry.id} style={{ gap: spacing.lg }}>
                     {i > 0 ? <Separator /> : null}
                     <NoteRow body={entry.body} date={formatDate(entry.createdAt)} />
                   </View>
@@ -282,7 +299,7 @@ export default function JourneyScreen() {
                 label="Open Journal"
                 icon="note"
                 variant="secondary"
-                style={{ marginTop: spacing.md }}
+                style={{ marginTop: spacing.lg }}
                 onPress={() => router.push('/journal')}
               />
             </>
@@ -293,7 +310,7 @@ export default function JourneyScreen() {
       {explain ? (
         <MetricExplainer
           title="Consistency"
-          body="How consistently you are documenting — not an assessment of your hair. Nothing in this app measures hair; it stores your photographs so you can compare them yourself."
+          body="How consistently you are documenting — not an assessment of your hair. The number counts what you did: routine ticked off and photo sessions taken, and nothing else."
           points={[
             'Routine adherence over the last 30 days, weighted 60%',
             'Photo sessions taken against those expected for your interval, weighted 40%',
@@ -319,7 +336,7 @@ function SessionTimeline({
   startedAt: string;
   canCompare: boolean;
 }) {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing } = useTheme();
   const router = useRouter();
 
   return (
@@ -329,7 +346,7 @@ function SessionTimeline({
           label="Compare Photos"
           icon="compare"
           variant="secondary"
-          style={{ marginBottom: spacing.lg }}
+          style={{ marginBottom: spacing.xl }}
           onPress={() => router.push('/compare')}
         />
       ) : null}
@@ -357,25 +374,24 @@ function SessionTimeline({
               ) : null}
             </View>
 
+            {/*
+              The shared card, so the session floats on the same shadow
+              as everything else. It used to be a hand-drawn outlined box
+              that clipped its own children, which on iOS also clipped the
+              shadow it declared — the one card on the tab that sat flat.
+            */}
             <View style={{ flex: 1, paddingBottom: spacing.xl }}>
-              <PressableScale
+              <Card
+                padded={false}
                 onPress={() => router.push(`/session/${session.id}`)}
-                scaleTo={0.985}
-                accessibilityRole="button"
-                accessibilityLabel={`${sessionLabel(startedAt, session)}, ${formatDate(session.capturedAt)}`}
-                style={{
-                  backgroundColor: colors.surface,
-                  borderRadius: radius.card,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  overflow: 'hidden',
-                }}>
+                accessibilityLabel={`${sessionLabel(startedAt, session)}, ${formatDate(session.capturedAt)}`}>
                 <View
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: spacing.lg,
+                    paddingHorizontal: spacing.xl,
+                    paddingTop: spacing.lg,
                     paddingBottom: spacing.md,
                   }}>
                   <View style={{ flex: 1 }}>
@@ -404,13 +420,13 @@ function SessionTimeline({
                 </View>
 
                 {session.note ? (
-                  <View style={{ padding: spacing.lg }}>
+                  <View style={{ paddingHorizontal: spacing.xl, paddingVertical: spacing.lg }}>
                     <Text variant="footnote" color="textSecondary" numberOfLines={2}>
                       {session.note}
                     </Text>
                   </View>
                 ) : null}
-              </PressableScale>
+              </Card>
             </View>
           </View>
         );

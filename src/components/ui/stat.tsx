@@ -4,9 +4,12 @@ import { useReducedMotion } from 'react-native-reanimated';
 
 import { Icon, type IconName } from './icon';
 import { Text } from './text';
-import { useTheme } from '@/theme';
+import { iconSize, useTheme } from '@/theme';
 
 const COUNT_UP_MS = 550;
+
+/** Diameter of the filled well a tile's glyph sits in. */
+const GLYPH_WELL = 36;
 
 /**
  * A number that counts up when it changes.
@@ -97,7 +100,7 @@ export function StatTile({
   tone?: 'default' | 'accent';
   style?: StyleProp<ViewStyle>;
 }) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, radius, spacing, shadow } = useTheme();
   const isAccent = tone === 'accent';
 
   return (
@@ -110,13 +113,37 @@ export function StatTile({
           padding: spacing.lg,
           borderRadius: radius.card,
           backgroundColor: isAccent ? colors.accentSoft : colors.surface,
-          borderWidth: 1,
-          borderColor: isAccent ? colors.accentBorder : colors.border,
-          gap: spacing.sm,
+          gap: spacing.md,
         },
+        /*
+          No border. The tile floats on the same soft shadow as every
+          other card; the outline it used to carry was the one thing on
+          the dashboard that still looked drawn rather than placed.
+        */
+        shadow.soft,
         style,
       ]}>
-      <Icon name={icon} size={18} color={isAccent ? colors.accent : colors.textTertiary} />
+      {/*
+        The glyph sits in a quiet round well rather than loose in the
+        corner. A bare icon beside a large number reads as a bullet; a
+        ringed one reads as the metric's mark. The well is filled, not
+        stroked, because a stroked ring competes with the number.
+      */}
+      <View
+        style={{
+          width: GLYPH_WELL,
+          height: GLYPH_WELL,
+          borderRadius: radius.pill,
+          backgroundColor: isAccent ? colors.surface : colors.fill,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+        <Icon
+          name={icon}
+          size={iconSize.sm}
+          color={isAccent ? colors.accent : colors.textSecondary}
+        />
+      </View>
 
       <View>
         {typeof value === 'number' ? (
@@ -138,7 +165,7 @@ export function StatTile({
             {suffix}
           </Text>
         )}
-        <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
+        <Text variant="footnote" color="textSecondary" style={{ marginTop: spacing.xs }}>
           {label}
         </Text>
         {caption ? (

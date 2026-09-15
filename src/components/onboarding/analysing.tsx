@@ -1,5 +1,5 @@
 /**
- * The pause between the last question and the plan.
+ * The pause between the card and the report.
  *
  * A summary that appears the instant somebody taps Continue reads as a
  * form echoing itself back. The same summary after a few seconds of
@@ -16,6 +16,13 @@
  * The timing is honest in the other direction too: these steps are not
  * pretending to be slow computation. They are a paced reveal, and paced
  * deliberately — slow enough to read, short enough that nobody taps away.
+ *
+ * ── Layout ────────────────────────────────────────────────────────────
+ * One object, one line, a short list, and air. The ring is the hero and
+ * sits alone in the top half; the title is set at the same size as a
+ * question so this screen is visibly part of the same conversation; the
+ * ticks are a narrow column under it rather than a full-width list, so
+ * they read as a note being written rather than as a form being filled.
  */
 
 import { useEffect } from 'react';
@@ -37,13 +44,21 @@ import { useTheme } from '@/theme';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-const RING = 132;
-const STROKE = 7;
+/*
+  Larger and thinner than it was. At 132 with a 7pt stroke the ring read
+  as a loading spinner; at 148 with a 6pt stroke it reads as the one
+  object on the screen, which is what it is.
+*/
+const RING = 148;
+const STROKE = 6;
 const RADIUS = (RING - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /** How long the whole reveal takes, and the gap between ticks. */
 const TOTAL_MS = 3200;
+
+/** The tick column's width. Narrow enough to read as a note. */
+const COLUMN_WIDTH = 292;
 
 export type AnalysingStep = { label: string };
 
@@ -142,7 +157,7 @@ export function Analysing({
   const percent = useAnimatedStyle(() => ({ opacity: 0.55 + progress.get() * 0.45 }));
 
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.xl }}>
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
       <Animated.View style={ringStyle}>
         <Svg width={RING} height={RING}>
           <Circle
@@ -173,15 +188,25 @@ export function Analysing({
               alignItems: 'center', justifyContent: 'center' },
             percent,
           ]}>
-          <Icon name="leaf" size={30} color={colors.accent} />
+          <Icon name="leaf" size={34} color={colors.accent} />
         </Animated.View>
       </Animated.View>
 
-      <Text variant="title3" center>
+      <Text
+        variant="question"
+        center
+        accessibilityRole="header"
+        style={{ marginTop: spacing.xxxl }}>
         {title}
       </Text>
 
-      <View style={{ gap: spacing.md, alignSelf: 'stretch', paddingHorizontal: spacing.md }}>
+      <View
+        style={{
+          gap: spacing.lg,
+          width: '100%',
+          maxWidth: COLUMN_WIDTH,
+          marginTop: spacing.xxxl,
+        }}>
         {steps.map((s, i) => (
           <Tick key={s.label} step={s} index={i} progress={progress} count={steps.length} />
         ))}

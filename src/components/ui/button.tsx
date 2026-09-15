@@ -44,7 +44,14 @@ export function Button({
 }: ButtonProps) {
   const { colors, radius, spacing } = useTheme();
 
-  const height = size === 'lg' ? 54 : MIN_TOUCH_TARGET;
+  /*
+    Fifty-six points for a primary action, not the 44 a hit target needs.
+    A pill that is only just tall enough to tap looks like a chip; one
+    with room above and below its label looks like the thing the screen
+    was leading to. The smaller size is for actions inside a row, where
+    the row's own height would otherwise be set by the button.
+  */
+  const height = size === 'lg' ? 56 : MIN_TOUCH_TARGET + spacing.xs;
 
   const surface: Record<Variant, ViewStyle> = {
     primary: { backgroundColor: colors.accent },

@@ -425,7 +425,10 @@ record(
 );
 
 // Lists must read thumbnails; only detail/viewer screens may use full-res.
-const FULL_RES_OK = ['session/[id].tsx', 'compare.tsx', 'capture-session.tsx'];
+// The paywall hero is one large image on a detail-like screen, loaded at
+// full resolution with the thumbnail as its placeholder on purpose — the
+// 320px thumbnail would blur across a 340pt frame. Not a list.
+const FULL_RES_OK = ['session/[id].tsx', 'compare.tsx', 'capture-session.tsx', 'subscription/hero.tsx'];
 const listImageOffenders = FILES.filter((f) => {
   if (FULL_RES_OK.some((ok) => f.rel.endsWith(ok))) return false;
   if (!f.text.includes('<Image')) return false;

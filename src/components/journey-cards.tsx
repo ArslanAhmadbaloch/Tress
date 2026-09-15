@@ -4,8 +4,14 @@
  * Every figure here is one the app genuinely observes — consistency,
  * routine adherence, sessions, days tracked, dated milestones, the user's
  * own notes. The design's hair "measurements" (density, thickness,
- * shedding) are deliberately not reproduced: nothing in the app measures
- * hair, and a number claiming to would be invented.
+ * shedding) are deliberately not reproduced: nothing here measures hair,
+ * and a number claiming to would be invented.
+ *
+ * The cards themselves follow one rule: white paper on the warm ground,
+ * lifted by a shadow and nothing else. No hairline around the edge, no
+ * rule between rows, no chip that casts its own shadow inside a card.
+ * Every line that used to be drawn here was a line the eye had to read
+ * past to reach the number.
  */
 
 import { Image } from 'expo-image';
@@ -31,10 +37,19 @@ import { placeholderSeries } from './ui/ring';
 import { CheckGlyph } from './ui/routine-glyphs';
 import { Text } from './ui/text';
 import type { DayCell, MonthPoint, SeriesPoint } from '@/store/selectors';
-import { typography, useTheme } from '@/theme';
+import { useTheme } from '@/theme';
 
 /* ------------------------------ shared ------------------------------ */
 
+/**
+ * The surface every card on the Journey tab sits on.
+ *
+ * It matches the shared `Card` — same radius, same twenty points of
+ * padding, same soft shadow — so a chart card and a list card on the
+ * same screen read as the same kind of object. It stays a separate
+ * component only because these cards never clip their children, and
+ * the shared one pays for a second view to do so.
+ */
 export function Panel({
   children,
   style,
@@ -47,11 +62,9 @@ export function Panel({
     <View
       style={[
         {
-          padding: spacing.lg,
-          borderRadius: radius.section,
+          padding: spacing.xl,
+          borderRadius: radius.card,
           backgroundColor: colors.surface,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.glassBorder,
         },
         shadow.soft,
         style,
@@ -61,29 +74,35 @@ export function Panel({
   );
 }
 
+/**
+ * A card's own heading and, when it has one, the way out of it.
+ *
+ * title3, the size Home gives "Today's Stack" and the section headers
+ * use, so a heading inside a card and one above a card weigh the same.
+ * The action is the accent word the section headers use too — the small
+ * grey word with an arrow it replaced looked like a footnote, and an
+ * affordance that looks like a footnote does not get tapped.
+ */
 function PanelHeader({
   title,
   action,
   onAction,
-  compact,
 }: {
   title: string;
   action?: string;
   onAction?: () => void;
-  /** Half-width cards: the action shrinks to its arrow so the title fits. */
-  compact?: boolean;
 }) {
-  const { colors, spacing } = useTheme();
+  const { spacing } = useTheme();
   return (
     <View
       style={{
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: spacing.md,
-        gap: spacing.sm,
+        marginBottom: spacing.lg,
+        gap: spacing.md,
       }}>
-      <Text variant="headline" numberOfLines={1} style={{ flexShrink: 1 }}>
+      <Text variant="title3" numberOfLines={1} style={{ flexShrink: 1 }}>
         {title}
       </Text>
       {action && onAction ? (
@@ -93,13 +112,10 @@ function PanelHeader({
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={`${action}, ${title}`}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          {compact ? null : (
-            <Text variant="footnote" color="textSecondary">
-              {action}
-            </Text>
-          )}
-          <Icon name="arrowRight" size={compact ? 14 : 12} color={colors.textSecondary} />
+          style={{ flexShrink: 0 }}>
+          <Text variant="subhead" color="accent">
+            {action}
+          </Text>
         </PressableScale>
       ) : null}
     </View>
@@ -131,7 +147,7 @@ export function ScoreCard({
   onExplain: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
-  const { colors, spacing, radius, shadow } = useTheme();
+  const { colors, spacing, radius } = useTheme();
   const realMonths = points.filter((p) => p.value !== null).length;
   const isPreview = realMonths < MIN_REAL_MONTHS;
 
@@ -142,9 +158,18 @@ export function ScoreCard({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: spacing.md,
         }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <Text variant="headline">Consistency</Text>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.sm,
+            flexShrink: 1,
+          }}>
+          <Text variant="title3" numberOfLines={1} style={{ flexShrink: 1 }}>
+            Consistency
+          </Text>
           <PressableScale
             onPress={onExplain}
             haptic="none"
@@ -155,28 +180,28 @@ export function ScoreCard({
           </PressableScale>
         </View>
 
+        {/*
+          A filled chip, not a bordered one with its own shadow. A control
+          that floats inside a card that is already floating is a card on
+          a card, and the reference's chips all sit flat in the same fill.
+        */}
         <PressableScale
           onPress={onCycleRange}
           haptic="light"
           accessibilityRole="button"
           accessibilityLabel={`Showing last ${months} months`}
           accessibilityHint="Changes between 3, 6 and 12 months"
-          style={[
-            {
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              paddingHorizontal: spacing.md,
-              paddingVertical: 7,
-              borderRadius: radius.pill,
-              backgroundColor: colors.surface,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.border,
-            },
-            shadow.soft,
-          ]}>
-          <Text variant="footnote">{`Last ${months} Months`}</Text>
-          <Icon name="chevronDown" size={12} color={colors.text} />
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+            borderRadius: radius.pill,
+            backgroundColor: colors.fill,
+          }}>
+          <Text variant="caption">{`Last ${months} months`}</Text>
+          <Icon name="chevronDown" size={12} color={colors.textSecondary} />
         </PressableScale>
       </View>
 
@@ -184,8 +209,8 @@ export function ScoreCard({
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          gap: spacing.md,
-          marginTop: spacing.sm,
+          gap: spacing.lg,
+          marginTop: spacing.md,
         }}>
         {/*
           With nothing recorded there is no number to show, so the slot
@@ -194,7 +219,7 @@ export function ScoreCard({
           redaction. A sentence reads as an invitation.
         */}
         {started ? (
-          <Text variant="display" style={{ fontSize: 48, lineHeight: 54 }}>
+          <Text variant="display" style={{ fontSize: 52, lineHeight: 58 }}>
             {value}
           </Text>
         ) : (
@@ -415,10 +440,10 @@ const BAR_LABEL_SPACE = 18;
 const BAR_VALUE_SPACE = 22;
 
 /**
- * A small bar chart for one measurement series. The current period is
- * the solid bar and carries its value; earlier periods sit behind it in
- * a lighter tint. With no history yet it draws a seeded preview, faded
- * and labelled, so the card keeps its shape without claiming data.
+ * A small bar chart for one series of counts. The current period is the
+ * solid bar and carries its value; earlier periods sit behind it in a
+ * lighter tint. With no history yet it draws a seeded preview, faded and
+ * labelled, so the card keeps its shape without claiming data.
  */
 export function BarChartCard({
   title,
@@ -457,21 +482,29 @@ export function BarChartCard({
 
   return (
     <Panel style={style}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <Text variant="headline">{title}</Text>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: spacing.md,
+        }}>
+        <Text variant="title3" numberOfLines={1} style={{ flexShrink: 1 }}>
+          {title}
+        </Text>
         {!preview && typeof current === 'number' ? (
-          <Text variant="headline" color="accent">
+          <Text variant="title3" color="accent">
             {format(current)}
           </Text>
         ) : null}
       </View>
-      <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+      <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xxs }}>
         {caption}
       </Text>
 
       <View
         onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}
-        style={{ height: BAR_CHART_HEIGHT, marginTop: spacing.md }}
+        style={{ height: BAR_CHART_HEIGHT, marginTop: spacing.lg }}
         accessible
         accessibilityLabel={
           preview
@@ -551,7 +584,7 @@ export function BarChartCard({
 
 /* --------------------------- check-in grid -------------------------- */
 
-const GRID_GAP = 5;
+const GRID_GAP = 6;
 
 /**
  * The last four weeks, a square a day: darker as more of the stack was
@@ -572,13 +605,21 @@ export function CheckInGrid({
 
   return (
     <Panel style={style}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <Text variant="headline">Daily check-ins</Text>
-        <Text variant="footnote" color={full ? 'accent' : 'textTertiary'}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: spacing.md,
+        }}>
+        <Text variant="title3" numberOfLines={1} style={{ flexShrink: 1 }}>
+          Daily check-ins
+        </Text>
+        <Text variant="subhead" color={full ? 'accent' : 'textTertiary'}>
           {full} full {full === 1 ? 'day' : 'days'}
         </Text>
       </View>
-      <Text variant="caption" color="textTertiary" style={{ marginTop: 2 }}>
+      <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xxs }}>
         Last 4 weeks · darker means more of your stack done
       </Text>
 
@@ -586,14 +627,14 @@ export function CheckInGrid({
         onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}
         accessible
         accessibilityLabel={`Daily check-ins: ${full} of the last ${days.length} days had the whole stack done`}
-        style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP, marginTop: spacing.md }}>
+        style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP, marginTop: spacing.lg }}>
         {cell > 0
           ? days.map((d) => (
               <View
                 key={d.key}
                 style={{
                   width: cell,
-                  height: 24,
+                  height: 26,
                   borderRadius: radius.xs,
                   backgroundColor:
                     d.value === null || d.value === 0 ? colors.fill : colors.accent,
@@ -615,8 +656,16 @@ export function CheckInGrid({
 /** One session in the strip. Always the thumbnail: this is a list. */
 export type StripItem = { id: string; thumbnailUri?: string; date: string; label: string };
 
-const THUMB_W = 52;
-const THUMB_H = 78;
+/*
+  Seventy-two by ninety-six, up from fifty-two by seventy-eight. The
+  photographs are the product, and at the old size they were postage
+  stamps with two lines of ten-point type stamped over them. The
+  labels now sit beneath the picture, in the app's own caption size,
+  where they can be read without covering what they describe.
+*/
+const THUMB_W = 72;
+const THUMB_H = 96;
+const STRIP_GAP = 10;
 
 export function PhotoStrip({
   items,
@@ -638,35 +687,45 @@ export function PhotoStrip({
     <Panel style={style}>
       <PanelHeader
         title="Progress Photos"
-        action={isEmpty ? undefined : 'See All'}
+        action={isEmpty ? undefined : 'See all'}
         onAction={onSeeAll}
       />
 
+      {/*
+        The strip bleeds to the card's edges and pads itself back in, so
+        a row that is longer than the card scrolls out from under its
+        edge rather than stopping short at the padding.
+      */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 5 }}>
+        style={{ marginHorizontal: -spacing.xl }}
+        contentContainerStyle={{ gap: STRIP_GAP, paddingHorizontal: spacing.xl }}>
         {isEmpty ? (
           <>
-            {/* Where the first photos go, then the months still to come. */}
+            {/*
+              Where the first photos go, then the months still to come.
+              The baseline slot is a solid tint rather than a dashed
+              outline: dashed borders are how a form says "drop a file
+              here", and this is an invitation, not a field.
+            */}
             <PressableScale
               onPress={onCapture}
               accessibilityRole="button"
               accessibilityLabel="Capture your baseline photos"
-              style={{
-                width: THUMB_W,
-                height: THUMB_H,
-                borderRadius: radius.sm,
-                borderWidth: 1.5,
-                borderStyle: 'dashed',
-                borderColor: colors.accent,
-                backgroundColor: colors.accentSoft,
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4,
-              }}>
-              <Icon name="plus" size={15} color={colors.accent} />
-              <Text variant="caption" color="accent" style={{ fontSize: typography.micro.fontSize, lineHeight: 11 }}>
+              style={{ width: THUMB_W, alignItems: 'center', gap: spacing.sm }}>
+              <View
+                style={{
+                  width: THUMB_W,
+                  height: THUMB_H,
+                  borderRadius: radius.md,
+                  backgroundColor: colors.accentSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                <Icon name="plus" size={18} color={colors.accent} />
+              </View>
+              <Text variant="caption" color="accent" numberOfLines={1}>
                 Baseline
               </Text>
             </PressableScale>
@@ -674,18 +733,20 @@ export function PhotoStrip({
               <View
                 key={m}
                 accessible={false}
-                style={{
-                  width: THUMB_W,
-                  height: THUMB_H,
-                  borderRadius: radius.sm,
-                  backgroundColor: colors.backgroundSubtle,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 4,
-                  opacity: 0.75,
-                }}>
-                <Icon name="camera" size={12} color={colors.textTertiary} />
-                <Text variant="caption" color="textTertiary" style={{ fontSize: typography.micro.fontSize, lineHeight: 11 }}>
+                style={{ width: THUMB_W, alignItems: 'center', gap: spacing.sm }}>
+                <View
+                  style={{
+                    width: THUMB_W,
+                    height: THUMB_H,
+                    borderRadius: radius.md,
+                    backgroundColor: colors.fill,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: 0.6,
+                  }}>
+                  <Icon name="camera" size={15} color={colors.textTertiary} />
+                </View>
+                <Text variant="caption" color="textTertiary" numberOfLines={1}>
                   Month {m}
                 </Text>
               </View>
@@ -699,45 +760,31 @@ export function PhotoStrip({
               scaleTo={0.96}
               accessibilityRole="button"
               accessibilityLabel={`${item.label}, ${item.date}`}
-              style={{
-                width: THUMB_W,
-                height: THUMB_H,
-                borderRadius: radius.sm,
-                overflow: 'hidden',
-                backgroundColor: colors.fill,
-              }}>
-              {item.thumbnailUri ? (
-                <Image
-                  source={{ uri: item.thumbnailUri }}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="cover"
-                  recyclingKey={item.id}
-                  accessible={false}
-                />
-              ) : null}
+              style={{ width: THUMB_W, alignItems: 'center', gap: spacing.sm }}>
               <View
                 style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  paddingHorizontal: 5,
-                  paddingVertical: 4,
-                  backgroundColor: colors.photoScrim,
+                  width: THUMB_W,
+                  height: THUMB_H,
+                  borderRadius: radius.md,
+                  overflow: 'hidden',
+                  backgroundColor: colors.fill,
                 }}>
-                <Text
-                  variant="caption"
-                  color="textOnPhoto"
-                  numberOfLines={1}
-                  style={{ fontSize: typography.micro.fontSize, lineHeight: 11 }}>
-                  {item.date}
-                </Text>
-                <Text
-                  variant="caption"
-                  color="textOnPhoto"
-                  numberOfLines={1}
-                  style={{ fontSize: typography.micro.fontSize, lineHeight: 11 }}>
+                {item.thumbnailUri ? (
+                  <Image
+                    source={{ uri: item.thumbnailUri }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    recyclingKey={item.id}
+                    accessible={false}
+                  />
+                ) : null}
+              </View>
+              <View style={{ alignItems: 'center' }}>
+                <Text variant="caption" numberOfLines={1}>
                   {item.label}
+                </Text>
+                <Text variant="caption" color="textTertiary" numberOfLines={1}>
+                  {item.date}
                 </Text>
               </View>
             </PressableScale>
@@ -746,7 +793,7 @@ export function PhotoStrip({
       </ScrollView>
 
       {isEmpty ? (
-        <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
+        <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.md }}>
           Your photo updates line up here, month by month.
         </Text>
       ) : null}
@@ -763,6 +810,15 @@ export type MetricRow = {
   trend?: 'up' | 'down';
 };
 
+/**
+ * Four figures in one card, two by two.
+ *
+ * It was a half-width card of four hairlined rows in thirteen-point
+ * type, sharing the width with the milestones — two dense columns
+ * squeezed into a space meant for one. Set full width, two figures to a
+ * row, with the number in the display face, each figure has room to be
+ * read as a figure rather than as a line in a table.
+ */
 export function KeyMetricsCard({
   rows,
   onDetails,
@@ -774,44 +830,44 @@ export function KeyMetricsCard({
 }) {
   const { colors, spacing } = useTheme();
   return (
-    <Panel style={[{ padding: spacing.md }, style]}>
-      <PanelHeader title="Key Metrics" action="Details" onAction={onDetails} compact />
-      {rows.map((row, i) => (
-        <View
-          key={row.label}
-          accessible
-          accessibilityLabel={`${row.label}, ${row.value}`}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: spacing.sm,
-            paddingVertical: 7,
-            borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
-            borderTopColor: colors.separator,
-          }}>
-          <GlassOrb size={30} ring={false} tone="neutral">
-            {row.glyph}
-          </GlassOrb>
-          <Text
-            variant="footnote"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.8}
-            style={{ flex: 1 }}>
-            {row.label}
-          </Text>
-          <Text variant="footnote" style={{ fontWeight: '600' }}>
-            {row.value}
-          </Text>
-          {row.trend ? (
-            <Icon
-              name={row.trend === 'up' ? 'arrowUpRight' : 'arrowDownRight'}
-              size={12}
-              color={row.trend === 'up' ? colors.accent : colors.textTertiary}
-            />
-          ) : null}
-        </View>
-      ))}
+    <Panel style={style}>
+      <PanelHeader title="Key Metrics" action="Details" onAction={onDetails} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.xl }}>
+        {rows.map((row) => (
+          <View
+            key={row.label}
+            accessible
+            accessibilityLabel={`${row.label}, ${row.value}`}
+            style={{
+              width: '50%',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.md,
+              paddingRight: spacing.sm,
+            }}>
+            <GlassOrb size={38} ring={false} tone="neutral">
+              {row.glyph}
+            </GlassOrb>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                <Text variant="metric" numberOfLines={1} style={{ flexShrink: 1 }}>
+                  {row.value}
+                </Text>
+                {row.trend ? (
+                  <Icon
+                    name={row.trend === 'up' ? 'arrowUpRight' : 'arrowDownRight'}
+                    size={13}
+                    color={row.trend === 'up' ? colors.accent : colors.textTertiary}
+                  />
+                ) : null}
+              </View>
+              <Text variant="caption" color="textSecondary" numberOfLines={1}>
+                {row.label}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
     </Panel>
   );
 }
@@ -820,6 +876,13 @@ export function KeyMetricsCard({
 
 export type Milestone = { label: string; date: string; done: boolean };
 
+/**
+ * The dated points the app can vouch for, on a rail.
+ *
+ * Full width now, with the labels at reading size. Sharing a row with
+ * the metrics meant every label had to shrink to fit, and a milestone
+ * that has to be squinted at is not much of a milestone.
+ */
 export function MilestonesCard({
   items,
   style,
@@ -831,7 +894,7 @@ export function MilestonesCard({
   const reduceMotion = useReducedMotion();
 
   return (
-    <Panel style={[{ padding: spacing.md }, style]}>
+    <Panel style={style}>
       <PanelHeader title="Milestones" />
       {items.map((m, i) => {
         const isLast = i === items.length - 1;
@@ -840,9 +903,9 @@ export function MilestonesCard({
             key={m.label}
             accessible
             accessibilityLabel={`${m.label}, ${m.date}, ${m.done ? 'reached' : 'upcoming'}`}
-            style={{ flexDirection: 'row', gap: spacing.sm }}>
+            style={{ flexDirection: 'row', gap: spacing.md }}>
             {/* Rail: a bead per milestone, joined by a hairline. */}
-            <View style={{ width: 24, alignItems: 'center' }}>
+            <View style={{ width: 26, alignItems: 'center' }}>
               {m.done ? (
                 // Reached milestones land one after another as the card
                 // appears, so a run of them reads as an accumulation.
@@ -852,16 +915,16 @@ export function MilestonesCard({
                       ? undefined
                       : ZoomIn.springify().damping(13).stiffness(360).delay(i * 90)
                   }>
-                  <GlassOrb size={24} ring={false}>
+                  <GlassOrb size={26} ring={false}>
                     <CheckGlyph size={12} />
                   </GlassOrb>
                 </Animated.View>
               ) : (
                 <View
                   style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: 12,
+                    width: 26,
+                    height: 26,
+                    borderRadius: 13,
                     borderWidth: 1.5,
                     borderColor: colors.fillSelected,
                     backgroundColor: colors.surface,
@@ -872,17 +935,16 @@ export function MilestonesCard({
                 <View style={{ flex: 1, width: 1.5, backgroundColor: colors.separator }} />
               ) : null}
             </View>
-            <View style={{ flex: 1, paddingBottom: isLast ? 0 : spacing.sm }}>
-              <Text variant="caption" color="textTertiary" numberOfLines={1}>
-                {m.date}
-              </Text>
+            <View style={{ flex: 1, paddingBottom: isLast ? 0 : spacing.lg }}>
               <Text
-                variant="footnote"
-                color={m.done ? 'textSecondary' : 'textTertiary'}
+                variant="callout"
+                color={m.done ? 'text' : 'textSecondary'}
                 numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}>
+                style={{ fontWeight: '500' }}>
                 {m.label}
+              </Text>
+              <Text variant="caption" color="textTertiary" numberOfLines={1} style={{ marginTop: 1 }}>
+                {m.date}
               </Text>
             </View>
           </View>
@@ -898,7 +960,7 @@ export function NoteRow({ body, date }: { body: string; date: string }) {
   const { colors, spacing } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-      <GlassOrb size={40} ring={false} tone="neutral">
+      <GlassOrb size={42} ring={false} tone="neutral">
         <Icon name="note" size={15} color={colors.text} />
       </GlassOrb>
       <View style={{ flex: 1 }}>
@@ -927,7 +989,7 @@ export function NotesCard({
   const { colors, spacing } = useTheme();
   return (
     <Panel style={style}>
-      <PanelHeader title="Hair Journal" action={latest ? 'See All' : undefined} onAction={onSeeAll} />
+      <PanelHeader title="Hair Journal" action={latest ? 'See all' : undefined} onAction={onSeeAll} />
       <PressableScale
         onPress={onOpen}
         scaleTo={0.99}
@@ -950,12 +1012,12 @@ export function NotesCard({
         </View>
         <View
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 16,
+            width: 34,
+            height: 34,
+            borderRadius: 17,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.backgroundSubtle,
+            backgroundColor: colors.fill,
           }}>
           <Icon name={latest ? 'chevronRight' : 'plus'} size={15} color={colors.text} />
         </View>

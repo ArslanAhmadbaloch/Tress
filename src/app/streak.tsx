@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { View } from 'react-native';
 
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GlassOrb } from '@/components/ui/glass-orb';
 import { Icon } from '@/components/ui/icon';
@@ -28,6 +29,7 @@ import {
   ScreenScroll,
   ScreenTitle,
   SectionHeader,
+  Separator,
 } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { RoutineGlyph } from '@/components/ui/routine-glyphs';
@@ -45,8 +47,11 @@ import {
 import { useTheme } from '@/theme';
 import { DOSE_LABELS, doseCount, TIME_OF_DAY_LABELS } from '@/types/domain';
 
+/** Diameter of the filled well a tile's glyph sits in. */
+const GLYPH_WELL = 36;
+
 export default function StreakScreen() {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, shadow } = useTheme();
   const router = useRouter();
   const { data } = useAppStore();
 
@@ -61,23 +66,24 @@ export default function StreakScreen() {
           eyebrow="Streak"
           title="What you"
           titleMuted="keep up"
-          subtitle="When you started each one, and how it has gone since."
+          subtitle="When you started each one, and how it has gone."
           trailing={
             <PressableScale
               hitSlop={4}
               onPress={() => router.back()}
               accessibilityRole="button"
               accessibilityLabel="Close"
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}>
+              style={[
+                {
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.surface,
+                },
+                shadow.soft,
+              ]}>
               <Icon name="close" size={15} color={colors.text} />
             </PressableScale>
           }
@@ -99,32 +105,25 @@ export default function StreakScreen() {
         ) : (
           <>
             <SectionHeader title="Since you started" />
-            <View style={{ gap: spacing.sm }}>
+            <View style={{ gap: spacing.md }}>
               {stats.map((stat) => (
                 <ItemRow key={stat.item.id} stat={stat} />
               ))}
             </View>
 
-            <PressableScale
+            {/*
+              The app's own secondary button, not a hand-drawn one. The
+              same action on Home is a row in the stack card; here, under
+              a list of cards, it is a button, and it should be the same
+              button the rest of the app uses for a secondary action.
+            */}
+            <Button
+              label="Add or edit tasks"
+              icon="plus"
+              variant="secondary"
+              style={{ marginTop: spacing.xl }}
               onPress={() => router.push('/routine')}
-              scaleTo={0.99}
-              accessibilityRole="button"
-              accessibilityLabel="Add or edit tasks"
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: spacing.sm,
-                marginTop: spacing.lg,
-                paddingVertical: spacing.lg,
-                borderRadius: radius.md,
-                backgroundColor: colors.fill,
-              }}>
-              <Icon name="plus" size={15} color={colors.accent} />
-              <Text variant="subhead" color="accent">
-                Add or edit tasks
-              </Text>
-            </PressableScale>
+            />
           </>
         )}
       </ScreenScroll>
@@ -143,41 +142,49 @@ function Tile({
   label: string;
   value: number;
 }) {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, radius, shadow } = useTheme();
 
   return (
     <View
       accessible
       accessibilityLabel={`${label}: ${value} days`}
-      style={{
-        flex: 1,
-        padding: spacing.lg,
-        borderRadius: radius.card,
-        backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: colors.border,
-        gap: spacing.sm,
-      }}>
+      style={[
+        {
+          flex: 1,
+          padding: spacing.xl,
+          borderRadius: radius.card,
+          backgroundColor: colors.surface,
+          gap: spacing.md,
+        },
+        /*
+          No border. The tile floats on the same soft shadow as every
+          other card; the outline it carried was the one thing on this
+          screen that still looked drawn rather than placed.
+        */
+        shadow.soft,
+      ]}>
       <View
         style={{
-          width: 30,
-          height: 30,
-          borderRadius: 15,
+          width: GLYPH_WELL,
+          height: GLYPH_WELL,
+          borderRadius: radius.pill,
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: colors.accentSoft,
         }}>
         <Icon name={icon} size={15} color={colors.accent} />
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
-        <AnimatedNumber value={value} />
-        <Text variant="caption" color="textTertiary">
-          days
+      <View>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.xs }}>
+          <AnimatedNumber value={value} />
+          <Text variant="footnote" color="textTertiary">
+            days
+          </Text>
+        </View>
+        <Text variant="footnote" color="textSecondary" style={{ marginTop: spacing.xs }}>
+          {label}
         </Text>
       </View>
-      <Text variant="caption" color="textSecondary">
-        {label}
-      </Text>
     </View>
   );
 }
@@ -209,7 +216,8 @@ function ItemRow({ stat }: { stat: RoutineItemStat }) {
           flexDirection: 'row',
           alignItems: 'center',
           gap: spacing.md,
-          padding: spacing.lg,
+          paddingHorizontal: spacing.xl,
+          paddingVertical: spacing.lg,
         }}>
         <GlassOrb size={42} ring={false} tone={streak > 0 ? 'green' : 'neutral'}>
           <RoutineGlyph icon={routineIconFor(item)} size={20} />
@@ -234,8 +242,8 @@ function ItemRow({ stat }: { stat: RoutineItemStat }) {
         {doneToday ? (
           <View
             style={{
-              paddingHorizontal: spacing.sm,
-              paddingVertical: 4,
+              paddingHorizontal: spacing.sm + spacing.xxs,
+              paddingVertical: spacing.xs,
               borderRadius: radius.pill,
               backgroundColor: colors.accentSoft,
             }}>
@@ -246,35 +254,24 @@ function ItemRow({ stat }: { stat: RoutineItemStat }) {
         ) : null}
       </View>
 
-      {/* What the record actually says. Three plain counts, no verdict. */}
-      <View
-        style={{
-          flexDirection: 'row',
-          borderTopWidth: 1,
-          borderTopColor: colors.separator,
-        }}>
+      {/*
+        What the record actually says. Three plain counts, no verdict —
+        and no rules between them. The vertical dividers it had turned
+        three numbers into a table; three numbers with room between them
+        are just three numbers.
+      */}
+      <Separator inset={spacing.xl} insetEnd={spacing.xl} />
+      <View style={{ flexDirection: 'row', paddingHorizontal: spacing.xl }}>
         <Stat label="Day streak" value={String(streak)} />
         <Stat label="Days done" value={`${daysDone} of ${daysTracked}`} />
-        <Stat
-          label="Kept to"
-          value={adherence === null ? '—' : `${adherence}%`}
-          last
-        />
+        <Stat label="Kept to" value={adherence === null ? '—' : `${adherence}%`} />
       </View>
     </Card>
   );
 }
 
-function Stat({
-  label,
-  value,
-  last,
-}: {
-  label: string;
-  value: string;
-  last?: boolean;
-}) {
-  const { colors, spacing } = useTheme();
+function Stat({ label, value }: { label: string; value: string }) {
+  const { spacing } = useTheme();
 
   return (
     <View
@@ -283,14 +280,12 @@ function Stat({
       style={{
         flex: 1,
         alignItems: 'center',
-        paddingVertical: spacing.md,
-        borderRightWidth: last ? 0 : 1,
-        borderRightColor: colors.separator,
+        paddingVertical: spacing.lg,
       }}>
-      <Text variant="subhead" style={{ fontWeight: '600' }}>
+      <Text variant="headline" numberOfLines={1}>
         {value}
       </Text>
-      <Text variant="caption" color="textTertiary" style={{ marginTop: 1 }}>
+      <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.xxs }}>
         {label}
       </Text>
     </View>

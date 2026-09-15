@@ -33,7 +33,7 @@ function named(line: string, name: string): string {
 /**
  * The moment the journey is created and the card appears.
  *
- * Thanks first, because they have just answered fourteen questions about
+ * Thanks first, because they have just answered a dozen questions about
  * something they are worried about, and that deserves acknowledging
  * before anything is shown to them.
  */
@@ -47,10 +47,6 @@ export function welcomeTitle(name: string): string {
  */
 export const WELCOME_BODY = 'Thank you for taking the time. This card is yours from today.';
 
-/** The last screen before the camera, once the plan has been laid out. */
-export const PLAN_THANKS =
-  'Thank you for answering all of that. Here is what you have told us.';
-
 /** Under the card wherever it is shown again afterwards. */
 export const CARD_NOTE =
   'Your membership card. Tap to open it full size and save it.';
@@ -59,11 +55,12 @@ export const CARD_NOTE =
 export const MEMBER_SINCE = 'Member since';
 
 /**
- * Shown once the first photographs are safely stored.
+ * Shown once the first photograph is safely stored.
  *
  * The point at which somebody has actually done the hard part, which is
- * photographing their own head five ways while feeling self-conscious
- * about it.
+ * pointing a camera at the thing they are worried about while feeling
+ * self-conscious about it. It reads the same whether the baseline was
+ * one photograph or a full set: what follows either is comparison.
  */
 export const BASELINE_THANKS =
   'That is the hard part done. Everything from here is comparison.';
@@ -72,18 +69,23 @@ export const BASELINE_THANKS =
 /* ------------------------------ analysing ------------------------------- */
 
 /**
- * The reveal between the last question and the plan.
+ * The reveal between the card and the report.
  *
  * Every line names something the person has just told us. No photograph
  * exists at this point in the funnel, so anything about hair, scalp or
  * density would be describing work that is not happening on data that is
  * not there — and it would be the first dishonest screen in the app.
+ *
+ * Nothing here mentions angles either. The first photograph is one shot
+ * from the front; the five-angle set is an update, asked for later, and
+ * a line "setting your five angles" a minute before a screen asking for
+ * one photo would be the funnel contradicting itself.
  */
 export const ANALYSING_TITLE = 'Putting your journey together.';
 
 export const ANALYSING_STEPS = [
   { label: 'Reading what you told us' },
-  { label: 'Setting your five angles' },
+  { label: 'Noting where you notice it most' },
   { label: 'Building your routine' },
-  { label: 'Choosing your check-in rhythm' },
+  { label: 'Setting your check-in rhythm' },
 ];

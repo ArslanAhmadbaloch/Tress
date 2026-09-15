@@ -1,72 +1,55 @@
 /**
- * What Premium actually gives you.
+ * What Premium actually gives you, as a short list.
  *
- * Seven lines, each a thing the app does rather than a thing it promises
- * will happen to your hair. Nothing here claims growth, and nothing here
- * implies the app produces a medical outcome — what is being sold is the
- * record and the clarity, which is the part we can actually deliver.
+ * The copy lives in paywall-variants.ts with the rest of the paywall's
+ * sentences, where the honesty tests can read it. This file only draws
+ * it: four rows on the ground, each a neutral disc holding a glyph, a
+ * title in the display face and one line under it.
+ *
+ * Neutral discs, not sage ones. The screen has one accent and it points
+ * at the selected plan and the button; four green beads above them would
+ * be four more things asking to be looked at.
  */
 
 import { View } from 'react-native';
 
-import { GlassOrb } from '@/components/ui/glass-orb';
-import { Icon, type IconName } from '@/components/ui/icon';
+import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import {
+  PREMIUM_BENEFITS,
+  type PremiumBenefit,
+} from '@/features/subscription/paywall-variants';
 import { useTheme } from '@/theme';
 
-export type PremiumBenefit = { icon: IconName; title: string; body: string };
+export type { PremiumBenefit };
+export { PREMIUM_BENEFITS };
 
-export const PREMIUM_BENEFITS: PremiumBenefit[] = [
-  {
-    icon: 'camera',
-    title: 'Unlimited photo tracking',
-    body: 'Capture your standardised five-angle updates.',
-  },
-  {
-    icon: 'compare',
-    title: 'Progress comparisons',
-    body: 'Put any two points in your journey side by side.',
-  },
-  {
-    icon: 'bottle',
-    title: 'Your Stack',
-    body: 'Keep your treatments and routine in one place.',
-  },
-  {
-    icon: 'chart',
-    title: 'Consistency tracking',
-    body: 'See how steadily you are keeping to your routine.',
-  },
-  {
-    icon: 'clock',
-    title: 'Complete journey history',
-    body: 'Photos, notes and milestones, kept together.',
-  },
-  {
-    icon: 'shield',
-    title: 'Private by design',
-    body: 'Everything stays on your device.',
-  },
-];
+const DISC = 40;
 
 export function PremiumFeatureList({ benefits = PREMIUM_BENEFITS }: { benefits?: PremiumBenefit[] }) {
   const { colors, spacing } = useTheme();
 
   return (
-    <View style={{ gap: spacing.lg }}>
+    <View style={{ gap: spacing.xl }}>
       {benefits.map((benefit) => (
         <View
           key={benefit.title}
           accessible
           accessibilityLabel={`${benefit.title}. ${benefit.body}`}
-          style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
-          <GlassOrb size={34} ring={false}>
-            <Icon name={benefit.icon} size={16} color={colors.accent} />
-          </GlassOrb>
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
+          <View
+            style={{
+              width: DISC,
+              height: DISC,
+              borderRadius: DISC / 2,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.fill,
+            }}>
+            <Icon name={benefit.icon} size={17} color={colors.text} />
+          </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text variant="subhead" style={{ fontWeight: '600' }}>
-              {benefit.title}
-            </Text>
+            <Text variant="headline">{benefit.title}</Text>
             <Text variant="footnote" color="textSecondary" style={{ marginTop: 1 }}>
               {benefit.body}
             </Text>

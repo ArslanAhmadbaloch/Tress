@@ -15,7 +15,7 @@ import { sessionLabel } from '@/store/selectors';
 import { useTheme, typography } from '@/theme';
 
 export default function JournalScreen() {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, shadow } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { data, addJournalEntry, deleteJournalEntry } = useAppStore();
@@ -57,17 +57,24 @@ export default function JournalScreen() {
       style={{
         flex: 1,
         backgroundColor: colors.background,
-        paddingTop: Platform.OS === 'ios' ? spacing.sm : insets.top,
+        paddingTop: Platform.OS === 'ios' ? spacing.md : insets.top,
       }}>
+      {/*
+        A sheet's title at title2, not title3. This is a whole screen
+        that slides up, and a heading the size of a card's heading made
+        it look like a card that had escaped. The close button is the
+        white disc the rest of the app uses for its header controls.
+      */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
+          paddingTop: spacing.md,
+          paddingBottom: spacing.lg,
         }}>
-        <Text variant="title3" accessibilityRole="header">
+        <Text variant="title2" accessibilityRole="header">
           Journal
         </Text>
         <PressableScale
@@ -75,14 +82,17 @@ export default function JournalScreen() {
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Close"
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 17,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.fill,
-          }}>
+          style={[
+            {
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.surface,
+            },
+            shadow.soft,
+          ]}>
           <Icon name="close" size={15} color={colors.text} />
         </PressableScale>
       </View>
@@ -107,12 +117,12 @@ export default function JournalScreen() {
               style={{
                 color: colors.text,
                 fontSize: typography.body.fontSize,
-                lineHeight: 23,
-                minHeight: 110,
+                lineHeight: typography.body.lineHeight,
+                minHeight: 120,
                 textAlignVertical: 'top',
               }}
             />
-            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
               <Button
                 label="Cancel"
                 variant="secondary"
@@ -150,29 +160,28 @@ export default function JournalScreen() {
             <SectionHeader
               title={`${data.journal.length} ${data.journal.length === 1 ? 'entry' : 'entries'}`}
             />
-            <View style={{ gap: spacing.sm }}>
+            {/*
+              Each entry on the shared card. They were outlined boxes,
+              eight points apart, which stacked into something that read
+              as a table; on shadows with twelve points between them they
+              read as pages.
+            */}
+            <View style={{ gap: spacing.md }}>
               {data.journal.map((entry) => {
                 const session = entry.sessionId
                   ? data.sessions.find((s) => s.id === entry.sessionId)
                   : undefined;
 
                 return (
-                  <View
-                    key={entry.id}
-                    style={{
-                      padding: spacing.lg,
-                      borderRadius: radius.card,
-                      backgroundColor: colors.surface,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                    }}>
+                  <Card key={entry.id}>
                     <View
                       style={{
                         flexDirection: 'row',
                         alignItems: 'center',
                         justifyContent: 'space-between',
+                        gap: spacing.md,
                       }}>
-                      <Text variant="caption" color="textTertiary">
+                      <Text variant="caption" color="textTertiary" style={{ flexShrink: 1 }}>
                         {formatDate(entry.createdAt)}
                         {session && journey
                           ? ` · ${sessionLabel(journey.startedAt, session)}`
@@ -190,7 +199,7 @@ export default function JournalScreen() {
                     <Text variant="body" style={{ marginTop: spacing.sm }}>
                       {entry.body}
                     </Text>
-                  </View>
+                  </Card>
                 );
               })}
             </View>

@@ -97,6 +97,21 @@ test('profile: no card makes a claim about their hair', () => {
   }
 });
 
+test('profile: nothing in the report hurries anybody', () => {
+  // This screen is one tap from the camera and two from the paywall,
+  // which is exactly where a "before it's too late" would earn its keep.
+  // It is the one place in the app such a line must never appear.
+  const urgency =
+    /\b(too late|limited time|spots? left|last chance|hurry|act now|only today|don.t miss|expires?|right now)\b/i;
+
+  for (const answers of [base, { ...base, approaches: [], medications: [] }]) {
+    const r = buildProfileReport(answers);
+    for (const line of [r.title, r.closing, ...r.cards.flatMap((c) => [c.echo, c.meaning])]) {
+      assert.ok(!urgency.test(line), `"${line}" is hurrying somebody`);
+    }
+  }
+});
+
 test('profile: a fortnightly rhythm is allowed but honestly labelled', () => {
   const rhythm = buildProfileReport({ ...base, intervalDays: 14 }).cards.find(
     (c) => c.id === 'rhythm',

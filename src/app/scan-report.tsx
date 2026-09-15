@@ -1,22 +1,32 @@
 /**
- * What the first set of photographs found.
+ * What the device measured in the first photograph.
  *
- * This is the screen the baseline lands on, and the one the paywall comes
+ * This is the screen the funnel lands on, and the one the paywall comes
  * after. That order matters commercially and it matters ethically, and
- * for once those point the same way: somebody who has seen a real reading
- * of their own five photographs is being asked to pay for something they
- * have already watched work, rather than for a promise.
+ * for once those point the same way: somebody who has just watched a real
+ * reading drawn over their own photograph is being asked to pay for
+ * something they have seen work, not for a promise.
  *
  * ── What it can say, and what it cannot ───────────────────────────────
- * Every line comes from measurements taken on this device when the
- * shutter fired: brightness, contrast, sharpness, clipping, and which of
- * the five angles are present. That is a report about the photographs.
+ * Every number here was taken on this device when the shutter fired:
+ * brightness, contrast, sharpness and clipping from the pixels, and —
+ * in the full build, where the segmenter is installed — how much of the
+ * frame the hair mask claims. That is a report about the photograph,
+ * drawn over the photograph.
  *
- * It is not a report about the hair in them, and the temptation to make
- * it one is strongest exactly here — this is the highest-intent screen in
- * the app. But no model in this build classifies hair, so a Norwood stage
- * or a density score printed here would be invented, on the screen a
- * person is most likely to believe, immediately before being charged.
+ * It is not a report about the hair in it, and the temptation to make it
+ * one is strongest exactly here, on the highest-intent screen in the app.
+ * A mask cannot see between strands and a phone cannot classify anything,
+ * so a stage or a density score printed here would be invented, on the
+ * screen a person is most likely to believe, immediately before being
+ * charged. The copy is built in features/assessment/scan-reading.ts and
+ * the tests sweep it for exactly those words.
+ *
+ * ── The pacing ────────────────────────────────────────────────────────
+ * The photograph first, on its own for a beat; then the overlay draws;
+ * then the readings land one card at a time, rings filling as they
+ * arrive. It takes a few seconds and it is meant to. A report that is
+ * simply there is skimmed; one that is delivered is read.
  */
 
 import { useRouter } from 'expo-router';
@@ -24,34 +34,35 @@ import { useMemo } from 'react';
 import { View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
+import {
+  FindingRow,
+  ReadingRing,
+  ReadingTile,
+  Reveal,
+  ScanHero,
+  revealDelay,
+} from '@/components/report';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { EmptyState, Screen, ScreenScroll } from '@/components/ui/layout';
 import { Text } from '@/components/ui/text';
-import { buildReport } from '@/features/assessment/engine';
+import { buildScanReading } from '@/features/assessment/scan-reading';
+import { formatDateShort } from '@/lib/date';
 import { useAppStore } from '@/store/app-store';
-import { useTheme } from '@/theme';
-import { ANGLES } from '@/types/domain';
-
-const STAGGER = 380;
+import { iconSize, useTheme } from '@/theme';
+import { ANGLE_LABELS } from '@/types/domain';
 
 export default function ScanReportScreen() {
   const { data } = useAppStore();
   const { colors, radius, spacing } = useTheme();
   const router = useRouter();
 
-  const report = useMemo(() => buildReport(data), [data]);
-  const framing = report.sections.find((s) => s.kind === 'framing');
-  const record = report.sections.find((s) => s.kind === 'record');
+  // Sessions are stored newest-first, so the latest is the head.
+  const latest = data.sessions[0];
+  const reading = useMemo(() => (latest ? buildScanReading(latest) : null), [latest]);
 
-  const latest = data.sessions[data.sessions.length - 1];
-  const captured = latest?.photos.length ?? 0;
-  const measured = latest?.photos.filter((p) => p.quality).length ?? 0;
-
-  // Everything worth showing, in the order it should land.
-  const findings = [...(record?.findings ?? []), ...(framing?.findings ?? [])];
-
-  if (!latest || captured === 0) {
+  if (!latest || !reading) {
     /*
       Reachable by deep link, or if a capture failed to write. A report
       with nothing behind it should say so and offer the way back, not
@@ -62,9 +73,9 @@ export default function ScanReportScreen() {
         <ScreenScroll clearsTabBar={false}>
           <EmptyState
             icon="camera"
-            title="No photographs to report on"
-            body="This report is built from your first set. Once those are taken, it fills in with what the device measured as you shot them."
-            actionLabel="Take My First Photos"
+            title="No photograph to report on"
+            body="This report is built from your first photograph. Once it is taken, this fills in with what the device measured as you shot it."
+            actionLabel="Take My First Photo"
             onAction={() => router.replace('/capture-intro')}
           />
         </ScreenScroll>
@@ -72,99 +83,177 @@ export default function ScanReportScreen() {
     );
   }
 
+  /*
+    The sequence, numbered so each card knows when to land. Blocks that
+    are not shown do not take a slot, so a report without rings does not
+    leave a silent gap where they would have been.
+  */
+  let slot = 0;
+  const next = () => slot++;
+
+  const heroSlot = next();
+  const ringsSlot = reading.rings.length > 0 || reading.coverageAbsent ? next() : -1;
+  const tilesSlot = reading.tiles.length > 0 ? next() : -1;
+  const listSlot = reading.tiles.length > 0 || reading.rings.length > 0 ? next() : -1;
+  const nextSlot = next();
+  const closeSlot = next();
+
+  const eyebrow = `${ANGLE_LABELS[reading.photo.angle]} · ${formatDateShort(reading.photo.capturedAt)}`;
+  const balance = reading.tiles.find((t) => t.id === 'balance');
+  const qualityTiles = reading.tiles.filter((t) => t.id !== 'balance');
+
   return (
     <Screen>
-      <ScreenScroll clearsTabBar={false}>
+      <ScreenScroll clearsTabBar={false} contentContainerStyle={{ paddingTop: spacing.md }}>
         <Animated.View entering={FadeInDown.duration(500).springify().damping(20)}>
-          <Text variant="caption" center style={{ color: colors.accent, letterSpacing: 1.4 }}>
-            Your baseline
+          <Text variant="subhead" center color="textSecondary">
+            Your first reading
           </Text>
-          <Text variant="title2" center style={{ marginTop: spacing.xs }}>
-            {captured === ANGLES.length
-              ? 'All five angles are in.'
-              : `${captured} of ${ANGLES.length} angles are in.`}
+          <Text
+            variant="title2"
+            center
+            accessibilityRole="header"
+            style={{ marginTop: spacing.xs, paddingHorizontal: spacing.md }}>
+            Here is what your phone measured.
           </Text>
           <Text
             variant="callout"
             center
             color="textSecondary"
-            style={{ marginTop: spacing.sm }}>
-            {measured > 0
-              ? `Each one was measured on this device as you took it. Nothing was uploaded.`
-              : 'This is the set every future month will be compared against.'}
+            style={{ marginTop: spacing.sm, paddingHorizontal: spacing.lg }}>
+            Taken from this photograph, on this device. Nothing was uploaded.
           </Text>
         </Animated.View>
 
-        <View style={{ gap: spacing.md, marginTop: spacing.xl }}>
-          {findings.map((f, i) => (
-            <Animated.View
-              key={f.id}
-              entering={FadeInDown.delay(260 + i * STAGGER).duration(520).springify().damping(21)}
-              style={{
-                flexDirection: 'row',
-                gap: spacing.md,
-                padding: spacing.lg,
-                borderRadius: radius.md,
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}>
+        <Reveal index={heroSlot} style={{ marginTop: spacing.xxl }}>
+          <ScanHero reading={reading} eyebrow={eyebrow} />
+        </Reveal>
+
+        {/* The two area readings, or the honest reason there are none. */}
+        {reading.rings.length > 0 ? (
+          <Reveal index={ringsSlot} style={{ marginTop: spacing.lg }}>
+            <Card>
               <View
                 style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  marginTop: 7,
-                  backgroundColor:
-                    f.tone === 'good'
-                      ? colors.accent
-                      : f.tone === 'attention'
-                        ? colors.warning
-                        : colors.textTertiary,
-                }}
-              />
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text variant="subhead">{f.headline}</Text>
-                <Text variant="footnote" color="textSecondary">
-                  {f.detail}
+                  flexDirection: 'row',
+                  justifyContent: 'space-evenly',
+                  alignItems: 'flex-start',
+                  paddingVertical: spacing.sm,
+                }}>
+                {reading.rings.map((ring) => (
+                  <ReadingRing
+                    key={ring.id}
+                    value={ring.value}
+                    label={ring.label}
+                    delay={revealDelay(ringsSlot) + 200}
+                  />
+                ))}
+              </View>
+              <Text
+                variant="footnote"
+                color="textSecondary"
+                center
+                style={{ marginTop: spacing.lg, paddingHorizontal: spacing.sm }}>
+                Area the on-device segmenter marked as hair. Area is not thickness.
+              </Text>
+            </Card>
+          </Reveal>
+        ) : reading.coverageAbsent ? (
+          <Reveal index={ringsSlot} style={{ marginTop: spacing.lg }}>
+            <Card tone="subtle">
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Icon name="info" size={iconSize.sm} color={colors.textSecondary} />
+                <Text variant="headline" style={{ flex: 1 }}>
+                  {reading.coverageAbsent.headline}
                 </Text>
               </View>
-            </Animated.View>
-          ))}
-        </View>
+              <Text variant="footnote" color="textSecondary" style={{ marginTop: spacing.sm }}>
+                {reading.coverageAbsent.detail}
+              </Text>
+            </Card>
+          </Reveal>
+        ) : null}
+
+        {/* The photograph's own quality, one word each. */}
+        {qualityTiles.length > 0 ? (
+          <Reveal index={tilesSlot} style={{ marginTop: spacing.lg }}>
+            <View style={{ flexDirection: 'row', gap: spacing.md }}>
+              {qualityTiles.map((tile) => (
+                <ReadingTile key={tile.id} reading={tile} />
+              ))}
+            </View>
+            {balance ? (
+              <View style={{ marginTop: spacing.md }}>
+                <ReadingTile reading={balance} style={{ flex: undefined }} />
+              </View>
+            ) : null}
+          </Reveal>
+        ) : null}
+
+        {/* The sentence behind every figure above. */}
+        {listSlot >= 0 ? (
+          <Reveal index={listSlot} style={{ marginTop: spacing.lg }}>
+            <Card>
+              <Text variant="title3" accessibilityRole="header">
+                What was measured
+              </Text>
+              <View style={{ marginTop: spacing.xs }}>
+                {[...reading.rings.map((r) => ({ ...r, tone: 'neutral' as const })), ...reading.tiles].map(
+                  (row, i) => (
+                    <FindingRow
+                      key={row.id}
+                      tone={row.tone}
+                      headline={row.headline}
+                      detail={row.detail}
+                      divider={i > 0}
+                    />
+                  ),
+                )}
+              </View>
+            </Card>
+          </Reveal>
+        ) : null}
+
+        {/* What to do next month, most useful line first. */}
+        <Reveal index={nextSlot} style={{ marginTop: spacing.lg }}>
+          <View
+            style={{
+              padding: spacing.xl,
+              borderRadius: radius.card,
+              backgroundColor: colors.accentSoft,
+              gap: spacing.md,
+            }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <Icon name="leaf" size={iconSize.sm} color={colors.accent} />
+              <Text variant="title3">Next month</Text>
+            </View>
+            {reading.nextTime.map((line) => (
+              <View
+                key={line}
+                style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+                <View style={{ paddingTop: 5 }}>
+                  <Icon name="check" size={iconSize.xs} color={colors.accent} />
+                </View>
+                <Text variant="callout" style={{ flex: 1 }}>
+                  {line}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </Reveal>
 
         {/*
           Said plainly, on the screen where it matters most. Somebody
           arriving here expects a verdict about their hair, and the honest
           answer is that no photograph taken today can give them one —
-          only the second set can, and that is the whole proposition.
+          only the second can, and that is the whole proposition.
         */}
         <Animated.View
-          entering={FadeIn.delay(300 + findings.length * STAGGER).duration(560)}
-          style={{
-            marginTop: spacing.xl,
-            padding: spacing.lg,
-            borderRadius: radius.md,
-            backgroundColor: colors.accentSoft,
-            borderWidth: 1,
-            borderColor: colors.accentBorder,
-            gap: spacing.sm,
-          }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-            <Icon name="leaf" size={16} color={colors.accent} />
-            <Text variant="subhead">What today cannot tell you</Text>
-          </View>
-          <Text variant="footnote" color="textSecondary">
-            One set of photographs cannot say whether anything is changing — there is
-            nothing yet to compare it with. What it does is fix the starting point, so
-            that the next one means something. That is the only honest thing a first
-            scan can be, and it is worth more than a number invented today.
+          entering={FadeIn.delay(revealDelay(closeSlot)).duration(560)}
+          style={{ marginTop: spacing.xxl, paddingHorizontal: spacing.md, gap: spacing.xl }}>
+          <Text variant="footnote" color="textSecondary" center>
+            {reading.scope}
           </Text>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeIn.delay(460 + findings.length * STAGGER).duration(520)}
-          style={{ marginTop: spacing.xl, gap: spacing.sm }}>
           <Button label="Continue" onPress={() => router.replace('/paywall')} />
         </Animated.View>
       </ScreenScroll>

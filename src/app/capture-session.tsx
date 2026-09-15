@@ -1,8 +1,8 @@
-import { CameraView, useCameraPermissions, type CameraCapturedPicture } from 'expo-camera';
+import { useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, Dimensions, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -22,15 +22,27 @@ import { Icon } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import {
-} from '@/lib/device-preferences';
-import {
   CAPTURE_TIMERS,
   loadCaptureTimer,
   saveCaptureTimer,
   type CaptureTimer,
 } from '@/lib/device-preferences';
+import { nitroAvailable } from '@/lib/native';
 import { useBackOrHome } from '@/lib/navigation';
 import { CaptureRing } from '@/components/capture-ring';
+import {
+  FACE_MOVING_PACE,
+  FaceFrame,
+  facePace,
+  guidanceFor,
+  TrackedCamera,
+  tracksFace,
+  type FaceFrameHandle,
+  type FaceObservation,
+  type Guidance,
+  type GuideTarget,
+  type TrackedCameraHandle,
+} from '@/components/capture';
 import { BASELINE_THANKS } from '@/features/content/belonging';
 import { useHairContent } from '@/features/content/use-hair-content';
 import { useSteadiness } from '@/features/capture/use-steadiness';
@@ -42,15 +54,89 @@ import {
   ANGLES,
   ANGLE_LABELS,
   type Angle,
+  type PhotoCoverage,
 } from '@/types/domain';
 
 const SHUTTER_SIZE = 78;
+
+/** The single-scan set: one photograph, from the front. */
+const SINGLE_ANGLES: readonly Angle[] = ['front'];
+
+/**
+ * How long a save will wait for a coverage reading that is still running.
+ * The measurement starts the moment the shutter fires and usually beats
+ * the person to the save button; this is for the phone that did not.
+ */
+const COVERAGE_WAIT_MS = 4000;
+
+/** How many empty frames in a row before the face counts as gone. */
+const FACE_LOST_AFTER = 3;
+
+/** The least time between two haptic or spoken framing cues. */
+const CUE_INTERVAL_MS = 1500;
 
 type Shot = {
   angle: Angle;
   /** Cache URI from the camera, before it is persisted. */
   tempUri: string;
+  /** The hair-mask reading, already running; undefined if it could not. */
+  coverage: Promise<PhotoCoverage | undefined>;
 };
+
+type Pending = {
+  uri: string;
+  width: number;
+  height: number;
+};
+
+const NO_GUIDANCE: Guidance = { status: 'off', message: null, aligned: false };
+
+/**
+ * Measures hair coverage in one frame, on the device, and never throws.
+ *
+ * The segmenter is loaded lazily because importing it touches the TFLite
+ * native module, and a binary without one — Expo Go, or a client built
+ * before the model was added — would fail at the import rather than at
+ * the call. Either way the answer is the same: no reading, and the
+ * photograph is kept regardless. Coverage is a note about the photo, not
+ * a condition of keeping it.
+ */
+async function measureCoverageSafely(uri: string): Promise<PhotoCoverage | undefined> {
+  // The segmenter runs on Nitro. Without it the import itself would be
+  // reported as a fatal error rather than thrown here — see `nitroAvailable`.
+  if (!nitroAvailable()) return undefined;
+  try {
+    const { measureCoverage } = await import('@/features/assessment/hair-segmenter');
+    const reading = await measureCoverage(uri);
+    if (!reading) return undefined;
+    return {
+      fraction: reading.fraction,
+      upperFraction: reading.upperFraction,
+      verticalBalance: reading.verticalBalance,
+      horizontalBalance: reading.horizontalBalance,
+      pixels: reading.pixels,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolves with `fallback` if `promise` has not settled within `ms`. */
+function withinTime<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
+}
 
 export default function CaptureSessionScreen() {
   const { colors, spacing, radius } = useTheme();
@@ -62,21 +148,37 @@ export default function CaptureSessionScreen() {
   const isBaseline = data.sessions.length === 0;
 
   const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<CameraView>(null);
+  const cameraRef = useRef<TrackedCameraHandle>(null);
 
-  // The intro can open capture at a chosen angle; the session still
-  // collects all five, wrapping round to any it skipped.
-  const { start } = useLocalSearchParams<{ start?: string }>();
+  /*
+    Two ways in. The intro opens the full session at a chosen angle, and
+    the session still collects all five, wrapping round to any it skipped.
+    The funnel opens a single scan: one photograph, from the front, and
+    straight to the report — the shortest honest path from "I wonder" to
+    "here is what the device measured".
+  */
+  const { start, single } = useLocalSearchParams<{ start?: string; single?: string }>();
+  const singleMode = single === '1';
+  const angles = singleMode ? SINGLE_ANGLES : ANGLES;
+
   const [index, setIndex] = useState(() =>
-    Math.max(0, ANGLES.indexOf(start as Angle)),
+    Math.max(0, angles.indexOf(start as Angle)),
   );
   const [shots, setShots] = useState<Shot[]>([]);
-  const [pending, setPending] = useState<CameraCapturedPicture | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   /** True while a system alert is up, so the capture session can pause. */
   const [confirming, setConfirming] = useState(false);
   const [phase, setPhase] = useState<'capture' | 'summary'>('capture');
+
+  /**
+   * Coverage readings in flight, by the frame they were taken from. The
+   * measurement starts the moment a frame is shrunk, so by the time the
+   * shot is accepted it is usually already done; a retake simply leaves
+   * its entry behind to be ignored.
+   */
+  const coverageByUri = useRef(new Map<string, Promise<PhotoCoverage | undefined>>());
 
   /*
    * Self-timer. The top and back angles are shot blind — the screen faces
@@ -96,7 +198,7 @@ export default function CaptureSessionScreen() {
   }, []);
 
 
-  const angle = ANGLES[index];
+  const angle = angles[index];
   const guidance = useHairContent().angles[angle];
 
 
@@ -132,17 +234,20 @@ export default function CaptureSessionScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
 
     try {
-      // `skipProcessing` is deliberately off: it shaves a little latency
-      // but on Android it can hand back an unrotated or empty frame, and a
-      // black progress photo is worse than a slightly slower shutter.
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.9 });
-      if (photo) {
-        // Down to storage size before it touches state: what is previewed,
-        // held and shown in the summary is then the size it will be saved
-        // at, not a full-resolution frame waiting to be resized later.
-        const small = await shrinkCapture(photo.uri);
-        setPending({ ...photo, ...small });
-      }
+      const photo = await cameraRef.current.takePhoto();
+      // Down to storage size before it touches state: what is previewed,
+      // held and shown in the summary is then the size it will be saved
+      // at, not a full-resolution frame waiting to be resized later.
+      const small = await shrinkCapture(photo.uri);
+
+      /*
+        The hair mask starts now, while the person is looking at the
+        frame and deciding whether to keep it. It is the slowest thing
+        the app does to a photograph, and this is the one moment where
+        nobody is waiting on it.
+      */
+      coverageByUri.current.set(small.uri, measureCoverageSafely(small.uri));
+      setPending(small);
     } catch {
       setConfirming(true);
       Alert.alert(
@@ -155,24 +260,6 @@ export default function CaptureSessionScreen() {
       setIsCapturing(false);
     }
   }, [isCapturing, reduceMotion, flash, shutterScale]);
-
-  const acceptShot = useCallback(() => {
-    if (!pending) return;
-
-    setShots((prev) => [
-      ...prev.filter((s) => s.angle !== angle),
-      { angle, tempUri: pending.uri },
-    ]);
-    setPending(null);
-
-    // Next angle still missing, wrapping round, so a session started
-    // part-way through still collects all five before the summary.
-    const taken = new Set([...shots.map((s) => s.angle), angle]);
-    const after = ANGLES.findIndex((a, i) => i > index && !taken.has(a));
-    const next = after !== -1 ? after : ANGLES.findIndex((a) => !taken.has(a));
-    if (next === -1) setPhase('summary');
-    else setIndex(next);
-  }, [pending, angle, index, shots]);
 
   const retake = useCallback(() => setPending(null), []);
 
@@ -242,27 +329,145 @@ export default function CaptureSessionScreen() {
 
 
   /*
-   * Motion, used for one thing only: knowing when to get out of the way.
+   * Motion, used for two things: knowing when to get out of the way, and
+   * knowing when "hold still" has been obeyed.
    *
    * It drove an automatic shutter once — settle the phone and it fired —
    * and taking the photo out of the user's hands turned out to be worse
    * than the problem it solved. The self-timer does that job, on purpose
-   * and when asked. This is now just the signal that the phone has been
-   * picked up, so the instruction can stop covering the shot.
+   * and when asked. This is the signal that the phone has been picked up,
+   * so the instruction can stop covering the shot, and the signal that it
+   * has been put still, so the guide can turn green honestly.
    */
   const framing =
     phase === 'capture' && !pending && !confirming && permission?.granted === true;
 
-  const { moving } = useSteadiness(framing);
+  const { moving, steady, unavailable: noMotionSensor } = useSteadiness(framing);
 
-  /** The instruction fades out the moment the phone is disturbed. */
+  /* --------------------------- head tracking ------------------------ */
+
+  const { width } = Dimensions.get('window');
+  const guideWidth = width * 0.62;
+  /** The ring's diameter; the instruction is sized against it. */
+  const RING = guideWidth * 1.18;
+  // High in the frame, just under the top bar: where a face sits when the
+  // phone is held at arm's length, rather than in the middle of the screen.
+  const guideTop = insets.top + 64 + spacing.lg;
+
+  /** Where the head should be, in the coordinates the camera reports in. */
+  const target = useMemo<GuideTarget>(
+    () => ({ cx: width / 2, cy: guideTop + RING / 2, diameter: RING }),
+    [width, guideTop, RING],
+  );
+
+  const [tracking, setTracking] = useState(false);
+  const [headGuidance, setHeadGuidance] = useState<Guidance>(NO_GUIDANCE);
+  const faceFrameRef = useRef<FaceFrameHandle>(null);
+
+  /*
+    Per-frame state lives in refs. Faces arrive at camera rate and most
+    of them change nothing the person can see; only a change of message
+    is worth a render.
+  */
+  const lastFace = useRef<FaceObservation | null>(null);
+  const missedFrames = useRef(0);
+  const pace = useRef(0);
+  const motionRef = useRef({ moving: false, steady: false, unavailable: true });
+  useEffect(() => {
+    motionRef.current = { moving, steady, unavailable: noMotionSensor };
+  }, [moving, steady, noMotionSensor]);
+  const guidanceRef = useRef<Guidance>(NO_GUIDANCE);
+  /** When the last tap or spoken cue went out, so a flicker cannot nag. */
+  const lastCueAt = useRef(0);
+
+  const trackingThisAngle = tracking && framing && tracksFace(angle);
+
+  const publishGuidance = useCallback((next: Guidance) => {
+    if (next.status === guidanceRef.current.status) return;
+    const wasAligned = guidanceRef.current.aligned;
+    guidanceRef.current = next;
+    setHeadGuidance(next);
+    faceFrameRef.current?.setAligned(next.aligned);
+
+    /*
+      The oval changes colour instantly; the tap and the spoken line are
+      rationed. A head hovering on the edge of "still" can cross it
+      several times a second, and a phone that buzzes on each crossing
+      would be telling the person to hold still by shaking in their hand.
+    */
+    const now = Date.now();
+    if (now - lastCueAt.current < CUE_INTERVAL_MS) return;
+    lastCueAt.current = now;
+
+    // The moment it lines up gets a tap, so it can be felt with the
+    // phone held out at arm's length and the eyes on the ring.
+    if (next.aligned && !wasAligned) {
+      Haptics.selectionAsync().catch(() => undefined);
+    }
+    if (next.message) AccessibilityInfo.announceForAccessibility(next.message);
+  }, []);
+
+  const onFace = useCallback(
+    (seen: FaceObservation | null) => {
+      if (!trackingThisAngle) return;
+
+      let face = seen;
+      if (seen) {
+        pace.current = lastFace.current ? facePace(lastFace.current, seen) : 0;
+        lastFace.current = seen;
+        missedFrames.current = 0;
+      } else {
+        // A single dropped frame is not a face leaving. Holding the last
+        // sighting for a few frames keeps the oval from blinking.
+        missedFrames.current += 1;
+        if (missedFrames.current < FACE_LOST_AFTER) face = lastFace.current;
+        else lastFace.current = null;
+      }
+
+      faceFrameRef.current?.update(face);
+
+      const m = motionRef.current;
+      publishGuidance(
+        guidanceFor({
+          angle,
+          face,
+          target,
+          phoneMoving: m.moving,
+          // No accelerometer — a simulator, say — means the phone's
+          // stillness cannot be known, so the face's own has to do.
+          phoneSteady: m.unavailable ? true : m.steady,
+          faceMoving: pace.current > FACE_MOVING_PACE,
+        }),
+      );
+    },
+    [trackingThisAngle, angle, target, publishGuidance],
+  );
+
+  /* Tracking off — a blind angle, a paused camera — clears the guide. */
+  useEffect(() => {
+    if (trackingThisAngle) return;
+    lastFace.current = null;
+    missedFrames.current = 0;
+    faceFrameRef.current?.update(null);
+    publishGuidance(NO_GUIDANCE);
+  }, [trackingThisAngle, publishGuidance]);
+
+  /** True while the guide has a head to follow. */
+  const faceSeen = headGuidance.status !== 'off' && headGuidance.status !== 'searching';
+
+  /**
+   * The instruction fades out the moment the phone is disturbed, or the
+   * moment a face arrives inside the ring — by then it has been read, and
+   * what it is covering is the thing being framed.
+   */
   const instructionFade = useSharedValue(1);
   useEffect(() => {
-    const to = moving ? 0 : 1;
+    const hide = moving || faceSeen;
+    const to = hide ? 0 : 1;
     instructionFade.set(
-      reduceMotion ? to : withTiming(to, { duration: moving ? 180 : 360 }),
+      reduceMotion ? to : withTiming(to, { duration: hide ? 180 : 360 }),
     );
-  }, [moving, reduceMotion, instructionFade]);
+  }, [moving, faceSeen, reduceMotion, instructionFade]);
 
   const instructionStyle = useAnimatedStyle(() => ({
     opacity: instructionFade.get(),
@@ -270,73 +475,119 @@ export default function CaptureSessionScreen() {
 
   /* ------------------------------ save ------------------------------ */
 
-  const save = useCallback(async () => {
-    if (shots.length === 0 || isSaving) return;
-    setIsSaving(true);
+  const save = useCallback(
+    async (toSave: Shot[]) => {
+      if (toSave.length === 0 || isSaving) return;
+      setIsSaving(true);
 
-    // Read before the session is added, or it is never the first one.
-    const isFirstSession = data.sessions.length === 0;
+      // Read before the session is added, or it is never the first one.
+      const isFirstSession = data.sessions.length === 0;
 
-    try {
-      const sessionKey = `${Date.now().toString(36)}`;
-      const stored = await Promise.all(
-        shots.map(async (shot) => {
-          const file = await persistCapture(shot.tempUri, sessionKey, shot.angle);
+      try {
+        const sessionKey = `${Date.now().toString(36)}`;
+        const stored = await Promise.all(
+          toSave.map(async (shot) => {
+            const file = await persistCapture(shot.tempUri, sessionKey, shot.angle);
 
-          /*
-            Measured now, while the file is untouched, and stored with the
-            photograph rather than recomputed when the report opens. Two
-            reasons: re-decoding five frames every time somebody visits a
-            tab is wasteful, and a reading taken months later would be of
-            a file that storage may since have recompressed — a different
-            photograph, quietly.
+            /*
+              Measured now, while the file is untouched, and stored with the
+              photograph rather than recomputed when the report opens. Two
+              reasons: re-decoding five frames every time somebody visits a
+              tab is wasteful, and a reading taken months later would be of
+              a file that storage may since have recompressed — a different
+              photograph, quietly.
 
-            A failure here is not a failure of the capture. The photograph
-            is the thing being saved; the measurement is a note about it,
-            and a session without one is simply a session we say nothing
-            about.
-          */
-          const analysis = await analysePhoto(file.uri).catch(() => null);
+              The coverage reading was started at the shutter, on the
+              shrunk frame this file was encoded from, and is awaited here
+              with a ceiling: a phone that is still segmenting after four
+              seconds saves the photograph without it.
 
-          return {
-            angle: shot.angle,
-            uri: file.uri,
-            thumbnailUri: file.thumbnailUri,
-            width: file.width,
-            height: file.height,
-            capturedAt: new Date().toISOString(),
-            quality: analysis ? { ...analysis.quality } : undefined,
-          };
-        }),
-      );
+              A failure of either is not a failure of the capture. The
+              photograph is the thing being saved; the measurements are
+              notes about it, and a session without one is simply a session
+              we say nothing about.
+            */
+            const [analysis, coverage] = await Promise.all([
+              analysePhoto(file.uri).catch(() => null),
+              withinTime(shot.coverage, COVERAGE_WAIT_MS, undefined),
+            ]);
 
-      const session = addSession(stored);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
-        () => undefined,
-      );
+            return {
+              angle: shot.angle,
+              uri: file.uri,
+              thumbnailUri: file.thumbnailUri,
+              width: file.width,
+              height: file.height,
+              capturedAt: new Date().toISOString(),
+              quality: analysis ? { ...analysis.quality } : undefined,
+              coverage,
+            };
+          }),
+        );
 
-      /*
-        The very first set goes to the report rather than to the session
-        view. It is the only moment in the app's life where somebody has
-        just produced five photographs and does not yet know what the app
-        will do with them — sending them to a gallery of their own scalp
-        wastes it. Every set after this one goes where it always did.
-      */
-      if (session && isFirstSession) {
-        router.replace('/scan-report');
-      } else if (session) {
-        router.replace(`/session/${session.id}`);
-      } else {
-        router.replace('/');
+        const session = addSession(stored);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+          () => undefined,
+        );
+
+        /*
+          The very first set goes to the report rather than to the session
+          view, and so does every single scan. It is the moment somebody
+          has just produced a photograph and does not yet know what the
+          app will do with it — sending them to a gallery of their own
+          scalp wastes it. Every full set after the first goes where it
+          always did.
+        */
+        if (session && (isFirstSession || singleMode)) {
+          router.replace('/scan-report');
+        } else if (session) {
+          router.replace(`/session/${session.id}`);
+        } else {
+          router.replace('/');
+        }
+      } catch {
+        setIsSaving(false);
+        Alert.alert(
+          "Couldn't save your update",
+          'Your photos were taken but could not be written to this device. Check your available storage and try again.',
+        );
       }
-    } catch {
-      setIsSaving(false);
-      Alert.alert(
-        "Couldn't save your update",
-        'Your photos were taken but could not be written to this device. Check your available storage and try again.',
-      );
+    },
+    [isSaving, addSession, router, data.sessions.length, singleMode],
+  );
+
+  const acceptShot = useCallback(() => {
+    if (!pending) return;
+
+    const shot: Shot = {
+      angle,
+      tempUri: pending.uri,
+      coverage: coverageByUri.current.get(pending.uri) ?? Promise.resolve(undefined),
+    };
+    const next = [...shots.filter((s) => s.angle !== angle), shot];
+    setShots(next);
+
+    /*
+      A single scan saves the moment it is accepted. There is no set to
+      review, so a summary screen listing one photograph would be a step
+      that exists only to be tapped through. The frame stays on screen
+      while it saves; if the save fails, it is still there to try again.
+    */
+    if (singleMode) {
+      save(next);
+      return;
     }
-  }, [shots, isSaving, addSession, router, data.sessions.length]);
+
+    setPending(null);
+
+    // Next angle still missing, wrapping round, so a session started
+    // part-way through still collects all five before the summary.
+    const taken = new Set(next.map((s) => s.angle));
+    const after = angles.findIndex((a, i) => i > index && !taken.has(a));
+    const following = after !== -1 ? after : angles.findIndex((a) => !taken.has(a));
+    if (following === -1) setPhase('summary');
+    else setIndex(following);
+  }, [pending, angle, index, shots, angles, singleMode, save]);
 
   const confirmExit = useCallback(() => {
     if (shots.length === 0 && !pending) {
@@ -405,7 +656,7 @@ export default function CaptureSessionScreen() {
               about it, is the hard part of this product. Saying so once —
               on the first set only — costs a line and is true. */}
           {isBaseline ? `${BASELINE_THANKS} ` : ''}
-          {shots.length} of {ANGLES.length} angles captured. Tap any angle to
+          {shots.length} of {angles.length} angles captured. Tap any angle to
           retake it before saving.
         </Text>
 
@@ -419,13 +670,13 @@ export default function CaptureSessionScreen() {
           style={{ flex: 1, marginTop: spacing.xl }}
           contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}
           showsVerticalScrollIndicator={false}>
-          {ANGLES.map((a) => {
+          {angles.map((a) => {
             const shot = shots.find((s) => s.angle === a);
             return (
               <PressableScale
                 key={a}
                 onPress={() => {
-                  setIndex(ANGLES.indexOf(a));
+                  setIndex(angles.indexOf(a));
                   setPending(null);
                   setPhase('capture');
                 }}
@@ -479,7 +730,7 @@ export default function CaptureSessionScreen() {
         <View style={{ gap: spacing.sm }}>
           <Button
             label={isSaving ? 'Saving…' : 'Save Update'}
-            onPress={save}
+            onPress={() => save(shots)}
             loading={isSaving}
             disabled={shots.length === 0}
           />
@@ -491,14 +742,6 @@ export default function CaptureSessionScreen() {
 
   /* ---------------------------- camera ------------------------------ */
 
-  const { width } = Dimensions.get('window');
-  const guideWidth = width * 0.62;
-  /** The ring's diameter; the instruction is sized against it. */
-  const RING = guideWidth * 1.18;
-  // High in the frame, just under the top bar: where a face sits when the
-  // phone is held at arm's length, rather than in the middle of the screen.
-  const guideTop = insets.top + 64 + spacing.lg;
-
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       {pending ? (
@@ -509,29 +752,11 @@ export default function CaptureSessionScreen() {
           accessibilityLabel={`Captured ${ANGLE_LABELS[angle]} photo`}
         />
       ) : (
-        <CameraView
+        <TrackedCamera
           ref={cameraRef}
-          /*
-            What you see is what gets saved.
-
-            iOS mirrors the front-camera preview, and the `mirror` prop
-            does not change that — set true or false the viewfinder is
-            pixel-identical, so it only ever reaches the captured file.
-            Leaving it false wrote the file as true optics while the
-            preview showed a mirror, and every shot came out flipped from
-            the thing that had just been composed.
-
-            So the file is mirrored to match the preview. The cost is that
-            it is a mirror image: "Left Side" frames the left side as its
-            owner sees it in a mirror, not as a camera would record it.
-            Comparisons stay sound because every photo is mirrored the
-            same way; what matters is that they are all treated alike.
-          */
-          style={{ flex: 1 }}
-          facing="front"
-          mode="picture"
           active={!confirming}
-          mirror={true}
+          onFace={onFace}
+          onTrackingChanged={setTracking}
         />
       )}
 
@@ -551,9 +776,11 @@ export default function CaptureSessionScreen() {
         ]}
       />
 
-      {/* Alignment guide + ghost of the previous session */}
+      {/* Alignment guide, and the oval that follows the head */}
       {!pending ? (
         <View pointerEvents="none" style={{ position: 'absolute', inset: 0 }}>
+          {trackingThisAngle ? <FaceFrame ref={faceFrameRef} target={target} /> : null}
+
           <View
             style={{
               position: 'absolute',
@@ -565,7 +792,7 @@ export default function CaptureSessionScreen() {
             <View style={{ alignItems: 'center', justifyContent: 'center' }}>
               <CaptureRing
                 size={RING}
-                total={ANGLES.length}
+                total={angles.length}
                 done={shots.length}
                 current={index}
                 countdownProgress={
@@ -672,21 +899,24 @@ export default function CaptureSessionScreen() {
           </GlassSurface>
         </PressableScale>
 
+        {/* One segment per angle. A single scan has nothing to count. */}
         <View style={{ flex: 1, flexDirection: 'row', gap: 4 }}>
-          {ANGLES.map((a, i) => (
-            <View
-              key={a}
-              style={{
-                flex: 1,
-                height: 3,
-                borderRadius: 2,
-                backgroundColor:
-                  shots.some((s) => s.angle === a)
-                    ? colors.accent
-                    : 'rgba(255,255,255,0.32)',
-              }}
-            />
-          ))}
+          {angles.length > 1
+            ? angles.map((a) => (
+                <View
+                  key={a}
+                  style={{
+                    flex: 1,
+                    height: 3,
+                    borderRadius: 2,
+                    backgroundColor:
+                      shots.some((s) => s.angle === a)
+                        ? colors.accent
+                        : 'rgba(255,255,255,0.32)',
+                  }}
+                />
+              ))
+            : null}
         </View>
 
         {/*
@@ -747,7 +977,15 @@ export default function CaptureSessionScreen() {
           entering={FadeIn.duration(250)}
           pointerEvents="none"
           accessible
-          accessibilityLabel={`Angle ${index + 1} of ${ANGLES.length}, ${ANGLE_LABELS[angle]}. ${guidance.instruction}`}
+          accessibilityLabel={[
+            singleMode
+              ? `${ANGLE_LABELS[angle]} photo.`
+              : `Angle ${index + 1} of ${angles.length}, ${ANGLE_LABELS[angle]}.`,
+            guidance.instruction,
+            headGuidance.message,
+          ]
+            .filter(Boolean)
+            .join(' ')}
           style={{
             position: 'absolute',
             left: spacing.lg,
@@ -761,13 +999,31 @@ export default function CaptureSessionScreen() {
               paddingVertical: spacing.md,
               paddingHorizontal: spacing.lg,
               alignItems: 'center',
+              gap: spacing.xxs,
             }}>
             {/* Which angle, and nothing else. The instruction itself now
                 sits inside the ring, where the framing is happening; two
                 copies of it meant reading the same sentence twice. */}
             <Text variant="overline" style={{ color: '#fff', opacity: 0.7 }}>
-              {`Angle ${index + 1} of ${ANGLES.length} · ${ANGLE_LABELS[angle]}`}
+              {singleMode
+                ? ANGLE_LABELS[angle]
+                : `Angle ${index + 1} of ${angles.length} · ${ANGLE_LABELS[angle]}`}
             </Text>
+
+            {/*
+              What the camera can see, in one line, only when it can see
+              anything. It says where the head is — closer, centred, still
+              — and never what is on it. The line turns sage with the
+              oval, so the eye reads one state, not two.
+            */}
+            {headGuidance.message ? (
+              <Text
+                variant="headline"
+                center
+                style={{ color: headGuidance.aligned ? colors.accent : '#fff' }}>
+                {headGuidance.message}
+              </Text>
+            ) : null}
           </GlassSurface>
         </Animated.View>
       ) : null}
@@ -790,12 +1046,22 @@ export default function CaptureSessionScreen() {
               icon="retake"
               variant="secondary"
               onPress={retake}
+              disabled={isSaving}
               style={{ flex: 1 }}
             />
             <Button
-              label={index === ANGLES.length - 1 ? 'Done' : 'Next'}
+              label={
+                singleMode
+                  ? isSaving
+                    ? 'Saving…'
+                    : 'Use Photo'
+                  : index === angles.length - 1
+                    ? 'Done'
+                    : 'Next'
+              }
               icon="check"
               onPress={acceptShot}
+              loading={isSaving}
               style={{ flex: 1 }}
             />
           </Animated.View>

@@ -1,10 +1,16 @@
 /**
  * Custom glyphs for the dashboard metrics, drawn to match the reference.
  *
- * SF Symbols has no hair strand, and its bar chart is lighter than the
- * bold marks the design calls for. Both are drawn on a 24-unit grid so
+ * SF Symbols has no hair strand, and its bar chart is a different weight
+ * from the marks the design calls for. Both are drawn on a 24-unit grid so
  * they sit at the same optical size as the system camera symbol beside
  * them. Decorative: the tile's label names the metric.
+ *
+ * Stroke weights sit a step lighter than the system symbol's medium. A
+ * glyph inside a small ring beside a large number is a mark, not an
+ * icon, and a mark drawn as heavily as the number fights it for the eye.
+ * The faint gauge under the strand is lighter still: it is context, and
+ * it should be the last thing the eye finds.
  */
 
 import Svg, { Ellipse, Path } from 'react-native-svg';
@@ -20,15 +26,15 @@ export function StrandGlyph({ size = 22 }: { size?: number }) {
       <Path
         d="M3.5 18 A 9.5 9.5 0 0 1 20.5 18"
         stroke={colors.textTertiary}
-        strokeOpacity={0.7}
-        strokeWidth={2}
+        strokeOpacity={0.55}
+        strokeWidth={1.8}
         strokeLinecap="round"
         fill="none"
       />
       <Path
         d="M15.8 2.6 C 13.4 6.6, 11.9 11, 11.9 16.2"
         stroke={colors.text}
-        strokeWidth={2.3}
+        strokeWidth={2}
         strokeLinecap="round"
         fill="none"
       />
@@ -38,7 +44,7 @@ export function StrandGlyph({ size = 22 }: { size?: number }) {
         rx={2.5}
         ry={2.9}
         stroke={colors.text}
-        strokeWidth={2.1}
+        strokeWidth={1.9}
         fill="none"
       />
     </Svg>
@@ -54,7 +60,7 @@ export function BarsGlyph({ size = 21 }: { size?: number }) {
       <Path
         d="M6 19.5 V 13.5 M12 19.5 V 9 M18 19.5 V 4.5"
         stroke={colors.text}
-        strokeWidth={2.8}
+        strokeWidth={2.4}
         strokeLinecap="round"
         fill="none"
       />

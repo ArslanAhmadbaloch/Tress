@@ -19,6 +19,8 @@ import {
   toGrey,
   type GreyImage,
 } from '@/features/assessment/image-quality';
+import { buildScanReading } from '@/features/assessment/scan-reading';
+import type { PhotoSession } from '@/types/domain';
 
 function flat(value: number, size = 16): GreyImage {
   return { width: size, height: size, data: new Uint8Array(size * size).fill(value) };
@@ -97,4 +99,36 @@ test('compare: the same scene two stops darker is an exposure shift', () => {
 test('compare: a repeat of the same conditions raises nothing', () => {
   const a = checkerboard(16, 70, 190);
   assert.deepEqual(compareShots(a, a).issues, []);
+});
+
+/* ------------------ the report's words agree with the flags ------------------ */
+
+test('quality: what the analyser flags, the scan report names in the same terms', () => {
+  // The report describes a photograph in bands wider than the analyser's
+  // flags, so a little dark is "Low" without being flagged. But where the
+  // analyser does raise a problem, the report must not call it fine —
+  // two modules disagreeing about the same pixels is the one thing worse
+  // than either being wrong.
+  const grids: [GreyImage, string][] = [
+    [flat(2), 'Dark'],
+    [flat(253), 'Bright'],
+    [checkerboard(16, 70, 190), 'Even'],
+  ];
+  for (const [grid, expected] of grids) {
+    const q = assessQuality(grid);
+    const s: PhotoSession = {
+      id: 's', journeyId: 'j', capturedAt: new Date().toISOString(), isBaseline: true,
+      photos: [{
+        id: 'p', sessionId: 's', angle: 'front', uri: 'file://p.jpg', width: 16, height: 16,
+        capturedAt: new Date().toISOString(), quality: q,
+      }],
+    };
+    const r = buildScanReading(s)!;
+    const light = r.tiles.find((t) => t.id === 'light')!;
+    assert.equal(light.value, expected);
+    assert.equal(light.tone === 'attention', q.issues.includes('tooDark') || q.issues.includes('tooBright'));
+
+    const focus = r.tiles.find((t) => t.id === 'sharpness')!;
+    assert.equal(focus.tone === 'attention', q.issues.includes('blurred'));
+  }
 });

@@ -20,8 +20,11 @@ import { consistencyScore } from '@/store/selectors';
 import { useTheme } from '@/theme';
 import { HAIR_GOAL_LABELS } from '@/types/domain';
 
+/** Diameter of the filled well each row's icon sits in. */
+const ROW_WELL = 36;
+
 export default function ProfileScreen() {
-  const { colors, spacing } = useTheme();
+  const { colors, spacing, shadow } = useTheme();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const { data } = useAppStore();
@@ -49,20 +52,29 @@ export default function ProfileScreen() {
           The tab bar still names the screen, and the section headers below
           are real headings, so the rotor has somewhere to land.
         */}
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: spacing.sm }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: spacing.md }}>
+          {/*
+            The same white disc the Journey header uses for its settings
+            button, so the one control on this screen is the control the
+            person met on the last one. It was a grey fill, which on the
+            cream ground read as disabled.
+          */}
           <PressableScale
             hitSlop={3}
             onPress={() => router.push('/settings')}
             accessibilityRole="button"
             accessibilityLabel="Settings"
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: 19,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.fill,
-            }}>
+            style={[
+              {
+                width: 46,
+                height: 46,
+                borderRadius: 23,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.surface,
+              },
+              shadow.soft,
+            ]}>
             <Icon name="settings" size={18} color={colors.text} />
           </PressableScale>
         </View>
@@ -72,7 +84,7 @@ export default function ProfileScreen() {
           scaleTo={0.985}
           accessibilityRole="button"
           accessibilityLabel="Your journey card. Opens it full size, where you can save it."
-          style={{ marginTop: spacing.sm, alignItems: 'center' }}>
+          style={{ marginTop: spacing.md, alignItems: 'center' }}>
           <CardFloat>
             <MemberCard
               name={name}
@@ -88,28 +100,45 @@ export default function ProfileScreen() {
 
         <Text
           variant="caption"
+          color="textSecondary"
           center
-          style={{ marginTop: spacing.md, paddingHorizontal: spacing.xl }}>
+          style={{ marginTop: spacing.lg, paddingHorizontal: spacing.xl }}>
           {CARD_NOTE}
         </Text>
 
         <SectionHeader title="Journal" action="View all" onAction={() => router.push('/journal')} />
         {data.journal.length === 0 ? (
-          <Card tone="subtle">
+          /*
+            A white card, like every other card on the screen. The grey
+            inset panel it used to be is the tone for a panel inside a
+            card; on the bare ground it read as a disabled control. And
+            the empty state now offers the thing it is empty of.
+          */
+          <Card>
             <Text variant="callout" color="textSecondary">
               Notes you attach to updates show up here.
             </Text>
+            <PressableScale
+              onPress={() => router.push({ pathname: '/journal', params: { compose: '1' } })}
+              haptic="none"
+              accessibilityRole="button"
+              accessibilityLabel="Write an entry"
+              style={{ alignSelf: 'flex-start', marginTop: spacing.md }}>
+              <Text variant="subhead" color="accent">
+                Write an entry
+              </Text>
+            </PressableScale>
           </Card>
         ) : (
           <Card padded={false}>
             {data.journal.slice(0, 3).map((entry, index) => (
               <View key={entry.id}>
-                {index > 0 ? <Separator inset={spacing.lg} /> : null}
-                <View style={{ padding: spacing.lg }}>
+                {index > 0 ? <Separator inset={spacing.xl} insetEnd={spacing.xl} /> : null}
+                <View style={{ paddingHorizontal: spacing.xl, paddingVertical: spacing.lg }}>
                   <Text variant="caption" color="textTertiary">
                     {formatDate(entry.createdAt)}
                   </Text>
-                  <Text variant="callout" style={{ marginTop: 4 }} numberOfLines={3}>
+                  <Text variant="callout" style={{ marginTop: spacing.xs }} numberOfLines={3}>
                     {entry.body}
                   </Text>
                 </View>
@@ -126,20 +155,20 @@ export default function ProfileScreen() {
             value={data.profile?.avatarUri ? 'Chosen' : 'Not set'}
             onPress={() => router.push('/profile-photo')}
           />
-          <Separator inset={56} />
+          <RowSeparator />
           <ProfileRow
             icon="bell"
             label="Reminders"
             onPress={() => router.push('/settings')}
           />
-          <Separator inset={56} />
+          <RowSeparator />
           <ProfileRow
             icon="lock"
             label="App lock"
             value={lock.state.enabled ? 'On' : 'Off'}
             onPress={() => router.push('/settings')}
           />
-          <Separator inset={56} />
+          <RowSeparator />
           <ProfileRow
             icon="settings"
             label="Settings"
@@ -149,6 +178,12 @@ export default function ProfileScreen() {
       </ScreenScroll>
     </Screen>
   );
+}
+
+/** Runs from the text, not the icon, the way a grouped list's does. */
+function RowSeparator() {
+  const { spacing } = useTheme();
+  return <Separator inset={spacing.xl + ROW_WELL + spacing.md} insetEnd={spacing.xl} />;
 }
 
 function ProfileRow({
@@ -162,7 +197,7 @@ function ProfileRow({
   value?: string;
   onPress: () => void;
 }) {
-  const { colors, spacing } = useTheme();
+  const { colors, spacing, radius } = useTheme();
 
   return (
     <PressableScale
@@ -175,10 +210,25 @@ function ProfileRow({
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
-        paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.lg,
+        paddingHorizontal: spacing.xl,
+        paddingVertical: spacing.md + spacing.xxs,
       }}>
-      <Icon name={icon} size={18} color={colors.textSecondary} />
+      {/*
+        The icon sits in a quiet round well rather than loose beside the
+        label. A bare glyph in a list row reads as a bullet; a filled one
+        reads as the row's mark, and it gives the four rows one left edge.
+      */}
+      <View
+        style={{
+          width: ROW_WELL,
+          height: ROW_WELL,
+          borderRadius: radius.pill,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.fill,
+        }}>
+        <Icon name={icon} size={16} color={colors.textSecondary} />
+      </View>
       <Text variant="body" style={{ flex: 1 }}>
         {label}
       </Text>

@@ -385,6 +385,13 @@ export type PhotoCoverage = {
   upperFraction: number;
   /** How much of the mask sits above the midline, 0-1. */
   verticalBalance: number;
+  /**
+   * Share of the mask on the left half, 0-1; 0.5 is even. Optional
+   * because it arrived a version later than the other four and older
+   * readings do not carry it. The segmenter computes it, and without this
+   * field it was being thrown away between the model and the report.
+   */
+  horizontalBalance?: number;
   /** Pixels counted as hair, so tiny masks can be rejected. */
   pixels: number;
 };

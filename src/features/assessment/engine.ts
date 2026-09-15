@@ -24,8 +24,16 @@ import {
   longestStreak,
   sessionsChronological,
 } from '@/store/selectors';
-import { ANGLES, ANGLE_LABELS, type AppData, type PhotoSession } from '@/types/domain';
+import {
+  ANGLES,
+  ANGLE_LABELS,
+  type AppData,
+  type Photo,
+  type PhotoSession,
+} from '@/types/domain';
 
+import { compareCoverage, describeTrend } from './hair-mask';
+import { frameHeadline, upperHeadline } from './scan-reading';
 import type { Finding, Report, ReportSection } from './types';
 
 const DAY = 86_400_000;
@@ -103,6 +111,21 @@ function recordSection(data: AppData, sessions: PhotoSession[]): ReportSection {
     });
   }
 
+  // A baseline that carries a hair-area reading is worth saying so about,
+  // because it is the number every later set is measured against — and
+  // because it is the reading somebody is most likely to go looking for.
+  const measured = coveragePhoto(latest);
+  if (sessions.length === 1 && measured?.coverage) {
+    findings.push({
+      id: 'record-coverage',
+      kind: 'record',
+      tone: 'neutral',
+      headline: upperHeadline(measured.coverage),
+      detail: `${frameHeadline(measured.coverage)} Measured by the on-device segmenter as area, not thickness. Next month’s ${ANGLE_LABELS[measured.angle].toLowerCase()} shot is lined up against these two numbers.`,
+      angle: measured.angle,
+    });
+  }
+
   const coverage = latest.photos.length / ANGLES.length;
   return {
     kind: 'record',
@@ -110,6 +133,55 @@ function recordSection(data: AppData, sessions: PhotoSession[]): ReportSection {
     score: Math.min(1, coverage),
     scoreLabel: `${latest.photos.length} of ${ANGLES.length} angles in your last set`,
     findings,
+  };
+}
+
+/**
+ * The photograph in a set that carries a hair-area reading.
+ *
+ * The front shot is preferred because it is the one the funnel captures
+ * and the one the hairline sits in; any other measured angle is accepted
+ * so a set from before the funnel changed still reads.
+ */
+function coveragePhoto(session: PhotoSession): Photo | null {
+  return (
+    session.photos.find((p) => p.angle === 'front' && p.coverage) ??
+    session.photos.find((p) => p.coverage) ??
+    null
+  );
+}
+
+/**
+ * How the hair-area reading moved between the last two sets, if both
+ * carry one for the same angle.
+ *
+ * The arithmetic lives in hair-mask.ts, along with the two guards that
+ * matter: a change inside the noise band is reported as no change, and a
+ * pair framed differently enough is refused outright. This only decides
+ * which pair to hand it and how to head the result — and the heading is
+ * as careful as the detail, because it is the line people read.
+ */
+function coverageTrendFinding(latest: PhotoSession, previous: PhotoSession): Finding | null {
+  const now = coveragePhoto(latest);
+  if (!now?.coverage) return null;
+  const before = previous.photos.find((p) => p.angle === now.angle && p.coverage);
+  if (!before?.coverage) return null;
+
+  const trend = compareCoverage(now.coverage, before.coverage);
+  const detail = describeTrend(trend);
+  if (!detail) return null;
+
+  return {
+    id: 'framing-coverage',
+    kind: 'framing',
+    tone: trend.framingSuspect ? 'attention' : 'neutral',
+    headline: trend.framingSuspect
+      ? 'The two hair-area readings were framed too differently to compare.'
+      : trend.meaningful
+        ? 'The hair-area reading moved measurably between these two sets.'
+        : 'No measurable change in hair area between these two sets.',
+    detail,
+    angle: now.angle,
   };
 }
 
@@ -238,6 +310,11 @@ function framingSection(sessions: PhotoSession[]): ReportSection {
   });
 
   findings.push(...qualityFindings(latest));
+
+  // Sets from before the segmenter existed carry no reading, and a pair
+  // where only one side has one is not a comparison. Nothing is shown.
+  const trend = coverageTrendFinding(latest, previous);
+  if (trend) findings.push(trend);
 
   const score = matched.length / Math.max(1, thenHave.size);
   return {

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LinearGradient } from 'expo-linear-gradient';
 
+import { Button } from './button';
 import { Ground, type GroundVariant } from './ground';
 import { Icon, type IconName } from './icon';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -119,7 +120,13 @@ export function SectionHeader({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginTop: spacing.xxl,
+          /*
+            Thirty-two above, twelve below. The gap above a header is what
+            separates one block from the last; the gap below only has to
+            attach the header to its own content. Equal gaps made every
+            screen read as one continuous list.
+          */
+          marginTop: spacing.xxxl,
           marginBottom: spacing.md,
         },
         style,
@@ -134,8 +141,13 @@ export function SectionHeader({
         under it — and a grey heading reads as a caption about the block
         instead. The muted tone belongs to supporting copy, not structure.
       */}
+      {/*
+        title3, the same size the screens already use for the headings
+        they draw by hand, so a section named through this component and
+        one named inline are the same weight of thing.
+      */}
       <Text
-        variant="headline"
+        variant="title3"
         accessibilityRole="header"
         numberOfLines={1}
         style={{ flexShrink: 1, marginRight: spacing.md }}>
@@ -202,8 +214,8 @@ export function ScreenTitle({
         flexDirection: 'row',
         alignItems: 'flex-start',
         gap: spacing.md,
-        paddingTop: spacing.sm,
-        paddingBottom: subtitle ? spacing.xs : spacing.sm,
+        paddingTop: spacing.md,
+        paddingBottom: subtitle ? spacing.sm : spacing.md,
       }}>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Animated.View entering={reveal ? FadeInDown.duration(480).springify().damping(20) : undefined}>
@@ -211,11 +223,18 @@ export function ScreenTitle({
             eyebrowTone === 'brand' ? (
               <Wordmark label={eyebrow} />
             ) : (
+              /*
+                Written as given, in the quiet grey of supporting copy.
+                It was tracked-out capitals, which is the one typographic
+                habit that most reliably dates an interface: a label that
+                has to shout to be noticed is a label in the wrong place.
+                Set small and calm above the headline it is noticed anyway.
+              */
               <Text
-                variant="caption"
-                color="textTertiary"
-                style={{ letterSpacing: 2, marginBottom: spacing.xs }}>
-                {eyebrow.toUpperCase()}
+                variant="subhead"
+                color="textSecondary"
+                style={{ marginBottom: spacing.xs }}>
+                {eyebrow}
               </Text>
             )
           ) : null}
@@ -350,22 +369,21 @@ export function EmptyState({
         {body}
       </Text>
 
+      {/*
+        The app's own button, not a hand-drawn pill. An empty state is
+        often the first screen someone sees, and the action on it should
+        be the same height and weight as every other primary action they
+        will meet — anything smaller reads as an afterthought.
+      */}
       {actionLabel && onAction ? (
-        <PressableScale
+        <Button
+          label={actionLabel}
           onPress={onAction}
-          style={{
-            marginTop: spacing.xl,
-            paddingHorizontal: spacing.xxl,
-            paddingVertical: spacing.md,
-            borderRadius: 999,
-            backgroundColor: colors.accent,
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={actionLabel}>
-          <Text variant="headline" color="textOnAccent">
-            {actionLabel}
-          </Text>
-        </PressableScale>
+          block={false}
+          // A non-block button hugs the leading edge; this one sits
+          // under centred copy and has to sit centred with it.
+          style={{ marginTop: spacing.xl, alignSelf: 'center' }}
+        />
       ) : null}
     </View>
   );

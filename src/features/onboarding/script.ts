@@ -3,8 +3,14 @@
  *
  * Kept apart from the screen that renders it so the whole arc can be read
  * in one place and reordered without touching layout code. The order is
- * the argument: what this is for, what you want, something useful in
- * return, where you are now, and only then your name.
+ * the argument: who this is for, what you want, something useful in
+ * return, where you are now, a report built from what you said — and
+ * then one photograph.
+ *
+ * Every question screen is the question and its answers, and nothing
+ * else. There used to be a line of helper text under each heading, and
+ * the screens stopped rendering it because a question that needs a
+ * sentence of explanation is the wrong question. The copy went with it.
  *
  * Two rules run through every line here.
  *
@@ -57,8 +63,6 @@ export type StepId =
   | 'card'
   | 'analysing'
   | 'profile'
-  | 'plan'
-  | 'future'
   | 'baseline';
 
 /** The order people move through. Progress is measured against it. */
@@ -91,8 +95,14 @@ export const STEPS: StepId[] = [
   // The report the analysing beat was building. Their own answers read
   // back to them, one card at a time, before anything is asked for.
   'profile',
-  'plan',
-  'future',
+  /*
+    Straight from the report to the camera. There used to be two more
+    screens here — a "your journey is ready" summary and a timeline that
+    said you would be glad you started — and both were the report again
+    in different clothes. Somebody who has just read where they stand
+    does not need to be told it twice more before being allowed to take
+    the photograph the whole funnel has been leading to.
+  */
   'baseline',
 ];
 
@@ -114,8 +124,6 @@ export const UNCOUNTED: StepId[] = [
   // advanced during it would be charging somebody for watching.
   'analysing',
   'profile',
-  'plan',
-  'future',
   'baseline',
 ];
 
@@ -266,25 +274,35 @@ export const CADENCE_CHOICES: Choice<string>[] = [
 
 /* -------------------------------- copy --------------------------------- */
 
+/*
+  The register, in one place so it does not drift.
+
+  Questions are short and asked the way a person would ask them. Buttons
+  say "Continue" rather than "That's My Goal" or "Build My Routine": a
+  button that narrates what you just did is a button trying too hard, and
+  eleven of them in a row read as a sales script. The two buttons that do
+  say something specific — the photo and the camera — say it because the
+  tap actually does that thing.
+
+  No screen tells the person how to feel, and no screen says the app will
+  make anything happen to their hair. The one line that comes close, on
+  the camera screen, says only what the photograph is for: it is the point
+  later photographs are measured against, which is true of any baseline.
+*/
 export const COPY = {
   welcome: {
-    title: 'Better Hair.',
-    titleMuted: 'A Confident You.',
-    body: 'Your journey starts with understanding where you are today.',
-    cta: 'Begin My Journey',
+    cta: 'Get started',
   },
   meaning: {
     title: 'What would better hair mean to you{name}?',
-    subtitle: 'There’s no right answer. Choose what matters most to you.',
     cta: 'Continue',
   },
   goal: {
-    title: 'Imagine six months from now{name}.',
-    subtitle:
-      'You look in the mirror and feel good about what you see. What would make you happiest?',
-    cta: "That's My Goal",
-    /** Shown while the chosen goal settles into the middle of the screen. */
-    settle: "We'll keep that goal in view.",
+    // Their hope, asked as a hope. The options underneath are the things
+    // people say when asked this, and the one they pick is shown back to
+    // them in those words — never as something the app is going to do.
+    title: 'What are you hoping for{name}?',
+    cta: 'Continue',
   },
   story: {
     title: 'When did you first notice something changing?',
@@ -295,29 +313,23 @@ export const COPY = {
     title: 'How often does your hair cross your mind{name}?',
     scaleLow: 'Rarely',
     scaleHigh: 'Often',
-    second: 'Which moments bother you most?',
+    second: 'When does it bother you most?',
     cta: 'Continue',
   },
   approach: {
     title: 'What are you doing for your hair right now?',
-    subtitle: 'Whatever it is, it’s a starting point. Nothing here is graded.',
-    second: 'How consistent do you feel you’ve been?',
+    second: 'How consistent have you been?',
     cta: 'Continue',
   },
   medication: {
     title: 'Are you using anything for your hair?',
-    subtitle:
-      'Tick whatever you already use and it goes straight into your routine. Nothing here is a suggestion — Tress doesn’t advise on treatments or doses.',
     otherLabel: 'What are you using?',
     otherPlaceholder: 'e.g. Rosemary oil',
-    footnote: 'Stays on this device. You can change it any time.',
     skip: 'Prefer not to say',
     cta: 'Continue',
   },
   products: {
     title: 'What does your hair routine look like?',
-    subtitle:
-      'Tick what you already use and set how often. It becomes your stack — you can change any of it later.',
     second: 'Anything else?',
     addPlaceholder: 'e.g. Rice water rinse',
     addLabel: 'Add your own',
@@ -327,70 +339,54 @@ export const COPY = {
   },
   system: {
     title: 'You don’t need more willpower.',
-    titleMuted: 'You need a system that’s easier to follow.',
-    body: 'We’ll keep the small things visible, so staying with it is a matter of noticing rather than remembering.',
-    cta: 'Build My Routine',
+    titleMuted: 'Just something easier to keep.',
+    body: 'Tress keeps the small things visible, so staying with it is noticing rather than remembering.',
+    cta: 'Continue',
   },
   cadence: {
-    title: 'How often would you like to check in with yourself?',
-    subtitle:
-      'Hair changes take time. Your journey shouldn’t require you to think about it every day.',
+    title: 'How often would you like to check in?',
     cta: 'Continue',
   },
   photo: {
-    title: 'Let’s meet the person behind the journey.',
-    subtitle: 'Add a photo of yourself. It makes the journey feel like yours.',
-    cta: 'Add My Photo',
-    skip: 'Skip for now',
+    title: 'Add a photo of yourself.',
+    // True, and the only reason anyone needs: it goes on the card, and
+    // like every photograph in this app it never leaves the phone.
+    body: 'It goes on your card, and it stays on your phone.',
+    cta: 'Choose a photo',
+    skip: 'Not now',
   },
   you: {
-    title: 'First, who are we doing this for?',
-    genderPrompt: 'Your hair',
-    genderHint:
-      'This sets the examples you are shown and the questions we ask. You can change it later.',
-    nameLabel: 'And what should we call you?',
-    second: 'How old are you?',
-    ageHint: 'Optional. It goes on your card and nowhere else.',
+    title: 'First, a little about you.',
+    genderPrompt: 'You are',
+    nameLabel: 'What should we call you?',
+    second: 'And how old are you?',
     cta: 'Continue',
   },
   card: {
-    title: 'This is your starting point.',
-    subtitle: 'Yours to keep. It fills in as you go.',
     cta: 'Continue',
   },
-  plan: {
+  profile: {
     cta: 'Continue',
-    promises: [
-      'See your changes over time',
-      'Stay consistent with your routine',
-      'Keep your journey organised',
-      'Learn what’s worth knowing',
-      'Build a record you can look back on',
-    ],
   },
-  future: {
-    title: 'One day, you’ll look back at today.',
-    titleMuted: 'And you’ll be glad you started.',
-    body: 'Let’s make today’s photo your Day 1.',
-    cta: 'Start My Journey',
-  },
+  /*
+    One photograph, not five. The five-angle set is what an update looks
+    like and it is asked for later, from Home, once there is something to
+    update. The first thing somebody does after the report is take a
+    single front shot and see what the app measured in it — that is the
+    whole promise of the funnel, and five angles between the promise and
+    the proof was where people stopped.
+
+    There is no skip. The baseline is not a feature of this app, it is
+    the thing every other feature is measured against — a journey that
+    starts without one has nothing for month three to be compared with,
+    and the person finds that out in month three.
+  */
   baseline: {
-    title: 'Let’s capture your starting point.',
-    subtitle:
-      'Five angles, one baseline — so your future self has something real to compare against.',
-    cta: 'Take My First Photos',
-    skip: 'I’ll do this later',
+    title: 'One photo, from the front.',
+    body: 'It stays on your phone, and it is the point everything after today is measured against.',
+    cta: 'Take the photo',
   },
 } as const;
-
-/** The five angles, as the baseline screen lists them. */
-export const BASELINE_ANGLES = [
-  'Top',
-  'Left Side',
-  'Right Side',
-  'Back',
-  'Hairline',
-] as const;
 
 /* ------------------------------- routine -------------------------------- */
 
@@ -584,21 +580,18 @@ const FEMALE_MEDICATIONS: (Choice<Medication> & { covers?: Approach })[] = [
   { value: 'none', label: 'Nothing right now', icon: 'circle' },
 ];
 
-/** Wording that differs, over the shared copy. */
+/**
+ * Wording that differs, over the shared copy.
+ *
+ * Only the second story question, in the end. "Where" rather than
+ * "what", because the female set asks about places on the head — the
+ * part, the temples — and "what do you notice most" sat oddly above
+ * them. Everything else reads the same to everyone.
+ */
 const FEMALE_COPY = {
-  goal: {
-    subtitle:
-      'You look in the mirror and feel good about what you see. What would make you happiest?',
-  },
   story: {
-    title: 'When did you first notice something changing?',
+    title: COPY.story.title,
     second: 'Where do you notice it most?',
-  },
-  approach: {
-    title: 'What are you doing for your hair right now?',
-  },
-  medication: {
-    otherPlaceholder: 'e.g. Rosemary oil',
   },
 };
 

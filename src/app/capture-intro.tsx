@@ -1,7 +1,14 @@
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { MetricExplainer } from '@/components/dashboard';
@@ -55,6 +62,16 @@ export default function CaptureIntroScreen() {
   const { isPremium } = usePremium();
   const content = useHairContent();
 
+  /*
+    `single=1` is the funnel's route in: one photograph, from the front,
+    straight to the report. Somebody who has just answered a dozen
+    questions about their hair and been promised a scan does not want an
+    orbit of five angles to read first; they want the camera. The full
+    five-angle intro is unchanged for everyone who arrives without it.
+  */
+  const { single } = useLocalSearchParams<{ single?: string }>();
+  const singleMode = single === '1';
+
   const [index, setIndex] = useState(0);
   const [showTips, setShowTips] = useState(false);
   const [showExample, setShowExample] = useState(false);
@@ -77,6 +94,18 @@ export default function CaptureIntroScreen() {
   useEffect(() => {
     if (!isPremium && !isBaseline) router.replace('/paywall');
   }, [isPremium, isBaseline, router]);
+
+  /*
+    The single scan skips this screen entirely, but only once the gate
+    above has had its say: the paywall effect runs first, and this one
+    stands down for anyone it has sent elsewhere.
+  */
+  useEffect(() => {
+    if (!singleMode) return;
+    if (!isPremium && !isBaseline) return;
+    router.replace({ pathname: '/capture-session', params: { start: 'front', single: '1' } });
+  }, [singleMode, isPremium, isBaseline, router]);
+
   const angle = ANGLES[index];
   const label = ANGLE_LABELS[angle];
 
@@ -92,6 +121,18 @@ export default function CaptureIntroScreen() {
     const a = ((ORBIT_OFFSETS[i] - 90) * Math.PI) / 180;
     return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
   };
+
+  if (singleMode) {
+    // A beat of the app's own ground while the camera is opened — never a
+    // flash of the five-angle orbit that this route exists to avoid.
+    return (
+      <Screen>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>

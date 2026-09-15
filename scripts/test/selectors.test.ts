@@ -12,10 +12,10 @@ import { test } from 'node:test';
 
 import {
   ANALYSING_STEPS,
+  ANALYSING_TITLE,
   BASELINE_THANKS,
   CARD_NOTE,
   MEMBER_SINCE,
-  PLAN_THANKS,
   WELCOME_BODY,
   welcomeTitle,
 } from '@/features/content/belonging';
@@ -23,7 +23,14 @@ import { hairContent } from '@/features/content/hair-content';
 import { caseStudies } from '@/features/onboarding/case-studies';
 import { productOptions } from '@/features/onboarding/products';
 import {
+  APPROACH_CHOICES,
+  CADENCE_CHOICES,
+  CONSISTENCY_CHOICES,
+  COPY,
   funnelContent,
+  GENDER_CHOICES,
+  MEANING_CHOICES,
+  ONSET_CHOICES,
   routineSeedsFor,
   STEPS,
   UNCOUNTED,
@@ -157,7 +164,6 @@ test('belonging: nothing claims a community that does not exist', () => {
   const lines = [
     welcomeTitle('Sara'),
     WELCOME_BODY,
-    PLAN_THANKS,
     CARD_NOTE,
     MEMBER_SINCE,
     BASELINE_THANKS,
@@ -226,9 +232,116 @@ test('funnel: a name goes into the heading, and its absence leaves no scar', () 
   assert.equal(withName(line, 'Arslan'), 'What would better hair mean to you, Arslan?');
   assert.equal(withName(line, '  '), 'What would better hair mean to you?');
   assert.equal(
-    withName('Imagine six months from now{name}.', 'Sara'),
-    'Imagine six months from now, Sara.',
+    withName('What are you hoping for{name}?', 'Sara'),
+    'What are you hoping for, Sara?',
   );
+});
+
+/* ------------------------------ the script ------------------------------ */
+
+/** Every string in a nested copy object, whatever shape it is. */
+function strings(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(strings);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(strings);
+  return [];
+}
+
+/** Every key at any depth of a nested copy object. */
+function keys(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.entries(value).flatMap(([k, v]) => [k, ...keys(v)]);
+}
+
+test('funnel: no helper copy is left in the script', () => {
+  // The screens stopped rendering the line under each question. Copy
+  // nobody renders is copy nobody proofreads, and it was the first place
+  // a claim could have crept back in unseen.
+  const dead = ['subtitle', 'settle', 'footnote', 'genderHint', 'ageHint'];
+  for (const key of keys(COPY)) {
+    assert.ok(!dead.includes(key), `COPY still carries a "${key}" nobody renders`);
+  }
+});
+
+test('funnel: the report is followed by the camera, and nothing else', () => {
+  // One scan, then the report on it. Every screen that used to sit
+  // between the profile report and the camera was the report again.
+  assert.equal(STEPS[STEPS.length - 1], 'baseline');
+  assert.equal(STEPS[STEPS.indexOf('profile') + 1], 'baseline');
+  assert.ok(!STEPS.includes('plan' as never));
+  assert.ok(!STEPS.includes('future' as never));
+});
+
+test('funnel: the baseline asks for one photograph and cannot be skipped', () => {
+  assert.match(COPY.baseline.title, /one photo/i);
+  assert.match(COPY.baseline.cta, /photo/i, 'the button says what the tap does');
+  assert.ok(!('skip' in COPY.baseline), 'a baseline with a skip is not a baseline');
+  assert.ok(
+    !/five|5 angles|angles/i.test(`${COPY.baseline.title} ${COPY.baseline.body}`),
+    'the five-angle set is asked for later, from Home',
+  );
+});
+
+test('funnel: nothing in the script claims an outcome or manufactures urgency', () => {
+  // The app measures pixels on a phone. Every one of these words would
+  // mean it had started describing what a person's hair is going to do,
+  // or hurrying them past the point where they could decide not to.
+  const outcome =
+    /\b(thicker|fuller|regrow|regrowth|restore|restored|improve|improved|improvement|norwood|diagnos\w*|severe|advanced|guarantee\w*|results?)\b/i;
+  const urgency =
+    /\b(limited time|spots? left|last chance|hurry|act now|only today|don.t miss|expires?|before it.s too late)\b/i;
+
+  const lines = [
+    ...strings(COPY),
+    ...strings(ANALYSING_STEPS),
+    ANALYSING_TITLE,
+    ...MEANING_CHOICES.map((c) => c.label),
+    ...ONSET_CHOICES.map((c) => c.label),
+    ...APPROACH_CHOICES.map((c) => c.label),
+    ...CONSISTENCY_CHOICES.map((c) => c.label),
+    ...CADENCE_CHOICES.map((c) => `${c.label} ${c.detail ?? ''}`),
+    ...GENDER_CHOICES.map((c) => c.label),
+    ...(['male', 'female'] as const).flatMap((g) => {
+      const content = funnelContent(g);
+      return [
+        content.story.title,
+        content.story.second,
+        ...content.areas.map((c) => c.label),
+        ...content.triggers.map((c) => c.label),
+        ...content.medications.map((c) => `${c.label} ${c.detail ?? ''}`),
+      ];
+    }),
+  ];
+
+  for (const line of lines) {
+    assert.ok(!outcome.test(line), `"${line}" reads as a claim about hair`);
+    assert.ok(!urgency.test(line), `"${line}" is hurrying somebody`);
+  }
+});
+
+test('funnel: a goal is the person’s hope in their words, never a promise', () => {
+  // The goal options say "more fullness" because that is what people say
+  // when asked what they are hoping for, and the app shows the one they
+  // pick back to them as theirs. What none of them may do is attach a
+  // time, a certainty, or the app to it.
+  const promise = /\b(will|guarantee\w*|in \d+ (days|weeks|months)|with tress|the app)\b/i;
+  for (const gender of ['male', 'female'] as const) {
+    for (const goal of funnelContent(gender).goals) {
+      assert.ok(!promise.test(goal.label), `"${goal.label}" promises the goal`);
+    }
+  }
+});
+
+test('funnel: every button says continue, or says exactly what the tap does', () => {
+  // "That's My Goal" and "Build My Routine" narrated what you had just
+  // done; eleven of those in a row read as a sales script. A button
+  // either moves on, or names the one real thing it is about to do.
+  const allowed = /^(Continue|Get started|Choose a photo|Take the photo)$/;
+  for (const [step, copy] of Object.entries(COPY)) {
+    if ('cta' in copy) {
+      assert.match(copy.cta, allowed, `${step}: "${copy.cta}" is narrating rather than acting`);
+    }
+  }
 });
 
 /* ----------------------------- reference set ---------------------------- */
@@ -945,11 +1058,11 @@ test('consistency delta: compares this month against the one before it', () => {
   );
 });
 
-test('funnel: the analysing beat sits between the card and the plan', () => {
-  // It exists to make the plan feel assembled. Before the card it would
-  // interrupt the reveal; after the plan it would delay nothing.
+test('funnel: the analysing beat sits between the card and the report', () => {
+  // It exists to make the report feel assembled. Before the card it
+  // would interrupt the reveal; after the report it would delay nothing.
   assert.ok(STEPS.indexOf('card') < STEPS.indexOf('analysing'));
-  assert.ok(STEPS.indexOf('analysing') < STEPS.indexOf('plan'));
+  assert.ok(STEPS.indexOf('analysing') < STEPS.indexOf('profile'));
 });
 
 test('funnel: the analysing beat never advances the progress bar', () => {

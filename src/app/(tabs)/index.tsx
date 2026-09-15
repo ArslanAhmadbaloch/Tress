@@ -11,11 +11,12 @@ import {
   MetricTile,
   PhotoStack,
 } from '@/components/dashboard';
+import { BaselineCard, baselineIsIncomplete } from '@/components/home/baseline-card';
+import { StreakGlyph } from '@/components/home/streak-glyph';
 import { STACK_TEXT_INSET, StackRow } from '@/components/stack-row';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GlassOrb } from '@/components/ui/glass-orb';
-import { StrandGlyph } from '@/components/ui/metric-glyphs';
-import { StreakGlyph } from '@/components/home/streak-glyph';
 import { Icon } from '@/components/ui/icon';
 import {
   EmptyState,
@@ -24,9 +25,11 @@ import {
   ScreenTitle,
   Separator,
 } from '@/components/ui/layout';
+import { StrandGlyph } from '@/components/ui/metric-glyphs';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import {
+  daysBetween,
   formatDate,
   formatRelative,
   toDateKey,
@@ -45,8 +48,8 @@ import {
   weeklyAdherenceHistory,
   sessionLabel,
 } from '@/store/selectors';
-import { useTheme } from '@/theme';
-import { type Angle } from '@/types/domain';
+import { spacing, useTheme } from '@/theme';
+import { ANGLES, type Angle, type PhotoSession } from '@/types/domain';
 
 /** The angle the progress card leads with — the crown shows most change. */
 const HERO_ANGLE: Angle = 'crown';
@@ -56,6 +59,13 @@ const STREAK_TARGET = 30;
 
 /** Sessions the photo ring fills across — enough for a first real comparison. */
 const SESSION_TARGET = 6;
+
+/**
+ * The gap between cards. Sixteen, not twelve: the reference's home is a
+ * column of white cards with visible ground between them, and at twelve
+ * the shadows of neighbouring cards ran together into one long strip.
+ */
+const CARD_GAP = spacing.lg;
 
 /** Shown in every explainer, because the tiles draw a line from day one. */
 const TREND_NOTE =
@@ -68,10 +78,14 @@ function greeting(): string {
   return 'Good Evening';
 }
 
+function hasAngle(session: PhotoSession, angle: Angle): boolean {
+  return session.photos.some((p) => p.angle === angle);
+}
+
 type Explainer = 'consistency' | 'streak' | 'photos' | null;
 
 export default function HomeScreen() {
-  const { colors, spacing } = useTheme();
+  const { colors } = useTheme();
   const router = useRouter();
   const { data, advanceRoutineToday } = useAppStore();
 
@@ -80,12 +94,26 @@ export default function HomeScreen() {
   const adherenceHistory = useMemo(() => weeklyAdherenceHistory(data), [data]);
   const photoHistory = useMemo(() => sessionHistory(data), [data]);
 
+  const latest = latestSession(data);
+  const baseline = baselineSession(data);
+
+  /*
+    The angle the hero compares. The crown, when both sessions have it;
+    otherwise the first angle they share. The first session can be a
+    single angle from the funnel's scan, and a card that insisted on the
+    crown would show "No photo" beside a real photograph for as long as
+    that session stayed the baseline.
+  */
+  const heroAngle = useMemo<Angle>(() => {
+    if (!baseline || !latest) return HERO_ANGLE;
+    if (hasAngle(baseline, HERO_ANGLE) && hasAngle(latest, HERO_ANGLE)) return HERO_ANGLE;
+    return ANGLES.find((a) => hasAngle(baseline, a) && hasAngle(latest, a)) ?? HERO_ANGLE;
+  }, [baseline, latest]);
+
   const journey = data.journey;
   if (!journey) return null;
 
   const name = data.profile?.displayName?.trim();
-  const latest = latestSession(data);
-  const baseline = baselineSession(data);
   const score = consistencyScore(data);
   const streak = currentStreak(data);
   const due = nextUpdate(data);
@@ -99,7 +127,23 @@ export default function HomeScreen() {
     .slice(0, 3)
     .map((p) => p.thumbnailUri ?? p.uri);
 
-  const hasComparison = Boolean(baseline && latest && baseline.id !== latest.id);
+  /*
+    Two sessions on different days. Two on the same day — a set retaken
+    ten minutes later, or the five angles captured straight after the
+    funnel's one-angle scan — are not before and after, and a hero that
+    put them side by side under "Baseline → Day 1" would be presenting a
+    change that had no time to happen.
+  */
+  const hasComparison = Boolean(
+    baseline &&
+      latest &&
+      baseline.id !== latest.id &&
+      daysBetween(baseline.capturedAt, latest.capturedAt) >= 1,
+  );
+
+  /* The funnel's first scan is one angle; the five-angle set is what
+     every later comparison needs. See baseline-card.tsx. */
+  const needsBaseline = baselineIsIncomplete(latest);
 
   return (
     <Screen>
@@ -132,8 +176,8 @@ export default function HomeScreen() {
         {/* Hair progress — the photographs come first. */}
         {hasComparison && baseline && latest ? (
           <HairProgressCard
-            beforeUri={baseline.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri}
-            afterUri={latest.photos.find((p) => p.angle === HERO_ANGLE)?.thumbnailUri}
+            beforeUri={baseline.photos.find((p) => p.angle === heroAngle)?.thumbnailUri}
+            afterUri={latest.photos.find((p) => p.angle === heroAngle)?.thumbnailUri}
             beforeLabel={sessionLabel(journey.startedAt, baseline)}
             afterLabel={sessionLabel(journey.startedAt, latest)}
             beforeDate={formatDate(baseline.capturedAt)}
@@ -156,8 +200,21 @@ export default function HomeScreen() {
           />
         )}
 
+        {/*
+          Directly under the hero, because it is about the hero: the
+          example photographs above it stay examples until this is done.
+          It leaves the screen on its own once five angles exist.
+        */}
+        {needsBaseline && latest ? (
+          <BaselineCard
+            session={latest}
+            onCapture={() => router.push('/capture-intro')}
+            style={{ marginTop: CARD_GAP }}
+          />
+        ) : null}
+
         {/* Three metrics. */}
-        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
+        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: CARD_GAP }}>
           <MetricTile
             glyph={<StrandGlyph size={21} />}
             label="Consistency"
@@ -212,20 +269,25 @@ export default function HomeScreen() {
 
         {/* Today's stack. */}
         {items.length > 0 ? (
-          <Card padded={false} style={{ marginTop: spacing.md }}>
+          <Card padded={false} style={{ marginTop: CARD_GAP }}>
+            {/*
+              The header's side padding matches the rows' rather than the
+              card's twenty, so the title sits flush over the first orb
+              instead of a few points to its right.
+            */}
             <View
               style={{
                 flexDirection: 'row',
-                alignItems: 'center',
+                alignItems: 'baseline',
                 justifyContent: 'space-between',
-                padding: spacing.lg,
-                paddingBottom: spacing.xs,
+                paddingHorizontal: spacing.lg,
+                paddingTop: spacing.xl,
+                paddingBottom: spacing.sm,
               }}>
               <Text variant="title3">Today&apos;s Stack</Text>
               <Text
-                variant="callout"
-                color={today.done === today.total ? 'accent' : 'textSecondary'}
-                style={{ fontWeight: '500' }}>
+                variant="subhead"
+                color={today.done === today.total ? 'accent' : 'textSecondary'}>
                 {today.done} of {today.total}
               </Text>
             </View>
@@ -257,6 +319,7 @@ export default function HomeScreen() {
                 gap: spacing.md,
                 paddingHorizontal: spacing.lg,
                 paddingVertical: spacing.sm + spacing.xxs,
+                paddingBottom: spacing.md,
               }}>
               <GlassOrb size={38} ring={false}>
                 <Icon name="plus" size={15} color={colors.accent} />
@@ -268,27 +331,24 @@ export default function HomeScreen() {
             </PressableScale>
           </Card>
         ) : (
-          <Card tone="subtle" style={{ marginTop: spacing.md }}>
+          /*
+            White like every other card, not the inset grey it was. An
+            empty stack is not a lesser card; it is the same card before
+            anything is in it, and a grey panel in a column of white ones
+            read as disabled.
+          */
+          <Card style={{ marginTop: CARD_GAP }}>
             <Text variant="title3">Today&apos;s Stack</Text>
             <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
               Build a routine you can actually stick to.
             </Text>
-            <PressableScale
+            <Button
+              label="Add routine"
+              size="md"
+              block={false}
               onPress={() => router.push('/routine')}
-              style={{
-                alignSelf: 'flex-start',
-                marginTop: spacing.lg,
-                paddingHorizontal: spacing.xl,
-                paddingVertical: spacing.md,
-                borderRadius: 999,
-                backgroundColor: colors.accent,
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Add routine">
-              <Text variant="subhead" color="textOnAccent">
-                Add routine
-              </Text>
-            </PressableScale>
+              style={{ marginTop: spacing.xl }}
+            />
           </Card>
         )}
 
@@ -296,18 +356,23 @@ export default function HomeScreen() {
           entries={data.journal}
           onOpen={() => router.push('/journal')}
           onWrite={() => router.push({ pathname: '/journal', params: { compose: '1' } })}
-          style={{ marginTop: spacing.md }}
+          style={{ marginTop: CARD_GAP }}
         />
 
         <LearnCard
-          style={{ marginTop: spacing.md }}
+          style={{ marginTop: CARD_GAP }}
           onPress={() => router.push('/learn')}
         />
 
-        {/* A reminder, not a metric, so it sits below the fold. */}
-        {due && data.sessions.length > 0 ? (
+        {/*
+          A reminder, not a metric, so it sits below the fold. Not shown
+          while the baseline is still one angle: "same five angles as
+          last time" is not true of a last time that had one, and the
+          baseline card above is already the ask.
+        */}
+        {due && data.sessions.length > 0 && !needsBaseline ? (
           <Card
-            style={{ marginTop: spacing.md }}
+            style={{ marginTop: CARD_GAP }}
             onPress={() => router.push('/capture-intro')}
             accessibilityLabel="Start a photo update">
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>

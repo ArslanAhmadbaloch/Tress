@@ -47,6 +47,16 @@ export type Coverage = {
    * across months usually mean the phone moved, not the hair.
    */
   verticalBalance: number;
+  /**
+   * How much of the mask sits left of the frame's centre line, 0–1. Half
+   * means the head was square to the camera; markedly more on one side
+   * means it was turned. Like the vertical figure it is a reading of the
+   * framing, and its only use is telling two months apart from a moved
+   * phone. Optional in the type because readings stored before it existed
+   * have no split, and a guessed 0.5 would read as "square" for a
+   * photograph nobody measured.
+   */
+  horizontalBalance?: number;
   /** Pixels counted as hair. Kept so callers can reject tiny masks. */
   pixels: number;
 };
@@ -55,15 +65,17 @@ export function coverageOf(mask: MaskImage): Coverage {
   const { width, height, data } = mask;
   const total = width * height;
   if (total === 0) {
-    return { fraction: 0, upperFraction: 0, verticalBalance: 0, pixels: 0 };
+    return { fraction: 0, upperFraction: 0, verticalBalance: 0, horizontalBalance: 0, pixels: 0 };
   }
 
   let pixels = 0;
   let upper = 0;
   let aboveMid = 0;
+  let leftOfMid = 0;
 
   const thirdRow = Math.floor(height / 3);
   const midRow = Math.floor(height / 2);
+  const midCol = width / 2;
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -71,6 +83,9 @@ export function coverageOf(mask: MaskImage): Coverage {
       pixels += 1;
       if (y < thirdRow) upper += 1;
       if (y < midRow) aboveMid += 1;
+      // Pixel centres, so an odd-width frame's middle column splits evenly
+      // rather than landing wholly on one side.
+      if (x + 0.5 < midCol) leftOfMid += 1;
     }
   }
 
@@ -78,6 +93,7 @@ export function coverageOf(mask: MaskImage): Coverage {
     fraction: pixels / total,
     upperFraction: upper / Math.max(1, thirdRow * width),
     verticalBalance: pixels === 0 ? 0 : aboveMid / pixels,
+    horizontalBalance: pixels === 0 ? 0 : leftOfMid / pixels,
     pixels,
   };
 }

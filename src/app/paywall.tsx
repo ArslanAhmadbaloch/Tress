@@ -12,31 +12,62 @@
  * button for four seconds. The price is visible above the button that
  * charges it, the renewal terms are on the screen rather than a tap away,
  * and the close control is there from the first frame.
+ *
+ * ── The page, top to bottom ────────────────────────────────────────────
+ * One headline, centred, in the display face. The person's own first
+ * photograph in a white frame, because the thing being sold is a record
+ * and the record is of them. Four lines on what Premium keeps. Two plans.
+ * Then, pinned, the price and the button that charges it.
+ *
+ * Every sentence on it lives in paywall-variants.ts, where the tests can
+ * read it. This file is layout.
  */
 
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
+import { useBackOrHome } from '@/lib/navigation';
+import { Rise } from '@/components/funnel';
+import { PremiumFeatureList } from '@/components/subscription/feature-list';
+import { PaywallHeroCard } from '@/components/subscription/hero';
+import { SubscriptionPlanCard } from '@/components/subscription/plan-card';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { ScrollEdgeEffect } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
-import { PremiumFeatureList } from '@/components/subscription/feature-list';
-import { SubscriptionPlanCard } from '@/components/subscription/plan-card';
 import { DEFAULT_PLAN, PLAN_ORDER, type PlanId } from '@/features/subscription/config';
-import { variantFor } from '@/features/subscription/paywall-variants';
 import { failureMessage } from '@/features/subscription/entitlement';
+import {
+  CTA_COPY,
+  ctaLabel,
+  heroFor,
+  priceLine,
+  renewalTerms,
+  variantFor,
+} from '@/features/subscription/paywall-variants';
 import { useSubscription } from '@/features/subscription/provider';
 import { useAppStore } from '@/store/app-store';
 import { useTheme } from '@/theme';
+
+/** The headline and body hold a narrower measure than the cards, so a
+    centred line breaks where a sentence would rather than at the edge. */
+const COPY_MEASURE = 320;
 
 export default function PaywallScreen() {
   const { colors, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  /*
+    The funnel arrives here by a chain of replaces — capture, report,
+    paywall — so there is nothing behind this screen to go back to. Home
+    is where "close" should land in that case; a dismiss that does nothing
+    is a paywall that cannot be closed.
+  */
+  const leave = useBackOrHome();
 
   const { data } = useAppStore();
   const {
@@ -52,41 +83,29 @@ export default function PaywallScreen() {
     stable arm, and the wrong thing to ever report alongside one.
   */
   const variant = useMemo(() => variantFor(data.profile?.id ?? ''), [data.profile?.id]);
+  const hero = useMemo(() => heroFor(data), [data]);
   const plan = plans[selected];
-
-  /*
-    The line directly above the button that charges them. When the store
-    is offering this person a trial it has to lead with that and still
-    name the price the trial turns into — a "7 days free" with no number
-    after it is the pattern the App Store rejects, and deserves to.
-  */
-  const recurring =
-    plan.period === 'year'
-      ? `${plan.formattedPrice} a year · about ${plan.formattedMonthlyEquivalent} a month`
-      : `${plan.formattedPrice} a month`;
-  const price = plan.trial
-    ? `${plan.trial.duration} free, then ${recurring}`
-    : recurring;
   const scroller = useRef<ScrollView>(null);
 
   const busy = purchaseState.kind === 'working' || restoreState.kind === 'working';
+  const succeeded = purchaseState.kind === 'success';
 
   // Already entitled — by subscription or as a tester — so there is
   // nothing to sell. Leaving rather than showing a price they have
   // already paid.
   useEffect(() => {
     if (entitlement.isPremium && purchaseState.kind !== 'success') {
-      router.back();
+      leave();
     }
-  }, [entitlement.isPremium, purchaseState.kind, router]);
+  }, [entitlement.isPremium, purchaseState.kind, leave]);
 
   // A completed purchase closes the sheet, landing them back on the thing
   // they were trying to do.
   useEffect(() => {
     if (purchaseState.kind !== 'success') return;
-    const t = setTimeout(() => { acknowledge(); router.back(); }, 1200);
+    const t = setTimeout(() => { acknowledge(); leave(); }, 1200);
     return () => clearTimeout(t);
-  }, [purchaseState.kind, acknowledge, router]);
+  }, [purchaseState.kind, acknowledge, leave]);
 
   // A result appended below the fold is a result nobody reads: the tap
   // that produced it happened at the bottom of the screen, and the answer
@@ -115,17 +134,17 @@ export default function PaywallScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingTop: insets.top + spacing.md,
-          paddingHorizontal: spacing.lg,
-          paddingBottom: spacing.xxl,
+          paddingHorizontal: spacing.xl,
+          paddingBottom: spacing.xxxl,
         }}>
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
           <PressableScale
-            hitSlop={5}
-            onPress={() => router.back()}
+            hitSlop={6}
+            onPress={leave}
             accessibilityRole="button"
             accessibilityLabel="Close"
             style={{
-              width: 34, height: 34, borderRadius: 17,
+              width: 36, height: 36, borderRadius: 18,
               alignItems: 'center', justifyContent: 'center',
               backgroundColor: colors.fill,
             }}>
@@ -133,42 +152,53 @@ export default function PaywallScreen() {
           </PressableScale>
         </View>
 
-        <Animated.View entering={FadeInDown.duration(360)}>
-          {/*
-            Which framing somebody sees is fixed for the life of their
-            install — see paywall-variants.ts. All three name the same
-            price, the same trial and the same features; only the door in
-            is different.
-          */}
-          <Text variant="title1" style={{ marginTop: spacing.sm }}>
+        {/*
+          Centred, like the funnel's questions. Which framing somebody sees
+          is fixed for the life of their install — see paywall-variants.ts.
+          All three name the same price, the same trial and the same
+          features; only the door in is different.
+        */}
+        <Rise index={0} style={{ alignItems: 'center', marginTop: spacing.lg }}>
+          <Text variant="overline" color="textSecondary" center>
+            Tress Premium
+          </Text>
+          <Text
+            variant="title1"
+            center
+            accessibilityRole="header"
+            style={{ marginTop: spacing.sm, maxWidth: COPY_MEASURE }}>
             {variant.headline}
           </Text>
-          <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
+          <Text
+            variant="callout"
+            color="textSecondary"
+            center
+            style={{ marginTop: spacing.md, maxWidth: COPY_MEASURE }}>
             {variant.body}
           </Text>
-        </Animated.View>
+        </Rise>
 
-        <Animated.View entering={FadeInDown.delay(80).duration(360)}>
-          <View style={{ marginTop: spacing.xxl }}>
-            <PremiumFeatureList />
-          </View>
-        </Animated.View>
+        <Rise index={1} style={{ marginTop: spacing.xxxl }}>
+          <PaywallHeroCard hero={hero} />
+        </Rise>
 
-        <Animated.View entering={FadeInDown.delay(160).duration(360)}>
-          <View
-            accessibilityRole="radiogroup"
-            style={{ gap: spacing.sm, marginTop: spacing.xxl }}>
+        <Rise index={2} style={{ marginTop: spacing.xxxl, paddingHorizontal: spacing.xs }}>
+          <PremiumFeatureList />
+        </Rise>
+
+        <Rise index={3} style={{ marginTop: spacing.xxxl }}>
+          <View accessibilityRole="radiogroup" style={{ gap: spacing.md }}>
             {PLAN_ORDER.map((id) => (
               <SubscriptionPlanCard
                 key={id}
                 plan={plans[id]}
                 selected={selected === id}
                 onSelect={() => setSelected(id)}
-                badge={id === 'yearly' ? 'BEST VALUE' : undefined}
+                badge={id === 'yearly' ? 'Best value' : undefined}
               />
             ))}
           </View>
-        </Animated.View>
+        </Rise>
 
         {showFailure && failure ? (
           <Animated.View entering={FadeIn.duration(200)}>
@@ -179,7 +209,7 @@ export default function PaywallScreen() {
               style={{
                 flexDirection: 'row',
                 gap: spacing.md,
-                marginTop: spacing.lg,
+                marginTop: spacing.xl,
                 padding: spacing.lg,
                 borderRadius: radius.md,
                 backgroundColor: colors.backgroundSubtle,
@@ -199,44 +229,45 @@ export default function PaywallScreen() {
           <Animated.View entering={FadeIn.duration(200)}>
             <Text
               variant="footnote"
-              color="accent"
+              color="success"
               center
               accessibilityLiveRegion="polite"
-              style={{ marginTop: spacing.lg }}>
+              style={{ marginTop: spacing.xl }}>
               {restoreState.message}
             </Text>
           </Animated.View>
         ) : null}
       </ScrollView>
 
-      {/* The price sits directly above the button that charges it, so
-          there is never a tap whose cost is off screen. */}
+      {/*
+        The footer is pinned, and content scrolls beneath it. No rule
+        between the two: the scroll edge effect dissolves the cards before
+        they reach the price, which is what makes them read as passing
+        under the footer rather than being cut off by it.
+      */}
+      <View pointerEvents="none" style={{ height: 0 }}>
+        <ScrollEdgeEffect edge="bottom" />
+      </View>
       <View
         style={{
-          paddingHorizontal: spacing.lg,
+          paddingHorizontal: spacing.xl,
           paddingBottom: insets.bottom + spacing.md,
-          paddingTop: spacing.md,
-          borderTopWidth: 1,
-          borderTopColor: colors.separator,
+          paddingTop: spacing.sm,
           backgroundColor: colors.background,
         }}>
+        {/* The price sits directly above the button that charges it, so
+            there is never a tap whose cost is off screen. */}
         <Text variant="footnote" color="textSecondary" center>
-          {price}
+          {priceLine(plan)}
         </Text>
 
         <Button
-          label={
-            purchaseState.kind === 'success'
-              ? 'Your journey is ready'
-              : plan.trial
-                ? 'Start My Free Trial'
-                : 'Start My Journey'
-          }
+          label={ctaLabel(plan, succeeded)}
           onPress={() => purchase(selected)}
           loading={purchaseState.kind === 'working'}
-          succeeded={purchaseState.kind === 'success'}
-          disabled={busy || purchaseState.kind === 'success'}
-          style={{ marginTop: spacing.sm }}
+          succeeded={succeeded}
+          disabled={busy || succeeded}
+          style={{ marginTop: spacing.md }}
           accessibilityHint={
             canPurchase
               ? 'Subscribes and unlocks your journey'
@@ -251,13 +282,13 @@ export default function PaywallScreen() {
             justifyContent: 'center',
             gap: spacing.sm,
             marginTop: spacing.sm,
-            minHeight: 28,
+            minHeight: 32,
           }}>
           {restoreState.kind === 'working' ? (
             <>
               <ActivityIndicator color={colors.textSecondary} />
               <Text variant="footnote" color="textSecondary" accessibilityLiveRegion="polite">
-                Checking your purchases…
+                {CTA_COPY.restoring}
               </Text>
             </>
           ) : (
@@ -267,33 +298,25 @@ export default function PaywallScreen() {
               hitSlop={10}
               haptic="none"
               accessibilityRole="button"
-              accessibilityLabel="Restore purchases"
+              accessibilityLabel={CTA_COPY.restore}
               accessibilityHint="Looks for a Premium subscription already bought with this store account"
               style={{ paddingVertical: spacing.xs, paddingHorizontal: spacing.sm }}>
-              <Text variant="footnote" color="accent" style={{ fontWeight: '600' }}>
-                Restore Purchases
+              <Text variant="footnote" color="textSecondary" style={{ fontWeight: '600' }}>
+                {CTA_COPY.restore}
               </Text>
             </PressableScale>
           )}
         </View>
 
-        <Text
-          variant="caption"
-          color="textTertiary"
-          center
-          style={{ marginTop: spacing.xs }}>
-          {plan.trial
-            ? `Your first ${plan.trial.duration} are free. After that the subscription renews automatically at ${plan.formattedPrice} unless cancelled at least 24 hours before the trial ends. `
-            : 'Subscriptions renew automatically unless cancelled. '}
-          Payment is charged to your App Store or Google Play account.
-          Cancel anytime in your account settings.
+        <Text variant="caption" color="textTertiary" center style={{ marginTop: spacing.xs }}>
+          {renewalTerms(plan)}
         </Text>
 
         <View
           style={{
             flexDirection: 'row',
             justifyContent: 'center',
-            gap: spacing.lg,
+            gap: spacing.xl,
             marginTop: spacing.xs,
           }}>
           <PressableScale

@@ -6,7 +6,7 @@
  * pull from here so light and dark stay in lockstep.
  */
 
-import { Platform } from 'react-native';
+import { Platform, type TextStyle } from 'react-native';
 
 /* ------------------------------------------------------------------ *
  * Palette
@@ -302,13 +302,18 @@ export const spacing = {
  * shape, so radii step up as containers get larger and nested shapes stay
  * concentric with their parent. `card` is the workhorse; `section` matches
  * the larger corner radius grouped lists took on in the refresh.
+ *
+ * `card` sits at 22 rather than the 16-18 a conventional card uses. A card
+ * that floats on a soft shadow with no outline reads as a pebble rather
+ * than a panel, and a pebble wants a rounder corner: at 20 the corners
+ * still looked drawn, at 24 the cards started to look like buttons.
  * ------------------------------------------------------------------ */
 
 export const radius = {
   xs: 6,
   sm: 10,
   md: 14,
-  card: 20,
+  card: 22,
   section: 26,
   lg: 28,
   xl: 34,
@@ -336,9 +341,9 @@ export function concentricRadius(outerRadius: number, inset: number): number {
 
 export const metrics = {
   /** Minimum height of a row in a grouped list. */
-  rowHeight: 52,
+  rowHeight: 56,
   /** Inner padding of a grouped section. */
-  sectionPadding: 18,
+  sectionPadding: 20,
   /** How far floating chrome sits from the screen edge. */
   floatingInset: 16,
   /**
@@ -350,8 +355,14 @@ export const metrics = {
 } as const;
 
 /* ------------------------------------------------------------------ *
- * Typography — native system faces, iOS rounded for numerals so the
- * dashboard reads like Apple Health rather than a spreadsheet.
+ * Typography
+ *
+ * Two voices. Everything that names or measures — headings, the funnel's
+ * questions, the numbers on a tile — is set in Manrope, the bundled
+ * grotesque, so the app has one recognisable face on every platform.
+ * Everything that is read at length — body, callouts, footnotes — stays
+ * on the system face, which is what the platform tuned for paragraphs and
+ * what Dynamic Type knows how to scale.
  * ------------------------------------------------------------------ */
 
 export const fontFamily = Platform.select({
@@ -456,6 +467,8 @@ type TypeStyle = {
     | '900';
   letterSpacing?: number;
   fontFamily?: string;
+  /** OpenType features — tabular figures for anything that counts. */
+  fontVariant?: TextStyle['fontVariant'];
 };
 
 export const typography = {
@@ -466,29 +479,34 @@ export const typography = {
     family — asking for 700 on a regular file silently gives you the
     regular back — and on iOS a weight on top of an already-bold file
     double-bolds it. The cut in the family name is the weight.
+
+    Every heading is the semibold cut, the display number included. Bold
+    Manrope above 30pt reads as a poster; semibold at the same tight
+    tracking reads as confident and leaves the number to carry the weight.
+    That one step is most of the distance between "immature" and "calm".
   */
   display: {
-    fontSize: 46,
+    fontSize: 44,
     lineHeight: 50,
-    letterSpacing: -1.4,
-    fontFamily: fontFamily.displayBold,
+    letterSpacing: -1.2,
+    fontFamily: fontFamily.display,
   },
   /** Large screen title. */
   title1: {
-    fontSize: 36,
-    lineHeight: 41,
-    letterSpacing: -1.1,
-    fontFamily: fontFamily.displayBold,
+    fontSize: 34,
+    lineHeight: 40,
+    letterSpacing: -0.9,
+    fontFamily: fontFamily.display,
   },
   title2: {
     fontSize: 26,
-    lineHeight: 32,
-    letterSpacing: -0.7,
+    lineHeight: 33,
+    letterSpacing: -0.6,
     fontFamily: fontFamily.display,
   },
   title3: {
     fontSize: 20,
-    lineHeight: 27,
+    lineHeight: 26,
     letterSpacing: -0.4,
     fontFamily: fontFamily.display,
   },
@@ -498,29 +516,35 @@ export const typography = {
     letterSpacing: -0.3,
     fontFamily: fontFamily.display,
   },
+  /*
+    Reading sizes sit a point larger and a few points looser than they
+    did. A 16/23 body next to a 17pt headline made every card feel tight;
+    17/25 is the platform's own body measure, and the extra leading is
+    what makes a paragraph read as air rather than as text.
+  */
   body: {
-    fontSize: 16,
-    lineHeight: 23,
+    fontSize: 17,
+    lineHeight: 25,
     fontWeight: '400',
   },
   callout: {
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 22,
     fontWeight: '400',
   },
   subhead: {
     fontSize: 14,
-    lineHeight: 19,
+    lineHeight: 20,
     fontWeight: '500',
   },
   footnote: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
     fontWeight: '400',
   },
   caption: {
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 17,
     fontWeight: '500',
   },
   /**
@@ -534,19 +558,28 @@ export const typography = {
     fontWeight: '600',
     letterSpacing: 0.2,
   },
+  /*
+    Numbers are set in the display face too, so a tile's figure and the
+    heading above it are visibly the same family. Tabular figures because
+    these numbers count up when they change: with proportional figures a
+    "1" is narrower than an "8" and the label beside it shuffles every
+    frame of the animation.
+  */
   /** Emphasised statistic inside a card. */
   stat: {
-    fontSize: 34,
-    lineHeight: 38,
-    fontWeight: '700',
-    letterSpacing: -0.8,
+    fontSize: 36,
+    lineHeight: 42,
+    letterSpacing: -0.9,
+    fontFamily: fontFamily.display,
+    fontVariant: ['tabular-nums'],
   },
   /** The number on a dashboard metric tile, sized for a third of the width. */
   metric: {
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: '700',
-    letterSpacing: -0.7,
+    fontSize: 26,
+    lineHeight: 31,
+    letterSpacing: -0.6,
+    fontFamily: fontFamily.display,
+    fontVariant: ['tabular-nums'],
   },
   /**
    * Smallest readable step. Chart axes and photo credits only — if a
@@ -605,8 +638,18 @@ export const typography = {
 export type TypographyVariant = keyof typeof typography;
 
 /* ------------------------------------------------------------------ *
- * Depth — shadows stay soft. Dark mode leans on surface contrast
- * instead, because large blurred shadows read as grey haze on black.
+ * Depth
+ *
+ * Cards carry no outline. What separates a white card from the warm
+ * ground is a shadow that is wide, low and faint — the kind a sheet of
+ * paper casts when it lies almost flat on a desk. A tighter, darker
+ * shadow would read as a drop shadow, which is the one thing the calm
+ * tone cannot survive. Dark mode leans on surface contrast instead,
+ * because large blurred shadows read as grey haze on black.
+ *
+ * A surface that clips its children (`overflow: 'hidden'`) clips its
+ * own shadow on iOS as well. Anything that needs both draws the shadow
+ * on an outer view and clips on an inner one — see `Card`.
  * ------------------------------------------------------------------ */
 
 export const shadow = {
@@ -614,14 +657,14 @@ export const shadow = {
   soft: Platform.select({
     ios: {
       shadowColor: '#000',
-      shadowOpacity: 0.06,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.07,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
     },
     // Elevation is a distance, not a blur radius: matching iOS by eye
-    // takes roughly half the shadowRadius. At elevation 2 these surfaces
-    // sat flat on the page next to the same screen on iOS.
-    android: { elevation: 4 },
+    // takes roughly a third of the shadowRadius. At elevation 2 these
+    // surfaces sat flat on the page next to the same screen on iOS.
+    android: { elevation: 6 },
     default: {},
   })!,
   lifted: Platform.select({

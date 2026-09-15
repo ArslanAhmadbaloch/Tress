@@ -1,14 +1,17 @@
 /**
  * The onboarding funnel.
  *
- * One screen holding a step machine, rather than seventeen routes. Every
+ * One screen holding a step machine, rather than a route per step. Every
  * answer lives here until the card is revealed, which is the moment the
  * journey is actually created — so someone can go back and change anything
  * they said, and nothing is written until they have seen what it makes.
  *
- * The order is the argument. Three questions about what this means to them
- * before anything about hair; a fact card in return before a fourth
- * question; their name asked last, once the journey is already theirs.
+ * The order is the argument. Who this is for; what better hair would mean
+ * to them, before anything about hair; somebody's pair in return before
+ * the next block of questions; their card; a report built from what they
+ * said; and then one photograph. The report is the thing the funnel has
+ * been promising, and the camera is one tap after it — everything that
+ * used to sit between the two was the report repeated.
  */
 
 import { Image } from 'expo-image';
@@ -20,8 +23,6 @@ import { Alert, TextInput, View, useWindowDimensions } from 'react-native';
 import {
   ChoiceRow,
   FunnelShell,
-  PlanFact,
-  PlanLine,
   Rise,
   Scale,
   StepTitle,
@@ -36,12 +37,12 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { ProductRow } from '@/components/product-row';
 import {
-  PLAN_THANKS,
   ANALYSING_STEPS,
   ANALYSING_TITLE,
   WELCOME_BODY,
   welcomeTitle,
 } from '@/features/content/belonging';
+import { hairContent } from '@/features/content/hair-content';
 import { Analysing } from '@/components/onboarding/analysing';
 import { ProfileReportScreen } from '@/components/onboarding/profile-report-screen';
 import { HowItWorks } from '@/components/onboarding/how-it-works';
@@ -49,8 +50,6 @@ import { caseStudies, type CaseStudy } from '@/features/onboarding/case-studies'
 import { buildProfileReport } from '@/features/onboarding/profile-report';
 import {
   HELP_FIGURES,
-  HELP_FOOTNOTE,
-  HELP_SUBTITLE,
   HELP_TITLE,
 } from '@/features/onboarding/how-it-helps';
 import { productOptions, type CustomProduct } from '@/features/onboarding/products';
@@ -79,7 +78,6 @@ import { MIN_TOUCH_TARGET, useTheme, typography } from '@/theme';
 import {
   HAIR_GOAL_LABELS,
   PREOCCUPATION_STEPS,
-  TRACKING_AREA_LABELS,
   type Approach,
   type Gender,
   type HairGoal,
@@ -161,7 +159,7 @@ function toggleMedication(list: Medication[], value: Medication): Medication[] {
 }
 
 export default function OnboardingFunnel() {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, radius, shadow } = useTheme();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const { createJourney } = useAppStore();
@@ -799,18 +797,16 @@ export default function OnboardingFunnel() {
         children: (
           <>
             <Wash />
-            <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxl }}>
+            <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxxl }}>
               <View
                 style={{
-                  width: 148,
-                  height: 148,
-                  borderRadius: 74,
+                  width: 160,
+                  height: 160,
+                  borderRadius: 80,
                   overflow: 'hidden',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: colors.accentSoft,
-                  borderWidth: 1,
-                  borderColor: colors.accentBorder,
+                  backgroundColor: answers.avatarUri ? colors.surface : colors.accentSoft,
                 }}>
                 {answers.avatarUri ? (
                   <Image
@@ -820,21 +816,21 @@ export default function OnboardingFunnel() {
                     accessibilityLabel="Your photo"
                   />
                 ) : (
-                  <Icon name="profile" size={54} color={colors.accent} />
+                  <Icon name="profile" size={56} color={colors.accent} />
                 )}
               </View>
             </Rise>
 
             <Rise index={1}>
-              <Text variant="title1" center>
+              <Text variant="question" center accessibilityRole="header">
                 {COPY.photo.title}
               </Text>
               <Text
                 variant="callout"
                 color="textSecondary"
                 center
-                style={{ marginTop: spacing.md }}>
-                {COPY.photo.subtitle}
+                style={{ marginTop: spacing.lg }}>
+                {COPY.photo.body}
               </Text>
             </Rise>
           </>
@@ -858,15 +854,13 @@ export default function OnboardingFunnel() {
               the app shows, not what it thinks of anybody.
             */}
             <SubHeading text={COPY.you.genderPrompt} index={1} />
-            <Rise index={2}>
-              <Choices
-                choices={GENDER_CHOICES}
-                multi={false}
-                selected={[answers.gender]}
-                onToggle={(gender) => set({ gender })}
-                from={2}
-              />
-            </Rise>
+            <Choices
+              choices={GENDER_CHOICES}
+              multi={false}
+              selected={[answers.gender]}
+              onToggle={(gender) => set({ gender })}
+              from={2}
+            />
 
             <SubHeading text={COPY.you.nameLabel} index={4} />
             <Rise index={5}>
@@ -880,11 +874,14 @@ export default function OnboardingFunnel() {
 
             <SubHeading text={COPY.you.second} index={6} />
             <Rise index={7}>
+              {/* The only optional answer in the funnel, and the field
+                  says so itself now that there is no line under the
+                  heading to say it. */}
               <Field
                 value={answers.age}
                 onChange={(age) => set({ age: age.replace(/[^0-9]/g, '').slice(0, 3) })}
-                placeholder="Age"
-                label="Your age"
+                placeholder="Age (optional)"
+                label="Your age, optional"
                 keyboardType="number-pad"
               />
             </Rise>
@@ -959,7 +956,7 @@ export default function OnboardingFunnel() {
     /* ------------------------------- profile ------------------------------- */
     case 'profile':
       return shell({
-        cta: COPY.plan.cta,
+        cta: COPY.profile.cta,
         onCta: next,
         children: (
           <ProfileReportScreen
@@ -978,174 +975,84 @@ export default function OnboardingFunnel() {
         ),
       });
 
-    /* -------------------------------- plan ---------------------------- */
-    case 'plan':
-      return shell({
-        cta: COPY.plan.cta,
-        onCta: next,
-        children: (
-          <>
-            <StepTitle
-              title={`Your journey is ready,`}
-              muted={`${answers.name.trim() || 'You'}.`}
-            />
-
-            <Rise index={1}>
-              <Text
-                variant="callout"
-                color="textSecondary"
-                style={{ marginTop: -spacing.md, marginBottom: spacing.xl }}>
-                {PLAN_THANKS}
-              </Text>
-            </Rise>
-
-            <View style={{ gap: spacing.sm }}>
-              <PlanFact label="Your goal" value={goalLabel ?? 'Still deciding'} index={2} />
-              <PlanFact
-                label="What you're focusing on"
-                value={
-                  answers.areas.length
-                    ? answers.areas.map((a) => TRACKING_AREA_LABELS[a]).join(' · ')
-                    : 'Everything, for now'
-                }
-                index={3}
-              />
-              <PlanFact
-                label="Your check-in"
-                value={
-                  CADENCE_CHOICES.find((c) => c.value === String(answers.intervalDays))?.label ??
-                  'Once a month'
-                }
-                index={4}
-              />
-              <PlanFact
-                label="Your routine"
-                // The real stack, not a paraphrase of it: this line is the
-                // last thing they see before the app builds it.
-                value={
-                  seeds()
-                    .map((seed) => seed.label)
-                    .join(' · ') || 'Add one whenever you like'
-                }
-                index={5}
-              />
-            </View>
-
-            <Rise index={6} style={{ marginTop: spacing.xxl, marginBottom: spacing.sm }}>
-              <Text variant="title3">We’ll help you</Text>
-            </Rise>
-            {COPY.plan.promises.map((promise, i) => (
-              <PlanLine key={promise} text={promise} index={7 + i} />
-            ))}
-          </>
-        ),
-      });
-
-    /* ------------------------------- future --------------------------- */
-    case 'future':
-      return shell({
-        centred: true,
-        cta: COPY.future.cta,
-        onCta: next,
-        children: (
-          <>
-            <Wash />
-            <Rise index={0}>
-              <Text variant="title1" center>
-                {COPY.future.title}
-              </Text>
-              <Text variant="title1" color="textTertiary" center>
-                {COPY.future.titleMuted}
-              </Text>
-            </Rise>
-
-            <View style={{ marginVertical: spacing.xxxl }}>
-              {['Today', 'Month 1', 'Month 3', 'Month 6'].map((label, i) => (
-                <Rise key={label} index={1 + i}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
-                    <View style={{ alignItems: 'center', width: 22 }}>
-                      <View
-                        style={{
-                          width: i === 0 ? 14 : 9,
-                          height: i === 0 ? 14 : 9,
-                          borderRadius: 7,
-                          backgroundColor: i === 0 ? colors.accent : colors.accentBorder,
-                        }}
-                      />
-                      {i < 3 ? (
-                        <View
-                          style={{
-                            width: 2,
-                            height: 34,
-                            backgroundColor: colors.accentBorder,
-                          }}
-                        />
-                      ) : null}
-                    </View>
-                    <Text
-                      variant={i === 0 ? 'headline' : 'callout'}
-                      color={i === 0 ? 'text' : 'textSecondary'}
-                      style={{ marginBottom: i < 3 ? 34 : 0 }}>
-                      {label}
-                    </Text>
-                  </View>
-                </Rise>
-              ))}
-            </View>
-
-            <Rise index={5}>
-              <Text variant="callout" color="textSecondary" center>
-                {COPY.future.body}
-              </Text>
-            </Rise>
-          </>
-        ),
-      });
-
     /* ------------------------------ baseline -------------------------- */
     case 'baseline':
     default:
       return shell({
+        centred: true,
         cta: COPY.baseline.cta,
-        onCta: () => router.replace('/capture-intro'),
+        /*
+          `single=1` asks the capture flow for the front angle only, and
+          to hand over to the scan report as soon as it has it. One
+          photograph, then the report: that is the whole promise of the
+          funnel, and five angles between the promise and the proof was
+          where people stopped. The five-angle set is what an update
+          looks like, and Home asks for it once there is something to
+          update.
+        */
+        onCta: () => router.replace('/capture-intro?single=1'),
         /*
           No skip. The baseline is not a feature of this app, it is the
           thing every other feature is measured against — a journey that
           starts without one has nothing for month three to be compared
           with, and the person finds that out in month three.
 
-          It is a real trade: somebody who cannot photograph their scalp
+          It is a real trade: somebody who cannot photograph themselves
           right now cannot get in. That is the cost of the app being worth
           opening later, and it is the same call the apps that work in
-          this category have all made.
+          this category have all made. Asking for one photograph rather
+          than five is what makes the trade a fair one.
         */
         children: (
           <>
-            <StepTitle title={COPY.baseline.title} />
-            {['Top', 'Left Side', 'Right Side', 'Back', 'Hairline'].map((angle, i) => (
-              <Rise key={angle} index={2 + i}>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: spacing.md,
-                    padding: spacing.lg,
-                    marginBottom: spacing.sm,
-                    borderRadius: radius.md,
+            <Wash />
+            {/*
+              The shot itself, as the hero. The reference photograph for
+              the front angle — the same framing example the capture
+              screen shows — so the person knows exactly what is being
+              asked for before the camera opens. Labelled as an example,
+              because it is one, and because a face the app did not name
+              would read as somebody's result.
+            */}
+            <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxxl }}>
+              <View
+                style={[
+                  {
+                    width: Math.min(220, width - spacing.xl * 2 - spacing.giant),
+                    aspectRatio: 4 / 5,
+                    borderRadius: radius.xl,
                     backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}>
-                  <Text variant="caption" color="textTertiary" style={{ width: 22 }}>
-                    {String(i + 1).padStart(2, '0')}
-                  </Text>
-                  <Text variant="headline" style={{ flex: 1 }}>
-                    {angle}
-                  </Text>
-                  <Icon name="camera" size={18} color={colors.textTertiary} />
-                </View>
-              </Rise>
-            ))}
+                  },
+                  shadow.lifted,
+                ]}>
+                <Image
+                  source={hairContent(answers.gender).angles.front.example}
+                  style={{ width: '100%', height: '100%', borderRadius: radius.xl }}
+                  contentFit="cover"
+                  accessibilityLabel="Example of the framing: a face, straight on, hair off the forehead"
+                />
+              </View>
+              <Text
+                variant="caption"
+                color="textTertiary"
+                center
+                style={{ marginTop: spacing.md }}>
+                Example framing
+              </Text>
+            </Rise>
+
+            <Rise index={1}>
+              <Text variant="question" center accessibilityRole="header">
+                {COPY.baseline.title}
+              </Text>
+              <Text
+                variant="callout"
+                color="textSecondary"
+                center
+                style={{ marginTop: spacing.lg }}>
+                {COPY.baseline.body}
+              </Text>
+            </Rise>
           </>
         ),
       });
@@ -1170,8 +1077,13 @@ function Choices<T extends string>({
 }) {
   const { spacing } = useTheme();
 
+  /*
+    Twelve between rows, not eight. Borderless cards on a soft shadow
+    need a little more air than outlined ones did, or the shadows merge
+    and the list reads as one tall panel with lines across it.
+  */
   return (
-    <View style={{ gap: spacing.sm }}>
+    <View style={{ gap: spacing.md }}>
       {choices.map((choice, i) => (
         <ChoiceRow
           key={choice.value}
@@ -1224,12 +1136,7 @@ function HowItHelpsScreen() {
   return (
     <>
       <Wash />
-      <Rise index={0}>
-        <Text variant="title2">{HELP_TITLE}</Text>
-        <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
-          {HELP_SUBTITLE}
-        </Text>
-      </Rise>
+      <StepTitle title={HELP_TITLE} />
 
       {/*
         The four beats, performed rather than listed. Reading "drag
@@ -1253,22 +1160,16 @@ function HowItHelpsScreen() {
             borderColor: colors.accentBorder,
           }}>
           {HELP_FIGURES.map((figure) => (
-            <View key={figure.label} style={{ flex: 1, gap: 2 }}>
-              <Text variant="title3" color="accent">
+            <View key={figure.label} style={{ flex: 1, gap: 2, alignItems: 'center' }}>
+              <Text variant="title3" color="accent" center>
                 {figure.value}
               </Text>
-              <Text variant="caption" color="textSecondary">
+              <Text variant="caption" color="textSecondary" center>
                 {figure.label}
               </Text>
             </View>
           ))}
         </View>
-      </Rise>
-
-      <Rise index={3} style={{ marginTop: spacing.lg }}>
-        <Text variant="footnote" color="textTertiary">
-          {HELP_FOOTNOTE}
-        </Text>
       </Rise>
     </>
   );

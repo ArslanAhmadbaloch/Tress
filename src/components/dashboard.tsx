@@ -184,44 +184,33 @@ export function HairProgressCard({
         },
         shadow.soft,
       ]}>
+      {/*
+        A title over a quiet range line, and one bare chevron. The header
+        used to carry the range in a pill beside a shadowed circle button,
+        which put three rounded shapes above two rounded photographs and
+        a rounded handle — the card read as busy before the eye reached
+        the pictures. The whole card is the button; the chevron only has
+        to say so.
+      */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
           paddingHorizontal: spacing.sm,
           paddingTop: spacing.xs,
-          paddingBottom: spacing.md,
+          paddingBottom: spacing.lg,
         }}>
-        <Text variant="title3">Hair Progress</Text>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <View
-            style={{
-              paddingHorizontal: spacing.md,
-              paddingVertical: 6,
-              borderRadius: radius.pill,
-              backgroundColor: colors.backgroundSubtle,
-            }}>
-            <Text variant="caption" color="textSecondary">
-              {beforeLabel} → {afterLabel}
-            </Text>
-          </View>
-          <View
-            style={[
-              {
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.surface,
-              },
-              shadow.soft,
-            ]}>
-            <Icon name="chevronRight" size={15} color={colors.text} />
-          </View>
+        <View style={{ flex: 1 }}>
+          <Text variant="title3">Hair Progress</Text>
+          <Text
+            variant="footnote"
+            color="textSecondary"
+            numberOfLines={1}
+            style={{ marginTop: spacing.xxs }}>
+            {beforeLabel} → {afterLabel}
+          </Text>
         </View>
+        <Icon name="chevronRight" size={15} color={colors.textTertiary} />
       </View>
 
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
@@ -436,14 +425,22 @@ export function MetricTile({
       accessibilityLabel={`${label}: ${value}${suffix ?? ''}${unit ? ` ${unit}` : ''}${
         showsPreview ? '. Trend preview only, not enough history yet.' : ''
       }`}
+      /*
+        No hairline. The tiles were the last white surfaces on Home with
+        an outline, and beside the borderless cards above and below them
+        they read as inputs rather than as things. The shadow does the
+        separating, as it does everywhere else.
+
+        Twelve points of padding rather than ten: a third of the width
+        is not much room, but a number with air around it reads as a
+        figure, and one jammed against the corner reads as a label.
+      */
       style={[
         {
           flex: 1,
-          padding: spacing.sm + spacing.xxs,
+          padding: spacing.md,
           borderRadius: radius.card,
           backgroundColor: colors.surface,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.glassBorder,
         },
         shadow.soft,
       ]}>
@@ -463,7 +460,7 @@ export function MetricTile({
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel={`How ${label} is calculated`}>
-          <Icon name="info" size={15} color={colors.textSecondary} />
+          <Icon name="info" size={15} color={colors.textTertiary} />
         </PressableScale>
       </View>
 
@@ -473,7 +470,7 @@ export function MetricTile({
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.8}
-        style={{ marginTop: spacing.xs }}>
+        style={{ marginTop: spacing.sm }}>
         {label}
       </Text>
 
@@ -627,13 +624,16 @@ export function JournalCard({
           ? `Hair journal. Latest entry: ${latest.body}. Opens your journal.`
           : 'Hair journal. Opens your journal.'
       }
+      /*
+        Borderless, and padded to the same twenty points as `Card`, so
+        the journal sits in the column as one more sheet of the same
+        paper rather than the one card that was drawn differently.
+      */
       style={[
         {
-          padding: spacing.lg,
+          padding: spacing.xl,
           borderRadius: radius.section,
           backgroundColor: colors.surface,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.glassBorder,
         },
         shadow.soft,
         style,

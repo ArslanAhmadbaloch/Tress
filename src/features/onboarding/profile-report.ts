@@ -124,7 +124,7 @@ function doingCard(a: ProfileAnswers): ProfileCard | null {
   return {
     id: 'doing',
     eyebrow: 'What you’re doing',
-    echo: `${list(doing)}${honest ? ', and you said you keep to it on and off.' : '.'}`,
+    echo: `You’re using ${list(doing)}${honest ? ', and you said you keep to it on and off.' : '.'}`,
     meaning: honest
       ? 'Worth saying plainly: almost everybody answers that way, and almost everybody is closer to the truth than the people who say they never miss. Ticking it off is what turns a guess into a number.'
       : 'Ticking each one off is what lets a photograph six months from now be read against what you were actually doing at the time, rather than what you meant to be doing.',

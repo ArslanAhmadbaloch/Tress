@@ -6,6 +6,11 @@
  * photographs can honestly be compared, how the routine has gone — and
  * ends on the one thing worth doing next.
  *
+ * It is drawn with the same kit as the scan report at the end of the
+ * funnel: a ring for each section's score, the same tone marks, the same
+ * row for a finding and its working. The first reading and the ongoing
+ * one are one document written at two moments, and they should look it.
+ *
  * The articles did not go anywhere. They are reached from the bottom of
  * this screen and from Profile, because the researched, sourced writing
  * is the part of this app that took longest and it would be a strange
@@ -17,59 +22,26 @@ import { useMemo } from 'react';
 import { View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { FindingRow, ReadingRing } from '@/components/report';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { EmptyState, Screen, ScreenScroll, ScreenTitle } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { buildReport } from '@/features/assessment/engine';
-import type { Finding, ReportSection } from '@/features/assessment/types';
+import type { ReportSection } from '@/features/assessment/types';
 import { useAppStore } from '@/store/app-store';
-import { useTheme } from '@/theme';
+import { iconSize, useTheme } from '@/theme';
 
-function toneColour(tone: Finding['tone'], colors: ReturnType<typeof useTheme>['colors']) {
-  if (tone === 'good') return colors.accent;
-  if (tone === 'attention') return colors.warning;
-  return colors.textSecondary;
-}
+/** Gap between section cards landing. Quicker than the funnel's report: this one is revisited. */
+const STAGGER = 110;
 
-function FindingRow({ finding, index }: { finding: Finding; index: number }) {
-  const { colors, spacing } = useTheme();
-  const dot = toneColour(finding.tone, colors);
+function SectionCard({ section, index }: { section: ReportSection; index: number }) {
+  const { colors, spacing, radius } = useTheme();
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(index * 50).springify().damping(20)}
-      style={{ flexDirection: 'row', gap: spacing.md, paddingVertical: spacing.md }}>
-      <View
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-          backgroundColor: dot,
-          marginTop: 7,
-        }}
-      />
-      <View style={{ flex: 1, gap: 4 }}>
-        <Text variant="subhead">{finding.headline}</Text>
-        {/*
-          Every finding shows its reasoning. A report that states a
-          conclusion without the working is a black box, and a black box
-          about somebody's body is worth less than nothing.
-        */}
-        <Text variant="footnote" color="textSecondary">
-          {finding.detail}
-        </Text>
-      </View>
-    </Animated.View>
-  );
-}
-
-function SectionCard({ section, index }: { section: ReportSection; index: number }) {
-  const { colors, spacing } = useTheme();
-
-  return (
-    <Animated.View entering={FadeInDown.delay(index * 90).springify().damping(20)}>
+      entering={FadeInDown.delay(index * STAGGER).duration(480).springify().damping(20)}>
       <Card style={{ marginTop: spacing.md }}>
         <View
           style={{
@@ -78,29 +50,58 @@ function SectionCard({ section, index }: { section: ReportSection; index: number
             justifyContent: 'space-between',
             gap: spacing.md,
           }}>
-          <Text variant="title3" style={{ flex: 1 }}>
-            {section.title}
-          </Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text variant="title3" accessibilityRole="header">
+              {section.title}
+            </Text>
+            <Text variant="footnote" color="textSecondary" style={{ marginTop: spacing.xxs }}>
+              {section.scoreLabel}
+            </Text>
+          </View>
+
           {/*
-            A section with nothing recorded shows no number at all. A zero
-            would read as a bad score rather than as an absence, and being
-            told you scored zero on a thing you have not started is a
-            small, avoidable insult.
+            A section with nothing recorded shows no ring at all — only a
+            quiet empty well where one would go. A ring at zero would read
+            as a bad score rather than as an absence, and being told you
+            scored zero on a thing you have not started is a small,
+            avoidable insult.
           */}
           {section.score !== null ? (
-            <Text variant="title3" style={{ color: colors.accent }}>
-              {Math.round(section.score * 100)}%
-            </Text>
-          ) : null}
+            <ReadingRing
+              value={section.score}
+              size={60}
+              thickness={5}
+              variant="subhead"
+              delay={index * STAGGER + 200}
+            />
+          ) : (
+            <View
+              accessible={false}
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: radius.pill,
+                borderWidth: 5,
+                borderColor: colors.fill,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+              <Text variant="subhead" color="textTertiary">
+                —
+              </Text>
+            </View>
+          )}
         </View>
-
-        <Text variant="caption" color="textSecondary" style={{ marginTop: 2 }}>
-          {section.scoreLabel}
-        </Text>
 
         <View style={{ marginTop: spacing.sm }}>
           {section.findings.map((f, i) => (
-            <FindingRow key={f.id} finding={f} index={i} />
+            <FindingRow
+              key={f.id}
+              tone={f.tone}
+              headline={f.headline}
+              detail={f.detail}
+              divider={i > 0}
+            />
           ))}
         </View>
       </Card>
@@ -110,7 +111,7 @@ function SectionCard({ section, index }: { section: ReportSection; index: number
 
 export default function ReportScreen() {
   const { data } = useAppStore();
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, radius, shadow } = useTheme();
   const router = useRouter();
 
   const report = useMemo(() => buildReport(data), [data]);
@@ -129,8 +130,8 @@ export default function ReportScreen() {
           <EmptyState
             icon="camera"
             title="Nothing to report yet"
-            body="Take your first set of photographs and this fills in. It reads your own record back to you — what you have captured, whether it can be compared, and how the routine has gone."
-            actionLabel="Take My First Photos"
+            body="Take your first photograph and this fills in. It reads your own record back to you — what you have captured, whether it can be compared, and how the routine has gone."
+            actionLabel="Take My First Photo"
             onAction={() => router.push('/capture-intro')}
           />
         ) : (
@@ -140,21 +141,24 @@ export default function ReportScreen() {
             ))}
 
             {/* The one thing worth doing next, in the app's own voice. */}
-            <Animated.View entering={FadeInDown.delay(360).springify().damping(20)}>
+            <Animated.View
+              entering={FadeInDown.delay(report.sections.length * STAGGER)
+                .duration(480)
+                .springify()
+                .damping(20)}>
               <View
                 style={{
                   marginTop: spacing.xl,
-                  padding: spacing.lg,
-                  borderRadius: radius.md,
+                  padding: spacing.xl,
+                  borderRadius: radius.card,
                   backgroundColor: colors.accentSoft,
-                  borderWidth: 1,
-                  borderColor: colors.accentBorder,
-                  gap: spacing.xs,
+                  gap: spacing.sm,
                 }}>
-                <Text variant="caption" style={{ color: colors.accent, letterSpacing: 1.4 }}>
-                  NEXT
-                </Text>
-                <Text variant="subhead">{report.nextStep}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                  <Icon name="leaf" size={iconSize.sm} color={colors.accent} />
+                  <Text variant="title3">Next</Text>
+                </View>
+                <Text variant="callout">{report.nextStep}</Text>
               </View>
             </Animated.View>
           </>
@@ -164,25 +168,26 @@ export default function ReportScreen() {
           onPress={() => router.push('/learn')}
           accessibilityRole="button"
           accessibilityLabel="Open the Learn library"
-          style={{
-            marginTop: spacing.xl,
-            padding: spacing.lg,
-            borderRadius: radius.md,
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.border,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: spacing.md,
-          }}>
-          <Icon name="learn" size={18} color={colors.textSecondary} />
+          style={[
+            {
+              marginTop: spacing.xl,
+              padding: spacing.xl,
+              borderRadius: radius.card,
+              backgroundColor: colors.surface,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.md,
+            },
+            shadow.soft,
+          ]}>
+          <Icon name="learn" size={iconSize.md} color={colors.textSecondary} />
           <View style={{ flex: 1 }}>
-            <Text variant="subhead">Learn</Text>
-            <Text variant="footnote" color="textSecondary">
+            <Text variant="headline">Learn</Text>
+            <Text variant="footnote" color="textSecondary" style={{ marginTop: spacing.xxs }}>
               How hair grows, how studies measure it, and how to read a claim.
             </Text>
           </View>
-          <Icon name="chevronRight" size={15} color={colors.textTertiary} />
+          <Icon name="chevronRight" size={iconSize.sm} color={colors.textTertiary} />
         </PressableScale>
       </ScreenScroll>
     </Screen>

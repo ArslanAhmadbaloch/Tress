@@ -103,3 +103,40 @@ test('trend: a real change is stated as area, never as thickness', () => {
     assert.ok(!text.includes(claim), `coverage copy must not say "${claim}"`);
   }
 });
+
+/* ----------------------------- left and right ----------------------------- */
+
+/** A mask where the left `cols` columns are hair and the rest is not. */
+function leftCols(cols: number, size = 12): MaskImage {
+  const data = new Float32Array(size * size);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < cols; x += 1) data[y * size + x] = 0.9;
+  }
+  return { width: size, height: size, data };
+}
+
+test('balance: hair spread evenly across the frame reads as half left', () => {
+  const c = coverageOf(topRows(6));
+  assert.ok(Math.abs((c.horizontalBalance ?? -1) - 0.5) < 1e-6);
+});
+
+test('balance: hair only on the left of the frame reads as all left', () => {
+  const c = coverageOf(leftCols(4));
+  assert.equal(c.horizontalBalance, 1);
+  assert.ok(Math.abs(c.fraction - 1 / 3) < 1e-6, 'and the area is still a third');
+});
+
+test('balance: an odd-width frame splits its middle column, not the reading', () => {
+  // Nine columns of hair across an odd width: the centre column straddles
+  // the midline and must fall wholly on one side or the other without
+  // pushing the figure past the obvious half.
+  const size = 9;
+  const data = new Float32Array(size * size).fill(0.9);
+  const c = coverageOf({ width: size, height: size, data });
+  assert.ok(Math.abs((c.horizontalBalance ?? -1) - 4 / 9) < 1e-6, 'four of nine columns lie left of centre');
+});
+
+test('balance: an empty mask has no side, and is zero rather than NaN', () => {
+  const c = coverageOf({ width: 8, height: 8, data: new Float32Array(64) });
+  assert.equal(c.horizontalBalance, 0);
+});

@@ -27,6 +27,9 @@ import { useTheme } from '@/theme';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+/** Diameter of the filled well a tile's glyph sits in. */
+const GLYPH_WELL = 36;
+
 /**
  * The consistency page.
  *
@@ -36,7 +39,7 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
  */
 
 export default function CalendarScreen() {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, shadow } = useTheme();
   const router = useRouter();
   const { data } = useAppStore();
 
@@ -99,16 +102,17 @@ export default function CalendarScreen() {
               onPress={() => router.back()}
               accessibilityRole="button"
               accessibilityLabel="Close"
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}>
+              style={[
+                {
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.surface,
+                },
+                shadow.soft,
+              ]}>
               <Icon name="close" size={15} color={colors.text} />
             </PressableScale>
           }
@@ -143,14 +147,14 @@ export default function CalendarScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
-              marginBottom: spacing.lg,
+              marginBottom: spacing.xl,
             }}>
             <MonthArrow
               icon="chevronLeft"
               label="Previous month"
               onPress={() => setMonthOffset((m) => m - 1)}
             />
-            <Text variant="headline">
+            <Text variant="title3">
               {month.toLocaleDateString(undefined, {
                 month: 'long',
                 year: 'numeric',
@@ -205,8 +209,8 @@ export default function CalendarScreen() {
             style={{
               flexDirection: 'row',
               justifyContent: 'center',
-              gap: spacing.lg,
-              marginTop: spacing.lg,
+              gap: spacing.xl,
+              marginTop: spacing.xl,
             }}>
             <Legend state="complete" label="Complete" />
             <Legend state="partial" label="Partial" />
@@ -215,8 +219,8 @@ export default function CalendarScreen() {
         </Card>
 
         {/* Month summary */}
-        <Card style={{ marginTop: spacing.md }}>
-          <Text variant="headline">
+        <Card style={{ marginTop: spacing.lg }}>
+          <Text variant="title3">
             {month.toLocaleDateString(undefined, { month: 'long' })} so far
           </Text>
           <View
@@ -224,7 +228,7 @@ export default function CalendarScreen() {
               flexDirection: 'row',
               alignItems: 'baseline',
               gap: spacing.sm,
-              marginTop: spacing.sm,
+              marginTop: spacing.md,
             }}>
             <Text variant="stat">
               {monthComplete}
@@ -237,27 +241,26 @@ export default function CalendarScreen() {
               days completed
             </Text>
           </View>
-          <Text variant="footnote" color="textTertiary" style={{ marginTop: spacing.sm }}>
+          <Text variant="footnote" color="textTertiary" style={{ marginTop: spacing.md }}>
             Only days after your journey started, and after each routine item
             was added, are counted.
           </Text>
         </Card>
 
-        <View
-          style={{
-            marginTop: spacing.xl,
-            padding: spacing.lg,
-            borderRadius: radius.card,
-            backgroundColor: colors.backgroundSubtle,
-            flexDirection: 'row',
-            gap: spacing.md,
-          }}>
-          <Icon name="info" size={18} color={colors.textTertiary} />
-          <Text variant="footnote" color="textSecondary" style={{ flex: 1 }}>
-            Consistency is what makes your timeline readable later — a routine
-            followed irregularly is hard to interpret against your photographs.
-          </Text>
-        </View>
+        {/*
+          A quiet line under the cards, not a boxed notice with an icon.
+          Everything above it is a card; one more grey panel with an "i"
+          in it read as a warning about the page rather than a thought
+          about it.
+        */}
+        <Text
+          variant="footnote"
+          color="textTertiary"
+          center
+          style={{ marginTop: spacing.xxl, paddingHorizontal: spacing.xl }}>
+          Consistency is what makes your timeline readable later — a routine
+          followed irregularly is hard to interpret against your photographs.
+        </Text>
       </ScreenScroll>
     </Screen>
   );
@@ -265,6 +268,14 @@ export default function CalendarScreen() {
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * One day.
+ *
+ * Complete is solid, partial is the soft tint, missed is the quiet fill,
+ * and the future is faint. A missed day used to be a hollow ring, which
+ * made a month of them look like a sheet of empty checkboxes; a filled
+ * dot in the ground's own grey says "nothing here" without scolding.
+ */
 function Day({
   day,
   state,
@@ -281,7 +292,9 @@ function Day({
       ? colors.accent
       : state === 'partial'
         ? colors.accentSoft
-        : 'transparent';
+        : state === 'missed'
+          ? colors.fill
+          : 'transparent';
 
   const textColor =
     state === 'complete'
@@ -301,8 +314,8 @@ function Day({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: fill,
-        borderWidth: isToday ? 1.5 : state === 'missed' ? 1 : 0,
-        borderColor: isToday ? colors.accent : colors.separator,
+        borderWidth: isToday ? 1.5 : 0,
+        borderColor: colors.accent,
         opacity: state === 'future' || state === 'before' ? 0.45 : 1,
       }}>
       <Text variant="footnote" color={textColor}>
@@ -320,7 +333,7 @@ function Legend({ state, label }: { state: DayState; label: string }) {
       ? colors.accent
       : state === 'partial'
         ? colors.accentSoft
-        : 'transparent';
+        : colors.fill;
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
@@ -330,8 +343,6 @@ function Legend({ state, label }: { state: DayState; label: string }) {
           height: 10,
           borderRadius: 5,
           backgroundColor: fill,
-          borderWidth: state === 'missed' ? 1 : 0,
-          borderColor: colors.separator,
         }}
       />
       <Text variant="caption" color="textTertiary">
@@ -364,12 +375,13 @@ function MonthArrow({
       accessibilityLabel={label}
       accessibilityState={{ disabled: Boolean(disabled) }}
       style={{
-        width: 34,
-        height: 34,
-        borderRadius: 17,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: colors.fill,
+        opacity: disabled ? 0.45 : 1,
       }}>
       <Icon name={icon} size={15} color={colors.text} />
     </PressableScale>
@@ -387,43 +399,51 @@ function SummaryTile({
   value: number;
   unit: string;
 }) {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, radius, shadow } = useTheme();
 
   return (
     <View
       accessible
       accessibilityLabel={`${label}: ${value} ${unit}`}
-      style={{
-        flex: 1,
-        padding: spacing.lg,
-        borderRadius: radius.card,
-        backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: colors.border,
-        gap: spacing.sm,
-      }}>
+      style={[
+        {
+          flex: 1,
+          padding: spacing.lg,
+          borderRadius: radius.card,
+          backgroundColor: colors.surface,
+          gap: spacing.md,
+        },
+        /*
+          No border. Three tiles across leave each one narrow, and an
+          outline on a narrow tile is most of what is visible; the
+          shadow does the same job without taking up any of the width.
+        */
+        shadow.soft,
+      ]}>
       <View
         style={{
-          width: 30,
-          height: 30,
-          borderRadius: 15,
+          width: GLYPH_WELL,
+          height: GLYPH_WELL,
+          borderRadius: radius.pill,
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: colors.accentSoft,
         }}>
         <Icon name={icon} size={15} color={colors.accent} />
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
-        <AnimatedNumber value={value} suffix={unit === '%' ? '%' : ''} />
-        {unit !== '%' ? (
-          <Text variant="caption" color="textTertiary">
-            {unit}
-          </Text>
-        ) : null}
+      <View>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.xs }}>
+          <AnimatedNumber value={value} suffix={unit === '%' ? '%' : ''} variant="metric" />
+          {unit !== '%' ? (
+            <Text variant="caption" color="textTertiary">
+              {unit}
+            </Text>
+          ) : null}
+        </View>
+        <Text variant="caption" color="textSecondary" style={{ marginTop: spacing.xs }}>
+          {label}
+        </Text>
       </View>
-      <Text variant="caption" color="textSecondary">
-        {label}
-      </Text>
     </View>
   );
 }

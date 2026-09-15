@@ -2,9 +2,16 @@
  * The onboarding funnel's furniture.
  *
  * One frame, one transition and one set of controls, used by every step, so
- * seventeen screens feel like one continuous conversation rather than a
- * stack of forms. Content is keyed by step id, which is what makes the
- * entering animations re-run on every move without a route change.
+ * a dozen and a half screens feel like one continuous conversation rather
+ * than a stack of forms. Content is keyed by step id, which is what makes
+ * the entering animations re-run on every move without a route change.
+ *
+ * The standard every piece here is held to is the one the best apps in
+ * this category set: a question screen is the question and its answers,
+ * centred, with more air than feels necessary, and nothing else. No
+ * helper line under the heading, no outline around every option, no
+ * texture behind any of it. The eye should land on the question, drop to
+ * the answers, and have nowhere else to go.
  *
  * Motion here is doing a job: each screen settles rather than snapping, and
  * answers arrive in a short stagger so the eye has somewhere to start. With
@@ -44,7 +51,7 @@ import { Icon, type IconName } from './ui/icon';
 import { FunnelAmbience } from './funnel-ambience';
 import { PressableScale } from './ui/pressable-scale';
 import { Text } from './ui/text';
-import { motion, useTheme, withZeroAlpha } from '@/theme';
+import { fontFamily, motion, useTheme, withZeroAlpha } from '@/theme';
 
 /** How far apart the staggered pieces of a screen arrive. */
 const STAGGER = 55;
@@ -95,7 +102,6 @@ export function FunnelShell({
   ctaDisabled,
   secondary,
   onSecondary,
-  footnote,
   /** Centres the content, for the reflective screens between questions. */
   centred = false,
   /**
@@ -115,7 +121,6 @@ export function FunnelShell({
   ctaDisabled?: boolean;
   secondary?: string;
   onSecondary?: () => void;
-  footnote?: string;
   centred?: boolean;
   backdrop?: ReactNode;
 }) {
@@ -191,6 +196,19 @@ export function FunnelShell({
         </View>
         )}
 
+        {/*
+          The margins are wider than the rest of the app's sixteen. A
+          question screen has one column of text and one column of cards
+          and nothing to fill the width with, and at sixteen the cards ran
+          nearly edge to edge and the screen read as dense. Twenty gives
+          the column a visible left and right, which is most of what
+          "generous" means on a phone.
+
+          The top padding is the gap between the chrome and the heading,
+          and it is deliberately more than a section gap: the heading is
+          the first thing on the screen and it should sit in air, not be
+          shouldered up against the progress bar.
+        */}
         <ScrollView
           ref={scroller}
           key={stepKey}
@@ -201,8 +219,8 @@ export function FunnelShell({
           }}
           contentContainerStyle={{
             flexGrow: 1,
-            paddingHorizontal: spacing.lg,
-            paddingTop: spacing.xl,
+            paddingHorizontal: spacing.xl,
+            paddingTop: spacing.xxxl,
             paddingBottom: spacing.xl,
             justifyContent: centred ? 'center' : 'flex-start',
           }}>
@@ -211,10 +229,10 @@ export function FunnelShell({
 
         <View
           style={{
-            paddingHorizontal: spacing.lg,
+            paddingHorizontal: spacing.xl,
             paddingBottom: insets.bottom + spacing.lg,
             paddingTop: spacing.sm,
-            gap: spacing.sm,
+            gap: spacing.xs,
           }}>
           {/*
             A screen that hands over on its own gets no button. A disabled
@@ -230,19 +248,11 @@ export function FunnelShell({
               onPress={onSecondary}
               accessibilityRole="button"
               accessibilityLabel={secondary}
-              style={{ paddingVertical: spacing.sm, alignItems: 'center' }}>
+              style={{ paddingVertical: spacing.md, alignItems: 'center' }}>
               <Text variant="subhead" color="textSecondary">
                 {secondary}
               </Text>
             </Pressable>
-          ) : null}
-
-          {footnote ? (
-            // Secondary rather than tertiary: on the first screen this line
-            // sits over the plate's stone, where tertiary grey disappears.
-            <Text variant="caption" color="textSecondary" center>
-              {footnote}
-            </Text>
           ) : null}
         </View>
       </View>
@@ -302,17 +312,15 @@ function ProgressBar({ value }: { value: number }) {
 
 /* ------------------------------- headings ------------------------------ */
 
-export function StepTitle({
-  title,
-  muted,
-  subtitle,
-  index = 0,
-}: {
-  title: string;
-  muted?: string;
-  subtitle?: string;
-  index?: number;
-}) {
+/**
+ * The question. Just the question.
+ *
+ * It used to take a subtitle and a muted second line, and every screen
+ * used at least one of them to explain the question it had just asked.
+ * A question that needs explaining is the wrong question, so the props
+ * went and the questions were rewritten until they stood on their own.
+ */
+export function StepTitle({ title, index = 0 }: { title: string; index?: number }) {
   const { spacing } = useTheme();
 
   return (
@@ -328,31 +336,30 @@ export function StepTitle({
         <Text variant="question" center accessibilityRole="header">
           {title}
         </Text>
-        {muted ? (
-          <Text variant="question" center color="textTertiary" accessible={false}>
-            {muted}
-          </Text>
-        ) : null}
       </Rise>
 
-      {subtitle ? (
-        <Rise index={index + 1}>
-          <Text
-            variant="callout"
-            center
-            color="textSecondary"
-            style={{ marginTop: spacing.md, marginBottom: spacing.xl }}>
-            {subtitle}
-          </Text>
-        </Rise>
-      ) : (
-        <View style={{ height: spacing.xl }} />
-      )}
+      {/*
+        The gap between a question and its answers is the one piece of
+        spacing on the screen that is read rather than merely seen: too
+        tight and the first option looks like part of the heading, too
+        loose and they stop belonging to each other. Thirty-two is where a
+        32pt heading and a row of white cards read as a pair.
+      */}
+      <View style={{ height: spacing.xxxl }} />
     </>
   );
 }
 
-/** A quiet heading for the second question on a screen. */
+/**
+ * A quiet heading for the second question on a screen.
+ *
+ * Centred like the first, and set two steps smaller: it is the same voice
+ * asking a follow-up, not a form starting a new section. Two steps rather
+ * than one because the "about you" screen stacks three of these under
+ * its heading, and at the next size up the follow-ups outweighed the
+ * question. The space above is larger than the space below, so it reads
+ * as belonging to the answers underneath rather than to the ones above.
+ */
 export function SubHeading({ text, index = 0 }: { text: string; index?: number }) {
   const { spacing } = useTheme();
   const reveal = useContext(RevealContext);
@@ -361,14 +368,14 @@ export function SubHeading({ text, index = 0 }: { text: string; index?: number }
   return (
     <Rise
       index={index}
-      style={{ marginTop: spacing.xxl, marginBottom: spacing.lg }}
+      style={{ marginTop: spacing.huge, marginBottom: spacing.xl }}
       onLayout={(e) => {
         if (asked.current || !reveal) return;
         asked.current = true;
         const { y, height } = e.nativeEvent.layout;
         reveal(y, height);
       }}>
-      <Text variant="title3" accessibilityRole="header">
+      <Text variant="title3" center accessibilityRole="header">
         {text}
       </Text>
     </Rise>
@@ -426,31 +433,39 @@ export function ChoiceRow({
         accessibilityLabel={label}
         accessibilityHint={detail}
         /*
-          Borderless, rounder, taller, and lifted by a shadow instead of a
+          Borderless, rounder, and lifted by a shadow instead of a
           hairline. The old row was a bordered rectangle — a form control.
           A 1px grey outline around every option is the single thing that
           made this read as a questionnaire rather than as an app asking
           somebody something, and removing it does more for the feel than
           any amount of new type did.
 
-          The selected state still carries a border, because on a white
-          card a tint alone is not enough to be certain which one you
-          picked — and being unsure is worse than being plain.
+          Selecting a row tints it, outlines it in the accent and fills
+          the mark — and that is all. The label stays ink. An earlier
+          version also turned the label green, and with the tint and the
+          border and the tick that was four signals for one fact; the
+          screen flashed every time somebody tapped. Two would do, three
+          is certain, and the label is the thing being read, so it is the
+          one that stays still.
+
+          The shadow stays on in both states. A selected row that lost its
+          shadow sank into the page — the opposite of what picking
+          something should feel like.
         */
         style={[
           {
             flexDirection: 'row',
             alignItems: 'center',
             gap: spacing.md,
-            minHeight: 68,
+            minHeight: 64,
             paddingVertical: spacing.md,
-            paddingHorizontal: spacing.lg,
+            paddingHorizontal: spacing.xl,
             borderRadius: radius.card,
             backgroundColor: selected ? colors.accentSoft : colors.surface,
-            borderWidth: selected ? 1.5 : 0,
-            borderColor: colors.accent,
+            borderWidth: 1.5,
+            borderColor: selected ? colors.accent : 'transparent',
           },
-          selected ? null : shadow.soft,
+          shadow.soft,
         ]}>
         {icon ? (
           <GlassOrb size={30} ring={false} tone={selected ? 'green' : 'neutral'}>
@@ -463,7 +478,14 @@ export function ChoiceRow({
         ) : null}
 
         <View style={{ flex: 1 }}>
-          <Text variant="headline" color={selected ? 'accent' : 'text'}>
+          {/*
+            Medium, not semibold. Seven rows of semibold Manrope is seven
+            rows shouting the same volume, and the question above them —
+            which is semibold — stopped standing out. One weight step down
+            and the heading leads again while the options read as a list
+            you scan rather than a list you are being told.
+          */}
+          <Text variant="headline" style={{ fontFamily: fontFamily.displayMedium }}>
             {label}
           </Text>
           {detail ? (
@@ -475,9 +497,9 @@ export function ChoiceRow({
 
         <View
           style={{
-            width: 24,
-            height: 24,
-            borderRadius: multi ? 7 : 12,
+            width: 22,
+            height: 22,
+            borderRadius: multi ? 7 : 11,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: selected ? colors.accent : 'transparent',
@@ -569,16 +591,14 @@ export function Scale({
   );
 }
 
-/* --------------------------------- facts -------------------------------- */
-
 /* ------------------------------ decoration ------------------------------ */
 
 /**
  * A soft wash behind a reflective screen, so it reads as a pause.
  *
  * It fades to its own colour at zero alpha rather than to the background:
- * the screen is sitting on a photographic plate, and fading to an opaque
- * background colour would cut a rectangle out of it.
+ * fading to `transparent` interpolates through black on some renderers
+ * and leaves a grey haze where the wash ends.
  */
 export function Wash() {
   const { colors } = useTheme();
@@ -592,66 +612,3 @@ export function Wash() {
   );
 }
 
-/** A line of the personalised plan, ticked. */
-export function PlanLine({ text, index }: { text: string; index: number }) {
-  const { colors, spacing } = useTheme();
-
-  return (
-    <Rise index={index}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.md,
-          paddingVertical: spacing.sm,
-        }}>
-        <View
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 11,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.accent,
-          }}>
-          <Icon name="check" size={12} color={colors.textOnAccent} />
-        </View>
-        <Text variant="callout" style={{ flex: 1 }}>
-          {text}
-        </Text>
-      </View>
-    </Rise>
-  );
-}
-
-/** A labelled fact from their own answers, on the plan screen. */
-export function PlanFact({
-  label,
-  value,
-  index,
-}: {
-  label: string;
-  value: string;
-  index: number;
-}) {
-  const { colors, spacing, radius } = useTheme();
-
-  return (
-    <Rise index={index}>
-      <View
-        style={{
-          padding: spacing.lg,
-          borderRadius: radius.md,
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderColor: colors.border,
-          gap: 2,
-        }}>
-        <Text variant="caption" color="textSecondary">
-          {label}
-        </Text>
-        <Text variant="headline">{value}</Text>
-      </View>
-    </Rise>
-  );
-}
