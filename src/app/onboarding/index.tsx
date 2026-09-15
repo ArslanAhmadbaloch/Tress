@@ -1117,8 +1117,17 @@ export default function OnboardingFunnel() {
       return shell({
         cta: COPY.baseline.cta,
         onCta: () => router.replace('/capture-intro'),
-        secondary: COPY.baseline.skip,
-        onSecondary: () => router.replace('/'),
+        /*
+          No skip. The baseline is not a feature of this app, it is the
+          thing every other feature is measured against — a journey that
+          starts without one has nothing for month three to be compared
+          with, and the person finds that out in month three.
+
+          It is a real trade: somebody who cannot photograph their scalp
+          right now cannot get in. That is the cost of the app being worth
+          opening later, and it is the same call the apps that work in
+          this category have all made.
+        */
         children: (
           <>
             <StepTitle title={COPY.baseline.title} subtitle={COPY.baseline.subtitle} />

@@ -274,6 +274,9 @@ export default function CaptureSessionScreen() {
     if (shots.length === 0 || isSaving) return;
     setIsSaving(true);
 
+    // Read before the session is added, or it is never the first one.
+    const isFirstSession = data.sessions.length === 0;
+
     try {
       const sessionKey = `${Date.now().toString(36)}`;
       const stored = await Promise.all(
@@ -312,7 +315,16 @@ export default function CaptureSessionScreen() {
         () => undefined,
       );
 
-      if (session) {
+      /*
+        The very first set goes to the report rather than to the session
+        view. It is the only moment in the app's life where somebody has
+        just produced five photographs and does not yet know what the app
+        will do with them — sending them to a gallery of their own scalp
+        wastes it. Every set after this one goes where it always did.
+      */
+      if (session && isFirstSession) {
+        router.replace('/scan-report');
+      } else if (session) {
         router.replace(`/session/${session.id}`);
       } else {
         router.replace('/');
@@ -324,7 +336,7 @@ export default function CaptureSessionScreen() {
         'Your photos were taken but could not be written to this device. Check your available storage and try again.',
       );
     }
-  }, [shots, isSaving, addSession, router]);
+  }, [shots, isSaving, addSession, router, data.sessions.length]);
 
   const confirmExit = useCallback(() => {
     if (shots.length === 0 && !pending) {

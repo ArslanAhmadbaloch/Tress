@@ -62,12 +62,21 @@ export default function CaptureIntroScreen() {
   const last = latestSession(data);
   const isBaseline = data.sessions.length === 0;
 
-  // Every route into the camera passes through this screen, so this is
-  // the only place capture has to be gated — a new entry point added
-  // later cannot slip past it.
+  /*
+    Every route into the camera passes through this screen, so this is the
+    only place capture has to be gated — a new entry point added later
+    cannot slip past it.
+
+    The baseline is the exception, and deliberately so. Asking somebody to
+    pay before they have taken a single photograph is asking them to buy a
+    comparison against nothing; letting them take the first set and then
+    showing what it found is the same money asked for at the point it
+    means something. It is also the honest order: they see what the app
+    actually does before deciding it is worth paying for.
+  */
   useEffect(() => {
-    if (!isPremium) router.replace('/paywall');
-  }, [isPremium, router]);
+    if (!isPremium && !isBaseline) router.replace('/paywall');
+  }, [isPremium, isBaseline, router]);
   const angle = ANGLES[index];
   const label = ANGLE_LABELS[angle];
 
