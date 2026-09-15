@@ -107,6 +107,9 @@ export default function HomeScreen() {
         <ScreenTitle
           eyebrow="Tress"
           eyebrowTone="brand"
+          // The first thing seen each launch, and the only header that
+          // arrives in sequence rather than all at once.
+          reveal
           title={`${greeting()},`}
           titleMuted={name ? `${name}.` : 'friend.'}
           // No subtitle: the script beside it already carries the warm

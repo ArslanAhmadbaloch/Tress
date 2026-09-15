@@ -17,6 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { Ground, type GroundVariant } from './ground';
 import { Icon, type IconName } from './icon';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+
 import { Sprout } from './motion';
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
@@ -167,6 +169,7 @@ export function SectionHeader({
 export function ScreenTitle({
   eyebrow,
   eyebrowTone = 'muted',
+  reveal = false,
   title,
   titleMuted,
   subtitle,
@@ -176,6 +179,15 @@ export function ScreenTitle({
   eyebrow?: string;
   /** 'brand' renders the animated sage wordmark instead of a grey label. */
   eyebrowTone?: 'muted' | 'brand';
+  /**
+   * Staggers the header's arrival on mount: eyebrow, then headline, then
+   * subtitle, then the actions. The reference's home header is a
+   * four-second reveal of its parts in sequence rather than a static
+   * frame, and it is the one place that kind of entrance earns its
+   * time — the first thing seen each launch. Off by default, because a
+   * header that re-performs itself on every tab switch is a tic.
+   */
+  reveal?: boolean;
   title: string;
   titleMuted?: string;
   subtitle?: string;
@@ -194,18 +206,20 @@ export function ScreenTitle({
         paddingBottom: subtitle ? spacing.xs : spacing.sm,
       }}>
       <View style={{ flex: 1, minWidth: 0 }}>
-        {eyebrow ? (
-          eyebrowTone === 'brand' ? (
-            <Wordmark label={eyebrow} />
-          ) : (
-            <Text
-              variant="caption"
-              color="textTertiary"
-              style={{ letterSpacing: 2, marginBottom: spacing.xs }}>
-              {eyebrow.toUpperCase()}
-            </Text>
-          )
-        ) : null}
+        <Animated.View entering={reveal ? FadeInDown.duration(480).springify().damping(20) : undefined}>
+          {eyebrow ? (
+            eyebrowTone === 'brand' ? (
+              <Wordmark label={eyebrow} />
+            ) : (
+              <Text
+                variant="caption"
+                color="textTertiary"
+                style={{ letterSpacing: 2, marginBottom: spacing.xs }}>
+                {eyebrow.toUpperCase()}
+              </Text>
+            )
+          ) : null}
+        </Animated.View>
 
         {/*
           Two single-line texts rather than one two-line text. On iOS a
@@ -213,34 +227,39 @@ export function ScreenTitle({
           mid-phrase and pushed the muted line out; a single line shrinks
           reliably. VoiceOver hears the pair as one heading.
         */}
-        <Text
-          variant="title1"
-          accessibilityRole="header"
-          accessibilityLabel={titleMuted ? `${title} ${titleMuted}` : undefined}
-          adjustsFontSizeToFit
-          minimumFontScale={0.66}
-          numberOfLines={1}>
-          {title}
-        </Text>
-        {titleMuted ? (
+        <Animated.View
+          entering={reveal ? FadeInDown.delay(130).duration(520).springify().damping(20) : undefined}>
           <Text
             variant="title1"
-            color="textTertiary"
-            accessible={false}
+            accessibilityRole="header"
+            accessibilityLabel={titleMuted ? `${title} ${titleMuted}` : undefined}
             adjustsFontSizeToFit
             minimumFontScale={0.66}
             numberOfLines={1}>
-            {titleMuted}
+            {title}
           </Text>
-        ) : null}
+          {titleMuted ? (
+            <Text
+              variant="title1"
+              color="textTertiary"
+              accessible={false}
+              adjustsFontSizeToFit
+              minimumFontScale={0.66}
+              numberOfLines={1}>
+              {titleMuted}
+            </Text>
+          ) : null}
+        </Animated.View>
 
         {subtitle ? (
-          <Text
-            variant="callout"
-            color="textSecondary"
-            style={{ marginTop: spacing.sm }}>
-            {subtitle}
-          </Text>
+          <Animated.View entering={reveal ? FadeIn.delay(260).duration(480) : undefined}>
+            <Text
+              variant="callout"
+              color="textSecondary"
+              style={{ marginTop: spacing.sm }}>
+              {subtitle}
+            </Text>
+          </Animated.View>
         ) : null}
       </View>
 
@@ -250,7 +269,9 @@ export function ScreenTitle({
       */}
       {trailing || script ? (
         <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
-          {trailing}
+          <Animated.View entering={reveal ? FadeIn.delay(320).duration(520) : undefined}>
+            {trailing}
+          </Animated.View>
           {script ? (
             <Text
               variant="script"
