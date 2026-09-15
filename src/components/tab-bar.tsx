@@ -17,10 +17,14 @@ import type { BottomTabBarProps } from 'expo-router/build/react-navigation/botto
 import { useEffect, type ReactNode } from 'react';
 import { View } from 'react-native';
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withRepeat,
+  withSequence,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -214,6 +218,72 @@ function TabItem({
   );
 }
 
+/**
+ * A scan line drifting down the capture button, on a slow loop.
+ *
+ * The reference's scan button is a camera-frame outline with a thin bar
+ * sweeping through it every ten seconds — the universal "this thing
+ * scans" gesture, and the only ambient motion on its home screen. This is
+ * the same idea inside the orb: a faint sage bar that fades in at the
+ * top, drifts to the bottom, fades out, waits, and goes again.
+ *
+ * Ten seconds is deliberate. A loop quick enough to notice is something
+ * to watch; one this slow is something you register only when you happen
+ * to look, which is how an ambient cue should behave. Reduced motion
+ * removes it entirely.
+ */
+function ScanSweep({ size }: { size: number }) {
+  const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
+  const y = useSharedValue(0);
+  const travel = size * 0.62;
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    y.set(
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.quad) }),
+          // The pause before the next pass is most of the loop.
+          withTiming(1, { duration: 7600 }),
+          withTiming(0, { duration: 0 }),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, [reduceMotion, y]);
+
+  const style = useAnimatedStyle(() => {
+    const p = y.get();
+    // Fade in over the first fifth, out over the last fifth of the pass.
+    const fade = Math.min(1, p / 0.2, (1 - p) / 0.2);
+    return {
+      opacity: Math.max(0, fade) * 0.55,
+      transform: [{ translateY: (p - 0.5) * travel }],
+    };
+  });
+
+  if (reduceMotion) return null;
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: 'absolute',
+          left: size * 0.22,
+          right: size * 0.22,
+          height: 1.5,
+          borderRadius: 1,
+          backgroundColor: colors.accent,
+        },
+        style,
+      ]}
+    />
+  );
+}
+
 function TabGlow() {
   const { colors } = useTheme();
   const glow = splitAlpha(colors.tabGlow);
@@ -276,6 +346,7 @@ function CentreAction({ onPress }: { onPress: () => void }) {
         accessibilityRole="button"
         accessibilityLabel="New photo update">
         <GlassOrb size={CENTRE_SIZE} ring={false} tone="neutral" emphasis="strong">
+          <ScanSweep size={CENTRE_SIZE} />
           <PlusGlyph size={24} color={colors.text} />
         </GlassOrb>
       </PressableScale>
