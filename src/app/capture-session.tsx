@@ -34,6 +34,7 @@ import { CaptureRing } from '@/components/capture-ring';
 import { BASELINE_THANKS } from '@/features/content/belonging';
 import { useHairContent } from '@/features/content/use-hair-content';
 import { useSteadiness } from '@/features/capture/use-steadiness';
+import { analysePhoto } from '@/features/assessment/analyse-photo';
 import { persistCapture, shrinkCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { motion, useTheme } from '@/theme';
@@ -278,6 +279,22 @@ export default function CaptureSessionScreen() {
       const stored = await Promise.all(
         shots.map(async (shot) => {
           const file = await persistCapture(shot.tempUri, sessionKey, shot.angle);
+
+          /*
+            Measured now, while the file is untouched, and stored with the
+            photograph rather than recomputed when the report opens. Two
+            reasons: re-decoding five frames every time somebody visits a
+            tab is wasteful, and a reading taken months later would be of
+            a file that storage may since have recompressed — a different
+            photograph, quietly.
+
+            A failure here is not a failure of the capture. The photograph
+            is the thing being saved; the measurement is a note about it,
+            and a session without one is simply a session we say nothing
+            about.
+          */
+          const analysis = await analysePhoto(file.uri).catch(() => null);
+
           return {
             angle: shot.angle,
             uri: file.uri,
@@ -285,6 +302,7 @@ export default function CaptureSessionScreen() {
             width: file.width,
             height: file.height,
             capturedAt: new Date().toISOString(),
+            quality: analysis ? { ...analysis.quality } : undefined,
           };
         }),
       );

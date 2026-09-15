@@ -237,6 +237,8 @@ function framingSection(sessions: PhotoSession[]): ReportSection {
         : 'Far enough apart that a visible difference is more likely to be real than a trick of the light.',
   });
 
+  findings.push(...qualityFindings(latest));
+
   const score = matched.length / Math.max(1, thenHave.size);
   return {
     kind: 'framing',
@@ -245,6 +247,77 @@ function framingSection(sessions: PhotoSession[]): ReportSection {
     scoreLabel: `${matched.length} angle${matched.length === 1 ? '' : 's'} comparable with last time`,
     findings,
   };
+}
+
+/** How each measured problem should be described, and what to do about it. */
+const ISSUE_COPY: Record<string, { what: string; fix: string }> = {
+  tooDark: {
+    what: 'came out dark',
+    fix: 'Facing a window usually fixes it, and matching the light matters more than having a lot of it.',
+  },
+  tooBright: {
+    what: 'came out very bright',
+    fix: 'Direct sun and overhead spotlights blow out the scalp. Softer, even light holds more detail.',
+  },
+  clipped: {
+    what: 'has burnt-out highlights',
+    fix: 'Detail lost that way cannot be recovered later, so it is worth retaking under softer light.',
+  },
+  blurred: {
+    what: 'came out soft',
+    fix: 'Bracing the phone against something, or asking somebody else to take it, is usually enough.',
+  },
+  lowContrast: {
+    what: 'is very flat',
+    fix: 'Flat light hides the texture the comparison relies on. A little directional light helps.',
+  },
+};
+
+/**
+ * Turns the measurements taken at capture into something to act on.
+ *
+ * Only the most common problem is raised, and only once. Five bullet
+ * points about five photographs is a list somebody closes; one sentence
+ * naming the angle and what to do is one they might act on next month.
+ */
+function qualityFindings(session: PhotoSession): Finding[] {
+  const measured = session.photos.filter((p) => p.quality);
+  if (measured.length === 0) return [];
+
+  const counts = new Map<string, { n: number; angle: (typeof ANGLES)[number] }>();
+  for (const photo of measured) {
+    for (const issue of photo.quality?.issues ?? []) {
+      const seen = counts.get(issue);
+      counts.set(issue, { n: (seen?.n ?? 0) + 1, angle: seen?.angle ?? photo.angle });
+    }
+  }
+
+  if (counts.size === 0) {
+    return [{
+      id: 'framing-quality-clean',
+      kind: 'framing',
+      tone: 'good',
+      headline: 'Every shot in your last set was well exposed and sharp.',
+      detail:
+        'Brightness, contrast and focus were measured on this device when you took them. Nothing needed retaking.',
+    }];
+  }
+
+  const [issue, { n, angle }] = [...counts.entries()].sort((a, b) => b[1].n - a[1].n)[0];
+  const copy = ISSUE_COPY[issue];
+  if (!copy) return [];
+
+  return [{
+    id: `framing-quality-${issue}`,
+    kind: 'framing',
+    tone: 'attention',
+    headline:
+      n === 1
+        ? `Your ${ANGLE_LABELS[angle]} shot ${copy.what}.`
+        : `${n} shots in your last set ${copy.what}.`,
+    detail: copy.fix,
+    angle: n === 1 ? angle : undefined,
+  }];
 }
 
 /* -------------------------------- the report ----------------------------- */

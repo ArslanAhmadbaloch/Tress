@@ -347,6 +347,27 @@ export type Journey = {
   createdAt: string;
 };
 
+/**
+ * What the device measured about a photograph at the moment it was taken.
+ *
+ * Optional, and stays optional. Photographs captured before this existed
+ * have no reading, and the honest thing to show for them is nothing —
+ * not a zero, and not a re-analysis months later against a file that has
+ * since been recompressed.
+ */
+export type PhotoQuality = {
+  /** Mean luminance, 0-255. */
+  brightness: number;
+  /** Standard deviation of luminance. */
+  contrast: number;
+  /** Mean absolute Laplacian response; low is soft. */
+  sharpness: number;
+  /** Fraction of pixels crushed or blown, 0-1. */
+  clipped: number;
+  /** Named problems, empty when there are none. */
+  issues: string[];
+};
+
 export type Photo = {
   id: string;
   sessionId: string;
@@ -358,6 +379,7 @@ export type Photo = {
   width: number;
   height: number;
   capturedAt: string;
+  quality?: PhotoQuality;
 };
 
 export type PhotoSession = {

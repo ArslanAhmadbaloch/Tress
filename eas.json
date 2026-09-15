@@ -9,6 +9,10 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_HJ_TESTER_BUILD": "1"
+      },
+      "credentialsSource": "local",
+      "android": {
+        "buildType": "apk"
       }
     },
     "internal": {

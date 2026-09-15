@@ -42,6 +42,18 @@ function base(): AppData {
   };
 }
 
+/** Attaches a measured problem to the first photo of a set. */
+function withIssue(s: PhotoSession, issue: string): PhotoSession {
+  return {
+    ...s,
+    photos: s.photos.map((p, i) =>
+      i === 0
+        ? { ...p, quality: { brightness: 30, contrast: 9, sharpness: 2, clipped: 0.4, issues: [issue] } }
+        : { ...p, quality: { brightness: 120, contrast: 40, sharpness: 20, clipped: 0, issues: [] } },
+    ),
+  };
+}
+
 function session(id: string, dAgo: number, angles: readonly string[]): PhotoSession {
   return {
     id,
@@ -133,4 +145,47 @@ test('report: no finding claims anything about hair', () => {
   for (const claim of ['thicker', 'fuller', 'regrow', 'improved', 'density increased', 'better hair']) {
     assert.ok(!text.includes(claim), `report must not claim "${claim}"`);
   }
+});
+
+test('report: a measured problem names the angle and what to do about it', () => {
+  const data = {
+    ...base(),
+    sessions: [session('s1', 90, ANGLES), withIssue(session('s2', 30, ANGLES), 'tooDark')],
+  };
+  const framing = buildReport(data).sections.find((s) => s.kind === 'framing')!;
+  const found = framing.findings.find((f) => f.id === 'framing-quality-tooDark')!;
+  assert.ok(found, 'a dark shot must be raised');
+  assert.equal(found.angle, 'top', 'and the angle named, so it can be retaken');
+  assert.match(found.detail, /window/);
+});
+
+test('report: photographs with no measurement produce no quality claim', () => {
+  // Sets captured before the analyser existed carry no reading. Saying
+  // nothing is right; inventing a clean bill of health is not.
+  const data = {
+    ...base(),
+    sessions: [session('s1', 90, ANGLES), session('s2', 30, ANGLES)],
+  };
+  const framing = buildReport(data).sections.find((s) => s.kind === 'framing')!;
+  assert.equal(
+    framing.findings.some((f) => f.id.startsWith('framing-quality')),
+    false,
+  );
+});
+
+test('report: a fully clean set is told so', () => {
+  const clean = (s: PhotoSession): PhotoSession => ({
+    ...s,
+    photos: s.photos.map((p) => ({
+      ...p,
+      quality: { brightness: 120, contrast: 40, sharpness: 20, clipped: 0, issues: [] },
+    })),
+  });
+  const data = {
+    ...base(),
+    sessions: [session('s1', 90, ANGLES), clean(session('s2', 30, ANGLES))],
+  };
+  const framing = buildReport(data).sections.find((s) => s.kind === 'framing')!;
+  const ok = framing.findings.find((f) => f.id === 'framing-quality-clean')!;
+  assert.equal(ok.tone, 'good');
 });
