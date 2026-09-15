@@ -16,6 +16,21 @@
 
 export type PlanId = 'yearly' | 'monthly';
 
+/**
+ * An introductory free trial, when the store is offering this person one.
+ *
+ * Null is the important case. A trial is offered per *subscription group*
+ * and only once: somebody who subscribed last year and came back is not
+ * eligible, and telling them "7 days free" would be a promise the App
+ * Store will not keep. So this is populated only when the store says this
+ * particular customer is eligible, and every piece of copy that mentions
+ * a trial is written to disappear when it is null.
+ */
+export type TrialTerms = {
+  /** "7 days", "1 month" — as the sentence needs it. */
+  duration: string;
+};
+
 export type PlanConfig = {
   id: PlanId;
   /** Product identifier to register with Apple, Google and RevenueCat. */
@@ -34,6 +49,8 @@ export type PlanConfig = {
   /** Raw amount, kept only to compute the comparisons above. */
   amount: number;
   currency: string;
+  /** A free trial this person can actually have, or null. */
+  trial: TrialTerms | null;
 };
 
 const MONTHLY_AMOUNT = 7.99;
@@ -58,6 +75,8 @@ export const PLANS: Record<PlanId, PlanConfig> = {
     formattedSaving: usd(yearlySaving),
     amount: YEARLY_AMOUNT,
     currency: CURRENCY,
+    // Null in the defaults: eligibility is the store's answer, never ours.
+    trial: null,
   },
   monthly: {
     id: 'monthly',
@@ -68,6 +87,7 @@ export const PLANS: Record<PlanId, PlanConfig> = {
     formattedSaving: null,
     amount: MONTHLY_AMOUNT,
     currency: CURRENCY,
+    trial: null,
   },
 };
 
@@ -99,3 +119,23 @@ export function comparePlans(
     saving: saving > 0 ? format(saving) : null,
   };
 }
+
+/**
+ * RevenueCat's public SDK key, per store.
+ *
+ * Public is the operative word: this key identifies the app to
+ * RevenueCat and is designed to ship inside the binary, the way a
+ * Firebase or Stripe publishable key does. It can fetch offerings and
+ * start purchases — both of which Apple has to approve anyway — and it
+ * cannot read another customer's data or move money. The *secret* key,
+ * which can, is not in this repository and never should be.
+ *
+ * Android is null because there is no Play Console product yet. That
+ * makes `createBilling()` return the unconfigured provider on Android,
+ * which shows "not available yet" instead of a purchase button that
+ * would fail — see billing.ts.
+ */
+export const REVENUECAT_KEYS: { ios: string | null; android: string | null } = {
+  ios: 'appl_kEQKncKEkIQMMivdNMFKjRNwnpH',
+  android: null,
+};

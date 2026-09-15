@@ -12,8 +12,22 @@
  */
 
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, type ReactNode } from 'react';
-import { Pressable, ScrollView, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from 'react';
+import {
+  Pressable,
+  ScrollView,
+  View,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -42,10 +56,12 @@ export function Rise({
   index = 0,
   children,
   style,
+  onLayout,
 }: {
   index?: number;
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const reduceMotion = useReducedMotion();
 
@@ -60,6 +76,7 @@ export function Rise({
               .delay(index * STAGGER)
               .withInitialValues({ transform: [{ translateY: RISE }] })
       }
+      onLayout={onLayout}
       style={style}>
       {children}
     </Animated.View>
@@ -105,6 +122,34 @@ export function FunnelShell({
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
 
+  const scroller = useRef<ScrollView>(null);
+  const viewport = useRef(0);
+
+  /**
+   * Brings a newly revealed question into view, and only then.
+   *
+   * `y` is the heading's offset inside the scroll content, so the target
+   * is the heading plus a little of what follows it — enough that the
+   * first option under the question is visible too, since a heading alone
+   * at the bottom edge still looks like nothing happened.
+   */
+  const reveal = useCallback((y: number, height: number) => {
+    const view = viewport.current;
+    // Before the first layout there is nothing to compare against, and a
+    // blind scroll would be a guess.
+    if (view <= 0) return;
+
+    const target = y - view * 0.32;
+    if (target <= 0) return; // Already comfortably on screen.
+
+    // A beat, so the reveal animation has started before the page moves
+    // and the two read as one gesture rather than a jump.
+    const timer = setTimeout(() => {
+      scroller.current?.scrollTo({ y: target + height * 0.5, animated: true });
+    }, 220);
+    return () => clearTimeout(timer);
+  }, []);
+
   const body = (
       <View style={{ flex: 1, paddingTop: insets.top + spacing.sm }}>
         {/* The ground the questions sit in. Behind everything, and only
@@ -147,9 +192,13 @@ export function FunnelShell({
         )}
 
         <ScrollView
+          ref={scroller}
           key={stepKey}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          onLayout={(e) => {
+            viewport.current = e.nativeEvent.layout.height;
+          }}
           contentContainerStyle={{
             flexGrow: 1,
             paddingHorizontal: spacing.lg,
@@ -157,7 +206,7 @@ export function FunnelShell({
             paddingBottom: spacing.xl,
             justifyContent: centred ? 'center' : 'flex-start',
           }}>
-          {children}
+          <RevealContext.Provider value={reveal}>{children}</RevealContext.Provider>
         </ScrollView>
 
         <View
@@ -281,15 +330,45 @@ export function StepTitle({
 /** A quiet heading for the second question on a screen. */
 export function SubHeading({ text, index = 0 }: { text: string; index?: number }) {
   const { spacing } = useTheme();
+  const reveal = useContext(RevealContext);
+  const asked = useRef(false);
 
   return (
-    <Rise index={index} style={{ marginTop: spacing.xxl, marginBottom: spacing.lg }}>
+    <Rise
+      index={index}
+      style={{ marginTop: spacing.xxl, marginBottom: spacing.lg }}
+      onLayout={(e) => {
+        if (asked.current || !reveal) return;
+        asked.current = true;
+        const { y, height } = e.nativeEvent.layout;
+        reveal(y, height);
+      }}>
       <Text variant="title3" accessibilityRole="header">
         {text}
       </Text>
     </Rise>
   );
 }
+
+
+/* ------------------------------ auto-reveal ------------------------------ */
+
+/**
+ * Lets a follow-up question ask the funnel to scroll it into view.
+ *
+ * Several steps hide a second question until the first is answered — the
+ * approach step asks how consistent you have been, the timeline step asks
+ * what you notice most. Both appear *below the fold*, so before this the
+ * screen simply looked stuck: you tapped an answer, nothing visibly
+ * happened, and the Continue button stayed disabled for a reason you
+ * could not see without scrolling.
+ *
+ * The rule is deliberately narrow. A heading reveals itself once, on its
+ * first layout, and only when it is actually out of sight. Scrolling on
+ * every layout pass would yank the page around whenever a row re-measured,
+ * which is worse than the problem it solves.
+ */
+const RevealContext = createContext<((y: number, height: number) => void) | null>(null);
 
 /* -------------------------------- choices ------------------------------- */
 

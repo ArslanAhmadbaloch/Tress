@@ -90,6 +90,14 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /*
+    Whether the store has answered yet. AsyncStorage is normally faster
+    than a network round trip, but "normally" is not a guarantee, and a
+    disk read that lands second must not overwrite a fresher answer from
+    the store with what we happened to believe last time.
+  */
+  const storeAnswered = useRef(false);
+
   useEffect(() => {
     (async () => {
       try {
@@ -100,7 +108,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
           TESTER_BUILD ? AsyncStorage.getItem(TESTER_KEY) : Promise.resolve(null),
         ]);
         if (!alive.current) return;
-        if (cached) setStored(JSON.parse(cached) as Entitlement);
+        if (cached && !storeAnswered.current) setStored(JSON.parse(cached) as Entitlement);
         if (testerFlag === '1') setTester(true);
       } catch {
         // An unreadable cache means no entitlement, not a crash. The store
@@ -123,6 +131,30 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       // Losing the cache costs a re-check against the store, nothing more.
     }
   }, []);
+
+  /*
+    The store is the authority; the cache above is only what we last
+    heard. A null answer means we could not ask — offline, or a store
+    that did not respond — and in that case the cached entitlement
+    stands, because nobody should lose access they have paid for
+    because a request timed out at launch.
+  */
+  useEffect(() => {
+    const ask = billing.entitlement;
+    if (!ask) return;
+    ask.call(billing)
+      .then((snapshot) => {
+        if (!snapshot || !alive.current) return;
+        storeAnswered.current = true;
+        void remember({
+          isPremium: snapshot.isPremium,
+          source: snapshot.isPremium ? 'subscription' : 'none',
+          status: snapshot.status,
+          expiresAt: snapshot.expiresAt,
+        });
+      })
+      .catch(() => undefined);
+  }, [billing, remember]);
 
   const purchase = useCallback(
     async (plan: PlanId) => {

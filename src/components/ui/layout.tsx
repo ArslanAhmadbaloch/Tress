@@ -20,6 +20,7 @@ import { Icon, type IconName } from './icon';
 import { Sprout } from './motion';
 import { PressableScale } from './pressable-scale';
 import { Text } from './text';
+import { Wordmark } from './wordmark';
 import { useTheme, withZeroAlpha } from '@/theme';
 
 /** Height the tab bar occupies, so scroll views can clear it. */
@@ -126,9 +127,13 @@ export function SectionHeader({
         list and form section headers to title case for legibility, and a
         screen that keeps shouting its headers reads as pre-refresh.
       */}
+      {/*
+        Ink, not grey. A section header is a heading — it names the block
+        under it — and a grey heading reads as a caption about the block
+        instead. The muted tone belongs to supporting copy, not structure.
+      */}
       <Text
         variant="headline"
-        color="textSecondary"
         accessibilityRole="header"
         numberOfLines={1}
         style={{ flexShrink: 1, marginRight: spacing.md }}>
@@ -161,6 +166,7 @@ export function SectionHeader({
  */
 export function ScreenTitle({
   eyebrow,
+  eyebrowTone = 'muted',
   title,
   titleMuted,
   subtitle,
@@ -168,6 +174,8 @@ export function ScreenTitle({
   trailing,
 }: {
   eyebrow?: string;
+  /** 'brand' renders the animated sage wordmark instead of a grey label. */
+  eyebrowTone?: 'muted' | 'brand';
   title: string;
   titleMuted?: string;
   subtitle?: string;
@@ -187,12 +195,16 @@ export function ScreenTitle({
       }}>
       <View style={{ flex: 1, minWidth: 0 }}>
         {eyebrow ? (
-          <Text
-            variant="caption"
-            color="textTertiary"
-            style={{ letterSpacing: 2, marginBottom: spacing.xs }}>
-            {eyebrow.toUpperCase()}
-          </Text>
+          eyebrowTone === 'brand' ? (
+            <Wordmark label={eyebrow} />
+          ) : (
+            <Text
+              variant="caption"
+              color="textTertiary"
+              style={{ letterSpacing: 2, marginBottom: spacing.xs }}>
+              {eyebrow.toUpperCase()}
+            </Text>
+          )
         ) : null}
 
         {/*

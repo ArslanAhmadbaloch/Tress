@@ -88,7 +88,6 @@ export default function ProfileScreen() {
 
         <Text
           variant="caption"
-          color="textSecondary"
           center
           style={{ marginTop: spacing.md, paddingHorizontal: spacing.xl }}>
           {CARD_NOTE}
@@ -184,7 +183,7 @@ function ProfileRow({
         {label}
       </Text>
       {value ? (
-        <Text variant="callout" color="textTertiary">
+        <Text variant="callout" color="textSecondary">
           {value}
         </Text>
       ) : null}

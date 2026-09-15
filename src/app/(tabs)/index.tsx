@@ -15,7 +15,7 @@ import { STACK_TEXT_INSET, StackRow } from '@/components/stack-row';
 import { Card } from '@/components/ui/card';
 import { GlassOrb } from '@/components/ui/glass-orb';
 import { StrandGlyph } from '@/components/ui/metric-glyphs';
-import { Flicker } from '@/components/ui/motion';
+import { StreakGlyph } from '@/components/home/streak-glyph';
 import { Icon } from '@/components/ui/icon';
 import {
   EmptyState,
@@ -106,6 +106,7 @@ export default function HomeScreen() {
       <ScreenScroll>
         <ScreenTitle
           eyebrow="Tress"
+          eyebrowTone="brand"
           title={`${greeting()},`}
           titleMuted={name ? `${name}.` : 'friend.'}
           // No subtitle: the script beside it already carries the warm
@@ -168,15 +169,10 @@ export default function HomeScreen() {
           />
           <MetricTile
             glyph={
-              // Lit only while the streak is: an unlit streak should look
-              // unlit, and a flame that flickers at zero is a lie.
-              <Flicker alive={streak > 0}>
-                <Icon
-                  name="flame"
-                  size={18}
-                  color={streak > 0 ? colors.accent : colors.textTertiary}
-                />
-              </Flicker>
+              // Ink like its neighbours until the day is actually done,
+              // then amber. See streak-glyph.tsx for why the colour is
+              // spent on that moment rather than on merely having a streak.
+              <StreakGlyph complete={today.total > 0 && today.done === today.total} />
             }
             label="Streak"
             value={streak}

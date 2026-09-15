@@ -43,6 +43,20 @@ export default function PaywallScreen() {
 
   const [selected, setSelected] = useState<PlanId>(DEFAULT_PLAN);
   const plan = plans[selected];
+
+  /*
+    The line directly above the button that charges them. When the store
+    is offering this person a trial it has to lead with that and still
+    name the price the trial turns into — a "7 days free" with no number
+    after it is the pattern the App Store rejects, and deserves to.
+  */
+  const recurring =
+    plan.period === 'year'
+      ? `${plan.formattedPrice} a year · about ${plan.formattedMonthlyEquivalent} a month`
+      : `${plan.formattedPrice} a month`;
+  const price = plan.trial
+    ? `${plan.trial.duration} free, then ${recurring}`
+    : recurring;
   const scroller = useRef<ScrollView>(null);
 
   const busy = purchaseState.kind === 'working' || restoreState.kind === 'working';
@@ -192,13 +206,17 @@ export default function PaywallScreen() {
           backgroundColor: colors.background,
         }}>
         <Text variant="footnote" color="textSecondary" center>
-          {plan.period === 'year'
-            ? `${plan.formattedPrice} a year · about ${plan.formattedMonthlyEquivalent} a month`
-            : `${plan.formattedPrice} a month`}
+          {price}
         </Text>
 
         <Button
-          label={purchaseState.kind === 'success' ? 'Your journey is ready' : 'Start My Journey'}
+          label={
+            purchaseState.kind === 'success'
+              ? 'Your journey is ready'
+              : plan.trial
+                ? 'Start My Free Trial'
+                : 'Start My Journey'
+          }
           onPress={() => purchase(selected)}
           loading={purchaseState.kind === 'working'}
           succeeded={purchaseState.kind === 'success'}
@@ -249,8 +267,11 @@ export default function PaywallScreen() {
           color="textTertiary"
           center
           style={{ marginTop: spacing.xs }}>
-          Subscriptions renew automatically unless cancelled. Payment is
-          charged to your App Store or Google Play account. Cancel anytime.
+          {plan.trial
+            ? `Your first ${plan.trial.duration} are free. After that the subscription renews automatically at ${plan.formattedPrice} unless cancelled at least 24 hours before the trial ends. `
+            : 'Subscriptions renew automatically unless cancelled. '}
+          Payment is charged to your App Store or Google Play account.
+          Cancel anytime in your account settings.
         </Text>
 
         <View

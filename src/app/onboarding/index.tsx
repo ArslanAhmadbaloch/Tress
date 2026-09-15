@@ -40,9 +40,9 @@ import {
   WELCOME_BODY,
   welcomeTitle,
 } from '@/features/content/belonging';
+import { HowItWorks } from '@/components/onboarding/how-it-works';
 import { caseStudies, type CaseStudy } from '@/features/onboarding/case-studies';
 import {
-  HELP_BEATS,
   HELP_FIGURES,
   HELP_FOOTNOTE,
   HELP_SUBTITLE,
@@ -1183,43 +1183,18 @@ function HowItHelpsScreen() {
         </Text>
       </Rise>
 
-      <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
-        {HELP_BEATS.map((beat, i) => (
-          <Rise key={beat.title} index={1 + i}>
-            <View
-              style={{
-                flexDirection: 'row',
-                gap: spacing.md,
-                padding: spacing.lg,
-                borderRadius: radius.md,
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}>
-              <View
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 17,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.accentSoft,
-                }}>
-                <Icon name={beat.icon} size={16} color={colors.accent} />
-              </View>
-              <View style={{ flex: 1, gap: spacing.xs }}>
-                <Text variant="subhead">{beat.title}</Text>
-                <Text variant="footnote" color="textSecondary">
-                  {beat.body}
-                </Text>
-              </View>
-            </View>
-          </Rise>
-        ))}
-      </View>
+      {/*
+        The four beats, performed rather than listed. Reading "drag
+        between an old set and a new one" teaches less than watching a
+        divider wipe, so the carousel demonstrates each action and the
+        copy underneath is unchanged.
+      */}
+      <Rise index={1} style={{ marginTop: spacing.xl }}>
+        <HowItWorks />
+      </Rise>
 
       {/* Three things about the product, each checkable by opening it. */}
-      <Rise index={1 + HELP_BEATS.length} style={{ marginTop: spacing.xl }}>
+      <Rise index={2} style={{ marginTop: spacing.xl }}>
         <View
           style={{
             flexDirection: 'row',
@@ -1242,7 +1217,7 @@ function HowItHelpsScreen() {
         </View>
       </Rise>
 
-      <Rise index={2 + HELP_BEATS.length} style={{ marginTop: spacing.lg }}>
+      <Rise index={3} style={{ marginTop: spacing.lg }}>
         <Text variant="footnote" color="textTertiary">
           {HELP_FOOTNOTE}
         </Text>
