@@ -56,6 +56,7 @@ export type StepId =
   | 'photo'
   | 'card'
   | 'analysing'
+  | 'profile'
   | 'plan'
   | 'future'
   | 'baseline';
@@ -87,6 +88,9 @@ export const STEPS: StepId[] = [
   // Nothing is being asked here either — it is a reveal, and a bar that
   // advanced during it would be charging somebody for watching.
   'analysing',
+  // The report the analysing beat was building. Their own answers read
+  // back to them, one card at a time, before anything is asked for.
+  'profile',
   'plan',
   'future',
   'baseline',
@@ -109,6 +113,7 @@ export const UNCOUNTED: StepId[] = [
   // Nothing is being asked here either — it is a reveal, and a bar that
   // advanced during it would be charging somebody for watching.
   'analysing',
+  'profile',
   'plan',
   'future',
   'baseline',

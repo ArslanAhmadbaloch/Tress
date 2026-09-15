@@ -308,12 +308,19 @@ export function StepTitle({
 
   return (
     <>
+      {/*
+        Centred, not left-aligned. A left-aligned question reads as a form
+        field label with options beneath it; the same words centred read
+        as the screen asking you something. It is the single biggest
+        difference between how this funnel looked and how the ones in this
+        category look, and it costs nothing.
+      */}
       <Rise index={index}>
-        <Text variant="question" accessibilityRole="header">
+        <Text variant="question" center accessibilityRole="header">
           {title}
         </Text>
         {muted ? (
-          <Text variant="question" color="textTertiary" accessible={false}>
+          <Text variant="question" center color="textTertiary" accessible={false}>
             {muted}
           </Text>
         ) : null}
@@ -323,6 +330,7 @@ export function StepTitle({
         <Rise index={index + 1}>
           <Text
             variant="callout"
+            center
             color="textSecondary"
             style={{ marginTop: spacing.md, marginBottom: spacing.xl }}>
             {subtitle}

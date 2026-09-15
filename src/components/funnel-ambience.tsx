@@ -1,132 +1,52 @@
 /**
  * What the funnel sits in.
  *
- * The questions were set on a bare plate, which read as a form rather
- * than as part of the app the rest of the screens belong to — the ground
- * everywhere else carries light through leaves, and the one place a
- * person is asked how their hair makes them feel had nothing at all.
+ * It used to be drifting palm fronds — pretty, and wrong for the job. A
+ * question screen is a sentence somebody is reading and a set of options
+ * they are weighing, and anything moving behind that is something to look
+ * at instead. The apps that do this well in this category all sit their
+ * funnels on near-flat ground for exactly that reason.
  *
- * So fronds lean in from the edges and drift, the way a shadow moves
- * across a wall over an afternoon. They are very faint and very slow on
- * purpose: this is the backdrop to a sentence somebody is reading, and
- * anything quick enough to notice would be something to look at instead.
+ * So: a still, very soft vertical wash, warm at the top where the heading
+ * sits and settling to the page colour by the middle. It gives the screen
+ * somewhere to start without giving the eye anywhere to wander.
  *
- * Nothing here is interactive and nothing announces itself — it is
- * `pointerEvents="none"` and hidden from the screen reader entirely.
+ * The colour is Tress's own cream and sage, not borrowed. The stillness
+ * is the part that was borrowed.
+ *
+ * Nothing here is interactive and nothing announces itself.
  */
 
-import { useEffect } from 'react';
-import { View, useWindowDimensions } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import { View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import { LeafShadow } from './ui/leaf-shadow';
-import { useTheme } from '@/theme';
-
-/** A full drift and back. Long enough to read as weather, not animation. */
-const DRIFT_MS = 26000;
-
-type Frond = {
-  /** Fraction of the screen width the frond's box starts at. */
-  left: number;
-  top: number;
-  size: number;
-  rotate: string;
-  opacity: number;
-  /** Pixels of travel, and which way it leans first. */
-  travel: number;
-  delay: number;
-};
-
-/*
- * Mostly off the edges, and barely there.
- *
- * The first attempt at this put three fronds across the middle of the
- * screen at half opacity and turned the backdrop into wallpaper — the
- * questions had to compete with it to be read, which is precisely the
- * job a backdrop must not do. These sit at the corners, hang off the
- * frame, and are faint enough that you notice the screen feels alive
- * rather than noticing the leaves.
- */
-const FRONDS: Frond[] = [
-  { left: -0.48, top: -0.1, size: 0.78, rotate: '22deg', opacity: 0.1, travel: 12, delay: 0 },
-  { left: 0.78, top: 0.26, size: 0.7, rotate: '-148deg', opacity: 0.075, travel: -15, delay: 5200 },
-  { left: -0.34, top: 0.78, size: 0.62, rotate: '-28deg', opacity: 0.06, travel: 9, delay: 11000 },
-];
+import { useTheme, withZeroAlpha } from '@/theme';
 
 export function FunnelAmbience() {
-  const { width, height } = useWindowDimensions();
+  const { colors } = useTheme();
 
   return (
     <View
       pointerEvents="none"
       accessible={false}
       importantForAccessibility="no-hide-descendants"
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
-      {FRONDS.map((frond, i) => (
-        <Drifting key={i} frond={frond} width={width} height={height} />
-      ))}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+      {/*
+        Two washes rather than one. A single gradient over the whole
+        screen leaves a visible band where it ends; a warm one falling
+        away by 45% and a faint sage one rising from the bottom meet in
+        the middle with nothing to see.
+      */}
+      <LinearGradient
+        colors={[colors.accentSoft, withZeroAlpha(colors.accentSoft)]}
+        locations={[0, 1]}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '45%' }}
+      />
+      <LinearGradient
+        colors={[withZeroAlpha(colors.accentSoft), colors.accentSoft]}
+        locations={[0, 1]}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '28%', opacity: 0.6 }}
+      />
     </View>
-  );
-}
-
-function Drifting({
-  frond,
-  width,
-  height,
-}: {
-  frond: Frond;
-  width: number;
-  height: number;
-}) {
-  const { colors } = useTheme();
-  const reduceMotion = useReducedMotion();
-  const sway = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      // Still there, just still. The leaves are part of the ground; only
-      // the movement is the thing somebody asked not to see.
-      sway.set(0);
-      return;
-    }
-    sway.set(
-      withRepeat(
-        withTiming(1, { duration: DRIFT_MS, easing: Easing.inOut(Easing.sin) }),
-        -1,
-        true,
-      ),
-    );
-  }, [reduceMotion, sway]);
-
-  const style = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: sway.get() * frond.travel },
-      { translateY: sway.get() * frond.travel * 0.4 },
-      { rotate: frond.rotate },
-    ],
-  }));
-
-  const size = width * frond.size;
-
-  return (
-    <Animated.View
-      style={[
-        {
-          position: 'absolute',
-          left: width * frond.left,
-          top: height * frond.top,
-          opacity: frond.opacity,
-        },
-        style,
-      ]}>
-      <LeafShadow width={size} height={size * 1.15} color={colors.leafShadow} />
-    </Animated.View>
   );
 }

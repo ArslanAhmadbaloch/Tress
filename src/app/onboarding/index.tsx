@@ -43,8 +43,10 @@ import {
   welcomeTitle,
 } from '@/features/content/belonging';
 import { Analysing } from '@/components/onboarding/analysing';
+import { ProfileReportScreen } from '@/components/onboarding/profile-report-screen';
 import { HowItWorks } from '@/components/onboarding/how-it-works';
 import { caseStudies, type CaseStudy } from '@/features/onboarding/case-studies';
+import { buildProfileReport } from '@/features/onboarding/profile-report';
 import {
   HELP_FIGURES,
   HELP_FOOTNOTE,
@@ -959,6 +961,28 @@ export default function OnboardingFunnel() {
             title={ANALYSING_TITLE}
             steps={ANALYSING_STEPS}
             onDone={next}
+          />
+        ),
+      });
+
+    /* ------------------------------- profile ------------------------------- */
+    case 'profile':
+      return shell({
+        cta: COPY.plan.cta,
+        onCta: next,
+        children: (
+          <ProfileReportScreen
+            report={buildProfileReport({
+              name: answers.name,
+              noticed: answers.noticed,
+              areas: answers.areas,
+              preoccupation: answers.preoccupation,
+              approaches: answers.approaches,
+              medications: answers.medications,
+              consistency: answers.consistency,
+              goal: answers.goal,
+              intervalDays: answers.intervalDays,
+            })}
           />
         ),
       });
