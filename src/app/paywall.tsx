@@ -15,7 +15,7 @@
  */
 
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -27,8 +27,10 @@ import { Text } from '@/components/ui/text';
 import { PremiumFeatureList } from '@/components/subscription/feature-list';
 import { SubscriptionPlanCard } from '@/components/subscription/plan-card';
 import { DEFAULT_PLAN, PLAN_ORDER, type PlanId } from '@/features/subscription/config';
+import { variantFor } from '@/features/subscription/paywall-variants';
 import { failureMessage } from '@/features/subscription/entitlement';
 import { useSubscription } from '@/features/subscription/provider';
+import { useAppStore } from '@/store/app-store';
 import { useTheme } from '@/theme';
 
 export default function PaywallScreen() {
@@ -36,12 +38,20 @@ export default function PaywallScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
+  const { data } = useAppStore();
   const {
     entitlement, plans, canPurchase,
     purchaseState, restoreState, purchase, restore, acknowledge,
   } = useSubscription();
 
   const [selected, setSelected] = useState<PlanId>(DEFAULT_PLAN);
+
+  /*
+    The profile id is created at onboarding, stays on the device and is
+    never sent anywhere — which makes it the right thing to hash for a
+    stable arm, and the wrong thing to ever report alongside one.
+  */
+  const variant = useMemo(() => variantFor(data.profile?.id ?? ''), [data.profile?.id]);
   const plan = plans[selected];
 
   /*
@@ -124,12 +134,17 @@ export default function PaywallScreen() {
         </View>
 
         <Animated.View entering={FadeInDown.duration(360)}>
+          {/*
+            Which framing somebody sees is fixed for the life of their
+            install — see paywall-variants.ts. All three name the same
+            price, the same trial and the same features; only the door in
+            is different.
+          */}
           <Text variant="title1" style={{ marginTop: spacing.sm }}>
-            Your journey is ready.
+            {variant.headline}
           </Text>
           <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
-            Start tracking your hair journey, stay consistent, and see your
-            progress over time.
+            {variant.body}
           </Text>
         </Animated.View>
 

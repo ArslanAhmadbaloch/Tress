@@ -14,16 +14,16 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { View } from 'react-native';
-import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassOrb } from './ui/glass-orb';
 import { GlassSurface } from './ui/glass-surface';
@@ -132,7 +132,41 @@ function TabItem({
   onPress: () => void;
 }) {
   const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
   const tint = active ? colors.text : colors.textSecondary;
+
+  /*
+    One value drives the whole selection, rather than three animations
+    starting independently. The glyph lifts, the glow blooms behind it and
+    the label settles — and because they share a spring they arrive
+    together, which is the difference between a tab that animates and a
+    tab that feels like one object responding.
+  */
+  const sel = useSharedValue(active ? 1 : 0);
+
+  useEffect(() => {
+    const to = active ? 1 : 0;
+    sel.set(
+      reduceMotion
+        ? to
+        : withSpring(to, { damping: 15, stiffness: 220, mass: 0.7 }),
+    );
+  }, [active, reduceMotion, sel]);
+
+  const glyph = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: -3 * sel.get() },
+      { scale: 1 + 0.12 * sel.get() },
+    ],
+  }));
+
+  const glow = useAnimatedStyle(() => ({
+    opacity: sel.get(),
+    transform: [{ scale: 0.7 + 0.3 * sel.get() }],
+  }));
+
+  // The label closes the gap the glyph opened, so the pair stays centred.
+  const caption = useAnimatedStyle(() => ({ transform: [{ translateY: -1.5 * sel.get() }] }));
 
   return (
     <PressableScale
@@ -150,18 +184,24 @@ function TabItem({
       }}>
       {/* The selected tab sits in a pool of soft green light rather than a
           filled chip, so the bar stays white and calm. */}
-      {active ? <TabGlow /> : null}
+      <Animated.View style={glow}>
+        <TabGlow />
+      </Animated.View>
       <Pop active={active}>
-        <Glyph size={20} color={tint} active={active} />
+        <Animated.View style={glyph}>
+          <Glyph size={20} color={tint} active={active} />
+        </Animated.View>
       </Pop>
-      <Text
-        variant="caption"
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.8}
-        style={{ color: tint, marginTop: 2, fontWeight: active ? '600' : '500' }}>
-        {label}
-      </Text>
+      <Animated.View style={caption}>
+        <Text
+          variant="caption"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          style={{ color: tint, marginTop: 2, fontWeight: active ? '600' : '500' }}>
+          {label}
+        </Text>
+      </Animated.View>
     </PressableScale>
   );
 }
