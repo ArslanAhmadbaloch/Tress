@@ -41,7 +41,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from './ui/button';
 import { GlassOrb } from './ui/glass-orb';
 import { Icon, type IconName } from './ui/icon';
-import { Ground } from './ui/ground';
 import { FunnelAmbience } from './funnel-ambience';
 import { PressableScale } from './ui/pressable-scale';
 import { Text } from './ui/text';
@@ -258,7 +257,17 @@ export function FunnelShell({
     );
   }
 
-  return <Ground variant="plain">{body}</Ground>;
+  /*
+    Flat, not a photographic plate.
+
+    Ground paints a stone texture behind every screen, and on a question
+    screen it was the loudest thing there — options sitting on a
+    photograph of a wall. The apps that run funnels well all put questions
+    on flat colour, because the only things competing for attention should
+    be the question and the answers. The texture stays everywhere else in
+    the app; it is the funnel it was wrong for.
+  */
+  return <View style={{ flex: 1, backgroundColor: colors.background }}>{body}</View>;
 }
 
 function ProgressBar({ value }: { value: number }) {
@@ -405,7 +414,7 @@ export function ChoiceRow({
   onPress: () => void;
   index?: number;
 }) {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, radius, shadow } = useTheme();
 
   return (
     <Rise index={index}>
@@ -416,18 +425,33 @@ export function ChoiceRow({
         accessibilityState={{ checked: selected }}
         accessibilityLabel={label}
         accessibilityHint={detail}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.md,
-          minHeight: 58,
-          paddingVertical: spacing.md,
-          paddingHorizontal: spacing.lg,
-          borderRadius: radius.md,
-          backgroundColor: selected ? colors.accentSoft : colors.surface,
-          borderWidth: 1,
-          borderColor: selected ? colors.accentBorder : colors.border,
-        }}>
+        /*
+          Borderless, rounder, taller, and lifted by a shadow instead of a
+          hairline. The old row was a bordered rectangle — a form control.
+          A 1px grey outline around every option is the single thing that
+          made this read as a questionnaire rather than as an app asking
+          somebody something, and removing it does more for the feel than
+          any amount of new type did.
+
+          The selected state still carries a border, because on a white
+          card a tint alone is not enough to be certain which one you
+          picked — and being unsure is worse than being plain.
+        */
+        style={[
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.md,
+            minHeight: 68,
+            paddingVertical: spacing.md,
+            paddingHorizontal: spacing.lg,
+            borderRadius: radius.card,
+            backgroundColor: selected ? colors.accentSoft : colors.surface,
+            borderWidth: selected ? 1.5 : 0,
+            borderColor: colors.accent,
+          },
+          selected ? null : shadow.soft,
+        ]}>
         {icon ? (
           <GlassOrb size={30} ring={false} tone={selected ? 'green' : 'neutral'}>
             <Icon

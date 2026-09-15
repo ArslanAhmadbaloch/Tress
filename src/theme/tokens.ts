@@ -570,11 +570,18 @@ export const typography = {
    * Unlike `script` this is a reading face, so it carries the whole
    * question at a size that holds three lines without crowding.
    */
+  /*
+    The funnel's headline. It was the serif, which was the last thing in
+    the app still speaking in the old voice — and on screen it was
+    obvious: a serif question sitting above sans-serif options reads as
+    two designs rather than one. Bigger and tighter than title1, because
+    a question deserves more room than a page heading.
+  */
   question: {
-    fontSize: 33,
+    fontSize: 34,
     lineHeight: 41,
-    letterSpacing: -0.3,
-    ...serifSemiboldStyle,
+    letterSpacing: -1.0,
+    fontFamily: fontFamily.displayBold,
   },
   /**
    * Decorative editorial script, for the one motivational phrase a screen
