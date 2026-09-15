@@ -83,7 +83,8 @@
         }
       ],
       "expo-image",
-      "expo-web-browser"
+      "expo-web-browser",
+      "react-native-fast-tflite"
     ],
     "experiments": {
       "typedRoutes": true,
