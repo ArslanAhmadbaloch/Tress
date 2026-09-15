@@ -273,13 +273,19 @@ export function ctaLabel(plan: PlanConfig, succeeded: boolean): string {
 }
 
 /**
- * The one second ask, offered when somebody closes the paywall.
+ * The one second ask, shown the next time the paywall opens after somebody
+ * has closed it without buying.
  *
  * Once per install, never again — it is recorded the first time it is
  * shown rather than the first time it is accepted, so declining twice is
- * not possible. A sheet that reappears on every dismissal is the pattern
- * that gets apps reported, and it teaches people to stop opening the app
- * rather than to subscribe.
+ * not possible (see device-preferences.ts). A sheet that reappears on
+ * every dismissal is the pattern that gets apps reported, and it teaches
+ * people to stop opening the app rather than to subscribe.
+ *
+ * Only the headline and body change. The photograph, the benefits, the
+ * plans, the price and the terms are exactly what the first visit showed,
+ * because a second ask that quietly moved the price would be a different
+ * offer wearing the first one's clothes.
  *
  * It also says the true thing about leaving: the journey is kept either
  * way. Implying somebody would lose their photographs by not paying
@@ -291,3 +297,12 @@ export const SECOND_ASK = {
   accept: 'See Premium again',
   decline: 'Not now',
 };
+
+export type PaywallCopy = Pick<PaywallVariant, 'headline' | 'body'>;
+
+/** The two sentences at the top of the screen for this visit. */
+export function paywallCopy(variant: PaywallVariant, secondAsk: boolean): PaywallCopy {
+  return secondAsk
+    ? { headline: SECOND_ASK.headline, body: SECOND_ASK.body }
+    : { headline: variant.headline, body: variant.body };
+}

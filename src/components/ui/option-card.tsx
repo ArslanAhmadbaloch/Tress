@@ -22,7 +22,7 @@ export function OptionCard({
   onPress: () => void;
   multi?: boolean;
 }) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, radius, spacing, shadow } = useTheme();
 
   return (
     <PressableScale
@@ -32,22 +32,29 @@ export function OptionCard({
       accessibilityState={{ checked: selected }}
       accessibilityLabel={label}
       accessibilityHint={description}
-      style={{
-        minHeight: MIN_TOUCH_TARGET + 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.md,
-        paddingVertical: spacing.md,
-        paddingHorizontal: spacing.lg,
-        borderRadius: radius.md,
-        backgroundColor: selected ? colors.accentSoft : colors.surface,
-        borderWidth: 1,
-        borderColor: selected ? colors.accentBorder : colors.border,
-      }}>
+      /*
+        The funnel's ChoiceRow recipe: no outline at rest, a soft shadow
+        instead, and selection shown by the tint, an accent border and the
+        filled mark. The label stays ink — tinting it too was a fourth
+        signal for one fact.
+      */
+      style={[
+        {
+          minHeight: MIN_TOUCH_TARGET + 12,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          paddingVertical: spacing.md,
+          paddingHorizontal: spacing.xl,
+          borderRadius: radius.card,
+          backgroundColor: selected ? colors.accentSoft : colors.surface,
+          borderWidth: 1.5,
+          borderColor: selected ? colors.accent : 'transparent',
+        },
+        shadow.soft,
+      ]}>
       <View style={{ flex: 1 }}>
-        <Text variant="headline" color={selected ? 'accent' : 'text'}>
-          {label}
-        </Text>
+        <Text variant="headline">{label}</Text>
         {description ? (
           <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
             {description}

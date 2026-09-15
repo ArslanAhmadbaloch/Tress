@@ -23,6 +23,7 @@ import {
   heroAccessibilityLabel,
   heroCaption,
   heroFor,
+  paywallCopy,
   priceLine,
   renewalTerms,
   variantFor,
@@ -303,4 +304,30 @@ test('second ask: it does not threaten to take their journey away', () => {
   ]) {
     assert.ok(!threat.test(SECOND_ASK.body), `second ask must not threaten: ${threat}`);
   }
+});
+
+test('second ask: it replaces the headline and body, and nothing else', () => {
+  // The install's arm is untouched by the second ask — the same person
+  // sees the same variant again the moment the second ask is spent.
+  for (const variant of Object.values(PAYWALL_VARIANTS)) {
+    const first = paywallCopy(variant, false);
+    assert.equal(first.headline, variant.headline);
+    assert.equal(first.body, variant.body);
+
+    const second = paywallCopy(variant, true);
+    assert.equal(second.headline, SECOND_ASK.headline);
+    assert.equal(second.body, SECOND_ASK.body);
+    assert.deepEqual(Object.keys(second).sort(), ['body', 'headline'], 'no extra copy on the second visit');
+  }
+});
+
+test('second ask: the price and the terms are not part of the copy it swaps', () => {
+  // A second ask that moved the price would be a different offer wearing
+  // the first one's clothes. The swap has no hook to touch either.
+  const copy = paywallCopy(PAYWALL_VARIANTS.record, true);
+  const yearlyTrial: PlanConfig = { ...PLANS.yearly, trial: { duration: '7 days' } };
+  for (const line of [priceLine(PLANS.yearly), priceLine(yearlyTrial), renewalTerms(yearlyTrial)]) {
+    assert.ok(!copy.body.includes(line) && !copy.headline.includes(line));
+  }
+  assert.ok(!/\$|£|€|\d/.test(`${copy.headline} ${copy.body}`), 'the second ask names no number');
 });

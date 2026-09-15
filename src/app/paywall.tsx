@@ -23,12 +23,13 @@
  * read it. This file is layout.
  */
 
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
+import { currentPaywallAsk, setPaywallAsk } from '@/lib/device-preferences';
 import { useBackOrHome } from '@/lib/navigation';
 import { Rise } from '@/components/funnel';
 import { PremiumFeatureList } from '@/components/subscription/feature-list';
@@ -45,6 +46,7 @@ import {
   CTA_COPY,
   ctaLabel,
   heroFor,
+  paywallCopy,
   priceLine,
   renewalTerms,
   variantFor,
@@ -83,6 +85,33 @@ export default function PaywallScreen() {
     stable arm, and the wrong thing to ever report alongside one.
   */
   const variant = useMemo(() => variantFor(data.profile?.id ?? ''), [data.profile?.id]);
+  /*
+    Fixed for the life of this visit: the stage is read once and then
+    advanced, so the copy cannot flip mid-screen. Recorded as shown, not
+    as accepted — the second ask is a single open, whatever they do on it.
+  */
+  const [secondAsk] = useState(() => currentPaywallAsk() === 'second');
+  const copy = paywallCopy(variant, secondAsk);
+  useEffect(() => {
+    if (secondAsk) setPaywallAsk('settled');
+  }, [secondAsk]);
+  /*
+    Closing without buying earns the one second ask on the next open.
+    The close control is only one of the ways out — this is a page sheet,
+    so the swipe-down and the hardware back button close it just as often
+    and never touch a button handler. beforeRemove fires for all three, so
+    the dismissal is recorded there, and the X simply leaves. A purchase or
+    an existing entitlement also removes this screen, and neither is a
+    dismissal: they flag the exit before leaving so the listener lets it go.
+  */
+  const navigation = useNavigation();
+  const paidExit = useRef(false);
+  useEffect(() => {
+    return navigation.addListener('beforeRemove', () => {
+      if (paidExit.current) return;
+      if (currentPaywallAsk() === 'first') setPaywallAsk('second');
+    });
+  }, [navigation]);
   const hero = useMemo(() => heroFor(data), [data]);
   const plan = plans[selected];
   const scroller = useRef<ScrollView>(null);
@@ -95,6 +124,7 @@ export default function PaywallScreen() {
   // already paid.
   useEffect(() => {
     if (entitlement.isPremium && purchaseState.kind !== 'success') {
+      paidExit.current = true;
       leave();
     }
   }, [entitlement.isPremium, purchaseState.kind, leave]);
@@ -103,7 +133,7 @@ export default function PaywallScreen() {
   // they were trying to do.
   useEffect(() => {
     if (purchaseState.kind !== 'success') return;
-    const t = setTimeout(() => { acknowledge(); leave(); }, 1200);
+    const t = setTimeout(() => { paidExit.current = true; acknowledge(); leave(); }, 1200);
     return () => clearTimeout(t);
   }, [purchaseState.kind, acknowledge, leave]);
 
@@ -156,7 +186,9 @@ export default function PaywallScreen() {
           Centred, like the funnel's questions. Which framing somebody sees
           is fixed for the life of their install — see paywall-variants.ts.
           All three name the same price, the same trial and the same
-          features; only the door in is different.
+          features; only the door in is different. The one exception is
+          the visit after a dismissal, which swaps these two lines for the
+          second ask and nothing else.
         */}
         <Rise index={0} style={{ alignItems: 'center', marginTop: spacing.lg }}>
           <Text variant="overline" color="textSecondary" center>
@@ -167,14 +199,14 @@ export default function PaywallScreen() {
             center
             accessibilityRole="header"
             style={{ marginTop: spacing.sm, maxWidth: COPY_MEASURE }}>
-            {variant.headline}
+            {copy.headline}
           </Text>
           <Text
             variant="callout"
             color="textSecondary"
             center
             style={{ marginTop: spacing.md, maxWidth: COPY_MEASURE }}>
-            {variant.body}
+            {copy.body}
           </Text>
         </Rise>
 

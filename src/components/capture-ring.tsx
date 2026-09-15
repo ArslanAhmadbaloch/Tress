@@ -1,15 +1,16 @@
 /**
- * The alignment guide, as a ring of five.
+ * The alignment guide, as a ring of one segment per angle.
  *
- * One segment per angle, in the order they are shot, so the guide doubles
- * as the progress meter: the arcs behind you are filled, the one you are
- * on is lit, the rest are waiting. It is the Face ID idea — a ring that
- * closes as you work through a set — but the set here is the five angles,
- * which is something the app genuinely knows.
+ * Segments run in the order the angles are shot, so the guide doubles as
+ * the progress meter: the arcs behind you are filled, the one you are on
+ * is lit, the rest are waiting. It is the Face ID idea — a ring that
+ * closes as you work through a set — and the set is whatever the session
+ * asked for: the full five on an update, a single front shot on the
+ * first scan, where the ring is one arc and there is nothing to count.
  *
- * It is deliberately *not* pretending to track your head. There is no face
- * detection available, so nothing on screen fills because of where you are
- * looking. What fills is what has been captured.
+ * Nothing here fills because of where the head is. Following the head is
+ * the FaceFrame oval's job, on the builds and angles that can do it; this
+ * ring only ever shows what has been captured.
  *
  * The countdown segment is the exception: while the timer runs, the active
  * arc sweeps, and that sweep is real — it is the seconds left.

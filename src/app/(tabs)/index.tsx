@@ -11,7 +11,7 @@ import {
   MetricTile,
   PhotoStack,
 } from '@/components/dashboard';
-import { BaselineCard, baselineIsIncomplete } from '@/components/home/baseline-card';
+import { BaselineCard } from '@/components/home/baseline-card';
 import { StreakGlyph } from '@/components/home/streak-glyph';
 import { STACK_TEXT_INSET, StackRow } from '@/components/stack-row';
 import { Button } from '@/components/ui/button';
@@ -49,7 +49,7 @@ import {
   sessionLabel,
 } from '@/store/selectors';
 import { spacing, useTheme } from '@/theme';
-import { ANGLES, type Angle, type PhotoSession } from '@/types/domain';
+import { ANGLES, sessionToExtend, type Angle, type PhotoSession } from '@/types/domain';
 
 /** The angle the progress card leads with — the crown shows most change. */
 const HERO_ANGLE: Angle = 'crown';
@@ -129,8 +129,7 @@ export default function HomeScreen() {
 
   /*
     Two sessions on different days. Two on the same day — a set retaken
-    ten minutes later, or the five angles captured straight after the
-    funnel's one-angle scan — are not before and after, and a hero that
+    ten minutes later — are not before and after, and a hero that
     put them side by side under "Baseline → Day 1" would be presenting a
     change that had no time to happen.
   */
@@ -142,8 +141,12 @@ export default function HomeScreen() {
   );
 
   /* The funnel's first scan is one angle; the five-angle set is what
-     every later comparison needs. See baseline-card.tsx. */
-  const needsBaseline = baselineIsIncomplete(latest);
+     every later comparison needs. The card shows for exactly the session
+     a capture would extend, so it leaves once the baseline has all five
+     angles — or once a second session exists, after which the baseline is
+     what it is. See baseline-card.tsx. */
+  const toExtend = sessionToExtend(data.sessions);
+  const needsBaseline = toExtend !== null;
 
   return (
     <Screen>
@@ -205,10 +208,14 @@ export default function HomeScreen() {
           example photographs above it stay examples until this is done.
           It leaves the screen on its own once five angles exist.
         */}
-        {needsBaseline && latest ? (
+        {toExtend ? (
           <BaselineCard
-            session={latest}
-            onCapture={() => router.push('/capture-intro')}
+            session={toExtend}
+            // Straight to the camera with the session named: the
+            // remaining angles go into this baseline, not a new update.
+            onCapture={() =>
+              router.push({ pathname: '/capture-session', params: { extend: toExtend.id } })
+            }
             style={{ marginTop: CARD_GAP }}
           />
         ) : null}

@@ -41,12 +41,6 @@ export function welcomeTitle(name: string): string {
   return named('Welcome to the family{name}.', name);
 }
 
-/**
- * Set small above the card, not as a headline. The card is the thing
- * being handed over; a paragraph on top of it only makes it wait.
- */
-export const WELCOME_BODY = 'Thank you for taking the time. This card is yours from today.';
-
 /** Under the card wherever it is shown again afterwards. */
 export const CARD_NOTE =
   'Your membership card. Tap to open it full size and save it.';
@@ -64,7 +58,6 @@ export const MEMBER_SINCE = 'Member since';
  */
 export const BASELINE_THANKS =
   'That is the hard part done. Everything from here is comparison.';
-
 
 /* ------------------------------ analysing ------------------------------- */
 

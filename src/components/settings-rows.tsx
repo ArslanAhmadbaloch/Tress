@@ -28,17 +28,11 @@ const TEXT_INSET = 16 + ORB + 12;
 export function SettingsGroup({ children }: { children: ReactNode }) {
   const { colors, radius, shadow } = useTheme();
 
+  // Two views, as in Card: on iOS a view that clips its rows also clips
+  // its own shadow, so the outer one floats and the inner one clips.
   return (
-    <View
-      style={[
-        {
-          backgroundColor: colors.surface,
-          borderRadius: radius.section,
-          overflow: 'hidden',
-        },
-        shadow.soft,
-      ]}>
-      {children}
+    <View style={[{ backgroundColor: colors.surface, borderRadius: radius.section }, shadow.soft]}>
+      <View style={{ borderRadius: radius.section, overflow: 'hidden' }}>{children}</View>
     </View>
   );
 }

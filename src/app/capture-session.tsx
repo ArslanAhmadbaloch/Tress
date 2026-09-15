@@ -53,8 +53,11 @@ import { motion, useTheme } from '@/theme';
 import {
   ANGLES,
   ANGLE_LABELS,
+  missingAngles,
+  sessionToExtend,
   type Angle,
   type PhotoCoverage,
+  type PhotoSession,
 } from '@/types/domain';
 
 const SHUTTER_SIZE = 78;
@@ -68,6 +71,9 @@ const SINGLE_ANGLES: readonly Angle[] = ['front'];
  * the person to the save button; this is for the phone that did not.
  */
 const COVERAGE_WAIT_MS = 4000;
+
+/** What `withinTime` hands back when the reading, not the wait, is what ran out. */
+const STILL_RUNNING = Symbol('still-running');
 
 /** How many empty frames in a row before the face counts as gone. */
 const FACE_LOST_AFTER = 3;
@@ -143,7 +149,7 @@ export default function CaptureSessionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const leave = useBackOrHome();
-  const { data, addSession } = useAppStore();
+  const { data, addSession, extendSession, patchPhoto } = useAppStore();
   /** Their very first set, which is the one worth acknowledging. */
   const isBaseline = data.sessions.length === 0;
 
@@ -151,15 +157,37 @@ export default function CaptureSessionScreen() {
   const cameraRef = useRef<TrackedCameraHandle>(null);
 
   /*
-    Two ways in. The intro opens the full session at a chosen angle, and
+    Three ways in. The intro opens the full session at a chosen angle, and
     the session still collects all five, wrapping round to any it skipped.
     The funnel opens a single scan: one photograph, from the front, and
     straight to the report — the shortest honest path from "I wonder" to
-    "here is what the device measured".
+    "here is what the device measured". Home's baseline card opens the
+    rest of that scan: only the angles the baseline lacks, saved into the
+    baseline rather than beside it.
   */
-  const { start, single } = useLocalSearchParams<{ start?: string; single?: string }>();
+  const { start, single, extend } = useLocalSearchParams<{
+    start?: string;
+    single?: string;
+    extend?: string;
+  }>();
   const singleMode = single === '1';
-  const angles = singleMode ? SINGLE_ANGLES : ANGLES;
+
+  /*
+    Decided once, as the screen opens. The rule is `sessionToExtend`'s,
+    and it applies with or without the card's param: a full capture
+    started from the intro while the baseline is still one photograph
+    extends it too, because the alternative is a "Day 1" set sitting
+    beside a one-photograph baseline for the life of the journey. The
+    store re-checks at save, so the session held here going stale costs
+    nothing.
+  */
+  const [extending] = useState<PhotoSession | null>(() =>
+    singleMode ? null : sessionToExtend(data.sessions, extend),
+  );
+  const angles = useMemo<readonly Angle[]>(
+    () => (singleMode ? SINGLE_ANGLES : extending ? missingAngles(extending) : ANGLES),
+    [singleMode, extending],
+  );
 
   const [index, setIndex] = useState(() =>
     Math.max(0, angles.indexOf(start as Angle)),
@@ -509,26 +537,59 @@ export default function CaptureSessionScreen() {
             */
             const [analysis, coverage] = await Promise.all([
               analysePhoto(file.uri).catch(() => null),
-              withinTime(shot.coverage, COVERAGE_WAIT_MS, undefined),
+              withinTime<PhotoCoverage | undefined | typeof STILL_RUNNING>(
+                shot.coverage,
+                COVERAGE_WAIT_MS,
+                STILL_RUNNING,
+              ),
             ]);
 
             return {
-              angle: shot.angle,
-              uri: file.uri,
-              thumbnailUri: file.thumbnailUri,
-              width: file.width,
-              height: file.height,
-              capturedAt: new Date().toISOString(),
-              quality: analysis ? { ...analysis.quality } : undefined,
-              coverage,
+              photo: {
+                angle: shot.angle,
+                uri: file.uri,
+                thumbnailUri: file.thumbnailUri,
+                width: file.width,
+                height: file.height,
+                capturedAt: new Date().toISOString(),
+                quality: analysis ? { ...analysis.quality } : undefined,
+                coverage: coverage === STILL_RUNNING ? undefined : coverage,
+              },
+              // Only a reading that outran the wait is worth following up;
+              // one that finished without a result has nothing more to say.
+              late: coverage === STILL_RUNNING ? shot.coverage : null,
             };
           }),
         );
 
-        const session = addSession(stored);
+        const photos = stored.map((s) => s.photo);
+        const session = extending
+          ? extendSession(extending.id, photos)
+          : addSession(photos);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
           () => undefined,
         );
+
+        /*
+          A reading still running at the save is not lost. It lands on
+          its photograph when it finishes — through the store, because
+          this screen is usually gone by then. The photograph is found by
+          file, which is unique to this save.
+        */
+        if (session) {
+          for (const { photo, late } of stored) {
+            const saved = session.photos.find((p) => p.uri === photo.uri);
+            if (!late || !saved) continue;
+            late.then(
+              (reading) => {
+                if (reading) patchPhoto(session.id, saved.id, { coverage: reading });
+              },
+              // A reading that fails after the save is no reading; the
+              // photograph is already kept.
+              () => undefined,
+            );
+          }
+        }
 
         /*
           The very first set goes to the report rather than to the session
@@ -553,7 +614,16 @@ export default function CaptureSessionScreen() {
         );
       }
     },
-    [isSaving, addSession, router, data.sessions.length, singleMode],
+    [
+      isSaving,
+      addSession,
+      extendSession,
+      patchPhoto,
+      extending,
+      router,
+      data.sessions.length,
+      singleMode,
+    ],
   );
 
   const acceptShot = useCallback(() => {
@@ -649,13 +719,13 @@ export default function CaptureSessionScreen() {
           paddingHorizontal: spacing.lg,
         }}>
         <Text variant="title1" accessibilityRole="header">
-          {isBaseline ? 'That’s your baseline' : 'Your update'}
+          {isBaseline || extending ? 'That’s your baseline' : 'Your update'}
         </Text>
         <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
           {/* Photographing your own head five ways, feeling self-conscious
               about it, is the hard part of this product. Saying so once —
               on the first set only — costs a line and is true. */}
-          {isBaseline ? `${BASELINE_THANKS} ` : ''}
+          {isBaseline || extending ? `${BASELINE_THANKS} ` : ''}
           {shots.length} of {angles.length} angles captured. Tap any angle to
           retake it before saving.
         </Text>
@@ -729,7 +799,7 @@ export default function CaptureSessionScreen() {
 
         <View style={{ gap: spacing.sm }}>
           <Button
-            label={isSaving ? 'Saving…' : 'Save Update'}
+            label={isSaving ? 'Saving…' : isBaseline || extending ? 'Save My Baseline' : 'Save Update'}
             onPress={() => save(shots)}
             loading={isSaving}
             disabled={shots.length === 0}

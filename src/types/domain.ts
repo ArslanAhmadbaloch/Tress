@@ -430,6 +430,83 @@ export type PhotoSession = {
   note?: string;
 };
 
+/* ------------------------------------------------------------------ */
+
+/** Angles, in capture order, that a session holds no photograph for. */
+export function missingAngles(session: Pick<PhotoSession, 'photos'>): Angle[] {
+  const held = new Set(session.photos.map((p) => p.angle));
+  return ANGLES.filter((angle) => !held.has(angle));
+}
+
+/**
+ * The session a new capture extends instead of sitting beside.
+ *
+ * The funnel's scan saves one photograph as the baseline. The five-angle
+ * set taken afterwards belongs to that same baseline: saved as a session
+ * of its own it would be "Day 1", and every comparison from then on
+ * would be between one hairline photograph and a set taken an hour
+ * later. So a capture extends the baseline while the baseline still
+ * lacks angles and is the only session there is. Once a second session
+ * exists the baseline is whatever it was, and a later capture is an
+ * update however few angles it holds.
+ *
+ * `requestedId` is the explicit route in from Home's baseline card. It
+ * is honoured only where the same rule holds for that session: a stale
+ * id — the session was deleted, or filled in from another entry — falls
+ * back to a plain capture rather than landing photographs in the wrong
+ * place.
+ */
+export function sessionToExtend(
+  sessions: PhotoSession[],
+  requestedId?: string,
+): PhotoSession | null {
+  const only = sessions.length === 1 ? sessions[0] : null;
+  if (!only?.isBaseline) return null;
+  if (requestedId !== undefined && only.id !== requestedId) return null;
+  return missingAngles(only).length > 0 ? only : null;
+}
+
+/**
+ * The session with the given photographs added for the angles it lacks.
+ *
+ * A photograph for an angle the session already holds is dropped, so the
+ * front photograph the funnel measured is never replaced. `capturedAt`
+ * stays the original scan's: that is when the baseline began, and the
+ * milestone labels count from it.
+ */
+export function addMissingAngles(session: PhotoSession, photos: Photo[]): PhotoSession {
+  const missing = new Set(missingAngles(session));
+  const added: Photo[] = [];
+  for (const photo of photos) {
+    if (!missing.has(photo.angle)) continue;
+    missing.delete(photo.angle);
+    added.push(photo);
+  }
+  if (added.length === 0) return session;
+  return { ...session, photos: [...session.photos, ...added] };
+}
+
+/**
+ * One photograph's record updated in place. Returns the same array when
+ * nothing matched, so a reading that arrives after its session was
+ * deleted changes nothing.
+ */
+export function patchPhotoIn(
+  sessions: PhotoSession[],
+  sessionId: string,
+  photoId: string,
+  patch: Partial<Omit<Photo, 'id' | 'sessionId'>>,
+): PhotoSession[] {
+  const session = sessions.find((s) => s.id === sessionId);
+  if (!session?.photos.some((p) => p.id === photoId)) return sessions;
+
+  return sessions.map((s) =>
+    s === session
+      ? { ...s, photos: s.photos.map((p) => (p.id === photoId ? { ...p, ...patch } : p)) }
+      : s,
+  );
+}
+
 export type RoutineCadence = 'daily' | 'weekly';
 
 /** How often something is done, as the routine screen offers it. */

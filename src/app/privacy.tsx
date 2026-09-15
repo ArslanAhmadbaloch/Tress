@@ -24,7 +24,7 @@ import { useTheme } from '@/theme';
 const SECTIONS: { title: string; body: string }[] = [
   {
     title: 'What we collect',
-    body: 'Nothing. Tress has no account, no sign-in and no server. We cannot see your data because it is never sent to us.',
+    body: 'Nothing. Tress has no account, no sign-in and no server of its own. The one thing that leaves your phone is the anonymous purchase check the App Store or Google Play and our subscription provider use to confirm a membership — it carries no photograph, no name and nothing you record.',
   },
   {
     title: 'Where your data lives',
@@ -32,11 +32,11 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Your photographs',
-    body: 'Photos you take in the app are written straight to that private storage. They are not uploaded, not analysed, and not shared with anyone. They are not added to your camera roll unless you save one yourself.',
+    body: 'Photos you take in the app are written straight to that private storage. They are not uploaded and not shared with anyone. The reading the app gives you — light, focus, and how much of the frame the hair covers — is measured on this device, by this device, and the photograph never leaves it. Photos are not added to your camera roll unless you save one yourself.',
   },
   {
     title: 'Artificial intelligence',
-    body: 'None. Tress does not send your photographs or anything else to an AI service. It does not assess your hair, diagnose anything, or generate advice — it stores what you record and shows it back to you.',
+    body: 'Only on your phone. Tress runs a small hair-segmentation model on the device to measure how much of a photograph is hair. Nothing is sent to an AI service. It does not diagnose anything or generate advice — it measures the picture and shows you the numbers, and what your hair does is yours to find out.',
   },
   {
     title: 'Analytics and tracking',

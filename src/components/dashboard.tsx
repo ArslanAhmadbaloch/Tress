@@ -85,15 +85,20 @@ export function HeaderActions({
             width: 46,
             height: 46,
             borderRadius: 23,
-            overflow: 'hidden',
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: colors.fillSelected,
           },
           shadow.soft,
         ]}>
+        {/* The image rounds itself: clipping on the button would take the
+            shadow with it on iOS. */}
         {avatarUri ? (
-          <Image source={{ uri: avatarUri }} style={{ width: 46, height: 46 }} contentFit="cover" />
+          <Image
+            source={{ uri: avatarUri }}
+            style={{ width: 46, height: 46, borderRadius: 23 }}
+            contentFit="cover"
+          />
         ) : (
           <Text variant="headline" color="textSecondary">
             {initial}
@@ -489,12 +494,11 @@ export function MetricTile({
               color={delta > 0 ? colors.accent : colors.textTertiary}
             />
             <Text
-              variant="footnote"
+              variant="caption"
               color={delta > 0 ? 'accent' : 'textTertiary'}
               numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.75}
-              style={{ fontWeight: '600' }}>
+              minimumFontScale={0.75}>
               {delta > 0 ? '+' : ''}
               {delta}
               {deltaSuffix}
@@ -559,11 +563,10 @@ export function PhotoStack({
       {remaining > 0 ? (
         <GlassOrb size={THUMB + 2} ring={false} style={{ marginLeft: -2 }}>
           <Text
-            variant="caption"
+            variant="overline"
             numberOfLines={1}
             adjustsFontSizeToFit
-            minimumFontScale={0.7}
-            style={{ fontWeight: '700' }}>
+            minimumFontScale={0.7}>
             {remaining > 99 ? '99+' : `+${remaining}`}
           </Text>
         </GlassOrb>
@@ -736,10 +739,7 @@ export function JournalCard({
                 }}
               />
             )}
-            <Text
-              variant="caption"
-              color={d.isToday ? 'accent' : 'textTertiary'}
-              style={{ fontWeight: d.isToday ? '600' : '500' }}>
+            <Text variant="caption" color={d.isToday ? 'accent' : 'textTertiary'}>
               {d.letter}
             </Text>
           </View>
@@ -795,19 +795,12 @@ export function LearnCard({
         </GlassOrb>
 
         <View style={{ flex: 1, marginLeft: spacing.xs }}>
-          <Text
-            variant="headline"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-            style={{ fontWeight: '700' }}>
+          {/* The headline's own semibold cut. A weight on top of the bundled
+              file double-bolds it on iOS and is ignored on Android. */}
+          <Text variant="headline" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
             Learn &amp; Grow
           </Text>
-          <Text
-            variant="caption"
-            color="textSecondary"
-            numberOfLines={2}
-            style={{ marginTop: 2, fontWeight: '400' }}>
+          <Text variant="footnote" color="textSecondary" numberOfLines={2} style={{ marginTop: 2 }}>
             Science-backed guides on how hair grows.
           </Text>
         </View>

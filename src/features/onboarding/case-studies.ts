@@ -94,9 +94,9 @@ const MALE: CaseStudy[] = [
 /**
  * The same shape, about the things the female funnel actually asks after.
  *
- * Not a crown that filled in: a part somebody kept photographing in the
- * same place, in the same light, until there was something to compare
- * against that was not last spring's memory of it.
+ * Not a crown: a part somebody kept photographing in the same place, in
+ * the same light, until there was something to compare against that was
+ * not last spring's memory of it.
  */
 const FEMALE: CaseStudy[] = [
   {
@@ -110,7 +110,7 @@ const FEMALE: CaseStudy[] = [
     before: require('@/assets/images/case-leila-before.jpg'),
     after: require('@/assets/images/case-leila-after.jpg'),
     story:
-      'She photographed the same five angles at the end of every month, part in the same place and the light from the same window, and wrote a line underneath each set. Any two months running looked identical to her. The first and the last did not.',
+      'She photographed the same five angles at the end of every month, part in the same place and the light from the same window, and wrote a line underneath each set. Any two months running looked identical to her, so she stopped comparing them by eye and let the timeline hold the first set beside the latest.',
     stats: [
       { value: '8', label: 'Photo sets' },
       { value: '34', label: 'Journal entries' },

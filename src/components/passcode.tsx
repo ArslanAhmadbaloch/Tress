@@ -29,7 +29,7 @@ import { GlassOrb } from './ui/glass-orb';
 import { Icon } from './ui/icon';
 import { PressableScale } from './ui/pressable-scale';
 import { Text } from './ui/text';
-import { motion, useTheme } from '@/theme';
+import { fontFamily, motion, useTheme } from '@/theme';
 
 const MARK = require('@/assets/images/app-mark.jpg');
 
@@ -158,7 +158,7 @@ function Key({
       ) : null}
 
       {label ? (
-        <Text variant="title2" style={{ color: colors.text, fontWeight: '500' }}>
+        <Text variant="title2" style={{ color: colors.text, fontFamily: fontFamily.displayMedium }}>
           {label}
         </Text>
       ) : (

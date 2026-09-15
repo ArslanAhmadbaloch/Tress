@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const TIMER_KEY = 'hj.captureTimer';
 const HAPTICS_KEY = 'hj.haptics';
 const REMINDER_HOUR_KEY = 'hj.reminderHour';
+const PAYWALL_ASK_KEY = 'hj.paywallAsk';
 
 /* ----------------------------- capture timer ---------------------------- */
 
@@ -86,6 +87,30 @@ export function setReminderHour(hour: ReminderHour): void {
   AsyncStorage.setItem(REMINDER_HOUR_KEY, String(hour)).catch(() => undefined);
 }
 
+/* ------------------------------ paywall ask ----------------------------- */
+
+/**
+ * How far along the paywall's one second ask this install is.
+ *
+ * `first` until the paywall has been closed without a purchase; `second`
+ * once it has, which is the single open that gets the second-ask framing;
+ * `settled` the moment that framing has been shown, whether or not it was
+ * accepted. Kept on the device rather than in the store because it is a
+ * fact about this handset's history with the sheet, not about the journey.
+ */
+export type PaywallAskStage = 'first' | 'second' | 'settled';
+
+let paywallAsk: PaywallAskStage = 'first';
+
+export function currentPaywallAsk(): PaywallAskStage {
+  return paywallAsk;
+}
+
+export function setPaywallAsk(stage: PaywallAskStage): void {
+  paywallAsk = stage;
+  AsyncStorage.setItem(PAYWALL_ASK_KEY, stage).catch(() => undefined);
+}
+
 /* --------------------------------- boot --------------------------------- */
 
 /**
@@ -94,15 +119,19 @@ export function setReminderHour(hour: ReminderHour): void {
  */
 export async function loadDevicePreferences(): Promise<void> {
   try {
-    const [haptics, hour] = await AsyncStorage.multiGet([
+    const [haptics, hour, ask] = await AsyncStorage.multiGet([
       HAPTICS_KEY,
       REMINDER_HOUR_KEY,
+      PAYWALL_ASK_KEY,
     ]);
     // Absent means never set, which is on: the app has always buzzed.
     hapticsEnabled = haptics[1] !== '0';
     const stored = Number(hour[1]);
     if (REMINDER_HOURS.includes(stored as ReminderHour)) {
       reminderHour = stored as ReminderHour;
+    }
+    if (ask[1] === 'second' || ask[1] === 'settled') {
+      paywallAsk = ask[1];
     }
   } catch {
     // Defaults are already in place; an unreadable store is not an error.

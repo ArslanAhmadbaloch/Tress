@@ -39,7 +39,6 @@ import { ProductRow } from '@/components/product-row';
 import {
   ANALYSING_STEPS,
   ANALYSING_TITLE,
-  WELCOME_BODY,
   welcomeTitle,
 } from '@/features/content/belonging';
 import { hairContent } from '@/features/content/hair-content';
@@ -898,22 +897,9 @@ export default function OnboardingFunnel() {
         children: (
           <>
             <Wash />
-            <Rise index={0}>
-              {/* The moment somebody joins. Thanks first: they have just
-                  answered a page of questions about something they are
-                  worried about, and that comes before anything is shown
-                  to them. */}
-              <Text variant="subhead" center>
-                {welcomeTitle(answers.name)}
-              </Text>
-              <Text
-                variant="footnote"
-                color="textSecondary"
-                center
-                style={{ marginTop: spacing.xs, marginBottom: spacing.xl }}>
-                {WELCOME_BODY}
-              </Text>
-            </Rise>
+            {/* The moment somebody joins. The line and the card, nothing
+                explaining either: the card says what it is by being one. */}
+            <StepTitle title={welcomeTitle(answers.name)} />
 
             <Rise index={2} style={{ alignItems: 'center' }}>
               <CardFloat>
@@ -1107,16 +1093,12 @@ function Choices<T extends string>({
  * is the only half of this the app has anything to do with.
  */
 function CaseStudyScreen({ study }: { study: CaseStudy }) {
-  const { spacing } = useTheme();
-
   return (
     <>
       <Wash />
-      <Rise index={0}>
-        <Text variant="title3">{study.headline}</Text>
-      </Rise>
+      <StepTitle title={study.headline} />
 
-      <Rise index={1} style={{ marginTop: spacing.xl }}>
+      <Rise index={1}>
         <CaseStudyCard study={study} />
       </Rise>
     </>

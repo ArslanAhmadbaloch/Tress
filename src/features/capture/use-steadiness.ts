@@ -1,20 +1,22 @@
 /**
  * Whether the phone is being moved, and whether it has gone still.
  *
- * This is the one thing about the moment of capture the app can actually
- * know. It cannot see a face — there is no face detection in this SDK —
- * so it cannot tell you your head is at the right angle, and it does not
- * claim to. What it can measure is the device: accelerometer magnitude
- * against gravity, which says plainly whether the phone is in motion.
+ * The device's own motion, from accelerometer magnitude against gravity.
+ * It is the one reading the capture screen has on every build and at
+ * every angle: head tracking needs the VisionCamera binary and a face in
+ * the frame, and the top and crown of the full set are shot with the
+ * screen facing away. A photograph taken mid-movement is blurred and
+ * framed differently from the last one, which is exactly the drift that
+ * makes two months of photos incomparable, so this is worth having even
+ * where nothing else is watching.
  *
- * That is worth having on its own. Two of the five angles are shot blind,
- * with the screen facing away, and a photograph taken mid-movement is
- * blurred and framed differently from the last one — which is exactly the
- * kind of drift that makes two months of photos incomparable.
- *
- * `moving` flips the instant it is disturbed, so the interface can get out
- * of the way. `steady` waits, because a hand pausing between movements is
- * not somebody who has settled.
+ * It does not fire the shutter. It once did, and taking the photo out of
+ * the person's hands was worse than the problem it solved; the self-timer
+ * does that job when asked. `moving` flips the instant the phone is
+ * disturbed, so the instruction can get out of the way of the shot.
+ * `steady` waits, because a hand pausing between movements is not
+ * somebody who has settled, and the guide should only turn green once
+ * they have.
  */
 
 import { Accelerometer } from 'expo-sensors';

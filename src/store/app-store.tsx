@@ -20,9 +20,11 @@ import {
 
 import { toDateKey } from '@/lib/date';
 import {
+  addMissingAngles,
   doseCount,
   dosesTaken,
   EMPTY_DATA,
+  patchPhotoIn,
   SCHEMA_VERSION,
   type AppData,
   type JournalEntry,
@@ -74,6 +76,21 @@ type AppStore = {
   updateProfile: (patch: Partial<Omit<Profile, 'id' | 'createdAt'>>) => void;
 
   addSession: (photos: Omit<Photo, 'id' | 'sessionId'>[], note?: string) => PhotoSession | null;
+  /**
+   * Adds the angles an existing session lacks; photographs for angles it
+   * already holds are dropped. See `sessionToExtend` for when a capture
+   * takes this route instead of `addSession`.
+   */
+  extendSession: (
+    sessionId: string,
+    photos: Omit<Photo, 'id' | 'sessionId'>[],
+  ) => PhotoSession | null;
+  /** Lands a measurement that finished after its photograph was saved. */
+  patchPhoto: (
+    sessionId: string,
+    photoId: string,
+    patch: Partial<Omit<Photo, 'id' | 'sessionId'>>,
+  ) => void;
   updateSessionNote: (sessionId: string, note: string) => void;
   /** Renames an update. An empty title restores the automatic milestone. */
   renameSession: (sessionId: string, title: string) => void;
@@ -231,6 +248,46 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       });
 
       return created;
+    },
+    [],
+  );
+
+  const extendSession = useCallback(
+    (sessionId: string, photos: Omit<Photo, 'id' | 'sessionId'>[]) => {
+      let extended: PhotoSession | null = null;
+
+      setData((prev) => {
+        const session = prev.sessions.find((s) => s.id === sessionId);
+        if (!session) return prev;
+
+        const next = addMissingAngles(
+          session,
+          photos.map((p) => ({ ...p, id: makeId('pho'), sessionId })),
+        );
+        extended = next;
+        if (next === session) return prev;
+
+        return {
+          ...prev,
+          sessions: prev.sessions.map((s) => (s === session ? next : s)),
+        };
+      });
+
+      return extended;
+    },
+    [],
+  );
+
+  const patchPhoto = useCallback(
+    (
+      sessionId: string,
+      photoId: string,
+      patch: Partial<Omit<Photo, 'id' | 'sessionId'>>,
+    ) => {
+      setData((prev) => {
+        const sessions = patchPhotoIn(prev.sessions, sessionId, photoId, patch);
+        return sessions === prev.sessions ? prev : { ...prev, sessions };
+      });
     },
     [],
   );
@@ -427,6 +484,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updateJourney,
       updateProfile,
       addSession,
+      extendSession,
+      patchPhoto,
       updateSessionNote,
       renameSession,
       deleteSession,
@@ -445,6 +504,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updateJourney,
       updateProfile,
       addSession,
+      extendSession,
+      patchPhoto,
       updateSessionNote,
       renameSession,
       deleteSession,

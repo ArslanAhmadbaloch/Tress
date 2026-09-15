@@ -26,7 +26,7 @@ import { usePremium } from '@/features/subscription/provider';
 import { useAppStore } from '@/store/app-store';
 import { latestSession } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { ANGLES, ANGLE_LABELS } from '@/types/domain';
+import { ANGLES, ANGLE_LABELS, sessionToExtend } from '@/types/domain';
 
 /**
  * Guided 5-angle capture — the step before the camera.
@@ -77,7 +77,9 @@ export default function CaptureIntroScreen() {
   const [showExample, setShowExample] = useState(false);
 
   const last = latestSession(data);
-  const isBaseline = data.sessions.length === 0;
+  // A one-photo baseline that still lacks angles is still the baseline:
+  // completing it is the same free first set, not an update.
+  const isBaseline = data.sessions.length === 0 || sessionToExtend(data.sessions) !== null;
 
   /*
     Every route into the camera passes through this screen, so this is the

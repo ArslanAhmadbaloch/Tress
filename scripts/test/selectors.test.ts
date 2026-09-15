@@ -16,7 +16,6 @@ import {
   BASELINE_THANKS,
   CARD_NOTE,
   MEMBER_SINCE,
-  WELCOME_BODY,
   welcomeTitle,
 } from '@/features/content/belonging';
 import { hairContent } from '@/features/content/hair-content';
@@ -163,7 +162,6 @@ test('belonging: nothing claims a community that does not exist', () => {
   // otherwise sends somebody looking for a room that is not there.
   const lines = [
     welcomeTitle('Sara'),
-    WELCOME_BODY,
     CARD_NOTE,
     MEMBER_SINCE,
     BASELINE_THANKS,
