@@ -12,6 +12,19 @@ import {
 } from '@expo-google-fonts/lora';
 import { Parisienne_400Regular } from '@expo-google-fonts/parisienne';
 /*
+  The display face. Tress used a serif for headings, which reads as
+  editorial but not as a modern consumer health app — the category the
+  competition sits in is set almost entirely in grotesques. Plus Jakarta
+  Sans is the closest widely-licensed match to that look; unlike the
+  commercial grotesques these apps license, it is OFL, so it can ship.
+*/
+import {
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+} from '@expo-google-fonts/plus-jakarta-sans';
+/*
   From expo-font, not from the @expo-google-fonts package that also
   exports a `useFonts`. The convenience copy in those packages has no
   mounted guard and always starts `loaded` at false, so on a re-mount
@@ -60,6 +73,10 @@ function Navigation() {
   */
   const [fontsLoaded, fontError] = useFonts({
     Parisienne_400Regular,
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
     Lora_400Regular,
     Lora_400Regular_Italic,
     Lora_600SemiBold,

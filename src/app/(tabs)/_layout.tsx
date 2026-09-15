@@ -30,7 +30,13 @@ export default function TabsLayout() {
       }}>
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
       <Tabs.Screen name="journey" options={{ title: 'Journey' }} />
-      <Tabs.Screen name="learn" options={{ title: 'Learn' }} />
+      {/*
+        Learn was a tab and is now a route under /learn, reached from the
+        report and from Profile. The researched, sourced writing is the
+        part of this app that took longest; it did not deserve deleting,
+        only demoting.
+      */}
+      <Tabs.Screen name="report" options={{ title: 'Report' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>
   );

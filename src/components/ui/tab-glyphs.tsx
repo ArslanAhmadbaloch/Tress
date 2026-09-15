@@ -61,6 +61,26 @@ export function LearnGlyph({ size = 24, color }: TabGlyphProps) {
   );
 }
 
+/**
+ * Report: a document with a rising line on it.
+ *
+ * Deliberately not a brain, a sparkle or a wand. The tab leads to an
+ * assessment of what somebody has recorded, and an icon promising magic
+ * would be the first of several small lies.
+ */
+export function ReportGlyph({ size = 24, color }: TabGlyphProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
+      <Path
+        d="M6.2 3.4 h8.1 L18.8 8 v12.6 H6.2 Z M14.1 3.6 V8 h4.5"
+        {...line(color)}
+        fill="none"
+      />
+      <Path d="M9 16.4 l2.4-2.9 2 1.7 2.3-3.3" {...line(color)} fill="none" />
+    </Svg>
+  );
+}
+
 export function ProfileGlyph({ size = 24, color }: TabGlyphProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>

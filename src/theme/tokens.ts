@@ -359,6 +359,15 @@ export const fontFamily = Platform.select({
     sans: 'system-ui',
     rounded: 'ui-rounded',
     mono: 'ui-monospace',
+    /*
+      Headings. Bundled rather than a system face on every platform: the
+      whole point of a display face is that it is the same everywhere, and
+      San Francisco and Roboto are not the same grotesque.
+    */
+    display: 'PlusJakartaSans_600SemiBold',
+    displayBold: 'PlusJakartaSans_700Bold',
+    displayMedium: 'PlusJakartaSans_500Medium',
+    displayRegular: 'PlusJakartaSans_400Regular',
     /* The membership card's voice. A warm old-style serif, which is what
        the design uses for the name and the phrase; the interface stays on
        the system face everywhere else. */
@@ -370,6 +379,10 @@ export const fontFamily = Platform.select({
     sans: 'normal',
     rounded: 'normal',
     mono: 'monospace',
+    display: 'PlusJakartaSans_600SemiBold',
+    displayBold: 'PlusJakartaSans_700Bold',
+    displayMedium: 'PlusJakartaSans_500Medium',
+    displayRegular: 'PlusJakartaSans_400Regular',
     /*
       Android has no Palatino, and the generic `serif` alias resolves to
       Noto Serif — a different face with different proportions, on the
@@ -389,6 +402,10 @@ export const fontFamily = Platform.select({
     sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     rounded: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     mono: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    display: '"Plus Jakarta Sans", system-ui, sans-serif',
+    displayBold: '"Plus Jakarta Sans", system-ui, sans-serif',
+    displayMedium: '"Plus Jakarta Sans", system-ui, sans-serif',
+    displayRegular: '"Plus Jakarta Sans", system-ui, sans-serif',
     serif: 'Palatino, "Palatino Linotype", Georgia, serif',
     serifItalic: 'Palatino, "Palatino Linotype", Georgia, serif',
     serifSemibold: 'Palatino, "Palatino Linotype", Georgia, serif',
@@ -443,37 +460,43 @@ type TypeStyle = {
 
 export const typography = {
   /** Screen-owning display number, e.g. "8 months". */
+  /*
+    Headings name an exact cut of the bundled grotesque and carry no
+    `fontWeight`. Android does not synthesise weights for a bundled
+    family — asking for 700 on a regular file silently gives you the
+    regular back — and on iOS a weight on top of an already-bold file
+    double-bolds it. The cut in the family name is the weight.
+  */
   display: {
-    fontSize: 44,
-    lineHeight: 48,
-    fontWeight: '700',
-    letterSpacing: -1.1,
-    fontFamily: fontFamily.rounded,
+    fontSize: 46,
+    lineHeight: 50,
+    letterSpacing: -1.4,
+    fontFamily: fontFamily.displayBold,
   },
   /** Large screen title. */
   title1: {
-    fontSize: 34,
-    lineHeight: 39,
-    fontWeight: '700',
-    letterSpacing: -0.8,
+    fontSize: 36,
+    lineHeight: 41,
+    letterSpacing: -1.1,
+    fontFamily: fontFamily.displayBold,
   },
   title2: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: '700',
-    letterSpacing: -0.4,
+    fontSize: 26,
+    lineHeight: 32,
+    letterSpacing: -0.7,
+    fontFamily: fontFamily.display,
   },
   title3: {
     fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '600',
-    letterSpacing: -0.3,
+    lineHeight: 27,
+    letterSpacing: -0.4,
+    fontFamily: fontFamily.display,
   },
   headline: {
     fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '600',
-    letterSpacing: -0.2,
+    lineHeight: 23,
+    letterSpacing: -0.3,
+    fontFamily: fontFamily.display,
   },
   body: {
     fontSize: 16,

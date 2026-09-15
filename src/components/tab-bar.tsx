@@ -33,7 +33,7 @@ import { PressableScale } from './ui/pressable-scale';
 import {
   HomeGlyph,
   JourneyGlyph,
-  LearnGlyph,
+  ReportGlyph,
   PlusGlyph,
   ProfileGlyph,
   type TabGlyphProps,
@@ -49,7 +49,7 @@ const TABS: {
 }[] = [
   { name: 'index', label: 'Home', Glyph: HomeGlyph },
   { name: 'journey', label: 'Journey', Glyph: JourneyGlyph },
-  { name: 'learn', label: 'Learn', Glyph: LearnGlyph },
+  { name: 'report', label: 'Report', Glyph: ReportGlyph },
   { name: 'profile', label: 'Profile', Glyph: ProfileGlyph },
 ];
 
