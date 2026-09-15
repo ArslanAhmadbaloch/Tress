@@ -67,3 +67,23 @@ export const MEMBER_SINCE = 'Member since';
  */
 export const BASELINE_THANKS =
   'That is the hard part done. Everything from here is comparison.';
+
+
+/* ------------------------------ analysing ------------------------------- */
+
+/**
+ * The reveal between the last question and the plan.
+ *
+ * Every line names something the person has just told us. No photograph
+ * exists at this point in the funnel, so anything about hair, scalp or
+ * density would be describing work that is not happening on data that is
+ * not there — and it would be the first dishonest screen in the app.
+ */
+export const ANALYSING_TITLE = 'Putting your journey together.';
+
+export const ANALYSING_STEPS = [
+  { label: 'Reading what you told us' },
+  { label: 'Setting your five angles' },
+  { label: 'Building your routine' },
+  { label: 'Choosing your check-in rhythm' },
+];

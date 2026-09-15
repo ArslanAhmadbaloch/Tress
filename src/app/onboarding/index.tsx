@@ -37,9 +37,12 @@ import { Text } from '@/components/ui/text';
 import { ProductRow } from '@/components/product-row';
 import {
   PLAN_THANKS,
+  ANALYSING_STEPS,
+  ANALYSING_TITLE,
   WELCOME_BODY,
   welcomeTitle,
 } from '@/features/content/belonging';
+import { Analysing } from '@/components/onboarding/analysing';
 import { HowItWorks } from '@/components/onboarding/how-it-works';
 import { caseStudies, type CaseStudy } from '@/features/onboarding/case-studies';
 import {
@@ -936,6 +939,27 @@ export default function OnboardingFunnel() {
               </CardFloat>
             </Rise>
           </>
+        ),
+      });
+
+    /* ------------------------------ analysing ------------------------------ */
+    case 'analysing':
+      return shell({
+        centred: true,
+        /*
+          No button. The screen is a few seconds of visible work and then
+          it hands over on its own — a Continue here would either sit
+          disabled, which is a dead control, or let somebody skip the one
+          beat that makes the plan feel assembled rather than echoed.
+        */
+        cta: undefined,
+        onCta: undefined,
+        children: (
+          <Analysing
+            title={ANALYSING_TITLE}
+            steps={ANALYSING_STEPS}
+            onDone={next}
+          />
         ),
       });
 

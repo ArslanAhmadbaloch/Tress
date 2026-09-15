@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  ANALYSING_STEPS,
   BASELINE_THANKS,
   CARD_NOTE,
   MEMBER_SINCE,
@@ -25,6 +26,7 @@ import {
   funnelContent,
   routineSeedsFor,
   STEPS,
+  UNCOUNTED,
   withName,
 } from '@/features/onboarding/script';
 import { formatMilestone, toDateKey } from '@/lib/date';
@@ -941,4 +943,27 @@ test('consistency delta: compares this month against the one before it', () => {
     60,
     `"vs last month" must compare against the previous month alone, got ${delta}`,
   );
+});
+
+test('funnel: the analysing beat sits between the card and the plan', () => {
+  // It exists to make the plan feel assembled. Before the card it would
+  // interrupt the reveal; after the plan it would delay nothing.
+  assert.ok(STEPS.indexOf('card') < STEPS.indexOf('analysing'));
+  assert.ok(STEPS.indexOf('analysing') < STEPS.indexOf('plan'));
+});
+
+test('funnel: the analysing beat never advances the progress bar', () => {
+  // Nothing is being asked, and a bar that moved while somebody watched
+  // would be charging them for waiting.
+  assert.ok(UNCOUNTED.includes('analysing'));
+});
+
+test('analysing: every line names something the person actually told us', () => {
+  // No photograph exists at this point in the funnel. A step claiming to
+  // read hair, scalp or density would be describing work that is not
+  // happening on data that is not there.
+  const text = ANALYSING_STEPS.map((s) => s.label).join(' ').toLowerCase();
+  for (const claim of ['scalp', 'density', 'analysing your hair', 'scanning', 'diagnos']) {
+    assert.ok(!text.includes(claim), `the loader must not claim "${claim}"`);
+  }
 });

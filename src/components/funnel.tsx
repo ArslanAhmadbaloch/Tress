@@ -110,8 +110,9 @@ export function FunnelShell({
   progress: number | null;
   onBack?: () => void;
   children: ReactNode;
-  cta: string;
-  onCta: () => void;
+  /** Omitted on screens that advance themselves. */
+  cta?: string;
+  onCta?: () => void;
   ctaDisabled?: boolean;
   secondary?: string;
   onSecondary?: () => void;
@@ -216,7 +217,14 @@ export function FunnelShell({
             paddingTop: spacing.sm,
             gap: spacing.sm,
           }}>
-          <Button label={cta} onPress={onCta} disabled={ctaDisabled} />
+          {/*
+            A screen that hands over on its own gets no button. A disabled
+            Continue would be a dead control, and an enabled one would let
+            somebody skip the beat the screen exists for.
+          */}
+          {cta && onCta ? (
+            <Button label={cta} onPress={onCta} disabled={ctaDisabled} />
+          ) : null}
 
           {secondary && onSecondary ? (
             <Pressable
