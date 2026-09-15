@@ -364,10 +364,10 @@ export const fontFamily = Platform.select({
       whole point of a display face is that it is the same everywhere, and
       San Francisco and Roboto are not the same grotesque.
     */
-    display: 'PlusJakartaSans_600SemiBold',
-    displayBold: 'PlusJakartaSans_700Bold',
-    displayMedium: 'PlusJakartaSans_500Medium',
-    displayRegular: 'PlusJakartaSans_400Regular',
+    display: 'Manrope_600SemiBold',
+    displayBold: 'Manrope_700Bold',
+    displayMedium: 'Manrope_500Medium',
+    displayRegular: 'Manrope_400Regular',
     /* The membership card's voice. A warm old-style serif, which is what
        the design uses for the name and the phrase; the interface stays on
        the system face everywhere else. */
@@ -379,10 +379,10 @@ export const fontFamily = Platform.select({
     sans: 'normal',
     rounded: 'normal',
     mono: 'monospace',
-    display: 'PlusJakartaSans_600SemiBold',
-    displayBold: 'PlusJakartaSans_700Bold',
-    displayMedium: 'PlusJakartaSans_500Medium',
-    displayRegular: 'PlusJakartaSans_400Regular',
+    display: 'Manrope_600SemiBold',
+    displayBold: 'Manrope_700Bold',
+    displayMedium: 'Manrope_500Medium',
+    displayRegular: 'Manrope_400Regular',
     /*
       Android has no Palatino, and the generic `serif` alias resolves to
       Noto Serif — a different face with different proportions, on the
@@ -402,10 +402,10 @@ export const fontFamily = Platform.select({
     sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     rounded: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     mono: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    display: '"Plus Jakarta Sans", system-ui, sans-serif',
-    displayBold: '"Plus Jakarta Sans", system-ui, sans-serif',
-    displayMedium: '"Plus Jakarta Sans", system-ui, sans-serif',
-    displayRegular: '"Plus Jakarta Sans", system-ui, sans-serif',
+    display: 'Manrope, system-ui, sans-serif',
+    displayBold: 'Manrope, system-ui, sans-serif',
+    displayMedium: 'Manrope, system-ui, sans-serif',
+    displayRegular: 'Manrope, system-ui, sans-serif',
     serif: 'Palatino, "Palatino Linotype", Georgia, serif',
     serifItalic: 'Palatino, "Palatino Linotype", Georgia, serif',
     serifSemibold: 'Palatino, "Palatino Linotype", Georgia, serif',
@@ -578,10 +578,16 @@ export const typography = {
     a question deserves more room than a page heading.
   */
   question: {
-    fontSize: 34,
-    lineHeight: 41,
-    letterSpacing: -1.0,
-    fontFamily: fontFamily.displayBold,
+    /*
+      Semibold, not bold. Bold Manrope at this size reads as shouting;
+      semibold with the same tight tracking reads as confident. That
+      one weight step is most of the difference between "immature" and
+      "clean" that was pointed out.
+    */
+    fontSize: 32,
+    lineHeight: 39,
+    letterSpacing: -0.9,
+    fontFamily: fontFamily.display,
   },
   /**
    * Decorative editorial script, for the one motivational phrase a screen

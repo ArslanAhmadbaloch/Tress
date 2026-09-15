@@ -46,6 +46,9 @@ type Plate = {
   headerFade: number;
 };
 
+/** Every screen sits on flat colour. See the note in `Ground`. */
+const FLAT_GROUND = true;
+
 const LIGHT: Record<GroundVariant, Plate> = {
   stone: {
     source: require('@/assets/images/ground-stone.jpg'),
@@ -118,7 +121,19 @@ export function Ground({
 
   return (
     <View style={[{ flex: 1, backgroundColor: colors.background }, style]}>
-      {!reduceTransparency ? (
+      {/*
+        The photographic plates are off. They were the app's signature
+        and they made it feel dull — every screen sat on a picture of
+        stone, and content on a photograph is content competing with a
+        photograph. The category this app lives in runs on flat, airy
+        ground with big type and white cards, and that is what the person
+        who owns this app asked for, in those words.
+
+        The plates and the variant API stay so this is one switch to
+        flip back, and so a screen that genuinely wants a plate later can
+        have one on purpose.
+      */}
+      {!FLAT_GROUND && !reduceTransparency ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <Image
             source={plate.source}

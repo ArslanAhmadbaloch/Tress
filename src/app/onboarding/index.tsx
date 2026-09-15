@@ -366,7 +366,7 @@ export default function OnboardingFunnel() {
         ctaDisabled: answers.motivations.length === 0,
         children: (
           <>
-            <StepTitle title={named(COPY.meaning.title)} subtitle={COPY.meaning.subtitle} />
+            <StepTitle title={named(COPY.meaning.title)} />
             <Choices
               choices={MEANING_CHOICES}
               multi
@@ -384,10 +384,9 @@ export default function OnboardingFunnel() {
         cta: COPY.goal.cta,
         onCta: next,
         ctaDisabled: answers.goal === null,
-        footnote: answers.goal ? COPY.goal.settle : undefined,
         children: (
           <>
-            <StepTitle title={named(COPY.goal.title)} subtitle={COPY.goal.subtitle} />
+            <StepTitle title={named(COPY.goal.title)} />
             <Choices
               choices={content.goals}
               multi={false}
@@ -502,7 +501,7 @@ export default function OnboardingFunnel() {
         ctaDisabled: answers.approaches.length === 0 || answers.consistency === null,
         children: (
           <>
-            <StepTitle title={COPY.approach.title} subtitle={COPY.approach.subtitle} />
+            <StepTitle title={COPY.approach.title} />
             <Choices
               choices={APPROACH_CHOICES}
               multi
@@ -536,12 +535,10 @@ export default function OnboardingFunnel() {
         // information about a person, and it is theirs to withhold.
         secondary: answers.medications.length === 0 ? COPY.medication.skip : undefined,
         onSecondary: answers.medications.length === 0 ? next : undefined,
-        footnote: COPY.medication.footnote,
         children: (
           <>
             <StepTitle
               title={COPY.medication.title}
-              subtitle={COPY.medication.subtitle}
             />
             <Choices
               choices={content.medications}
@@ -612,7 +609,7 @@ export default function OnboardingFunnel() {
         onSecondary: chosen === 0 ? next : undefined,
         children: (
           <>
-            <StepTitle title={COPY.products.title} subtitle={COPY.products.subtitle} />
+            <StepTitle title={COPY.products.title} />
 
             <View style={{ gap: spacing.sm }}>
               {options.map((option, i) => (
@@ -779,7 +776,7 @@ export default function OnboardingFunnel() {
         onCta: next,
         children: (
           <>
-            <StepTitle title={COPY.cadence.title} subtitle={COPY.cadence.subtitle} />
+            <StepTitle title={COPY.cadence.title} />
             <Choices
               choices={CADENCE_CHOICES}
               multi={false}
@@ -869,9 +866,6 @@ export default function OnboardingFunnel() {
                 onToggle={(gender) => set({ gender })}
                 from={2}
               />
-              <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
-                {COPY.you.genderHint}
-              </Text>
             </Rise>
 
             <SubHeading text={COPY.you.nameLabel} index={4} />
@@ -893,9 +887,6 @@ export default function OnboardingFunnel() {
                 label="Your age"
                 keyboardType="number-pad"
               />
-              <Text variant="caption" color="textTertiary" style={{ marginTop: spacing.sm }}>
-                {COPY.you.ageHint}
-              </Text>
             </Rise>
           </>
         ),
@@ -1130,7 +1121,7 @@ export default function OnboardingFunnel() {
         */
         children: (
           <>
-            <StepTitle title={COPY.baseline.title} subtitle={COPY.baseline.subtitle} />
+            <StepTitle title={COPY.baseline.title} />
             {['Top', 'Left Side', 'Right Side', 'Back', 'Hairline'].map((angle, i) => (
               <Rise key={angle} index={2 + i}>
                 <View

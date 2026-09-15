@@ -14,16 +14,21 @@ import { Parisienne_400Regular } from '@expo-google-fonts/parisienne';
 /*
   The display face. Tress used a serif for headings, which reads as
   editorial but not as a modern consumer health app — the category the
-  competition sits in is set almost entirely in grotesques. Plus Jakarta
-  Sans is the closest widely-licensed match to that look; unlike the
-  commercial grotesques these apps license, it is OFL, so it can ship.
+  competition sits in is set almost entirely in grotesques.
+
+  Plus Jakarta Sans was the first attempt and it read heavy at headline
+  size: wide bowls and a bold weight that looked chunky rather than
+  clean. Manrope is the face this category actually reaches for — a
+  geometric grotesque with tight, even letterforms that stays crisp at
+  34px semibold. OFL, so it ships; the commercial grotesque the reference
+  licenses cannot.
 */
 import {
-  PlusJakartaSans_400Regular,
-  PlusJakartaSans_500Medium,
-  PlusJakartaSans_600SemiBold,
-  PlusJakartaSans_700Bold,
-} from '@expo-google-fonts/plus-jakarta-sans';
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+} from '@expo-google-fonts/manrope';
 /*
   From expo-font, not from the @expo-google-fonts package that also
   exports a `useFonts`. The convenience copy in those packages has no
@@ -73,10 +78,10 @@ function Navigation() {
   */
   const [fontsLoaded, fontError] = useFonts({
     Parisienne_400Regular,
-    PlusJakartaSans_400Regular,
-    PlusJakartaSans_500Medium,
-    PlusJakartaSans_600SemiBold,
-    PlusJakartaSans_700Bold,
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
     Lora_400Regular,
     Lora_400Regular_Italic,
     Lora_600SemiBold,

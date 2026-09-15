@@ -368,6 +368,27 @@ export type PhotoQuality = {
   issues: string[];
 };
 
+/**
+ * What the on-device hair segmenter measured in a photograph.
+ *
+ * Area, not density: a mask cannot see between strands, so a thin
+ * covering and a thick one over the same region produce the same number.
+ * Present only when the native model ran — Expo Go has no TFLite, so
+ * photographs taken there carry no reading, and the honest thing to show
+ * for them is nothing. Mirrors `Coverage` in features/assessment/hair-mask
+ * so the domain types do not depend on a feature module.
+ */
+export type PhotoCoverage = {
+  /** Fraction of the frame the mask claims as hair, 0-1. */
+  fraction: number;
+  /** Coverage of the upper third of the frame, 0-1. */
+  upperFraction: number;
+  /** How much of the mask sits above the midline, 0-1. */
+  verticalBalance: number;
+  /** Pixels counted as hair, so tiny masks can be rejected. */
+  pixels: number;
+};
+
 export type Photo = {
   id: string;
   sessionId: string;
@@ -380,6 +401,7 @@ export type Photo = {
   height: number;
   capturedAt: string;
   quality?: PhotoQuality;
+  coverage?: PhotoCoverage;
 };
 
 export type PhotoSession = {
