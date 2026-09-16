@@ -170,8 +170,8 @@ export default function JourneyScreen() {
         */}
         <ScreenTitle
           eyebrow="Your journey"
-          title="Track your"
-          titleMuted="progress"
+          title="Your record,"
+          titleMuted="month by month"
           trailing={
             <HeaderActions
               initial={(name ?? 'Y').charAt(0).toUpperCase()}

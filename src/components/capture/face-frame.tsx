@@ -51,6 +51,8 @@ export type FaceFrameHandle = {
   update(face: FaceObservation | null): void;
   /** Whether the head is framed and steady. Switches the colour. */
   setAligned(aligned: boolean): void;
+  /** One beat of scale 1.06 → 1 on the oval, for the moment a frame is taken. */
+  pulse(): void;
 };
 
 export function FaceFrame({
@@ -72,6 +74,8 @@ export function FaceFrame({
   const presence = useSharedValue(0);
   /** 0 lining up, 1 aligned. */
   const tone = useSharedValue(0);
+  /** A single beat at the shutter, multiplied into the radii below. */
+  const pulseScale = useSharedValue(1);
 
   useImperativeHandle(
     ref,
@@ -117,8 +121,13 @@ export function FaceFrame({
         const to = aligned ? 1 : 0;
         tone.set(reduceMotion ? to : withTiming(to, { duration: motion.duration.base }));
       },
+      pulse() {
+        if (reduceMotion) return;
+        pulseScale.set(1.06);
+        pulseScale.set(withSpring(1, motion.spring.bouncy));
+      },
     }),
-    [cx, cy, rx, ry, presence, tone, reduceMotion, target],
+    [cx, cy, rx, ry, presence, tone, pulseScale, reduceMotion, target],
   );
 
   const neutral = colors.textOnPhoto;
@@ -127,8 +136,11 @@ export function FaceFrame({
   const ovalProps = useAnimatedProps(() => ({
     cx: cx.get(),
     cy: cy.get(),
-    rx: rx.get(),
-    ry: ry.get(),
+    // The radii carry the beat rather than a transform on the Svg: a
+    // transform scales about the origin and would walk the oval off the
+    // face; multiplying the radii keeps it centred where it is.
+    rx: rx.get() * pulseScale.get(),
+    ry: ry.get() * pulseScale.get(),
     stroke: interpolateColor(tone.get(), [0, 1], [neutral, accent]),
     strokeWidth: 2.5 + tone.get() * 1.5,
     opacity: presence.get() * 0.95,

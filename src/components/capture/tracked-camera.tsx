@@ -13,6 +13,10 @@
  * instead: the same shutter, the same files, no tracking. The fallback is
  * also where the camera lands if VisionCamera starts and then fails —
  * a photograph taken without guidance beats no photograph.
+ *
+ * A third sits in front of both, and only in a development build on a
+ * simulator, where neither of them has a sensor to read: SampleCamera,
+ * which shows a bundled frame and photographs its own marked preview.
  */
 
 import { CameraView } from 'expo-camera';
@@ -21,7 +25,10 @@ import { StyleSheet } from 'react-native';
 
 import { nitroAvailable } from '@/lib/native';
 
+import { SampleCamera, sampleCameraActive } from './sample-camera';
 import type { TrackedCameraHandle, TrackedCameraProps } from './types';
+
+export { sampleCameraActive };
 
 type VisionModule = typeof import('./vision-camera');
 
@@ -57,6 +64,13 @@ export function headTrackingAvailable(): boolean {
 
 export function TrackedCamera({
   onTrackingChanged,
+  /*
+    Pulled out alongside `onTrackingChanged`, and only handed back to the
+    SampleCamera. It changes with every angle, and the spreads below reach
+    a memoised camera whose native output — and with it the whole capture
+    session — is rebuilt on any render it receives. See vision-camera.tsx.
+  */
+  sampleSource,
   ...props
 }: TrackedCameraProps & {
   /**
@@ -66,7 +80,10 @@ export function TrackedCamera({
   onTrackingChanged?: (tracking: boolean) => void;
 }) {
   const [visionFailed, setVisionFailed] = useState(false);
-  const module = visionFailed ? null : loadVision();
+  // The sample stand-in reports no faces either, so it is "no tracking"
+  // for the same reason the expo-camera fallback is.
+  const sample = sampleCameraActive();
+  const module = visionFailed || sample ? null : loadVision();
   const tracking = module !== null;
 
   useEffect(() => {
@@ -86,6 +103,10 @@ export function TrackedCamera({
     setVisionFailed(true);
     onErrorRef.current?.(error);
   }, []);
+
+  if (sample) {
+    return <SampleCamera {...props} sampleSource={sampleSource} />;
+  }
 
   if (module) {
     return <module.VisionTrackedCamera {...props} onError={handleVisionError} />;

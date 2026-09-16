@@ -6,8 +6,12 @@
  * a difference". There is no cohort, no measurement and no study, so any
  * such number would be invented — and it would be a claim about hair
  * rather than about software, which this app is not in a position to
- * make about anybody. The figures below are about the product, and every
- * one of them is checkable inside the app in under a minute.
+ * make about anybody. The figures below are about the product instead.
+ *
+ * Two of them a person can settle by using the app: the capture screen
+ * asks for five angles, and nothing anywhere asks them to sign in. The
+ * third is a fact about the code rather than something a screen shows,
+ * so it is worded as what the app does — see the note on it below.
  *
  * If real numbers ever exist — from a study, or from members who have
  * opted in — they belong here, sourced, with the denominator shown.
@@ -50,14 +54,25 @@ export const HELP_BEATS: HelpBeat[] = [
 ];
 
 /**
- * Facts about the product. Each is verifiable by opening the app; none
- * is a claim about anybody's hair.
+ * Facts about the product, not about anybody's hair.
+ *
+ * The middle one used to read "Photos uploaded". On a screen with no
+ * other mention of the network that reads as "this app sends nothing",
+ * and the app does send something: scan a product and its barcode
+ * digits go to Open Beauty Facts. What the code does support is the
+ * narrower statement — the app has no upload path for a photograph. A
+ * picture leaves when the person hands it to a share sheet themselves,
+ * or with a device backup they have turned on. So the label says whose
+ * uploads it is counting.
+ *
+ * The privacy screen is where the rest of it is set out; this is a
+ * figure on an onboarding card and is not trying to be that document.
  */
 export const HELP_FIGURES: { value: string; label: string }[] = [
   { value: '5', label: 'Angles an update' },
-  { value: '0', label: 'Photos uploaded' },
+  { value: '0', label: 'Photos the app uploads' },
   { value: '0', label: 'Accounts needed' },
 ];
 
 export const HELP_FOOTNOTE =
-  'That is all the app does. What your hair does is yours to find out — this is how you’ll know.';
+  'That is the shape of it. What your hair does is yours to find out — this is how you’ll know.';

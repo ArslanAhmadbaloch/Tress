@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
+import { headTrackingAvailable, sampleCameraActive } from '@/components/capture';
 import { MetricExplainer } from '@/components/dashboard';
 import { Button } from '@/components/ui/button';
 import { GlassOrb } from '@/components/ui/glass-orb';
@@ -19,6 +20,8 @@ import { Screen, ScreenScroll, ScreenTitle } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { BulbGlyph } from '@/components/ui/tab-glyphs';
 import { Text } from '@/components/ui/text';
+import { loadHandsFree } from '@/features/capture/hands-free';
+import { SCAN_COPY } from '@/features/capture/scan-copy';
 import { useHairContent } from '@/features/content/use-hair-content';
 import { formatRelative } from '@/lib/date';
 import { useBackOrHome } from '@/lib/navigation';
@@ -75,6 +78,27 @@ export default function CaptureIntroScreen() {
   const [index, setIndex] = useState(0);
   const [showTips, setShowTips] = useState(false);
   const [showExample, setShowExample] = useState(false);
+
+  /*
+    Whether this build can follow a head, which is what the next screen
+    offers. The sample camera rules it out on its own: it stands in for a
+    camera the simulator does not have, it reports no faces, and a
+    development build there would otherwise read as tracked and promise a
+    scan that takes itself — on the one build where every photograph is a
+    tap.
+  */
+  const guided = headTrackingAvailable() && !sampleCameraActive();
+
+  /*
+    The body promises a countdown on the top and the back, and only the
+    hands-free preference arms one — so the sentence is chosen by the same
+    flag the capture screen reads. Null until AsyncStorage answers, and
+    that one frame shows no subtitle rather than a guess.
+  */
+  const [handsFree, setHandsFree] = useState<boolean | null>(null);
+  useEffect(() => {
+    loadHandsFree().then(setHandsFree);
+  }, []);
 
   const last = latestSession(data);
   // A one-photo baseline that still lacks angles is still the baseline:
@@ -163,16 +187,33 @@ export default function CaptureIntroScreen() {
           <CircleButton icon="close" label="Close" onPress={leave} />
         </View>
 
-        <ScreenTitle
-          eyebrow="Capture photos"
-          title="Guided 5-Angle"
-          titleMuted="Capture"
-          subtitle={
-            isBaseline
-              ? 'Take 5 clear photos to track your progress from all important angles.'
-              : `Last captured ${last ? formatRelative(last.capturedAt) : 'recently'}. Match those conditions as closely as you can.`
-          }
-        />
+        {/* Two headers, because on a build that can follow a head the
+            next screen is a different offer: you turn, and it takes them.
+            Without the detector it is the shutter, and saying otherwise
+            would be describing a screen this binary cannot show. */}
+        {guided ? (
+          <ScreenTitle
+            eyebrow="Capture photos"
+            title="Turn, and it"
+            titleMuted="takes the photos."
+            subtitle={
+              handsFree === null
+                ? undefined
+                : SCAN_COPY.intro.body[handsFree ? 'handsFree' : 'manual']
+            }
+          />
+        ) : (
+          <ScreenTitle
+            eyebrow="Capture photos"
+            title="Guided 5-Angle"
+            titleMuted="Capture"
+            subtitle={
+              isBaseline
+                ? 'Take 5 clear photos, so every important angle is on the record.'
+                : `Last captured ${last ? formatRelative(last.capturedAt) : 'recently'}. Match those conditions as closely as you can.`
+            }
+          />
+        )}
 
         {/* The five angles as one set around a front-facing portrait. */}
         <View
@@ -386,13 +427,39 @@ export default function CaptureIntroScreen() {
           </View>
 
           <Button
-            label="Take Photo"
+            label={guided ? SCAN_COPY.intro.cta : 'Take Photo'}
             icon="camera"
             style={{ marginTop: spacing.xl }}
             onPress={() =>
               router.replace({ pathname: '/capture-session', params: { start: angle } })
             }
           />
+
+          {/*
+            The way out for anybody who cannot turn their head to order —
+            a stiff neck, a wheelchair headrest, one hand busy. It opens
+            the same camera with the tracking and the countdown off, so
+            every photograph is taken by a deliberate tap. On a build with
+            no detector that is already the only way, and the link would
+            be offering a choice that does not exist.
+          */}
+          {guided ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={SCAN_COPY.intro.manualLink}
+              hitSlop={8}
+              onPress={() =>
+                router.replace({
+                  pathname: '/capture-session',
+                  params: { start: angle, manual: '1' },
+                })
+              }
+              style={{ marginTop: spacing.md, alignSelf: 'center' }}>
+              <Text variant="subhead" color="textSecondary">
+                {SCAN_COPY.intro.manualLink}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {/* Conditions, one tap away. */}
@@ -452,7 +519,14 @@ export default function CaptureIntroScreen() {
             ...CONDITIONS,
             ...content.angles[angle].tips.map((tip) => `${label}: ${tip}`),
             ...(last
-              ? ['During capture you can overlay your previous photo to line the shot up']
+              ? [
+                  'A faint copy of your last photo can be laid over the preview to line the shot up — tap ‘Last time’ on the camera.',
+                ]
+              : []),
+            ...(guided
+              ? [
+                  'Hold the pose and the front and side photos take themselves. Tap the shutter any time to take one yourself.',
+                ]
               : []),
           ]}
           onClose={() => setShowTips(false)}

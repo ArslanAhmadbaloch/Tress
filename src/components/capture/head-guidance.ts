@@ -27,6 +27,10 @@ export type FaceObservation = {
   height: number;
   /** Head turn in degrees; zero is square to the camera. */
   yaw: number;
+  /** Head nod in degrees, ML Kit X-axis; positive = facing up. Absent on builds that do not report it. */
+  pitch?: number;
+  /** Head tilt in degrees, ML Kit Z-axis; positive = counter-clockwise. */
+  roll?: number;
   /** When it was seen, in milliseconds. */
   at: number;
 };

@@ -186,6 +186,8 @@ const ALLOWED_RAW = [
   'src/app/session/[id].tsx',
   'src/app/compare.tsx',
   'src/components/capture-ring.tsx',
+  'src/components/capture/frame-stack.tsx',
+  'src/components/capture/sample-camera.tsx',
   'src/components/ui/glass-surface.tsx',
 ];
 

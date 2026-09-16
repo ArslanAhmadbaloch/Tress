@@ -107,6 +107,13 @@ export const VisionTrackedCamera = memo(function VisionTrackedCamera({
       width,
       height,
       yaw: best.yawAngle,
+      // ML Kit reports all three Euler angles in this configuration —
+      // they are withheld only when contour detection is asked for
+      // alongside "fast" and no landmarks, which is not what runs here.
+      // The reducer reads an absent angle as level, so passing them
+      // through unguarded costs nothing on a build that omits them.
+      pitch: best.pitchAngle,
+      roll: best.rollAngle,
       at: Date.now(),
     });
   }, []);

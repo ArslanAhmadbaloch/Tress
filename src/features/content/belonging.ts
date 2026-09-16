@@ -6,7 +6,11 @@
  *
  * ── What this is allowed to mean ───────────────────────────────────────
  * There is no community in this app. No feed, no other members to meet,
- * nothing shared with anybody — the photographs never leave the device.
+ * and nothing anybody records is published anywhere — the app has no
+ * upload path for a photograph, and what does leave is what the person
+ * hands to a share sheet themselves (see src/app/privacy.tsx, which is
+ * the document that qualifies this properly).
+ *
  * So "family" here is a tone and a promise about how the app treats the
  * person, never a claim about a room full of people they have joined. No
  * line in this file says anybody else is out there, because that would

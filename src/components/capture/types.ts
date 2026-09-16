@@ -36,4 +36,12 @@ export type TrackedCameraProps = {
   onFace: (face: FaceObservation | null) => void;
   /** The camera stopped working. Fired at most once per implementation. */
   onError?: (error: Error) => void;
+  /**
+   * The bundled example frame for the current angle. Read only by the
+   * dev-only SampleCamera on a simulator; the real cameras never see it
+   * — TrackedCamera destructures it out before spreading, because a prop
+   * that changes with every angle would reconfigure the capture session
+   * each time.
+   */
+  sampleSource?: number;
 };

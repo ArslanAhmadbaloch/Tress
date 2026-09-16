@@ -275,6 +275,14 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AppStoreProvider>
+            {/*
+              Mounted at the root because every screen that gates a feature
+              asks it who is entitled. Mounting it does not reach the
+              store: it reads the cached answer off the device, and the
+              billing SDK is configured later, when the paywall is on
+              screen or somebody buys or restores — the provider's own
+              comment sets out what reaches it and when.
+            */}
             <SubscriptionProvider>
               <AppLockProvider>
                 <Navigation />

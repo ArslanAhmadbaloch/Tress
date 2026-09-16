@@ -6,11 +6,38 @@
  * listing. This is that page.
  *
  * It is deliberately short. Most of what a long one would cover — data
- * handling, retention, third-party processors — does not apply to an app
- * with no server, and padding it out with clauses about things that do not
- * exist would make the parts that do matter harder to find.
+ * handling, retention, the rest of it — belongs in the privacy screen,
+ * which describes it in plain words, and padding this out with clauses
+ * about things that do not exist would make the parts that do matter
+ * harder to find.
+ *
+ * Two facts these terms have to keep telling the truth about:
+ *
+ *  1. The third-party processor that holds anything is RevenueCat, on
+ *     iOS, and what it holds is a purchase record against a random
+ *     install identifier (src/features/subscription/revenuecat.ts). The
+ *     SDK is no longer configured at launch: it is reached when the
+ *     paywall is on screen, on a purchase, on a restore, and at launch
+ *     only for an install whose cached Premium snapshot has run past its
+ *     date (src/features/subscription/provider.tsx and
+ *     entitlement-cache.ts). So that record exists for an install that
+ *     opened the paywall, bought or restored — not for every install, as
+ *     "Ending your use" used to say.
+ *  2. The other copy that is not ours is the person's own device backup:
+ *     the photograph files sit in Documents, nothing excludes them, so a
+ *     backup can hold them under their Apple or Google account.
+ *
+ * The seller of record on the store listing is an individual developer,
+ * Arslan Ahmad, and that is who these terms are with. No company is named
+ * here, because none is the seller and naming one would contradict the
+ * listing a reviewer reads these against.
+ *
+ * Do not write a completeness claim in this file — no "the whole of", no
+ * "and nothing else". Say what is known and leave the list open.
+ *
+ * LAST_UPDATED is hand-set and shown in the app; the hosted page stamps
+ * its own build date (scripts/build-site.mjs).
  */
-
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
@@ -19,6 +46,9 @@ import { Screen, ScreenScroll, ScreenTitle } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { useTheme } from '@/theme';
+
+/** The date shown under the title. Move it whenever a section changes. */
+const LAST_UPDATED = '16 September 2026';
 
 const SECTIONS: { title: string; body: string }[] = [
   {
@@ -43,11 +73,15 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Your content',
-    body: 'Your photographs and notes are yours. They stay on your device — we never receive them, so we claim no rights over them and could not use them if we wanted to.',
+    body: 'Your photographs and notes are yours. They stay on your device unless you hand one to a share sheet yourself — we never receive them, so we claim no rights over them and could not use them if we wanted to. If your phone backs itself up, the photograph files can go into that backup; it is held under your own Apple or Google account, on your terms with them, and not by us.',
   },
   {
     title: 'Ending your use',
-    body: 'Delete the app, or use "Delete all my data" in Settings, and everything goes with it. There is no copy held anywhere else.',
+    body: 'Delete the app and your photographs and records go with it. "Delete all my data" in Settings removes them too, and leaves a few device settings behind — the privacy screen lists which. We never receive them, so there is no copy of them here to delete; a backup you have turned on is your own copy, and you clear it in your phone’s backup settings. On iPhone, once the app has connected to our subscription provider — because you opened the paywall, bought, or tapped Restore — that provider holds a purchase record against a random identifier for the install. An install that did none of those never reached it, so there is nothing of it there. Email support@tresshaircare.com and we will have a record deleted. The privacy screen says what it contains and what stays on the phone afterwards.',
+  },
+  {
+    title: 'Who these terms are with',
+    body: 'Tress is made and published by Arslan Ahmad, an individual developer, who is the seller named on its App Store and Google Play listings. support@tresshaircare.com reaches him, and a person reads it. The purchase itself is a contract with Apple or Google; these terms are about the app.',
   },
   {
     title: 'Changes',
@@ -83,6 +117,10 @@ export default function TermsScreen() {
             </PressableScale>
           }
         />
+
+        <Text variant="footnote" color="textTertiary" style={{ marginTop: spacing.xs }}>
+          Last updated {LAST_UPDATED}
+        </Text>
 
         <View style={{ gap: spacing.xl, marginTop: spacing.lg, marginBottom: spacing.xxl }}>
           {SECTIONS.map((section) => (

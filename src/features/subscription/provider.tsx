@@ -5,6 +5,22 @@
  * answer; the paywall asks `useSubscription()` for prices and the two
  * actions that change anything. Nothing outside this folder knows what a
  * billing provider is.
+ *
+ * ── Launch does not talk to the store ──────────────────────────────────
+ * This provider used to ask RevenueCat for prices and for the customer's
+ * entitlement as soon as it mounted, which is to say on every cold start
+ * of every install. Configuring the SDK mints an identifier for the
+ * install, so that gave a customer record to people who had never opened
+ * the paywall, let alone bought anything.
+ *
+ * Launch now reads the cached snapshot from disk and acts on it
+ * (entitlement-cache.ts decides what it is still worth). The store is
+ * asked when the paywall is on screen, when somebody buys, when somebody
+ * restores, and when the cached snapshot grants Premium but can no longer
+ * vouch for itself — it has passed the date it was good until, or it
+ * carries none. A snapshot that grants Premium is written by a purchase
+ * or a restore, so on an install where neither has happened there is
+ * nothing here that reaches the store.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -28,6 +44,13 @@ import {
   type Entitlement,
   type PremiumFeature,
 } from './entitlement';
+import {
+  judgeCache,
+  parseCache,
+  snapshotToStore,
+  type CacheVerdict,
+} from './entitlement-cache';
+import { usePaywallOnScreen } from './store-activation';
 
 /** Last known entitlement, so a launch without a network is not a lockout. */
 const CACHE_KEY = 'hair-journey.entitlement.v1';
@@ -67,7 +90,17 @@ const SubscriptionContext = createContext<SubscriptionContextValue | null>(null)
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const billing = useMemo(() => createBilling(), []);
 
-  const [stored, setStored] = useState<Entitlement>(NO_ENTITLEMENT);
+  /*
+    What the cached snapshot is worth, recomputed whenever the snapshot
+    changes rather than on a timer. A session that runs long enough to
+    cross an expiry keeps the answer it started with; the next launch
+    reads the clock again.
+  */
+  const [verdict, setVerdict] = useState<CacheVerdict>({
+    entitlement: NO_ENTITLEMENT,
+    needsRefresh: false,
+  });
+  const stored = verdict.entitlement;
   const [tester, setTester] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [plans, setPlans] = useState<Record<PlanId, PlanConfig>>(PLANS);
@@ -91,13 +124,77 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /*
-    Whether the store has answered yet. AsyncStorage is normally faster
-    than a network round trip, but "normally" is not a guarantee, and a
-    disk read that lands second must not overwrite a fresher answer from
-    the store with what we happened to believe last time.
+    Whether the store has answered yet. The launch ask waits on the disk
+    read, but the paywall's does not — a link that opens straight onto the
+    paywall can have the store answering while the disk read is still in
+    flight, and the disk read must not then overwrite the fresher answer
+    with what we happened to believe last time.
   */
   const storeAnswered = useRef(false);
 
+  const remember = useCallback(async (next: Entitlement) => {
+    const now = Date.now();
+    const snapshot = snapshotToStore(next, now);
+    setVerdict(judgeCache(snapshot, now));
+    try {
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // Losing the cache costs a re-check against the store, nothing more.
+    }
+  }, []);
+
+  /*
+    Asking the store, which is also what configures the SDK and mints the
+    identifier this install is known by. The two effects below decide when
+    this runs; `purchase` and `restore` reach the SDK by their own route,
+    inside revenuecat.ts.
+
+    A null answer means we could not ask — offline, or a store that did
+    not respond — and the cached entitlement then stands, because nobody
+    should lose access they have paid for because a request timed out. A
+    failed ask does not hold the guard, so the next trigger gets to try
+    again; a successful one holds it, so a single run of the app asks
+    once.
+  */
+  const asking = useRef(false);
+  const refresh = useCallback(async () => {
+    const ask = billing.entitlement;
+    if (!ask || asking.current) return;
+    asking.current = true;
+    try {
+      const snapshot = await ask.call(billing);
+      if (!snapshot) {
+        asking.current = false;
+        return;
+      }
+      if (!alive.current) return;
+      storeAnswered.current = true;
+      await remember({
+        isPremium: snapshot.isPremium,
+        source: snapshot.isPremium ? 'subscription' : 'none',
+        status: snapshot.status,
+        expiresAt: snapshot.expiresAt,
+      });
+    } catch {
+      asking.current = false;
+    }
+  }, [billing, remember]);
+
+  /*
+    Launch: the cached snapshot off the disk, and the store asked in the
+    one case where that snapshot can no longer vouch for itself.
+
+    That second half is the one ask that can happen at launch, and it is
+    deliberately not the thing this change set out to remove.
+    `needsRefresh` is true for a snapshot that grants Premium and has gone
+    past the date it was good until, or that grants Premium with no date
+    on it and has sat unchecked for a day. A snapshot like that is written
+    by a purchase, by a restore, or by a store answer that followed one of
+    those — so the person being asked about has bought something, and the
+    answer either renews their access or ends it. Once the store says the
+    subscription is over, that answer goes to disk and launches stop
+    asking.
+  */
   useEffect(() => {
     (async () => {
       try {
@@ -108,53 +205,33 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
           TESTER_BUILD ? AsyncStorage.getItem(TESTER_KEY) : Promise.resolve(null),
         ]);
         if (!alive.current) return;
-        if (cached && !storeAnswered.current) setStored(JSON.parse(cached) as Entitlement);
+        const decided = judgeCache(parseCache(cached), Date.now());
+        if (!storeAnswered.current) setVerdict(decided);
         if (testerFlag === '1') setTester(true);
+        if (decided.needsRefresh) void refresh();
       } catch {
-        // An unreadable cache means no entitlement, not a crash. The store
-        // is the authority; this was only ever an offline convenience.
+        // An unreadable cache means no entitlement, not a crash — and the
+        // paywall's Restore is the way back for somebody who has paid.
       } finally {
         if (alive.current) setIsLoaded(true);
       }
     })();
-  }, []);
-
-  useEffect(() => {
-    billing.products().then((p) => { if (alive.current) setPlans(p); }).catch(() => undefined);
-  }, [billing]);
-
-  const remember = useCallback(async (next: Entitlement) => {
-    setStored(next);
-    try {
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(next));
-    } catch {
-      // Losing the cache costs a re-check against the store, nothing more.
-    }
-  }, []);
+  }, [refresh]);
 
   /*
-    The store is the authority; the cache above is only what we last
-    heard. A null answer means we could not ask — offline, or a store
-    that did not respond — and in that case the cached entitlement
-    stands, because nobody should lose access they have paid for
-    because a request timed out at launch.
+    The paywall: prices, and a fresh reading of the entitlement, fetched
+    when it is on screen rather than at launch — see store-activation.ts
+    for why the route is the signal. Once per run of the app, so a second
+    visit shows what the first one fetched.
   */
+  const paywallOnScreen = usePaywallOnScreen();
+  const storeOpened = useRef(false);
   useEffect(() => {
-    const ask = billing.entitlement;
-    if (!ask) return;
-    ask.call(billing)
-      .then((snapshot) => {
-        if (!snapshot || !alive.current) return;
-        storeAnswered.current = true;
-        void remember({
-          isPremium: snapshot.isPremium,
-          source: snapshot.isPremium ? 'subscription' : 'none',
-          status: snapshot.status,
-          expiresAt: snapshot.expiresAt,
-        });
-      })
-      .catch(() => undefined);
-  }, [billing, remember]);
+    if (!paywallOnScreen || storeOpened.current) return;
+    storeOpened.current = true;
+    billing.products().then((p) => { if (alive.current) setPlans(p); }).catch(() => undefined);
+    void refresh();
+  }, [paywallOnScreen, billing, refresh]);
 
   const purchase = useCallback(
     async (plan: PlanId) => {

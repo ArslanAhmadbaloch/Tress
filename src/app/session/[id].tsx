@@ -1,9 +1,10 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ShareUpdateModal } from '@/components/session/share-sheet';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
@@ -16,6 +17,7 @@ import {
 import { BackButton } from '@/components/ui/back-button';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
+import { SHARE_COPY, buildSessionSheet } from '@/features/share/session-sheet';
 import { formatDate, formatMilestone } from '@/lib/date';
 import { useBackOrHome } from '@/lib/navigation';
 import { deletePhotoFiles } from '@/lib/photo-storage';
@@ -38,6 +40,25 @@ export default function SessionDetailScreen() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState(session?.note ?? '');
+  const [sharing, setSharing] = useState(false);
+
+  /*
+    One object per session rather than a fresh one every render: the share
+    panel keys its "which frames have loaded" bookkeeping to this sheet,
+    and a new identity on every keystroke in the note field would reset it.
+  */
+  const sheet = useMemo(
+    () =>
+      session && data.journey
+        ? buildSessionSheet({
+            session,
+            journeyStartedAt: data.journey.startedAt,
+            baselineCapturedAt:
+              data.sessions.find((s) => s.isBaseline)?.capturedAt ?? null,
+          })
+        : null,
+    [session, data.journey, data.sessions],
+  );
 
   if (!session || !data.journey) {
     return (
@@ -192,7 +213,9 @@ export default function SessionDetailScreen() {
           {formatDate(session.capturedAt)}
         </Text>
 
-        <SectionHeader title={`${session.photos.length} photos`} />
+        <SectionHeader
+          title={`${session.photos.length} ${session.photos.length === 1 ? 'photo' : 'photos'}`}
+        />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
           {session.photos.map((photo) => (
             <PressableScale
@@ -220,12 +243,25 @@ export default function SessionDetailScreen() {
           ))}
         </View>
 
+        {session.photos.length > 0 ? (
+          <Button
+            label={SHARE_COPY.button}
+            icon="share"
+            variant="secondary"
+            style={{ marginTop: spacing.xl }}
+            onPress={() => setSharing(true)}
+            accessibilityHint={SHARE_COPY.buttonHint}
+          />
+        ) : null}
+
         {data.sessions.length >= 2 ? (
           <Button
             label="Compare with another update"
             icon="compare"
             variant="secondary"
-            style={{ marginTop: spacing.xl }}
+            // Paired tight under the share button; on its own it keeps the
+            // full gap it had from the grid above.
+            style={{ marginTop: session.photos.length > 0 ? spacing.sm : spacing.xl }}
             onPress={() => router.push(`/compare?from=${session.id}`)}
           />
         ) : null}
@@ -401,6 +437,8 @@ export default function SessionDetailScreen() {
           ) : null}
         </Pressable>
       </Modal>
+
+      <ShareUpdateModal sheet={sharing ? sheet : null} onClose={() => setSharing(false)} />
     </Screen>
   );
 }

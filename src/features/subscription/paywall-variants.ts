@@ -219,8 +219,15 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
   },
   {
     icon: 'shield',
-    title: 'Private by design',
-    body: 'Everything stays on this device. Nothing is uploaded.',
+    /*
+     * The title used to read "Private by design", which is a claim about
+     * the whole app made on a line that can only vouch for the
+     * photographs. The barcode lookup leaves the phone; a share sheet
+     * sends whatever you hand it. So the title now says the same thing
+     * the body does, no wider: where the files sit.
+     */
+    title: 'Kept on this device',
+    body: 'Your photographs are kept on this device. The app never uploads them.',
   },
 ];
 

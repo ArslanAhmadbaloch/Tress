@@ -57,7 +57,7 @@ export function SubscriptionStatus() {
                 ? 'Cancelled — your access continues until the period ends.'
                 : entitlement.isPremium
                   ? 'Your journey tracking is unlocked.'
-                  : 'Track your journey, your stack and your progress over time.'}
+                  : 'Keep your photographs, your stack and your notes in one record.'}
           </Text>
         </View>
       </View>
@@ -119,7 +119,7 @@ export function SubscriptionStatus() {
           <View style={{ flex: 1 }}>
             <Text variant="subhead">Tester access</Text>
             <Text variant="caption" color="textTertiary" style={{ marginTop: 1 }}>
-              Development builds only. Never present in a release build.
+              Test builds only. Not present in a build released to the stores.
             </Text>
           </View>
           <Switch

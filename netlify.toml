@@ -1,0 +1,45 @@
+# Hosting for tresshaircare.com — the public site and the two legal pages.
+#
+# The pages are not written here. They are generated from the app's own
+# /privacy and /terms screens by scripts/build-site.mjs, because the one
+# thing that must never happen is the hosted policy saying something the
+# app does not. Building on deploy rather than publishing the committed
+# copies closes the last gap: whatever ships is what the screens say at
+# that commit, even if someone edits a screen and forgets to regenerate.
+#
+# This file matters because the site was previously uploaded by hand. It
+# drifted — the hosted policy still claimed photographs were "not
+# analysed" after the on-device segmenter shipped and after the barcode
+# lookup added the app's first outbound request. Connect this repository
+# to the Netlify site once and that class of mistake is over.
+
+[build]
+  command = "node scripts/build-site.mjs"
+  publish = "site"
+
+[build.environment]
+  # The generator is plain ESM over node:fs; any current LTS will do.
+  NODE_VERSION = "20"
+
+# Apple opens the Support URL during review and both stores read
+# /privacy, so serve the clean paths as well as the .html files.
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy.html"
+  status = 200
+
+[[redirects]]
+  from = "/terms"
+  to = "/terms.html"
+  status = 200
+
+[[redirects]]
+  from = "/support"
+  to = "/support.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

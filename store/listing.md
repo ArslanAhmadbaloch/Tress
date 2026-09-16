@@ -11,10 +11,18 @@ descriptions drift, and the one a reviewer reads is the one nobody edited.
 
 Companion files:
 
- - store/app-store-metadata.md — name, subtitle, promotional text, the
-   description, keywords, category, age rating, What's New, review notes.
+ - store/app-store-metadata.md — seller identity, name, subtitle,
+   promotional text, the description, keywords, category, age rating,
+   What's New, review notes, URLs and their status.
  - store/privacy-labels.md — Apple nutrition labels and Play Data safety.
  - store/play-declarations.md — the Play Console questionnaire answers.
+
+## Developer name on both listings
+**Arslan Ahmad**, an individual developer — the seller of record on the
+App Store and the same person on the Play developer account. It is not a
+company, and no company name belongs on either listing or in the policy;
+store/app-store-metadata.md says why, under "Seller and developer identity".
+Support and data questions: support@tresshaircare.com.
 
 ## App name (both stores)
 Tress - Haircare Journal
@@ -40,15 +48,21 @@ substitutions for the Android build:
     fingerprint, face unlock or a passcode".
  2. "Manage or cancel any time in your App Store account settings" →
     "Manage or cancel any time in your Google Play subscriptions".
- 3. "The only thing that leaves your phone is the anonymous purchase check
-    that the App Store and our subscription provider need to confirm your
-    membership." → **drop the sentence** while Play Billing is off (the
-    Android build's only network request is the product barcode lookup,
-    which the Data safety form describes; a listing that admits a purchase
-    check the build never makes contradicts it). Once billing is live, put it back as "The only
-    thing that leaves your phone is the anonymous purchase check that
-    Google Play and our subscription provider need to confirm your
-    membership."
+ 3. The two subscription-check sentences in the "no account" paragraph →
+    **delete them** while Play Billing is off. `REVENUECAT_KEYS.android` is
+    null (src/features/subscription/config.ts), so the Android build makes
+    no such request from any screen, and a listing that admits a check the
+    build never makes contradicts the Data safety form beside it. Delete
+    from "When you open the Premium screen" through "that question is never
+    asked." — the paragraph then runs straight on into "Scanning a product
+    barcode sends the digits…", which needs no rewording.
+
+    Once Android billing is live, restore the App Store wording verbatim.
+    It names our subscription provider rather than a store, so unlike
+    substitutions 1 and 2 it needs no Google Play rewording — and it will
+    be true of the Android build in the same way, because the SDK is
+    configured by the paywall and by a purchase or restore on both
+    platforms.
  4. "Tress Premium" paragraph: Play wording is the same as the App Store
     copy except substitution 2 and "where the App Store offers one" →
     "where Google Play offers one".
@@ -83,6 +97,25 @@ Privacy policy: https://tresshaircare.com/privacy
 Terms of use: https://tresshaircare.com/terms
 Support: https://tresshaircare.com/support
 
-All three are placeholders until the pages exist. The privacy page must
-describe the RevenueCat purchase check in the same words as
-store/privacy-labels.md and the in-app privacy screen.
+**All three are live pages, not placeholders** — each returned 200 from
+Netlify when checked on 16 September 2026. Their status lives in one
+place, the URLs section of store/app-store-metadata.md, which also records
+what is still wrong with the deployed pages; this file names the URLs and
+defers on the rest. Two files in one tree disagreeing about whether the
+site exists is the kind of thing a reviewer notices, so do not restate the
+status here.
+
+The short version, and do not let this file drift from it: the privacy
+page is live and has been redeployed since the pre-scanner version, but it
+is behind the tree and now behind the build as well — it describes a
+subscription check that runs every time the app starts, which is not what
+this build does. `src/app/privacy.tsx` is rewritten first, then the site
+is regenerated and deployed, then diffed. The landing page's "not
+analysed" sentence is a separate fix, in the generator.
+
+Play reads the privacy URL too, and the page it reads is the same one the
+App Store reads. It must describe the RevenueCat purchase check in the
+same substance as store/privacy-labels.md and the in-app privacy screen —
+including that the check is iOS-only and that it happens at the paywall
+rather than at launch, because the Data safety form on this listing
+answers "no collection" for the Android build.

@@ -409,6 +409,21 @@ export type Photo = {
   capturedAt: string;
   quality?: PhotoQuality;
   coverage?: PhotoCoverage;
+  /**
+   * The head's angles when the shutter fired, from the on-device detector,
+   * in degrees. A framing fact about the photograph — it is what lets next
+   * month's shot be lined up with this one — never a fact about the hair.
+   * Absent on blind angles, on builds without the detector, and on every
+   * photograph taken before this existed.
+   */
+  pose?: { yaw: number; pitch: number; roll: number };
+  /**
+   * How the shutter fired. Absent on photographs from before it was
+   * recorded. 'sample' is a development build's simulator stand-in for a
+   * camera (see components/capture/sample-camera.tsx); such a photograph
+   * also carries its marker in its own pixels.
+   */
+  capture?: 'guided' | 'manual' | 'timer' | 'sample';
 };
 
 export type PhotoSession = {

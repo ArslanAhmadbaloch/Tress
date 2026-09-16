@@ -161,6 +161,13 @@ function createProvider(apiKey: string): BillingProvider {
     than at import time. Module side effects run before the app has
     decided anything, and a network-touching one that runs during a
     Metro fast-refresh or a test import is a hard thing to reason about.
+
+    This call is also where RevenueCat mints the anonymous app user id
+    for the install, which is why every method below configures on its
+    own way in and nothing configures ahead of time. What reaches these
+    methods, and when, is decided in provider.tsx: the paywall being on
+    screen, a purchase, a restore, and a cached entitlement that has run
+    past its date. A person who does none of those is never configured.
   */
   let configured = false;
   function configure(): void {
