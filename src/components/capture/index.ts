@@ -20,5 +20,12 @@ export {
   type GuideTarget,
 } from './head-guidance';
 export { ScanAnalysing, type AnalysingFrame } from './scan-analysing';
+export {
+  SWEEP_RING_INSET,
+  SweepRing,
+  type SweepMark,
+  type SweepMarkState,
+  type SweepStep,
+} from './sweep-ring';
 export { TrackedCamera, headTrackingAvailable, sampleCameraActive } from './tracked-camera';
 export type { CapturedFrame, TrackedCameraHandle, TrackedCameraProps } from './types';

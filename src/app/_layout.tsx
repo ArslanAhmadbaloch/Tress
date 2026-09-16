@@ -213,6 +213,15 @@ function Navigation() {
           name="routine"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
+        {/*
+            What the centre "+" opens: the choice between a scan and the
+            five angles. A sheet rather than a push, because it is a
+            decision taken over whatever was on screen and returned from,
+            and because both of its doors replace it with a camera. */}
+        <Stack.Screen
+          name="new"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
         <Stack.Screen
           name="capture-intro"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}

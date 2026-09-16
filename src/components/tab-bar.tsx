@@ -8,7 +8,14 @@
  * on the system material, not a reimplementation of it.
  *
  * The centre "+" is deliberately not a tab. It is the app's primary action
- * and pushes the capture flow, so it never takes a selected state.
+ * and opens the capture flow over the top of whatever is showing, so it
+ * never takes a selected state.
+ *
+ * What it opens is a choice, not a camera. There are two things behind the
+ * Plus now — a scan that ends in a reading, and the five angles kept as a
+ * record — and they are different enough that picking for somebody would
+ * be picking wrong half the time. `/new` asks; the cameras are one tap
+ * further in.
  */
 
 import * as Haptics from 'expo-haptics';
@@ -117,7 +124,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
           shadow.lifted,
         ]}>
         {TABS.slice(0, CENTRE_INDEX).map(renderTab)}
-        <CentreAction onPress={() => router.push('/capture-intro')} />
+        <CentreAction onPress={() => router.push('/new')} />
         {TABS.slice(CENTRE_INDEX).map(renderTab)}
       </GlassSurface>
     </View>
@@ -344,7 +351,9 @@ function CentreAction({ onPress }: { onPress: () => void }) {
         haptic="none"
         scaleTo={1}
         accessibilityRole="button"
-        accessibilityLabel="New photo update">
+        // Two things sit behind it, so it is named for the choice rather
+        // than for either one of them.
+        accessibilityLabel="New scan or photos">
         <GlassOrb size={CENTRE_SIZE} ring={false} tone="neutral" emphasis="strong">
           <ScanSweep size={CENTRE_SIZE} />
           <PlusGlyph size={24} color={colors.text} />

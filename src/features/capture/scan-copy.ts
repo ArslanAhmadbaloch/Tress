@@ -33,6 +33,21 @@ export const SCAN_COPY = {
       manual:
         'Face the ring. It takes the front, then each side as you turn. The top and the back are yours to take with the shutter. Nothing leaves your phone.',
     },
+    /*
+      The sweep intro, in the same two halves and for the same reason. It
+      says plainly what one turn in front of a front-facing camera can and
+      cannot reach: the front and the two sides come out of the turn, and
+      the top and the back stay held shots, because the camera is in front
+      of the face and those two are not. Written as "two held shots to
+      finish" rather than naming a moment relative to the turn, because
+      the honesty sweep bans `before` and `after` as words.
+    */
+    sweepBody: {
+      handsFree:
+        'Face the ring and turn slowly — one side, back through the middle, then the other. The ring closes as you go, and it takes three photographs on the way. The top and the back are two held shots to finish, and it counts down for each once the phone is still. Nothing leaves your phone.',
+      manual:
+        'Face the ring and turn slowly — one side, back through the middle, then the other. The ring closes as you go, and it takes three photographs on the way. The top and the back are two held shots to finish, and they are yours to take with the shutter. Nothing leaves your phone.',
+    },
     cta: 'Start scan',
     manualLink: 'Can’t turn your head? Take them yourself',
   },
@@ -54,6 +69,32 @@ export const SCAN_COPY = {
     hold: 'Hold still — taking it',
   } satisfies Record<Cue, string>,
   manualHint: 'Or tap the shutter to take it yourself',
+  /*
+    The one continuous turn. Its cues are kept apart from `cue` above
+    because they describe a ring with open parts and a head moving through
+    them, not a single angle being lined up — and because `cue` is pinned
+    to the reducer's `Cue` union, which the walk owns.
+
+    `scope` is the sentence that stops this ever being sold as five angles
+    from one turn. It is shown under the intro body and again wherever an
+    angle is still missing.
+  */
+  sweep: {
+    scope: 'The turn reaches the front and the two sides. The top and the back are held shots.',
+    altLink: 'One at a time instead',
+    cue: {
+      sweepStart: 'Turn slowly — one side, then the other',
+      slower: 'Slower — parts of the ring are still open',
+      pause: 'Pause here for a moment',
+      gaps: 'Turn back through the gaps',
+      wellFront: 'The middle is still open — face the camera and hold',
+      wellSide: 'One side is still open — turn back to it and hold',
+      soft: 'That one came out soft — pass through again',
+    },
+    saved: (done: number, total: number) => `Saved. ${done} of ${total}.`,
+    closed: 'The turn is done. Three saved.',
+    finish: 'Finish with these',
+  },
   blind: {
     instruction: {
       top: 'Hold the phone above your head, screen down. It counts down once you are still.',

@@ -49,6 +49,10 @@
             "backgroundColor": "#F0E9E3",
             "image": "./assets/images/splash-plate.jpg",
             "resizeMode": "cover"
+          },
+          "enableFullScreenImage_legacy": true,
+          "android": {
+            "backgroundColor": "#F0E9E3"
           }
         }
       ],

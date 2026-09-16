@@ -46,7 +46,9 @@ import {
   FrameStack,
   GhostOverlay,
   SLOT_H,
+  SWEEP_RING_INSET,
   ScanAnalysing,
+  SweepRing,
   TrackedCamera,
   facePace,
   sampleCameraActive,
@@ -55,14 +57,17 @@ import {
   type FaceFrameHandle,
   type FaceObservation,
   type GuideTarget,
+  type SweepMark,
   type TrackedCameraHandle,
 } from '@/components/capture';
 /*
   Straight from the module rather than the barrel: RingScrim is the lower
   half of the FaceFrame — the dimming, which has to sit under the ghost
-  and the flash — and the barrel does not name it yet.
+  and the flash — and `headProximity` is the number both halves of it are
+  drawn from, which the turn needs in its own hand so it can take the
+  worse of that and the head's stillness. Neither is named by the barrel.
 */
-import { RingScrim } from '@/components/capture/face-frame';
+import { RingScrim, headProximity } from '@/components/capture/face-frame';
 import { BASELINE_THANKS } from '@/features/content/belonging';
 import { useHairContent } from '@/features/content/use-hair-content';
 import {
@@ -75,12 +80,22 @@ import {
   type Phase,
   type Pose,
   type ScanState,
+  type SweepCue,
+  type SweepState,
 } from '@/features/capture/guided-scan';
 import { loadHandsFree, saveHandsFree } from '@/features/capture/hands-free';
 import { previousPhotoForAngle } from '@/features/capture/previous-photo';
 import { SCAN_COPY } from '@/features/capture/scan-copy';
+import {
+  SEGMENT_HAPTIC_MS,
+  fillOf,
+  lagFills,
+  ringClosed,
+  theta,
+} from '@/features/capture/sweep';
 import { useSteadiness } from '@/features/capture/use-steadiness';
 import { analysePhoto } from '@/features/assessment/analyse-photo';
+import { SHARPNESS_WIDTH, isSoft, sharpnessAt } from '@/features/assessment/frame-sharpness';
 import { formatDateShort } from '@/lib/date';
 import { persistCapture, shrinkCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
@@ -128,15 +143,56 @@ const FACE_LOST_AFTER = 3;
 const CUE_INTERVAL_MS = 1500;
 
 /**
+ * How long after the last face before the phone's own stillness is worth
+ * reporting to the reducer at all.
+ *
+ * The blind countdown arms on stillness, and the two angles it arms for
+ * are shot with the camera pointed away from everybody. A turn leaves the
+ * camera full of face and the phone already steady in somebody's hand, so
+ * without this the countdown for the top could arm while they were still
+ * looking at their own chin. It lives here rather than in the reducer
+ * because the screen is what owns the camera, and because the arming rule
+ * itself is tested as it stands.
+ */
+const FACE_GONE_MS = 1500;
+
+/**
  * The phases where a photograph is being framed, and so the accelerometer
  * is worth running. `flying` is one of them on purpose: dropping the
  * sensor for the 900 ms cooldown and picking it up again would reset it
  * to "no reading yet" at the start of every angle.
  */
-const FRAMING_PHASES = new Set<Phase['kind']>(['tracked', 'blind', 'capturing', 'flying']);
+const FRAMING_PHASES = new Set<Phase['kind']>([
+  'tracked',
+  'sweep',
+  'blind',
+  'capturing',
+  'flying',
+]);
 
 /** The phases the reducer needs a clock for. */
-const TICKING = new Set<Phase['kind']>(['tracked', 'blind', 'flying']);
+const TICKING = new Set<Phase['kind']>(['tracked', 'sweep', 'blind', 'flying']);
+
+/** How long the cursor takes to reach the head's latest position. */
+const CURSOR_MS = 70;
+
+/** The cross-fade from the turn's eight arcs to the five-angle ring. */
+const COLLAPSE_MS = 380;
+
+/**
+ * Where the ring's own answer to the head stops warming during a turn:
+ * degrees of turn per second, and face widths per second.
+ *
+ * Both are deliberately near the pace at which a photograph stops being
+ * possible, so the edge is brightest exactly when a shot could be taken.
+ * It is still a reading of where a head is and how fast it is moving, and
+ * never a judgement of the photograph.
+ */
+const LOCK_YAW_RATE = 12;
+const LOCK_PACE = 0.55;
+
+/** How much of a new stillness reading counts, so the edge does not flicker. */
+const LOCK_SMOOTHING = 0.35;
 
 /** How often the reducer is given the time, and the phone's motion with it. */
 const TICK_MS = 250;
@@ -147,10 +203,18 @@ const HOLD_TICK_MS = 60;
 /**
  * Lines that are events rather than corrections, so they are spoken
  * whenever they happen rather than rationed like the framing cues.
+ *
+ * The turn's confirmation is a count rather than a name, so every count
+ * it could produce is enumerated here — there are at most five
+ * photographs in a set, so there are at most twenty-five of them, and
+ * matching the exact string is worth more than matching a prefix.
  */
 const ALWAYS_SPOKEN = new Set<string>([
   ...Object.values(SCAN_COPY.captured),
   SCAN_COPY.complete,
+  ...ANGLES.flatMap((_, i) =>
+    ANGLES.map((__, j) => SCAN_COPY.sweep.saved(i + 1, j + 1)),
+  ),
 ]);
 
 /** The least time a work unit's line stays on screen. */

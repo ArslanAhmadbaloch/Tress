@@ -24,6 +24,39 @@ import {
 import { ANGLES, type Angle, type Photo } from '@/types/domain';
 
 import { SCAN_COPY } from './scan-copy';
+import {
+  BAND,
+  DWELL_PITCH_MAX,
+  DWELL_ROLL_MAX,
+  MOTION_WINDOW,
+  SWEEP_COOLDOWN_MS,
+  SWEEP_FORCED_MS,
+  SWEEP_GRACE_MS,
+  SWEEP_HINT_MS,
+  SWEEP_MAX_MS,
+  SWEEP_MAX_SHOTS,
+  SWEEP_SEGMENTS,
+  SWEEP_STILL_PACE,
+  REOPEN_POSE_COST,
+  SEGMENT_DWELL_MS,
+  accrueDwell,
+  dispatchSegment,
+  fractional,
+  isFull,
+  motionSteady,
+  openWellFor,
+  poseCost,
+  poseOf,
+  pushYaw,
+  ringClosed,
+  segmentGap,
+  settleReady,
+  theta,
+  wellsFor,
+  type BaselinePoses,
+  type WellKey,
+  type WellTarget,
+} from './sweep';
 
 /** How long a pose must hold before the shutter fires itself. */
 export const HOLD_MS = 600;
@@ -87,6 +120,83 @@ export type Cue =
   | 'brace'
   | 'hold';
 
+/**
+ * The lines only the turn can say.
+ *
+ * They are kept apart from `Cue` because they describe a ring with open
+ * parts and a head moving through them, rather than a single angle being
+ * lined up. `pause` is deliberately not `still`: "hold still" while
+ * asking somebody to turn their head is a contradiction, and the turn
+ * needs a word for the micro-pause that earns a photograph.
+ */
+export type SweepOnlyCue =
+  | 'sweepStart'
+  | 'slower'
+  | 'pause'
+  | 'gaps'
+  | 'wellFront'
+  | 'wellSide'
+  | 'soft';
+
+/** Everything the turn can say: the walk's vocabulary, plus its own. */
+export type SweepCue = Cue | SweepOnlyCue;
+
+/** One of the three targets a front camera can reach, and how it is going. */
+export type Well = WellTarget & {
+  status: 'open' | 'taken' | 'abandoned';
+  /** `poseCost` of the shot that filled it; the yardstick for a better pass. */
+  cost: number | null;
+  reopens: 0 | 1;
+};
+
+export type SweepState = {
+  step: 'centre' | 'turning' | 'finishing';
+  /**
+   * When the turn began. Every one of its timers falls back to this
+   * while the ring is still shut, so the centre gate is as escapable as
+   * every other step rather than a room with no door.
+   */
+  startedAt: number;
+  /** When the ring opened, which is when the front photograph landed. */
+  openedAt: number | null;
+  /** Dwell in milliseconds, one per segment. Monotonic; never decays. */
+  segments: number[];
+  filled: boolean[];
+  wells: Record<WellKey, Well>;
+  /**
+   * Set once the record's own two temple photographs have been found to
+   * disagree with each other and the head has been believed instead. It
+   * stops the disputed well being argued with; it does not move any well,
+   * because the temple whose record was never in dispute is still the
+   * best guide there is to where that photograph should be taken.
+   */
+  signFlipped: boolean;
+  /**
+   * Frames spent inside a well the record disagrees with. Counted rather
+   * than acted on at once: one is a person turning the wrong way.
+   */
+  contra: number;
+  shutters: number;
+  settleSince: number | null;
+  settleWell: WellKey | null;
+  settleCost: number | null;
+  yawWindow: number[];
+  phoneStillSince: number | null;
+  lastFaceAt: number | null;
+  /** The last pose seen, for a shutter tapped between face events. */
+  lastPose: Pose | null;
+  current: number;
+  currentF: number;
+  cue: SweepCue;
+  stillSince: number | null;
+  /** The centre gate only: the walk's hold, before any turning. */
+  holdSince: number | null;
+  manualHint: boolean;
+  forcedOffer: boolean;
+  finishingSince: number | null;
+  finished: boolean;
+};
+
 export type Phase =
   | {
       kind: 'tracked';
@@ -102,7 +212,13 @@ export type Phase =
   | { kind: 'flying'; angle: Angle; uri: string; until: number; landed: boolean }
   | { kind: 'review' }
   | { kind: 'analysing'; done: number; total: number; label: string; angle: Angle | null }
-  | { kind: 'saved' };
+  | { kind: 'saved' }
+  /*
+    Thin on purpose: everything the turn knows lives in `state.sweep`, so
+    a shutter and a flight can run over the top of a live sweep without
+    the sweep being torn down and rebuilt underneath them.
+  */
+  | { kind: 'sweep' };
 
 export type Shot = { angle: Angle; uri: string; pose?: Pose };
 
@@ -115,6 +231,17 @@ export type ScanState = {
   sign: 1 | -1 | null;
   /** From the baseline's own temple photographs, when they carry a pose. */
   baselineSign: Partial<Record<Angle, 1 | -1>>;
+  /** The baseline's own poses, which move the sweep's wells onto last month's. */
+  baselinePose: BaselinePoses;
+  /**
+   * How the tracked angles are taken: one continuous turn, or one angle
+   * at a time. `'walk'` is the default and is the machine that was here
+   * before the turn existed, kept intact rather than refactored.
+   */
+  mode: 'sweep' | 'walk';
+  sweep: SweepState | null;
+  /** Angles the turn gave up on, so the walk does not ask for them again. */
+  skipped: Angle[];
   tracking: boolean;
   handsFree: boolean;
   motionAvailable: boolean;
@@ -144,13 +271,27 @@ export type Event =
   | { type: 'analyse'; total: number }
   | { type: 'work'; done: number; label: string; angle: Angle | null }
   | { type: 'saved' }
-  | { type: 'saveFailed' };
+  | { type: 'saveFailed' }
+  /** The photograph came back soft enough to be worth another pass. */
+  | { type: 'shotSoft'; angle: Angle; now: number }
+  /** Finish the turn with whatever it has. */
+  | { type: 'finish'; now: number }
+  /** Switch between the turn and the walk, before any photograph exists. */
+  | { type: 'mode'; mode: 'sweep' | 'walk'; now: number };
 
 export type Effect =
-  | { type: 'capture'; angle: Angle }
+  /*
+    The pose travels with the effect rather than being read off a ref when
+    the photograph resolves. The reducer knows the pose it decided on; a
+    ref keeps moving for the whole of the capture, and `Photo.pose` would
+    quietly record where the head ended up instead of where the
+    photograph was taken — poisoning next month's well targets with
+    nothing to catch it.
+  */
+  | { type: 'capture'; angle: Angle; pose?: Pose }
   | { type: 'countdown'; seconds: number }
   | { type: 'cancelCountdown' }
-  | { type: 'haptic'; kind: 'holdStart' | 'captured' | 'complete' }
+  | { type: 'haptic'; kind: 'holdStart' | 'captured' | 'complete' | 'segment' }
   | { type: 'announce'; text: string };
 
 type Result = { state: ScanState; effects: Effect[] };
@@ -201,6 +342,8 @@ export function createScan(input: {
   handsFree: boolean;
   motionAvailable: boolean;
   baseline?: Photo[];
+  /** Defaults to the walk, so a caller that says nothing gets the old machine. */
+  mode?: 'sweep' | 'walk';
   now?: number;
 }): ScanState {
   const order = orderFor(input.angles, input.startAt);
@@ -213,25 +356,36 @@ export function createScan(input: {
     detector's sign convention is not stable enough to argue with.
   */
   const baselineSign: Partial<Record<Angle, 1 | -1>> = {};
+  const baselinePose: BaselinePoses = {};
   for (const photo of input.baseline ?? []) {
+    const pose = (photo as { pose?: Pose }).pose;
+    if (pose && Number.isFinite(pose.yaw) && Number.isFinite(pose.pitch)) {
+      baselinePose[photo.angle] ??= pose;
+    }
     if (photo.angle !== 'leftTemple' && photo.angle !== 'rightTemple') continue;
-    const yaw = (photo as { pose?: Pose }).pose?.yaw;
+    const yaw = pose?.yaw;
     if (typeof yaw !== 'number' || !Number.isFinite(yaw) || yaw === 0) continue;
-    baselineSign[photo.angle] = Math.sign(yaw) as 1 | -1;
+    baselineSign[photo.angle] ??= Math.sign(yaw) as 1 | -1;
   }
 
-  return {
+  const base: ScanState = {
     order,
     index: 0,
     phase: phaseFor(input, order[0], now),
     shots: {},
     sign: null,
     baselineSign,
+    baselinePose,
+    mode: 'walk',
+    sweep: null,
+    skipped: [],
     tracking: input.tracking,
     handsFree: input.handsFree,
     motionAvailable: input.motionAvailable,
     returnToReview: false,
   };
+
+  return input.mode === 'sweep' && sweepAvailable(base) ? asSweep(base, now) : base;
 }
 
 /**
@@ -292,6 +446,11 @@ export function poseCue(input: {
 /** 0-1 while a hold is running, else 0. */
 export function holdProgress(state: ScanState, now: number): number {
   const phase = state.phase;
+  // The turn runs the same hold, once, at the centre gate before it opens.
+  if (phase.kind === 'sweep') {
+    const holdSince = state.sweep?.holdSince ?? null;
+    return holdSince === null ? 0 : Math.min(1, (now - holdSince) / HOLD_MS);
+  }
   if (phase.kind !== 'tracked' || phase.holdSince === null) return 0;
   return Math.min(1, (now - phase.holdSince) / HOLD_MS);
 }
@@ -315,6 +474,745 @@ export function remaining(state: ScanState): Angle[] {
   return state.order.filter((angle) => !state.shots[angle]);
 }
 
+/* ------------------------------ the sweep ------------------------------ */
+
+/**
+ * The turn is a phase that replaces the *tracked prefix* of the walk and
+ * hands back to the walk at the first blind angle. Everything below is
+ * additive: `advance`, `reduceBlind`, `reduceCapturing`, `reduceFlying`,
+ * `reduceReview` and `reduceAnalysing` keep their shapes, and a scan that
+ * never asks for `mode: 'sweep'` never meets any of it.
+ */
+const WELL_KEYS: readonly WellKey[] = ['front', 'templeA', 'templeB'];
+
+/**
+ * Frames inside a well the record disagrees with, before the record is
+ * the thing assumed wrong. One is a person turning the wrong way; a
+ * sustained pass is the detector's own convention, and nagging about it
+ * for the rest of the turn would be nagging about something the person
+ * cannot fix.
+ */
+const CONTRA_FRAMES = MOTION_WINDOW;
+
+const SWEEP_ONLY: readonly SweepOnlyCue[] = [
+  'sweepStart',
+  'slower',
+  'pause',
+  'gaps',
+  'wellFront',
+  'wellSide',
+  'soft',
+];
+
+function isSweepOnly(cue: SweepCue): cue is SweepOnlyCue {
+  return (SWEEP_ONLY as readonly string[]).includes(cue);
+}
+
+function cueText(cue: SweepCue): string {
+  return isSweepOnly(cue) ? SCAN_COPY.sweep.cue[cue] : SCAN_COPY.cue[cue];
+}
+
+/**
+ * The turn is only offered where it can work: a detector that reports
+ * faces, and at least two of the three angles it can reach. Everything
+ * else — a screen reader, the manual preference, a build with no
+ * detector at all — is the screen's to decide, and the answer to all of
+ * them is the walk.
+ */
+export function sweepAvailable(state: Pick<ScanState, 'tracking' | 'order'>): boolean {
+  return state.tracking && state.order.filter((angle) => tracksFace(angle)).length >= 2;
+}
+
+function createSweep(state: ScanState, now: number): SweepState {
+  const targets = wellsFor({ baseline: state.baselinePose });
+  const well = (target: WellTarget): Well => ({
+    ...target,
+    status: state.order.includes(target.angle) && !state.shots[target.angle] ? 'open' : 'abandoned',
+    cost: null,
+    reopens: 0,
+  });
+
+  const wells = {
+    front: well(targets.front),
+    templeA: well(targets.templeA),
+    templeB: well(targets.templeB),
+  };
+
+  /*
+    Centre first. The one photograph the report cannot do without is taken
+    while the person is demonstrably still and before any turning, and the
+    ring opening on it is what says the ring means something before
+    anybody is asked to fill it. A set without a front angle has no centre
+    gate to run, so the ring is open from the start.
+  */
+  const centre = wells.front.status === 'open';
+
+  return {
+    step: centre ? 'centre' : 'turning',
+    startedAt: now,
+    openedAt: centre ? null : now,
+    segments: Array.from({ length: SWEEP_SEGMENTS }, () => 0),
+    filled: Array.from({ length: SWEEP_SEGMENTS }, () => false),
+    wells,
+    signFlipped: false,
+    contra: 0,
+    shutters: 0,
+    settleSince: null,
+    settleWell: null,
+    settleCost: null,
+    yawWindow: [],
+    phoneStillSince: null,
+    lastFaceAt: null,
+    lastPose: null,
+    current: 0,
+    currentF: 0,
+    cue: 'searching',
+    stillSince: null,
+    holdSince: null,
+    manualHint: false,
+    forcedOffer: false,
+    finishingSince: null,
+    finished: false,
+  };
+}
+
+function asSweep(state: ScanState, now: number): ScanState {
+  return {
+    ...state,
+    mode: 'sweep',
+    index: 0,
+    sweep: createSweep(state, now),
+    phase: { kind: 'sweep' },
+  };
+}
+
+const wellsOf = (sweep: SweepState): Well[] => WELL_KEYS.map((key) => sweep.wells[key]);
+
+const wellsResolved = (sweep: SweepState): boolean =>
+  wellsOf(sweep).every((well) => well.status !== 'open');
+
+const wellFor = (sweep: SweepState, angle: Angle): Well | null =>
+  wellsOf(sweep).find((well) => well.angle === angle) ?? null;
+
+function putWell(sweep: SweepState, well: Well): SweepState {
+  return { ...sweep, wells: { ...sweep.wells, [well.key]: well } };
+}
+
+/**
+ * Whether the record and the well disagree about which way this angle was
+ * turned. The two temple wells always sit on opposite sides of the ring —
+ * a head has two temples — so a baseline whose own two photographs point
+ * the same way puts one well against the record it came from.
+ */
+function contradicts(state: ScanState, sweep: SweepState, well: Well): boolean {
+  if (sweep.signFlipped || well.key === 'front') return false;
+  const baseline = state.baselineSign[well.angle];
+  if (baseline === undefined) return false;
+  return Math.sign(well.target.yaw) !== baseline;
+}
+
+/** The turn's cue, in the order that makes the next correction possible. */
+function sweepCue(input: {
+  framing: ReturnType<typeof framingOf>;
+  pose: Pose;
+  signCue: SweepCue | null;
+  live: Well | null;
+  steady: boolean;
+  facePace: number;
+  segment: number;
+  sweep: SweepState;
+  closed: boolean;
+}): SweepCue {
+  const { framing, pose, live, sweep } = input;
+
+  if (framing.size === 'far') return 'closer';
+  if (framing.size === 'near') return 'back';
+  if (!framing.centred) return 'centre';
+  if (Math.abs(pose.pitch) > DWELL_PITCH_MAX) return 'chinLevel';
+  if (Math.abs(pose.roll) > DWELL_ROLL_MAX) return 'headLevel';
+  if (input.signCue) return input.signCue;
+  // "Hold still" while asking somebody to turn is a contradiction, so a
+  // well that is live but shaking asks for a pause instead.
+  if (live) return input.steady ? 'hold' : 'pause';
+  if (input.facePace >= SWEEP_STILL_PACE * 2 && input.segment < SEGMENT_DWELL_MS / 2) return 'slower';
+
+  if (sweep.step === 'finishing') {
+    if (!wellsResolved(sweep)) {
+      return sweep.wells.front.status === 'open' ? 'wellFront' : 'wellSide';
+    }
+    if (!input.closed) return 'gaps';
+  }
+  return 'sweepStart';
+}
+
+/**
+ * The turn is over: mark what it never reached, and hand the rest to the
+ * walk exactly as it stands.
+ *
+ * A temple it could not get is left for next time — `missingAngles` and
+ * the Home card already ask for it. The front is different: the report is
+ * built from the front photograph, so rather than inventing an escape the
+ * turn hands the front alone back to the one-at-a-time phase, with the
+ * shutter offered.
+ */
+function finishSweep(state: ScanState, sweep: SweepState, effects: Effect[], now: number): Result {
+  let wells = sweep.wells;
+  const skipped = [...state.skipped];
+
+  for (const key of WELL_KEYS) {
+    const well = wells[key];
+    if (well.status !== 'open') continue;
+    if (well.angle === 'front') continue;
+    wells = { ...wells, [key]: { ...well, status: 'abandoned' } };
+    if (state.order.includes(well.angle) && !state.shots[well.angle] && !skipped.includes(well.angle)) {
+      skipped.push(well.angle);
+    }
+  }
+
+  const next: ScanState = {
+    ...state,
+    skipped,
+    sweep: {
+      ...sweep,
+      wells,
+      finished: true,
+      settleSince: null,
+      settleWell: null,
+      settleCost: null,
+    },
+  };
+
+  const index = next.order.findIndex(
+    (angle) => !next.shots[angle] && !next.skipped.includes(angle),
+  );
+
+  /*
+    Nothing is left, so the end of the whole set is the walk's to
+    declare. The turn does not fire the completion itself: that haptic
+    belongs to `advance`, and a turn with its own copy of it would sound
+    twice in any session where the held shots were still to come.
+  */
+  if (index === -1) {
+    const done = advance({ ...next, index: -1 }, now);
+    return { state: done.state, effects: [...effects, ...done.effects] };
+  }
+
+  const phase = phaseFor(next, next.order[index], now);
+  return {
+    state: {
+      ...next,
+      index,
+      phase: phase.kind === 'tracked' ? { ...phase, manualHint: true } : phase,
+    },
+    effects,
+  };
+}
+
+/**
+ * The clock the turn's own timers run on.
+ *
+ * The ring's clock starts when it opens, but the centre gate comes before
+ * that and can be sat in indefinitely — a person who cannot get the front
+ * photograph would otherwise be offered no shutter, no way to finish and
+ * no end at all, which is the one thing every other step of this screen
+ * is careful not to do. So the timers fall back to when the turn began.
+ */
+const sweepClock = (sweep: SweepState): number => sweep.openedAt ?? sweep.startedAt;
+
+/** The two ways a turn ends on its own: everything done, or time up. */
+function maybeFinish(
+  state: ScanState,
+  sweep: SweepState,
+  effects: Effect[],
+  now: number,
+): Result | null {
+  if (sweep.finished) return null;
+  const resolved = wellsResolved(sweep);
+  const closed = ringClosed(sweep.segments);
+
+  if (now - sweepClock(sweep) >= SWEEP_MAX_MS) {
+    return finishSweep(state, sweep, effects, now);
+  }
+  if (sweep.step !== 'finishing' || !resolved) return null;
+  if (closed) return finishSweep(state, sweep, effects, now);
+  if (sweep.finishingSince !== null && now - sweep.finishingSince >= SWEEP_GRACE_MS) {
+    return finishSweep(state, sweep, effects, now);
+  }
+  return null;
+}
+
+/** The last step of every face event: name it, move the step on, or end. */
+function settleSweep(
+  state: ScanState,
+  sweep: SweepState,
+  cue: SweepCue,
+  effects: Effect[],
+  now: number,
+): Result {
+  let next = sweep;
+
+  /*
+    A pause that never ends is the same tiring arm the walk already knows
+    about, and the same sentence answers it.
+  */
+  let spoken = cue;
+  let stillSince = sweep.stillSince;
+  if (cue === 'pause') {
+    if (stillSince === null) stillSince = now;
+    else if (now - stillSince >= STUCK_STILL_MS) spoken = 'brace';
+  } else {
+    stillSince = null;
+  }
+  next = { ...next, stillSince, cue: spoken };
+
+  if (next.step === 'turning' && (wellsResolved(next) || ringClosed(next.segments))) {
+    next = { ...next, step: 'finishing', finishingSince: now };
+  }
+
+  const out = [...effects];
+  if (spoken !== sweep.cue) out.push({ type: 'announce', text: cueText(spoken) });
+
+  return maybeFinish(state, next, out, now) ?? { state: { ...state, sweep: next }, effects: out };
+}
+
+/**
+ * The centre gate. The ring is inert, nothing accrues, and the only live
+ * target is the front — gated exactly as the walk gates a tracked angle,
+ * because a deliberate pause is exactly what is being asked for here.
+ */
+function sweepCentre(
+  state: ScanState,
+  sweep: SweepState,
+  event: Extract<Event, { type: 'face' }>,
+): Result {
+  if (!state.tracking) return { state, effects: NO_EFFECTS };
+
+  const now = event.now;
+  const front = sweep.wells.front;
+  const face = event.face;
+
+  let cue: SweepCue = face
+    ? poseCue({
+        face,
+        target: event.target,
+        angle: front.angle,
+        sign: state.sign,
+        baselineSign: state.baselineSign[front.angle],
+        phoneMoving: event.phoneMoving,
+        phoneSteady: event.phoneSteady,
+        facePace: event.facePace,
+      })
+    : 'searching';
+
+  let stillSince = sweep.stillSince;
+  if (cue === 'still') {
+    if (stillSince === null) stillSince = now;
+    else if (now - stillSince >= STUCK_STILL_MS) cue = 'brace';
+  } else {
+    stillSince = null;
+  }
+
+  const effects: Effect[] = [];
+  let holdSince = sweep.holdSince;
+  if (cue === 'hold') {
+    if (holdSince === null) {
+      holdSince = now;
+      effects.push({ type: 'haptic', kind: 'holdStart' });
+    }
+  } else {
+    holdSince = null;
+  }
+
+  if (cue !== sweep.cue) effects.push({ type: 'announce', text: cueText(cue) });
+
+  const next: SweepState = {
+    ...sweep,
+    cue,
+    stillSince,
+    holdSince,
+    lastFaceAt: now,
+    lastPose: face ? poseOf(face) : sweep.lastPose,
+    phoneStillSince: event.phoneMoving ? null : (sweep.phoneStillSince ?? now),
+  };
+
+  if (face && holdSince !== null && now - holdSince >= HOLD_MS) {
+    const pose = poseOf(face);
+    effects.push(
+      { type: 'capture', angle: front.angle, pose },
+      { type: 'haptic', kind: 'captured' },
+    );
+    return {
+      state: {
+        ...state,
+        sweep: { ...next, holdSince: null, shutters: next.shutters + 1 },
+        phase: { kind: 'capturing', angle: front.angle },
+      },
+      effects,
+    };
+  }
+
+  return { state: { ...state, sweep: next }, effects };
+}
+
+/** The turn itself: dwell, the wells, the motion gate, the shutter. */
+function sweepTurn(
+  state: ScanState,
+  sweep: SweepState,
+  event: Extract<Event, { type: 'face' }>,
+): Result {
+  if (!state.tracking) return { state, effects: NO_EFFECTS };
+
+  const now = event.now;
+  const face = event.face;
+  const effects: Effect[] = [];
+
+  if (!face) {
+    const lost: SweepState = {
+      ...sweep,
+      lastFaceAt: now,
+      yawWindow: [],
+      settleSince: null,
+      settleWell: null,
+      settleCost: null,
+    };
+    return settleSweep(state, lost, 'searching', effects, now);
+  }
+
+  const pose = poseOf(face);
+  const framing = framingOf(face, event.target, 'front');
+
+  /* 1. Dwell, which is monotonic and never decays. */
+  const dwell = accrueDwell(sweep.segments, {
+    face,
+    target: event.target,
+    now,
+    lastFaceAt: sweep.lastFaceAt,
+    running: true,
+  });
+
+  const filled = [...sweep.filled];
+  if (dwell.index !== null && !filled[dwell.index] && isFull(dwell.segments[dwell.index])) {
+    filled[dwell.index] = true;
+    effects.push({ type: 'haptic', kind: 'segment' });
+  }
+
+  /* 2. The cursor, with the hysteresis that keeps it off the boundary. */
+  const cursor = dispatchSegment({
+    theta: theta(face.yaw),
+    current: sweep.current,
+    currentF: sweep.currentF,
+  });
+
+  let next: SweepState = {
+    ...sweep,
+    segments: dwell.segments,
+    filled,
+    current: cursor.current,
+    currentF: cursor.currentF,
+    yawWindow: pushYaw(sweep.yawWindow, face.yaw),
+    phoneStillSince: event.phoneMoving ? null : (sweep.phoneStillSince ?? now),
+    lastFaceAt: now,
+    lastPose: pose,
+  };
+
+  /* 3. Which well this frame could fill, if any. At most one ever can. */
+  const candidates = wellsOf(next).filter(
+    (well) =>
+      well.status === 'open' ||
+      (well.status === 'taken' && well.reopens === 0 && well.cost !== null && well.cost > REOPEN_POSE_COST),
+  );
+  const found = openWellFor({ wells: candidates, face, target: event.target });
+  let live = found ? next.wells[found.key] : null;
+  let signCue: SweepCue | null = null;
+
+  if (live && contradicts(state, next, live)) {
+    /*
+      The record says this angle was turned the other way. Refuse the
+      photograph rather than file it under a label the record disputes —
+      and if the head keeps coming back here, believe the head.
+    */
+    const contra = next.contra + 1;
+    live = null;
+    if (contra >= CONTRA_FRAMES) {
+      /*
+        The head keeps coming back to the well the record disputes, so
+        the record is what gives way — about that well, and only about
+        that well. Nothing moves: the other temple's photograph agreed
+        with the record it came from, and shifting it to the opposite
+        side of the head to keep the disputed one company would break
+        the one comparison that was still sound.
+      */
+      next = { ...next, signFlipped: true, contra: 0 };
+    } else {
+      next = { ...next, contra };
+      signCue = 'matchBaseline';
+    }
+  } else if (!live) {
+    const magnitude = Math.abs(pose.yaw);
+    const temples = wellsOf(next).filter((well) => well.key !== 'front');
+    if (magnitude >= BAND.temple.yawMin && magnitude <= BAND.temple.yawMax) {
+      const side = pose.yaw < 0 ? -1 : 1;
+      const owner = temples.find((well) => Math.sign(well.target.yaw) === side);
+      if (owner && owner.status !== 'open' && temples.some((well) => well.status === 'open')) {
+        signCue = 'otherWay';
+      }
+    }
+  }
+
+  /* 4. The motion gate, then the settle it opens. */
+  const steady = motionSteady({
+    yawWindow: next.yawWindow,
+    facePace: event.facePace,
+    phoneStillSince: next.phoneStillSince,
+    motionAvailable: state.motionAvailable,
+    now,
+  });
+
+  const cost = live ? poseCost(pose, live) : null;
+  let fire: Well | null = null;
+
+  if (live && cost !== null && steady) {
+    if (next.settleWell !== live.key || next.settleSince === null) {
+      next = { ...next, settleSince: now, settleWell: live.key, settleCost: null };
+      effects.push({ type: 'haptic', kind: 'holdStart' });
+    }
+    const ready = settleReady({
+      settleSince: next.settleSince,
+      now,
+      cost,
+      lastCost: next.settleCost,
+    });
+    // A well that is already taken only re-opens for a better pass.
+    const better = live.status === 'open' || (live.cost !== null && cost < live.cost);
+    if (ready && better && next.shutters < SWEEP_MAX_SHOTS) fire = live;
+    next = { ...next, settleCost: cost };
+  } else {
+    next = { ...next, settleSince: null, settleWell: null, settleCost: null };
+  }
+
+  const cue = sweepCue({
+    framing,
+    pose,
+    signCue,
+    live,
+    steady,
+    facePace: event.facePace,
+    segment: next.segments[cursor.current] ?? 0,
+    sweep: next,
+    closed: ringClosed(next.segments),
+  });
+
+  if (fire && cost !== null) {
+    /*
+      A well re-opened for a better pass keeps the photograph it already
+      has until the replacement is in hand. It is the rule the review's
+      retake follows — a shot that is cancelled or fails must lose
+      nothing — and the better frame is not a reason to break it. The
+      soft re-open is the one place a photograph is dropped with no
+      replacement, and only because that frame is known to be soft.
+    */
+    const retaken = fire.status === 'taken';
+
+    if (cue !== next.cue) effects.push({ type: 'announce', text: cueText(cue) });
+    effects.push(
+      { type: 'capture', angle: fire.angle, pose },
+      { type: 'haptic', kind: 'captured' },
+    );
+
+    return {
+      state: {
+        ...state,
+        sweep: putWell(
+          {
+            ...next,
+            cue,
+            stillSince: null,
+            shutters: next.shutters + 1,
+            settleSince: null,
+            settleWell: null,
+            settleCost: null,
+          },
+          // The second chance is spent here; the status and the cost are
+          // the landed photograph's to say, and it has not landed yet.
+          { ...fire, reopens: retaken ? 1 : fire.reopens },
+        ),
+        phase: { kind: 'capturing', angle: fire.angle },
+      },
+      effects,
+    };
+  }
+
+  return settleSweep(state, next, cue, effects, now);
+}
+
+const openWells = (sweep: SweepState): Well[] =>
+  wellsOf(sweep).filter((well) => well.status === 'open');
+
+/** The nearest of these wells to the cursor, which is the one being asked for. */
+function nearestWell(sweep: SweepState, wells: readonly Well[]): Well | null {
+  if (wells.length === 0) return null;
+  return wells.reduce((best, well) =>
+    segmentGap(fractional(theta(well.target.yaw)), sweep.currentF) <
+    segmentGap(fractional(theta(best.target.yaw)), sweep.currentF)
+      ? well
+      : best,
+  );
+}
+
+function reduceSweep(state: ScanState, sweep: SweepState, event: Event): Result {
+  switch (event.type) {
+    case 'face':
+      return sweep.step === 'centre'
+        ? sweepCentre(state, sweep, event)
+        : sweepTurn(state, sweep, event);
+
+    case 'motion': {
+      const phoneStillSince = event.moving ? null : (sweep.phoneStillSince ?? event.now);
+      return { state: { ...state, sweep: { ...sweep, phoneStillSince } }, effects: NO_EFFECTS };
+    }
+
+    case 'tick': {
+      const ended = maybeFinish(state, sweep, [], event.now);
+      if (ended) return ended;
+
+      const since = event.now - sweepClock(sweep);
+      const manualHint = sweep.manualHint || since >= SWEEP_HINT_MS;
+      const forcedOffer = sweep.forcedOffer || since >= SWEEP_FORCED_MS;
+      if (manualHint === sweep.manualHint && forcedOffer === sweep.forcedOffer) {
+        return { state, effects: NO_EFFECTS };
+      }
+      return {
+        state: { ...state, sweep: { ...sweep, manualHint, forcedOffer } },
+        effects: NO_EFFECTS,
+      };
+    }
+
+    case 'shutter': {
+      /*
+        The budget is a budget whoever spends it. The automatic gate and
+        a tapped shutter draw on the same five, so a turn cannot take a
+        sixth photograph by being asked for it by hand.
+      */
+      if (sweep.shutters >= SWEEP_MAX_SHOTS) return { state, effects: NO_EFFECTS };
+
+      const well =
+        sweep.step === 'centre' ? sweep.wells.front : nearestWell(sweep, openWells(sweep));
+      if (!well || well.status !== 'open') return { state, effects: NO_EFFECTS };
+      return {
+        state: {
+          ...state,
+          sweep: {
+            ...sweep,
+            shutters: sweep.shutters + 1,
+            settleSince: null,
+            settleWell: null,
+            settleCost: null,
+            holdSince: null,
+          },
+          phase: { kind: 'capturing', angle: well.angle },
+        },
+        effects: [{ type: 'capture', angle: well.angle, pose: sweep.lastPose ?? undefined }],
+      };
+    }
+
+    case 'skip': {
+      /*
+        The front is the one angle the turn may not give up on. The
+        report is built from the front photograph, so a turn asked to do
+        without it ends instead, and `finishSweep` hands the front alone
+        back to the one-at-a-time phase with the shutter offered — the
+        same exception a forced finish makes, rather than a second escape
+        that could quietly lose it. While the ring is still shut the
+        front is the only thing being asked for, so a skip there is that
+        request; once it is turning, a skip is about the side wells and
+        reaches the front only when nothing else is left open.
+      */
+      const open = openWells(sweep);
+      if (open.length === 0) return { state, effects: NO_EFFECTS };
+
+      const sides = open.filter((candidate) => candidate.angle !== 'front');
+      if (sweep.step === 'centre' || sides.length === 0) {
+        return finishSweep(state, sweep, [], event.now);
+      }
+
+      const well = nearestWell(sweep, sides);
+      if (!well) return { state, effects: NO_EFFECTS };
+
+      const skipped = state.order.includes(well.angle) && !state.skipped.includes(well.angle)
+        ? [...state.skipped, well.angle]
+        : state.skipped;
+      const next = putWell(sweep, { ...well, status: 'abandoned' });
+      /*
+        Giving up on the last open well is the end of the turn, whichever
+        step it happened in — but it still ends through `'finishing'`, so
+        the ring is given its grace to close rather than vanishing under
+        somebody's hand.
+      */
+      const stepped: SweepState = wellsResolved(next)
+        ? { ...next, step: 'finishing', finishingSince: event.now, openedAt: next.openedAt ?? event.now }
+        : next;
+
+      const skippedState = { ...state, skipped };
+      return (
+        maybeFinish(skippedState, stepped, [], event.now) ?? {
+          state: { ...skippedState, sweep: stepped },
+          effects: NO_EFFECTS,
+        }
+      );
+    }
+
+    default:
+      return { state, effects: NO_EFFECTS };
+  }
+}
+
+/**
+ * A photograph came back soft. One well may re-open once for it; a second
+ * soft frame is accepted as it is, because a soft photograph the report
+ * can honestly flag beats a missing angle.
+ */
+function reduceShotSoft(state: ScanState, event: Extract<Event, { type: 'shotSoft' }>): Result {
+  const sweep = state.sweep;
+  if (!sweep || sweep.finished) return { state, effects: NO_EFFECTS };
+
+  const well = wellFor(sweep, event.angle);
+  if (!well || well.status !== 'taken' || well.reopens !== 0) return { state, effects: NO_EFFECTS };
+
+  const shots = { ...state.shots };
+  delete shots[event.angle];
+
+  return {
+    state: {
+      ...state,
+      shots,
+      sweep: putWell({ ...sweep, cue: 'soft' }, { ...well, status: 'open', cost: null, reopens: 1 }),
+    },
+    effects: [{ type: 'announce', text: SCAN_COPY.sweep.cue.soft }],
+  };
+}
+
+/** The turn and the walk are chosen once, before any photograph exists. */
+function reduceMode(state: ScanState, event: Extract<Event, { type: 'mode' }>): Result {
+  if (Object.keys(state.shots).length > 0) return { state, effects: NO_EFFECTS };
+  if (event.mode === state.mode) return { state, effects: NO_EFFECTS };
+
+  if (event.mode === 'sweep') {
+    if (!sweepAvailable(state)) return { state, effects: NO_EFFECTS };
+    return { state: asSweep(state, event.now), effects: NO_EFFECTS };
+  }
+
+  return {
+    state: {
+      ...state,
+      mode: 'walk',
+      sweep: null,
+      index: 0,
+      phase: phaseFor(state, state.order[0], event.now),
+    },
+    effects: NO_EFFECTS,
+  };
+}
+
 /* --------------------------- the transitions --------------------------- */
 
 /** On to the next angle, back to review after a retake, or done. */
@@ -323,7 +1221,38 @@ function advance(state: ScanState, now: number): Result {
     return { state: { ...state, returnToReview: false, phase: { kind: 'review' } }, effects: [] };
   }
 
-  const index = state.index + 1;
+  /*
+    A turn that is still running gets its phase back after a photograph,
+    rather than the walk stepping to the next angle underneath it. The
+    front landing is also where the ring opens: it is the first moment the
+    person has done something the ring can report.
+  */
+  if (state.sweep && !state.sweep.finished) {
+    const sweep = state.sweep;
+    const opened =
+      sweep.step === 'centre' && sweep.wells.front.status === 'taken'
+        ? {
+            ...sweep,
+            step: 'turning' as const,
+            openedAt: now,
+            lastFaceAt: null,
+            holdSince: null,
+            stillSince: null,
+            cue: 'sweepStart' as SweepCue,
+          }
+        : sweep;
+    return { state: { ...state, sweep: opened, phase: { kind: 'sweep' } }, effects: [] };
+  }
+
+  let index = state.index + 1;
+  // An angle the turn already took, or gave up on, is not walked again.
+  while (
+    index < state.order.length &&
+    (state.shots[state.order[index]] || state.skipped.includes(state.order[index]))
+  ) {
+    index += 1;
+  }
+
   if (index < state.order.length) {
     return { state: { ...state, index, phase: phaseFor(state, state.order[index], now) }, effects: [] };
   }
@@ -500,30 +1429,69 @@ function reduceCapturing(
         sign = Math.sign(event.pose.yaw) as 1 | -1;
       }
 
+      const turning = state.sweep !== null && !state.sweep.finished;
+      const well = state.sweep ? wellFor(state.sweep, angle) : null;
+      /*
+        The well's cost is the cost of the photograph actually in hand,
+        so it is written here rather than when the shutter was asked
+        for: a shot that never arrived has no pose and no cost, and a
+        well that recorded one would be describing a photograph that
+        does not exist.
+      */
+      const sweep =
+        turning && state.sweep && well
+          ? putWell(state.sweep, {
+              ...well,
+              status: 'taken',
+              cost: event.pose ? poseCost(event.pose, well) : well.cost,
+            })
+          : state.sweep;
+
+      /*
+        Three per-angle confirmations can land inside a second during a
+        turn, so the turn counts instead. The per-angle lines stay for the
+        held shots and for the walk, where there is one angle at a time to
+        be about.
+      */
+      const text = turning
+        ? SCAN_COPY.sweep.saved(Object.keys(shots).length, state.order.length)
+        : SCAN_COPY.captured[angle];
+
       return {
         state: {
           ...state,
           shots,
           sign,
+          sweep,
           phase: {
             kind: 'flying',
             angle,
             uri: event.uri,
-            until: event.now + COOLDOWN_MS,
+            until: event.now + (turning ? SWEEP_COOLDOWN_MS : COOLDOWN_MS),
             landed: false,
           },
         },
-        effects: [{ type: 'announce', text: SCAN_COPY.captured[angle] }],
+        effects: [{ type: 'announce', text }],
       };
     }
 
     case 'shotFailed':
-    case 'cancelled':
-      // Nothing was taken: the hold and the steadiness start over.
+    case 'cancelled': {
+      /*
+        Nothing was taken: the hold and the steadiness start over. The
+        turn's wells are left exactly as they were, which is the point of
+        writing them only when a photograph lands — a well that was full
+        before the shutter is still full, holding the photograph it
+        already had, and one that was empty is still empty.
+      */
+      if (state.sweep && !state.sweep.finished) {
+        return { state: { ...state, phase: { kind: 'sweep' } }, effects: NO_EFFECTS };
+      }
       return {
         state: { ...state, phase: phaseFor(state, phase.angle, event.now) },
         effects: NO_EFFECTS,
       };
+    }
 
     default:
       return { state, effects: NO_EFFECTS };
@@ -617,8 +1585,31 @@ function reduceAnalysing(
 }
 
 export function reduce(state: ScanState, event: Event): Result {
+  /*
+    Three events are about the turn rather than about the phase it is
+    currently in: a photograph comes back soft while it is already flying
+    to the stack, the turn is finished from a button, and the mode is
+    chosen before anything has happened at all.
+  */
+  switch (event.type) {
+    case 'shotSoft':
+      return reduceShotSoft(state, event);
+    case 'finish':
+      return state.sweep && !state.sweep.finished
+        ? finishSweep(state, state.sweep, [], event.now)
+        : { state, effects: NO_EFFECTS };
+    case 'mode':
+      return reduceMode(state, event);
+    default:
+      break;
+  }
+
   const phase = state.phase;
   switch (phase.kind) {
+    case 'sweep':
+      return state.sweep
+        ? reduceSweep(state, state.sweep, event)
+        : { state, effects: NO_EFFECTS };
     case 'tracked':
       return reduceTracked(state, phase, event);
     case 'blind':

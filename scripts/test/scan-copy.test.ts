@@ -44,3 +44,37 @@ test('scan copy: nothing says before or after', () => {
     assert.ok(!/\b(before|after)\b/i.test(sentence), `"${sentence}" promises a comparison`);
   }
 });
+
+test('scan copy: only the sweep bodies behind hands-free promise a countdown', () => {
+  // The same rule the walk bodies keep: the countdown is only named by the
+  // body shown when the preference that arms it is on.
+  assert.ok(SCAN_COPY.intro.sweepBody.handsFree.includes('counts down'));
+  assert.ok(!SCAN_COPY.intro.sweepBody.manual.toLowerCase().includes('count'));
+
+  // And the turn never claims more than a front camera can reach: three
+  // angles out of the turn, the other two held.
+  const scope = SCAN_COPY.sweep.scope;
+  assert.ok(scope.includes('the front and the two sides'), scope);
+  assert.ok(/\btop\b/.test(scope) && /\bback\b/.test(scope), scope);
+  assert.ok(scope.includes('held shots'), scope);
+  for (const body of Object.values(SCAN_COPY.intro.sweepBody)) {
+    assert.ok(body.includes('held shots'), `"${body}" leaves the top and the back unexplained`);
+  }
+
+  // Everything added under intro.sweepBody and sweep is reached by the
+  // flattener, so the three tests above this one read it too.
+  const added = [
+    ...Object.values(SCAN_COPY.intro.sweepBody),
+    scope,
+    SCAN_COPY.sweep.altLink,
+    ...Object.values(SCAN_COPY.sweep.cue),
+    SCAN_COPY.sweep.saved(2, 5),
+    SCAN_COPY.sweep.closed,
+    SCAN_COPY.sweep.finish,
+  ];
+  for (const sentence of added) {
+    assert.ok(sentences.includes(sentence), `"${sentence}" never reached the sweep`);
+  }
+  const withoutSweep = sentences.filter((s) => !added.includes(s));
+  assert.ok(sentences.length > withoutSweep.length, 'the sweep group added nothing to the sweep');
+});
