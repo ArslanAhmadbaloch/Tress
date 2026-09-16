@@ -1,0 +1,75 @@
+[
+  {
+    "shot": "/private/tmp/claude-501/-Users-evan-Coding-Claude-Plugins/22ed36ae-c2a0-4018-a96f-ec1d7e8fef13/scratchpad/shots/52-guided-dev.png",
+    "out": "01-scan.png",
+    "line1": "Turn your head.",
+    "line2": "That's the whole scan.",
+    "sub": "",
+    "pull": null,
+    "float": null
+  },
+  {
+    "shot": "/private/tmp/claude-501/-Users-evan-Coding-Claude-Plugins/22ed36ae-c2a0-4018-a96f-ec1d7e8fef13/scratchpad/shots/21-scan-report.png",
+    "out": "02-reading.png",
+    "line1": "One photograph.",
+    "line2": "A reading you keep.",
+    "sub": "",
+    "pull": {
+      "x": 840,
+      "y": 1120,
+      "w": 300,
+      "h": 160,
+      "at": "right",
+      "scale": 1.7
+    },
+    "float": null
+  },
+  {
+    "shot": "/private/tmp/claude-501/-Users-evan-Coding-Claude-Plugins/22ed36ae-c2a0-4018-a96f-ec1d7e8fef13/scratchpad/shots/22-scan-report-2.png",
+    "out": "03-findings.png",
+    "line1": "What's going well.",
+    "line2": "What isn't.",
+    "sub": "",
+    "pull": null,
+    "float": null
+  },
+  {
+    "shot": "/private/tmp/claude-501/-Users-evan-Coding-Claude-Plugins/22ed36ae-c2a0-4018-a96f-ec1d7e8fef13/scratchpad/shots/42-ask-answer.png",
+    "out": "04-ask.png",
+    "line1": "Ask about",
+    "line2": "your own record.",
+    "sub": "",
+    "pull": {
+      "x": 60,
+      "y": 880,
+      "w": 1090,
+      "h": 330,
+      "at": "left",
+      "scale": 1.05
+    },
+    "float": null
+  },
+  {
+    "shot": "/private/tmp/claude-501/-Users-evan-Coding-Claude-Plugins/22ed36ae-c2a0-4018-a96f-ec1d7e8fef13/scratchpad/shots/46-scanner.png",
+    "out": "05-products.png",
+    "line1": "Scan a bottle.",
+    "line2": "See what's in it.",
+    "sub": "",
+    "pull": null,
+    "float": {
+      "image": "store/frames/assets/bottle.png",
+      "cx": 0.5,
+      "cy": 0.545,
+      "w": 1.02
+    }
+  },
+  {
+    "shot": "/private/tmp/claude-501/-Users-evan-Coding-Claude-Plugins/22ed36ae-c2a0-4018-a96f-ec1d7e8fef13/scratchpad/shots/27-home.png",
+    "out": "06-record.png",
+    "line1": "Your hair,",
+    "line2": "month by month.",
+    "sub": "",
+    "pull": null,
+    "float": null
+  }
+]
