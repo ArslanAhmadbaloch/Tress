@@ -79,7 +79,7 @@ function base(): AppData {
       startedAt: daysAgo(200).toISOString(),
       trackingAreas: ['crown'],
       motivations: [],
-      goal: 'fullness',
+      goals: ['fullness'],
       triggers: [],
       approaches: [],
       selfConsistency: 'onOff',
@@ -571,6 +571,53 @@ test('coach: echo isolation', () => {
     }
   }
   assert.ok(echoed > 0, 'the fixtures exercise the echo channel');
+});
+
+/* --------------------------------- goals ----------------------------------- */
+
+test('coach: every goal they gave is read back, and only what they gave', () => {
+  const one = ask('goals', FIXTURES.full);
+  assert.deepEqual(one.echo!.slice(0, 1), ['More fullness']);
+  assert.equal(one.echoLabel, 'Your goal and the areas you watch');
+
+  const several: AppData = {
+    ...FIXTURES.full,
+    journey: { ...FIXTURES.full.journey!, goals: ['fullness', 'shedding', 'routineWorking'] },
+  };
+  const many = ask('goals', several);
+  assert.deepEqual(many.echo!.slice(0, 3), [
+    'More fullness',
+    'Less shedding',
+    'Knowing whether my routine is working',
+  ]);
+  assert.equal(many.echoLabel, 'What you said you want and the areas you watch');
+  assert.ok(
+    !answerSentences(many).join(' ').includes('More fullness'),
+    'their words stay in the quotation, out of the sweep',
+  );
+});
+
+test('coach: a journey saved before the change still answers about its goal', () => {
+  // The blob on a phone that has not been through the loader yet, or a
+  // record the loader could not reach. The reader takes both shapes.
+  const legacy: AppData = {
+    ...FIXTURES.full,
+    journey: { ...FIXTURES.full.journey!, goals: undefined, goal: 'hairline' },
+  };
+  assert.deepEqual(ask('goals', legacy).echo!.slice(0, 1), ['A stronger-looking hairline']);
+});
+
+test('coach: a journey with no goal at all captions only what it has', () => {
+  // Nothing invented, and nothing left promising a goal above a list
+  // that has none.
+  const none: AppData = {
+    ...FIXTURES.full,
+    journey: { ...FIXTURES.full.journey!, goals: [], trackingAreas: [], approaches: [] },
+  };
+  const a = ask('goals', none);
+  assert.equal(a.echo, undefined);
+  assert.equal(a.echoLabel, undefined);
+  assert.match(a.headline, /What you said you wanted/);
 });
 
 /* -------------------------------- compare ---------------------------------- */

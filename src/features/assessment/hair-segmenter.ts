@@ -55,6 +55,19 @@ function inputSide(model: TensorflowModel): number {
   return shape.length >= 3 ? shape[1] : 512;
 }
 
+/**
+ * Channels per pixel the loaded model expects, from its own tensor shape.
+ *
+ * Read rather than assumed, for the same reason the side is: swapping the
+ * model file should not silently change what the interpreter is fed. This
+ * one matters more than the side, because a wrong side throws and a wrong
+ * channel count does not — see the note on `inputTensor`.
+ */
+function inputChannels(model: TensorflowModel): number {
+  const shape = model.inputs[0]?.shape ?? [];
+  return shape.length >= 4 ? shape[3] : 4;
+}
+
 function base64ToBytes(base64: string): Uint8Array {
   const binary = globalThis.atob(base64);
   const out = new Uint8Array(binary.length);
@@ -62,8 +75,31 @@ function base64ToBytes(base64: string): Uint8Array {
   return out;
 }
 
-/** Decodes a photo to the model's input tensor: RGB, 0–1, square. */
-async function inputTensor(uri: string, side: number): Promise<Float32Array | null> {
+/**
+ * Decodes a photo to the model's input tensor: RGBA, 0–1, square.
+ *
+ * The fourth channel is not padding and not alpha. MediaPipe's hair
+ * segmenter is a video model: its fourth input plane is the mask it
+ * produced for the previous frame, which is how it stays steady from one
+ * frame to the next. A still photograph has no previous frame, so the
+ * plane is zeroed — the documented way to run it on a single image.
+ *
+ * It has to be there at all because the interpreter checks the byte
+ * count and nothing else. An earlier version of this function wrote only
+ * three channels; TfLiteTensorCopyFromBuffer then returned an error,
+ * copied nothing, and react-native-fast-tflite discarded that status
+ * (node_modules/react-native-fast-tflite/cpp/HybridTfliteModel.cpp:98).
+ * The model ran anyway — on whatever was left in the input tensor, which
+ * is zeros on the first call of a process and the PREVIOUS PHOTOGRAPH on
+ * the second through fifth of a five-angle session. Nothing threw, and
+ * the coverage figure that came back looked entirely reasonable. Keep
+ * the length in step with the model or the readings are fiction.
+ */
+async function inputTensor(
+  uri: string,
+  side: number,
+  channels: number,
+): Promise<Float32Array | null> {
   try {
     const context = ImageManipulator.manipulate(uri).resize({ width: side, height: side });
     const rendered = await context.renderAsync();
@@ -76,11 +112,13 @@ async function inputTensor(uri: string, side: number): Promise<Float32Array | nu
     FileSystem.deleteAsync(saved.uri, { idempotent: true }).catch(() => undefined);
 
     const pixels = side * side;
-    const tensor = new Float32Array(pixels * 3);
-    for (let p = 0, i = 0, o = 0; p < pixels; p += 1, i += 4, o += 3) {
+    const tensor = new Float32Array(pixels * channels);
+    for (let p = 0, i = 0, o = 0; p < pixels; p += 1, i += 4, o += channels) {
       tensor[o] = raw.data[i] / 255;
       tensor[o + 1] = raw.data[i + 1] / 255;
       tensor[o + 2] = raw.data[i + 2] / 255;
+      // Any plane beyond RGB is left at zero: for this model that is the
+      // previous frame's mask, which a still photograph does not have.
     }
     return tensor;
   } catch {
@@ -99,9 +137,20 @@ export async function measureCoverage(uri: string): Promise<Coverage | null> {
   try {
     const model = await segmenter();
     const side = inputSide(model);
+    const channels = inputChannels(model);
 
-    const input = await inputTensor(uri, side);
+    const input = await inputTensor(uri, side, channels);
     if (!input) return null;
+
+    /*
+      The interpreter will not tell us if this is wrong. A buffer whose
+      byte count does not match the tensor is refused by TFLite and the
+      refusal is discarded upstream, so the model then runs on stale
+      memory and returns a reading of nothing. Better to return null and
+      show no figure than to show a confident wrong one.
+    */
+    const expected = side * side * channels;
+    if (input.length !== expected) return null;
 
     const [out] = await model.run([input.buffer as ArrayBuffer]);
     const output = new Float32Array(out);

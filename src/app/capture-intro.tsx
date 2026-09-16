@@ -49,6 +49,20 @@ const CONDITIONS = [
   'Dry hair, styled as you normally wear it',
 ];
 
+/*
+ * This is the record door.
+ *
+ * The centre button now asks which of two things somebody came for, and
+ * the answer decides what they are left holding: the scan ends in a
+ * reading, and this ends in a set of photographs saved beside last
+ * month's. Every route out of here therefore reaches the camera with no
+ * `mode` parameter at all — its absence is what says "record", and the
+ * capture screen reads it exactly that way, taking the angles one at a
+ * time as it always has. Do not add one. Passing `mode` here, even
+ * `walk`, would send a photo set to the report instead of to the
+ * session it belongs to.
+ */
+
 /** Photo diameter of an angle in the orbit, and its ring. */
 const SAT = 60;
 const SAT_RING = SAT + 8;

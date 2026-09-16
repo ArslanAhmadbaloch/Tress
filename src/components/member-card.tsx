@@ -71,7 +71,14 @@ export type MemberCardProps = {
   name: string;
   /** Optional, asked at the end of the funnel. Takes the line under the name. */
   age?: number;
-  /** The goal they chose at onboarding. Stands in when there is no age. */
+  /**
+   * What they said they are hoping for, already summarised to fit.
+   *
+   * Shown WITH the age rather than instead of it. An earlier version
+   * fell back to this only when there was no age, which meant almost
+   * nobody ever saw it — age is asked for on the same screen and most
+   * people answer it.
+   */
   goalLabel?: string;
   /** Their chosen picture, from photos they captured here. */
   portraitUri?: string;
@@ -206,7 +213,7 @@ export function MemberCard({
                   color: colors.textSecondary,
                   marginTop: u(3),
                 }}>
-                {age ? `${age} years old` : goalLabel}
+                {[age ? `${age}` : null, goalLabel].filter(Boolean).join(' · ')}
               </Text>
             ) : null}
 

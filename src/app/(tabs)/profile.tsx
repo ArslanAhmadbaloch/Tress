@@ -18,7 +18,7 @@ import { useAppStore } from '@/store/app-store';
 import { useAppLock } from '@/store/lock-provider';
 import { consistencyScore } from '@/store/selectors';
 import { useTheme } from '@/theme';
-import { HAIR_GOAL_LABELS } from '@/types/domain';
+import { goalSummary, journeyGoals } from '@/types/domain';
 
 /** Diameter of the filled well each row's icon sits in. */
 const ROW_WELL = 36;
@@ -88,7 +88,7 @@ export default function ProfileScreen() {
           <CardFloat>
             <MemberCard
               name={name}
-              goalLabel={HAIR_GOAL_LABELS[journey.goal]}
+              goalLabel={goalSummary(journeyGoals(journey))}
               portraitUri={data.profile?.avatarUri}
               age={data.profile?.age}
               startedAt={journey.startedAt}

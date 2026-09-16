@@ -88,6 +88,7 @@ import { previousPhotoForAngle } from '@/features/capture/previous-photo';
 import { SCAN_COPY } from '@/features/capture/scan-copy';
 import {
   SEGMENT_HAPTIC_MS,
+  SWEEP_SEGMENTS,
   fillOf,
   lagFills,
   ringClosed,
@@ -113,6 +114,17 @@ import {
 } from '@/types/domain';
 
 const SHUTTER_SIZE = 78;
+
+/**
+ * A small display-only frame the camera handed back before the
+ * photograph itself was through the pipeline.
+ *
+ * It is never the photograph. Nothing stores it, measures it, or puts it
+ * beside last month — it exists so the frame can leave for the pile at
+ * the moment the shutter is felt rather than half a second later, and
+ * the file behind it is deleted the moment it stops being shown.
+ */
+type EarlyFrame = { angle: Angle; uri: string; release: () => void };
 
 /**
  * The weight of the guide ring's track.
@@ -240,7 +252,44 @@ function visibleKey(state: ScanState): string {
     state.index,
     Object.keys(state.shots).length,
     phase.kind === 'analysing' ? `${phase.done}/${phase.label}` : '',
+    state.sweep ? sweepKey(state.sweep) : '',
   ].join('|');
+}
+
+/**
+ * The turn, reduced to what is drawn in React rather than in a shared
+ * value.
+ *
+ * Everything that moves at camera rate — the dwell in each arc, the
+ * cursor, the ring's answer to the head — is deliberately absent: those
+ * are written straight to the UI thread and a re-render of a screen
+ * carrying a live camera thirty times a second is not a price worth
+ * paying to move an arc. What is here is the handful of facts that change
+ * the words on screen or the shape of a control.
+ */
+function sweepKey(sweep: SweepState): string {
+  return [
+    sweep.step,
+    sweep.cue,
+    sweep.finished,
+    sweep.manualHint,
+    sweep.forcedOffer,
+    ringClosed(sweep.segments),
+    sweep.wells.front.status,
+    sweep.wells.templeA.status,
+    sweep.wells.templeB.status,
+  ].join(',');
+}
+
+/** The turn's own vocabulary, or the walk's where it borrows one. */
+function sweepCueText(cue: SweepCue): string {
+  return cue in SCAN_COPY.sweep.cue
+    ? SCAN_COPY.sweep.cue[cue as keyof typeof SCAN_COPY.sweep.cue]
+    : SCAN_COPY.cue[cue as keyof typeof SCAN_COPY.cue];
+}
+
+function clamp01(value: number): number {
+  return value < 0 ? 0 : value > 1 ? 1 : value;
 }
 
 /**
@@ -313,23 +362,50 @@ export default function CaptureSessionScreen() {
   const cameraRef = useRef<TrackedCameraHandle>(null);
 
   /*
-    Four ways in. The intro opens the full session at a chosen angle, and
+    Five ways in. The intro opens the full session at a chosen angle, and
     the reducer rotates the order so that angle is first and the rest
     follow, wrapping round. The funnel opens a single scan: one
     photograph, from the front, and straight to the report. Home's
     baseline card opens the rest of that scan: only the angles the
-    baseline lacks, saved into the baseline rather than beside it. And
+    baseline lacks, saved into the baseline rather than beside it.
     `manual=1` — the intro's "Can't turn your head?" link — forces the
     shutter to be the only way the camera fires, whatever the build can do.
+
+    And `mode` is what the centre button's chooser asks for: `sweep` for
+    one continuous turn, `walk` for the same angles one at a time.
+    Anything else, including nothing at all, is the walk — every route
+    that existed before the chooser did lands here without the parameter
+    and gets exactly the screen it always got.
   */
-  const { start, single, extend, manual } = useLocalSearchParams<{
+  const { start, single, extend, manual, mode } = useLocalSearchParams<{
     start?: string;
     single?: string;
     extend?: string;
     manual?: string;
+    mode?: string;
   }>();
   const singleMode = single === '1';
   const manualMode = manual === '1';
+  /*
+    Asked for, which is not the same as available. A turn needs a build
+    that reports faces and a person who is not reading the screen through
+    a screen reader, and neither is known on the first frame; both are
+    answered later, through `syncMode`.
+  */
+  const sweepAsked = mode === 'sweep' && !singleMode && !manualMode;
+  /*
+    Which of the two doors this came through, and so what the person is
+    left holding at the end.
+
+    The chooser sends a `mode` on both of its scan routes and none at all
+    on the record route, which makes the parameter's presence the signal
+    rather than its value — a turn and a one-at-a-time scan are two ways
+    through the same door and both end in a reading, while a set of
+    photographs ends in the session it belongs to, beside last month's.
+    Every route that predates the chooser sends no `mode`, and every one
+    of them was a record route.
+  */
+  const forReading = mode === 'sweep' || mode === 'walk';
 
   /*
     Decided once, as the screen opens. The rule is `sessionToExtend`'s,
@@ -407,6 +483,54 @@ export default function CaptureSessionScreen() {
     });
   }, [manualMode, patchScan]);
 
+  /* ------------------------------ mode ------------------------------ */
+
+  /** Whether a screen reader is running. Null until the platform answers. */
+  const screenReader = useRef<boolean | null>(null);
+
+  /**
+   * Chooses between the turn and the walk, from what is now known.
+   *
+   * It is called from callbacks rather than from an effect body on
+   * purpose — dispatching sets state, and a synchronous state set in an
+   * effect body is a lint error — and it is idempotent, so calling it
+   * again when nothing has changed costs one comparison. The reducer
+   * refuses the change once a photograph exists; this refuses it too,
+   * so the intent is stated in both places rather than relied on in one.
+   */
+  const syncMode = useCallback(() => {
+    const state = scanRef.current;
+    if (Object.keys(state.shots).length > 0) return;
+    /*
+      A continuous turn is a visual gesture with no honest non-visual
+      analogue, so with a screen reader running the walk is the default —
+      one finite, announced target at a time. It is a default and not a
+      lock: the chooser offers the walk to everybody at equal prominence,
+      and this is the same answer arrived at without anybody being asked.
+    */
+    const want = sweepAsked && screenReader.current === false && state.tracking;
+    const next = want ? 'sweep' : 'walk';
+    if (next === state.mode) return;
+    dispatch({ type: 'mode', mode: next, now: Date.now() });
+  }, [sweepAsked, dispatch]);
+
+  useEffect(() => {
+    let alive = true;
+    const answer = (on: boolean) => {
+      if (!alive) return;
+      screenReader.current = on;
+      syncMode();
+    };
+    // A platform that cannot answer is read as no screen reader rather
+    // than left unknown, or the turn would never be offered on it.
+    AccessibilityInfo.isScreenReaderEnabled().then(answer, () => answer(false));
+    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', answer);
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, [syncMode]);
+
   /**
    * Coverage readings in flight, by the frame they were taken from. The
    * measurement starts the moment a frame is shrunk, so by the time the
@@ -416,10 +540,24 @@ export default function CaptureSessionScreen() {
   const coverageByUri = useRef(new Map<string, Promise<PhotoCoverage | undefined>>());
   /** How the shutter fired for each angle, kept for the saved record. */
   const captureModeByAngle = useRef(new Map<Angle, Photo['capture']>());
-  /** The head's angles at the last face event, attached to the next shot. */
+  /**
+   * The head's angles at the last face event.
+   *
+   * A fallback only. The pose a photograph is recorded with travels on
+   * the capture effect, because the reducer knows the frame it decided
+   * on and this ref does not: it is frozen for the length of a capture
+   * only because `onFace` returns before writing it while the phase is
+   * `capturing`, and a screen that widened that guard by a word would
+   * start recording where the head ended up instead of where the
+   * photograph was taken, with nothing to catch it.
+   */
   const lastPose = useRef<Pose | null>(null);
+  /** When a face was last actually seen, so a blind angle knows it is alone. */
+  const lastFaceSeenAt = useRef<number | null>(null);
   /** True while a shutter tap is being reduced, so the record says so. */
   const viaShutter = useRef(false);
+  /** The last segment tick, so eight of them over ten seconds stay texture. */
+  const lastSegmentHaptic = useRef(0);
 
   /*
    * Self-timer. The top and back angles are shot blind — the screen faces
@@ -451,13 +589,54 @@ export default function CaptureSessionScreen() {
   const shutterScale = useSharedValue(1);
   const reduceMotion = useReducedMotion();
 
+  /**
+   * The frame currently on its way to the pile, when it is one the camera
+   * handed over early.
+   *
+   * Held here rather than read off the phase because it exists before the
+   * phase does: the point of it is that the flight starts at the shutter
+   * rather than when the file lands. `release` is the camera's own, and
+   * it is called when this is replaced or the screen closes — the file is
+   * ours, not the person's photograph, and three of them a turn left
+   * behind would be a slow leak with nobody's name on it.
+   */
+  const [flight, setFlight] = useState<EarlyFrame | null>(null);
+  const flightRef = useRef<EarlyFrame | null>(null);
+
+  /**
+   * Shows one early frame, and lets go of whatever was being shown.
+   *
+   * The letting go is done here rather than in an effect's cleanup
+   * because it deletes a file: a cleanup that ran for any reason other
+   * than the frame being replaced would delete one that is still on
+   * screen, and the flight would finish on a missing image.
+   */
+  const showFlight = useCallback((next: EarlyFrame | null) => {
+    const previous = flightRef.current;
+    if (previous === next) return;
+    flightRef.current = next;
+    previous?.release();
+    setFlight(next);
+  }, []);
+
+  // Whatever is still in hand when the screen closes. The camera would
+  // sweep it up on its own unmount; saying so here as well costs nothing
+  // and means the file's owner is the code that was showing it.
+  useEffect(
+    () => () => {
+      flightRef.current?.release();
+      flightRef.current = null;
+    },
+    [],
+  );
+
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.get() }));
   const shutterStyle = useAnimatedStyle(() => ({
     transform: [{ scale: shutterScale.get() }],
   }));
 
   const startCapture = useCallback(
-    async (target: Angle, via: NonNullable<Photo['capture']>) => {
+    async (target: Angle, via: NonNullable<Photo['capture']>, decided?: Pose) => {
       if (!cameraRef.current) return;
 
       if (!reduceMotion) {
@@ -481,8 +660,41 @@ export default function CaptureSessionScreen() {
       // rings again. No-ops under Reduce Motion.
       faceFrameRef.current?.pulse();
 
+      /*
+        The pose the reducer decided on, carried through the await as a
+        local. The ref behind it is the fallback for the one caller that
+        has none — a blind angle, where there is no face and no pose to
+        record either way.
+      */
+      const pose = decided ?? lastPose.current ?? undefined;
+
+      /*
+        Whatever the last shutter left behind goes now, before this one
+        can hand back a frame of its own. A retake that reached the same
+        angle would otherwise fly the previous photograph's stand-in down
+        the screen, and the temporary file behind it would be released
+        only when something else replaced it.
+      */
+      showFlight(null);
+
       try {
-        const photo = await cameraRef.current.takePhoto();
+        const photo = await cameraRef.current.takePhoto({
+          /*
+            Some devices can hand back a small display-ready frame before
+            the photograph itself is through the pipeline. Where they do,
+            the frame leaves for the pile at the moment the shutter is
+            felt rather than half a second later. It is never the
+            photograph: nothing stores it, measures it or compares it.
+          */
+          onPreview: (frame) => {
+            const phase = scanRef.current.phase;
+            if (phase.kind !== 'capturing' || phase.angle !== target) {
+              frame.release();
+              return;
+            }
+            showFlight({ angle: target, uri: frame.previewUri, release: frame.release });
+          },
+        });
         // Down to storage size before it touches state: what flies into
         // the pile and is reviewed is then the size it will be saved at,
         // not a full-resolution frame waiting to be resized later.
@@ -498,12 +710,28 @@ export default function CaptureSessionScreen() {
         // A frame from the simulator's stand-in camera is recorded as
         // one, so the record says what the pixels already show.
         captureModeByAngle.current.set(target, sampleCameraActive() ? 'sample' : via);
-        dispatch({
-          type: 'shot',
-          uri: small.uri,
-          pose: lastPose.current ?? undefined,
-          now: Date.now(),
-        });
+        dispatch({ type: 'shot', uri: small.uri, pose, now: Date.now() });
+
+        /*
+          A turn photographs a moving head, so it re-reads its own frame
+          for sharpness at a width where the answer means something —
+          the report's own note is taken at 64 pixels and is advice
+          rather than a gate. Paid during the cooldown, while the person
+          is already turning away, and never awaited: a measurement that
+          fails says nothing, and an angle is never lost over a number
+          that was never taken.
+        */
+        const sweeping = scanRef.current.sweep;
+        if (sweeping && !sweeping.finished) {
+          sharpnessAt(small.uri, SHARPNESS_WIDTH).then(
+            (sharpness) => {
+              if (isSoft(sharpness)) {
+                dispatch({ type: 'shotSoft', angle: target, now: Date.now() });
+              }
+            },
+            () => undefined,
+          );
+        }
       } catch {
         setConfirming(true);
         Alert.alert(
@@ -515,7 +743,7 @@ export default function CaptureSessionScreen() {
         dispatch({ type: 'shotFailed', now: Date.now() });
       }
     },
-    [reduceMotion, flash, shutterScale, dispatch],
+    [reduceMotion, flash, shutterScale, dispatch, showFlight],
   );
 
   const cancelCountdown = useCallback(() => {
@@ -532,7 +760,7 @@ export default function CaptureSessionScreen() {
    * one you started yourself — the only difference is what began it.
    */
   const runCountdown = useCallback(
-    (seconds: number, target: Angle) => {
+    (seconds: number, target: Angle, pose?: Pose) => {
       let remaining = seconds;
       const say = (n: number) => {
         setCountdown({ left: n, from: seconds });
@@ -560,7 +788,7 @@ export default function CaptureSessionScreen() {
           if (state.phase.kind !== 'capturing') {
             patchScan({ ...state, phase: { kind: 'capturing', angle: target } });
           }
-          startCapture(target, 'timer');
+          startCapture(target, 'timer', pose);
           return;
         }
         say(remaining);
@@ -629,13 +857,21 @@ export default function CaptureSessionScreen() {
       case 'capture': {
         const byHand = viaShutter.current;
         viaShutter.current = false;
-        // Somebody's own self-timer sits in front of their own tap, at
-        // every angle: it is the thing they set it for.
-        if (byHand && timer > 0) {
-          runCountdown(timer, effect.angle);
+        /*
+          Somebody's own self-timer sits in front of their own tap, at
+          every angle: it is the thing they set it for. Not inside a
+          turn, where its two controls are off the bar — a hidden setting
+          that still fires three seconds after the tap is a control
+          acting from somewhere nobody can see it — and where the shutter
+          is the override on a gesture that is already running.
+        */
+        const held = scanRef.current.sweep;
+        const inTurn = held !== null && !held.finished;
+        if (byHand && timer > 0 && !inTurn) {
+          runCountdown(timer, effect.angle, effect.pose);
           return;
         }
-        startCapture(effect.angle, byHand ? 'manual' : 'guided');
+        startCapture(effect.angle, byHand ? 'manual' : 'guided', effect.pose);
         return;
       }
       case 'countdown': {
@@ -648,7 +884,18 @@ export default function CaptureSessionScreen() {
         return;
       case 'haptic':
         if (effect.kind === 'holdStart') Haptics.selectionAsync().catch(() => undefined);
-        else if (effect.kind === 'captured')
+        else if (effect.kind === 'segment') {
+          /*
+            One tick per slice of the turn, and rationed: eight of them
+            over ten seconds should read as texture under the thumb, not
+            as a rattle. Dropped rather than queued — a tick that arrives
+            after the slice it was about is worse than no tick.
+          */
+          const now = Date.now();
+          if (now - lastSegmentHaptic.current < SEGMENT_HAPTIC_MS) return;
+          lastSegmentHaptic.current = now;
+          Haptics.selectionAsync().catch(() => undefined);
+        } else if (effect.kind === 'captured')
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
         else
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
@@ -722,18 +969,44 @@ export default function CaptureSessionScreen() {
   const lockValue = useSharedValue(0);
 
   /*
+    The turn's three live values, all written on the JS side at camera
+    rate and read on the UI thread, so a turn costs no re-renders.
+
+    `sweepFills` is the time held in each of the eight slices, already
+    lagged: the lag belongs in the writer and not in an animation,
+    because the value arrives eased and easing it twice puts the arc
+    behind the head it is reporting. `sweepCursor` is where the head is
+    on the ring, signed and never wrapped. `sweepLock` is how close this
+    is to a usable frame — the ring's own answer to the head, which says
+    nothing about the hair.
+  */
+  const sweepFills = useSharedValue<number[]>(Array.from({ length: SWEEP_SEGMENTS }, () => 0));
+  const sweepCursor = useSharedValue(0);
+  const sweepLock = useSharedValue(0);
+  /** A value nothing writes: the scrim sits still for the whole turn. */
+  const scrimPinned = useSharedValue(0);
+
+  /*
     Per-frame state lives in refs. Faces arrive at camera rate and most
     of them change nothing the person can see.
   */
   const lastFace = useRef<FaceObservation | null>(null);
   const missedFrames = useRef(0);
   const pace = useRef(0);
+  /** The fills as drawn, which trail the fills as measured by 65 ms. */
+  const shownFills = useRef<number[]>(Array.from({ length: SWEEP_SEGMENTS }, () => 0));
+  const lastLagAt = useRef<number | null>(null);
+  /** The last turn reading and its time, for the rate the ring answers to. */
+  const lastYaw = useRef<{ yaw: number; at: number } | null>(null);
+  const shownLock = useRef(0);
   const motionRef = useRef({ moving: false, steady: false, unavailable: true });
   useEffect(() => {
     motionRef.current = { moving, steady, unavailable: noMotionSensor };
   }, [moving, steady, noMotionSensor]);
   /** The last motion the reducer was told about, so only changes are sent. */
   const lastMotion = useRef({ moving: false, steady: false });
+  /** A flight that finished before its photograph did. */
+  const landedPending = useRef(false);
 
   /*
     The scan's own answer, not the camera's. `manual=1` forces tracking
@@ -742,7 +1015,21 @@ export default function CaptureSessionScreen() {
     promise on the screen somebody opened because they cannot turn their
     head.
   */
-  const trackingThisAngle = scan.tracking && framing && tracksFace(angle);
+  /* ------------------------------ the turn -------------------------- */
+
+  /** The turn as the screen is currently drawing it, or null for a walk. */
+  const sweep = scan.sweep;
+  /** True while one continuous turn is running, rather than a walk. */
+  const sweeping = scan.mode === 'sweep' && sweep !== null && !sweep.finished;
+  /** The live turn, which a finished one is not. */
+  const turning = sweeping ? sweep : null;
+
+  /*
+    A turn is tracking whichever angle it happens to be nearest: the
+    whole gesture is one target, and the ring answers the head for the
+    length of it.
+  */
+  const trackingThisAngle = scan.tracking && framing && (sweeping || tracksFace(angle));
 
   const onTrackingChanged = useCallback(
     (reporting: boolean) => {
@@ -750,30 +1037,117 @@ export default function CaptureSessionScreen() {
       // and the shots are a record of what happened, not a setting.
       if (Object.keys(scanRef.current.shots).length > 0) return;
       const next = !manualMode && reporting;
-      if (next === scanRef.current.tracking) return;
 
-      const patched: ScanState = { ...scanRef.current, tracking: next };
-      if (patched.phase.kind === 'tracked') {
-        patched.phase = {
-          ...patched.phase,
-          cue: next ? 'searching' : 'manual',
-          holdSince: null,
-          stillSince: null,
-          manualHint: !next,
-        };
+      if (next !== scanRef.current.tracking) {
+        const patched: ScanState = { ...scanRef.current, tracking: next };
+        if (patched.phase.kind === 'tracked') {
+          patched.phase = {
+            ...patched.phase,
+            cue: next ? 'searching' : 'manual',
+            holdSince: null,
+            stillSince: null,
+            manualHint: !next,
+          };
+        }
+        patchScan(patched);
       }
-      patchScan(patched);
+
+      /*
+        Whether faces will be reported at all is the other half of the
+        mode question, and this is where the answer arrives. A camera
+        that stops reporting mid-turn takes the turn with it: the walk is
+        the only thing that works without a detector, and it is what the
+        turn falls back to here.
+      */
+      syncMode();
     },
-    [manualMode, patchScan],
+    [manualMode, patchScan, syncMode],
+  );
+
+  /**
+   * The three values the turn's ring reads, written straight to the UI
+   * thread once the reducer has had the frame.
+   *
+   * Nothing here decides anything and nothing here is state: the whole
+   * point is that a head moving through a ring costs no re-render of a
+   * screen carrying a live camera.
+   */
+  const writeSweepValues = useCallback(
+    (sweep: SweepState, face: FaceObservation | null, now: number) => {
+      /*
+        The fill, lagged by 65 ms here in the writer. Under Reduce Motion
+        it steps rather than lags: the fill is the information, and a
+        person who asked for less movement still needs to read it.
+      */
+      const dt = lastLagAt.current === null ? 0 : Math.max(0, now - lastLagAt.current);
+      lastLagAt.current = now;
+      const measured = fillOf(sweep.segments);
+      const drawn =
+        reduceMotion || dt <= 0 ? measured : lagFills(shownFills.current, measured, dt);
+      shownFills.current = drawn;
+      sweepFills.modify((values) => {
+        'worklet';
+        for (let i = 0; i < values.length; i += 1) values[i] = drawn[i] ?? 0;
+        return values;
+      });
+
+      if (!face) {
+        lastYaw.current = null;
+        shownLock.current = 0;
+        sweepLock.set(0);
+        return;
+      }
+
+      const position = theta(face.yaw);
+      // Slightly longer than the gap between frames, so the cap never
+      // stalls between writes. θ is signed and never wraps, so there is
+      // no long way round for it to take.
+      sweepCursor.set(
+        reduceMotion
+          ? position
+          : withTiming(position, { duration: CURSOR_MS, easing: Easing.out(Easing.quad) }),
+      );
+
+      /*
+        The ring's edge warms on the worse of two readings: how close the
+        head is to sitting in the ring, and how still it is. It reaches
+        full exactly where a photograph becomes possible, which teaches
+        the micro-pause the turn depends on without a sentence for it.
+        During the centre gate there is nothing to be still for yet, so
+        it is the geometry alone, as it is everywhere else in the app.
+      */
+      const proximity = headProximity(face, target);
+      let level = proximity;
+      if (sweep.step !== 'centre') {
+        const previous = lastYaw.current;
+        const span = previous === null ? 0 : Math.max(1, now - previous.at);
+        const rate =
+          previous === null ? 0 : (Math.abs(face.yaw - previous.yaw) / span) * 1000;
+        const stillness = Math.min(
+          clamp01(1 - rate / LOCK_YAW_RATE),
+          clamp01(1 - pace.current / LOCK_PACE),
+        );
+        level = Math.min(proximity, stillness);
+      }
+      lastYaw.current = { yaw: face.yaw, at: now };
+      // Averaged rather than animated: the detector wobbles by a percent
+      // or two while a head sits still, and nothing should move unless
+      // the head does.
+      shownLock.current += (level - shownLock.current) * LOCK_SMOOTHING;
+      sweepLock.set(shownLock.current);
+    },
+    [reduceMotion, target, sweepFills, sweepCursor, sweepLock],
   );
 
   const onFace = useCallback(
     (seen: FaceObservation | null) => {
+      const now = Date.now();
       let face = seen;
       if (seen) {
         pace.current = lastFace.current ? facePace(lastFace.current, seen) : 0;
         lastFace.current = seen;
         missedFrames.current = 0;
+        lastFaceSeenAt.current = now;
       } else {
         // A single dropped frame is not a face leaving. Holding the last
         // sighting for a few frames keeps the ring from blinking.
@@ -783,8 +1157,15 @@ export default function CaptureSessionScreen() {
       }
 
       faceFrameRef.current?.update(face);
-      if (scanRef.current.phase.kind !== 'tracked') return;
+      const kind = scanRef.current.phase.kind;
+      if (kind !== 'tracked' && kind !== 'sweep') return;
 
+      /*
+        Written only in the two phases that are framing something, which
+        is what keeps it frozen for the length of a capture. Widening the
+        guard above by one word would make it follow the head through the
+        whole shutter chain and quietly record where it ended up.
+      */
       lastPose.current = face
         ? { yaw: face.yaw, pitch: face.pitch ?? 0, roll: face.roll ?? 0 }
         : null;
@@ -799,13 +1180,21 @@ export default function CaptureSessionScreen() {
         // stillness cannot be known, so the face's own has to do.
         phoneSteady: m.unavailable ? true : m.steady,
         facePace: pace.current,
-        now: Date.now(),
+        now,
       });
 
-      const next = scanRef.current.phase;
-      faceFrameRef.current?.setAligned(next.kind === 'tracked' && next.cue === 'hold');
+      const next = scanRef.current;
+      const sweep = next.sweep;
+      if (next.phase.kind === 'tracked') {
+        faceFrameRef.current?.setAligned(next.phase.cue === 'hold');
+      } else if (sweep && !sweep.finished) {
+        faceFrameRef.current?.setAligned(sweep.cue === 'hold');
+        writeSweepValues(sweep, face, now);
+      } else {
+        faceFrameRef.current?.setAligned(false);
+      }
     },
-    [target, dispatch],
+    [target, dispatch, writeSweepValues],
   );
 
   /* Tracking off — a blind angle, a paused camera — clears the guide. */
@@ -814,13 +1203,17 @@ export default function CaptureSessionScreen() {
     lastFace.current = null;
     missedFrames.current = 0;
     lastPose.current = null;
+    lastYaw.current = null;
+    lastLagAt.current = null;
+    shownLock.current = 0;
     faceFrameRef.current?.update(null);
     faceFrameRef.current?.setAligned(false);
     // The FaceFrame is unmounted by now, so the value it would have wound
     // down has to be put back by hand; otherwise the next angle's ring
     // opens at whatever the last head left it at.
     lockValue.set(0);
-  }, [trackingThisAngle, lockValue]);
+    sweepLock.set(0);
+  }, [trackingThisAngle, lockValue, sweepLock]);
 
   /*
     The clock. Motion reaches the reducer from here rather than from an
@@ -852,7 +1245,35 @@ export default function CaptureSessionScreen() {
         patchScan({ ...scanRef.current, motionAvailable: available });
       }
 
-      if (m.moving !== lastMotion.current.moving || m.steady !== lastMotion.current.steady) {
+      /*
+        A frame that left for the pile before its photograph did lands
+        while the reducer is still capturing, and the reducer has no case
+        for that — so the landing is held and delivered as soon as there
+        is a flight for it to end. Without this the flight would never
+        complete and the cooldown would never run out.
+      */
+      const held = scanRef.current.phase;
+      if (landedPending.current) {
+        if (held.kind === 'flying') {
+          landedPending.current = false;
+          if (!held.landed) dispatch({ type: 'landed', now });
+        } else if (held.kind !== 'capturing') {
+          landedPending.current = false;
+        }
+      }
+
+      /*
+        The phone's stillness is only news to a blind angle, and a blind
+        angle is one where the camera is pointed away from everybody. A
+        turn leaves the camera full of face and the phone already steady,
+        so nothing is reported until the face has actually gone.
+      */
+      const alone =
+        lastFaceSeenAt.current === null || now - lastFaceSeenAt.current >= FACE_GONE_MS;
+      if (
+        alone &&
+        (m.moving !== lastMotion.current.moving || m.steady !== lastMotion.current.steady)
+      ) {
         lastMotion.current = { moving: m.moving, steady: m.steady };
         dispatch({ type: 'motion', moving: m.moving, steady: m.steady, now });
       }
@@ -874,7 +1295,9 @@ export default function CaptureSessionScreen() {
   const holdValue = useSharedValue(0);
   const lastHold = useRef(0);
   useEffect(() => {
-    if (phase.kind !== 'tracked') {
+    // The turn runs the same hold, once, at the centre gate before it
+    // opens — so the arc is driven for that phase too.
+    if (phase.kind !== 'tracked' && phase.kind !== 'sweep') {
       if (lastHold.current !== 0) {
         lastHold.current = 0;
         holdValue.set(reduceMotion ? 0 : withTiming(0, { duration: 120 }));
@@ -897,11 +1320,65 @@ export default function CaptureSessionScreen() {
     return () => clearInterval(id);
   }, [phase.kind, holdValue, reduceMotion]);
 
-  const onLanded = useCallback(() => dispatch({ type: 'landed', now: Date.now() }), [dispatch]);
+  /*
+    The collapse. When the turn ends, the eight arcs and the five-angle
+    ring cross-fade over the same circle: the person watches a ring they
+    just closed become a set that is three fifths done, rather than one
+    ring vanishing and another arriving. Two opacities and no layout
+    animation — the two rings are mounted at radii that already agree.
+  */
+  const sweepFade = useSharedValue(0);
+  const ringFade = useSharedValue(1);
+  useEffect(() => {
+    const to = sweeping ? 1 : 0;
+    const ease = { duration: COLLAPSE_MS, easing: Easing.out(Easing.cubic) };
+    sweepFade.set(reduceMotion ? to : withTiming(to, ease));
+    ringFade.set(reduceMotion ? 1 - to : withTiming(1 - to, ease));
+  }, [sweeping, reduceMotion, sweepFade, ringFade]);
+
+  const sweepRingStyle = useAnimatedStyle(() => ({ opacity: sweepFade.get() }));
+  const fiveRingStyle = useAnimatedStyle(() => ({ opacity: ringFade.get() }));
+
+  /**
+   * The three marks on the ring: where each photograph is being asked
+   * for, and whether it has been taken.
+   *
+   * With a previous set to match they stand where those photographs were
+   * taken — the well targets are the baseline's own poses — so the turn
+   * is simply asked to pass through last month's three again.
+   */
+  const sweepMarks = useMemo<SweepMark[]>(() => {
+    if (!sweep) return [];
+    return [sweep.wells.front, sweep.wells.templeA, sweep.wells.templeB].map((well) => ({
+      key: well.key,
+      yaw: well.target.yaw,
+      state: well.status,
+    }));
+  }, [sweep]);
+
+  /*
+    Two beats, one each for two different facts: the ring opening when
+    the front photograph lands, and the ring closing when the last slice
+    fills. There is no third — what has been saved is the frame stack's
+    to report, and it already does.
+  */
+  const sweepBeat =
+    sweep === null || sweep.step === 'centre' ? 0 : ringClosed(sweep.segments) ? 2 : 1;
+
+  const onLanded = useCallback(() => {
+    if (scanRef.current.phase.kind !== 'flying') {
+      // The frame beat its own photograph down to the pile. The landing
+      // is kept and delivered by the clock, above.
+      landedPending.current = true;
+      return;
+    }
+    dispatch({ type: 'landed', now: Date.now() });
+  }, [dispatch]);
 
   /** True while the guide has a head to follow. */
-  const faceSeen =
-    phase.kind === 'tracked' && phase.cue !== 'searching' && phase.cue !== 'manual';
+  const faceSeen = turning
+    ? turning.cue !== 'searching' && turning.cue !== 'manual'
+    : phase.kind === 'tracked' && phase.cue !== 'searching' && phase.cue !== 'manual';
 
   /**
    * The instruction fades out the moment the phone is disturbed, or the
@@ -1054,13 +1531,16 @@ export default function CaptureSessionScreen() {
       dispatch({ type: 'saved' });
 
       /*
-        The very first set goes to the report rather than to the session
-        view, and so does every single scan. It is the moment somebody has
-        just produced a photograph and does not yet know what the app will
-        do with it. Everything else — every extend included — goes to the
-        session it belongs to.
+        The report is where a scan ends: it is what the person came
+        through that door for, and the chooser said so in words before
+        they chose. The very first set of all goes there too, whichever
+        door it came through — it is the moment somebody has just
+        produced a photograph and does not yet know what the app will do
+        with it — and so does every single scan. Everything else, a set
+        of photographs taken for the record included, goes to the session
+        it belongs to.
       */
-      if (session && (isFirstSession || singleMode)) {
+      if (session && (isFirstSession || singleMode || forReading)) {
         router.replace('/scan-report');
       } else if (session) {
         router.replace(`/session/${session.id}`);
@@ -1087,6 +1567,7 @@ export default function CaptureSessionScreen() {
     patchPhoto,
     router,
     singleMode,
+    forReading,
   ]);
 
   const confirmExit = useCallback(() => {
@@ -1299,19 +1780,42 @@ export default function CaptureSessionScreen() {
   const inRing =
     handsFreeHere && blindAngle ? SCAN_COPY.blind.instruction[angle] : guidance.instruction;
 
-  const overline = singleMode
-    ? ANGLE_LABELS[angle]
-    : `Angle ${scan.index + 1} of ${scan.order.length} · ${ANGLE_LABELS[angle]}`;
-  // Only the tracked cue. While a blind angle counts down, the line that
-  // says the shutter stops it sits under the digits — where the eye
-  // already is — and the same sentence in two places at once is not the
-  // same sentence said louder.
-  const headline = phase.kind === 'tracked' ? SCAN_COPY.cue[phase.cue] : '';
+  /*
+    A turn has no current angle to name — it is filling three at once —
+    so the line that counts them stands down and the ring does the
+    counting. The centre gate is the exception: at that moment the front
+    photograph is the only thing being asked for, and saying so is true.
+  */
+  const overline = turning
+    ? turning.step === 'centre'
+      ? ANGLE_LABELS.front
+      : ''
+    : singleMode
+      ? ANGLE_LABELS[angle]
+      : `Angle ${scan.index + 1} of ${scan.order.length} · ${ANGLE_LABELS[angle]}`;
+  // The tracked cue, or the turn's own. While a blind angle counts down,
+  // the line that says the shutter stops it sits under the digits — where
+  // the eye already is — and the same sentence in two places at once is
+  // not the same sentence said louder.
+  const headline = turning
+    ? sweepCueText(turning.cue)
+    : phase.kind === 'tracked'
+      ? SCAN_COPY.cue[phase.cue]
+      : '';
+  const holding = turning ? turning.cue === 'hold' : phase.kind === 'tracked' && phase.cue === 'hold';
   // The hint is for somebody who has been holding a pose and getting
   // nowhere. On a build with no detector the cue above already is the
   // shutter instruction, and saying it twice is not saying it louder.
-  const footnote =
-    phase.kind === 'tracked' && phase.manualHint && phase.cue !== 'manual'
+  // Under the turn it is joined by the sentence that says what one pass
+  // in front of a front-facing camera reaches — shown until the first
+  // photograph lands, by which time it has been read.
+  const footnote = turning
+    ? turning.manualHint
+      ? SCAN_COPY.manualHint
+      : shotCount === 0
+        ? SCAN_COPY.sweep.scope
+        : null
+    : phase.kind === 'tracked' && phase.manualHint && phase.cue !== 'manual'
       ? SCAN_COPY.manualHint
       : null;
   const skipLabel =
@@ -1320,6 +1824,13 @@ export default function CaptureSessionScreen() {
         ? SCAN_COPY.blind.skipCrown
         : SCAN_COPY.blind.skipTop
       : null;
+  /*
+    The way out of a turn that is not going anywhere. It keeps whatever
+    has been taken and hands the rest to the held shots — a temple it
+    never reached is simply missing, which the record and the Home card
+    already know how to ask for next time.
+  */
+  const finishLabel = turning?.forcedOffer ? SCAN_COPY.sweep.finish : null;
 
   /*
     What is on the pile, which is not the same as what has been taken.
@@ -1338,15 +1849,38 @@ export default function CaptureSessionScreen() {
     label: ANGLE_LABELS[a],
   }));
   /*
-    Where the frame in flight is headed: past the frames that come before
-    its angle in the capture order, so a retake flies back to the slot
-    that angle already holds rather than to the top of the pile.
+    The frame on its way to the pile, and the angle it belongs to.
+
+    Usually it is the photograph itself, from the moment the file lands.
+    Where the camera handed back an early display frame, the flight
+    started at the shutter instead and carries on through the photograph
+    arriving — the same component, the same key, so nothing restarts
+    halfway down. What the pile then shows is always the real file.
+  */
+  const flyingAngle =
+    flight && (phase.kind === 'capturing' || phase.kind === 'flying') && phase.angle === flight.angle
+      ? flight.angle
+      : phase.kind === 'flying'
+        ? phase.angle
+        : null;
+  const flyingUri =
+    flyingAngle === null
+      ? null
+      : flight && flight.angle === flyingAngle
+        ? flight.uri
+        : phase.kind === 'flying'
+          ? phase.uri
+          : null;
+  /*
+    Where it is headed: past the frames that come before its angle in the
+    capture order, so a retake flies back to the slot that angle already
+    holds rather than to the top of the pile.
   */
   const flyingIndex =
-    phase.kind === 'flying'
-      ? landedAngles.filter((a) => scan.order.indexOf(a) < scan.order.indexOf(phase.angle))
-          .length
-      : 0;
+    flyingAngle === null
+      ? 0
+      : landedAngles.filter((a) => scan.order.indexOf(a) < scan.order.indexOf(flyingAngle))
+          .length;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -1364,11 +1898,22 @@ export default function CaptureSessionScreen() {
         against last month's — and above the flash it would punch a bright
         disc through it at the moment of capture.
       */}
-      {trackingThisAngle ? <RingScrim target={target} lock={lockValue} /> : null}
+      {/* Through a turn the dimming sits still. A scrim that lifts and
+          falls on every pass of the head is noise, and the eye is on the
+          ring by then rather than on the room. */}
+      {trackingThisAngle ? (
+        <RingScrim target={target} lock={sweeping ? scrimPinned : lockValue} />
+      ) : null}
 
+      {/*
+        Off through a turn. The ghost is one previous photograph for one
+        current angle, and a turn has no current angle for it to be
+        about; the marks on the ring carry the same information, and they
+        carry it for all three at once.
+      */}
       <GhostOverlay
         uri={previous?.thumbnailUri ?? previous?.uri ?? null}
-        visible={ghostOn && previous !== null}
+        visible={ghostOn && previous !== null && !sweeping}
         label={SCAN_COPY.ghost.label(
           previous ? formatDateShort(previous.capturedAt) : '',
         )}
@@ -1417,18 +1962,59 @@ export default function CaptureSessionScreen() {
             right: 0,
             alignItems: 'center',
           }}>
-          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <CaptureRing
-              size={RING}
-              stroke={RING_STROKE}
-              total={scan.order.length}
-              done={shotCount}
-              current={scan.index}
-              hold={phase.kind === 'tracked' ? holdValue : null}
-              lock={trackingThisAngle ? lockValue : null}
-              pulse={armedSoon}
-              countdownProgress={countdown === null ? null : countdown.left / countdown.from}
-            />
+          {/*
+            Sized for the larger of the two rings, and pulled back up by
+            exactly the difference, so the five-angle ring's own circle
+            still lands where the FaceFrame and the scrim's hole are.
+            Without the room the turn's three marks sit just outside the
+            stroke, and Android would cut them off at the box.
+          */}
+          <View
+            style={{
+              width: RING + SWEEP_RING_INSET * 2,
+              height: RING + SWEEP_RING_INSET * 2,
+              marginTop: -SWEEP_RING_INSET,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+            <Animated.View style={fiveRingStyle}>
+              <CaptureRing
+                size={RING}
+                stroke={RING_STROKE}
+                total={scan.order.length}
+                done={shotCount}
+                current={scan.index}
+                hold={phase.kind === 'tracked' ? holdValue : null}
+                lock={trackingThisAngle ? lockValue : null}
+                pulse={armedSoon}
+                countdownProgress={countdown === null ? null : countdown.left / countdown.from}
+              />
+            </Animated.View>
+
+            {/*
+              The turn's own ring, mounted so its stroke lands on exactly
+              the circle the five-angle ring draws — that is what
+              SWEEP_RING_INSET is for, and it is why the collapse reads
+              as one circle becoming another rather than as two circles
+              swapping places.
+            */}
+            {sweep ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[{ position: 'absolute', left: 0, top: 0 }, sweepRingStyle]}>
+                <SweepRing
+                  size={RING + SWEEP_RING_INSET * 2}
+                  stroke={RING_STROKE}
+                  fills={sweepFills}
+                  cursor={faceSeen ? sweepCursor : null}
+                  hold={sweep.step === 'centre' ? holdValue : null}
+                  lock={trackingThisAngle ? sweepLock : null}
+                  step={sweep.step}
+                  marks={sweepMarks}
+                  beat={sweepBeat}
+                />
+              </Animated.View>
+            ) : null}
 
             {/*
               The instruction sits where the face goes, and leaves the
@@ -1505,10 +2091,10 @@ export default function CaptureSessionScreen() {
       ) : null}
 
       {/* The photograph that was just taken, on its way to the pile. */}
-      {phase.kind === 'flying' ? (
+      {flyingUri !== null ? (
         <FlyingFrame
-          key={phase.uri}
-          uri={phase.uri}
+          key={flyingUri}
+          uri={flyingUri}
           index={flyingIndex}
           slot={slot}
           onLanded={onLanded}
@@ -1575,7 +2161,7 @@ export default function CaptureSessionScreen() {
             is pointed away, so the widest pill on the bar would be a
             switch for something nobody can look at, on exactly the two
             angles where the bar is tightest. */}
-        {previous && !blindAngle ? (
+        {previous && !blindAngle && !sweeping ? (
           <BarPill
             icon="photo"
             label={SCAN_COPY.ghost.toggle}
@@ -1613,15 +2199,15 @@ export default function CaptureSessionScreen() {
           setting you want by overshooting it; both are on the bar now,
           and pressing the lit one puts it back to off.
 
-          Both stand down only while hands-free is actually counting this
-          angle down for you: that is the one place the delay is already
-          being run, and four pills plus the close control do not fit a
-          375-point bar. Switch hands-free off and they come straight
+          Both stand down while hands-free is actually counting this angle
+          down for you, and through a turn: those are the two places the
+          delay is already being run or has nowhere to sit, and four pills
+          plus the close control do not fit a 375-point bar. Switch hands-free off and they come straight
           back, because turning off the automatic countdown must not also
           take away the one you set yourself — on the angle where you can
           least afford to be without it.
         */}
-        {handsFreeSwitch && scan.handsFree
+        {sweeping || (handsFreeSwitch && scan.handsFree)
           ? null
           : CAPTURE_TIMERS.filter((seconds) => seconds > 0).map((seconds) => {
               const active = timer === seconds;
@@ -1644,7 +2230,10 @@ export default function CaptureSessionScreen() {
           head outline and the shutter, and lifted clear of the pile once
           there is one. */}
       <Animated.View
-        key={angle}
+        // One card for the whole of a turn: it is one gesture, and a card
+        // re-entering as the harvest moves from one angle to the next
+        // would be the screen flinching at its own progress.
+        key={sweeping ? 'sweep' : angle}
         entering={FadeIn.duration(250)}
         style={{
           position: 'absolute',
@@ -1699,10 +2288,7 @@ export default function CaptureSessionScreen() {
               <Text
                 variant="headline"
                 center
-                style={{
-                  color:
-                    phase.kind === 'tracked' && phase.cue === 'hold' ? colors.accent : '#fff',
-                }}>
+                style={{ color: holding ? colors.accent : '#fff' }}>
                 {headline}
               </Text>
             ) : null}
@@ -1723,6 +2309,22 @@ export default function CaptureSessionScreen() {
               onPress={() => dispatch({ type: 'skip', now: Date.now() })}>
               <Text variant="footnote" center style={{ color: '#fff', opacity: 0.7 }}>
                 {skipLabel}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {/* The end of a turn that has gone on long enough, offered
+              rather than taken: it keeps what has been photographed and
+              hands whatever is left to the held shots. */}
+          {finishLabel ? (
+            <Pressable
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={finishLabel}
+              hitSlop={8}
+              onPress={() => dispatch({ type: 'finish', now: Date.now() })}>
+              <Text variant="footnote" center style={{ color: '#fff', opacity: 0.7 }}>
+                {finishLabel}
               </Text>
             </Pressable>
           ) : null}
@@ -1751,7 +2353,7 @@ export default function CaptureSessionScreen() {
             accessibilityLabel={
               countdown !== null
                 ? 'Cancel countdown'
-                : phase.kind === 'tracked' && phase.cue === 'hold'
+                : turning || holding
                   ? 'Take the photo myself'
                   : `Capture ${ANGLE_LABELS[angle]}`
             }

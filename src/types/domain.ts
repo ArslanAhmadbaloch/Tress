@@ -327,7 +327,28 @@ export type Journey = {
   trackingAreas: TrackingArea[];
   /** Everything the funnel asked, kept so the app can speak to the person. */
   motivations: Motivation[];
-  goal: HairGoal;
+  /**
+   * What they said they are hoping for, in the words they picked.
+   *
+   * Several, because almost nobody has one reason — and, as `HairGoal`
+   * says, an aspiration rather than a forecast. Optional only because a
+   * journey written before the question took more than one answer has
+   * `goal` on disk instead: read both shapes through `journeyGoals`,
+   * never this field directly, and an old record answers the same as a
+   * new one.
+   */
+  goals?: HairGoal[];
+  /**
+   * The single answer the question used to take.
+   *
+   * Nothing writes it any more. `migrateStoredData` folds it into `goals`
+   * as the app loads, so a journey that has come through the loader has
+   * `goals` and no `goal` — but it stays on the type because every
+   * install made before this change has one sitting in storage.
+   *
+   * @deprecated Read `journeyGoals(journey)`.
+   */
+  goal?: HairGoal;
   noticed?: Onset;
   /** 0 to PREOCCUPATION_STEPS - 1: how often their hair crosses their mind. */
   preoccupation?: number;
@@ -346,6 +367,100 @@ export type Journey = {
   updateIntervalDays: number;
   createdAt: string;
 };
+
+/**
+ * Their goals, whichever shape the record is in.
+ *
+ * One `goal` from before the question took several, or `goals` from
+ * after — and possibly neither, because a blob can be older or stranger
+ * than either. Every screen that shows a goal reads it through here, so
+ * no screen has to know which shape it was handed, and "nothing
+ * selected" arrives as an empty list rather than as a crash.
+ */
+export function journeyGoals(journey: Pick<Journey, 'goals' | 'goal'>): HairGoal[] {
+  /*
+    Everything here comes off disk, so none of it can be trusted to be
+    what the type says. A goal the app no longer offers — renamed in a
+    later version, or simply corrupt — used to render as a blank line;
+    once it is fed to a label table it becomes a crash on the Profile
+    tab instead. And `goals` is only an array in the type: a string on
+    disk has a length too, and would pass a truthiness check and then
+    iterate character by character.
+  */
+  const known = (value: unknown): value is HairGoal =>
+    typeof value === 'string' && value in HAIR_GOAL_LABELS;
+
+  const list = Array.isArray(journey.goals) ? journey.goals.filter(known) : [];
+  if (list.length > 0) return list;
+  return known(journey.goal) ? [journey.goal] : [];
+}
+
+/**
+ * "a, b and c" — how the app reads a list of someone's answers back.
+ *
+ * No serial comma: this is a sentence a person reads, not a citation.
+ */
+export function joinPhrases(parts: string[]): string {
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * A choice label landing in the middle of a sentence.
+ *
+ * The labels are written to stand alone in a list — "Less shedding" — so
+ * the capital comes down when one is quoted mid-sentence. "I'm not sure
+ * yet" keeps its own, because lowercasing a person's "I" reads as a typo.
+ */
+export function midSentence(label: string): string {
+  return /^I(?![a-z])/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/**
+ * Their goals as a phrase: "more fullness and less shedding".
+ *
+ * Only ever what they said they want. Whoever builds the sentence around
+ * it owns the harder half — see the closing line of the profile report,
+ * where the same list is followed by the reason it is not a promise.
+ */
+export function goalSentence(goals: HairGoal[]): string {
+  return joinPhrases(goals.map((g) => midSentence(HAIR_GOAL_LABELS[g])));
+}
+
+/**
+ * Their goals in the one line a card has room for.
+ *
+ * As many as fit, and then a count of the rest. The line under the name
+ * on the membership card is small, two lines tall and as wide as a
+ * photograph, so a list of five joined with commas would be cut off
+ * mid-word by the renderer rather than by us. Counting characters rather
+ * than goals is what keeps "knowing whether my routine is working" — the
+ * longest thing anybody can tick — from pushing a second label off the
+ * end on its own.
+ *
+ * Nothing is hidden by it: the count says how many are not shown, and
+ * the coach reads the whole list back when asked.
+ */
+export function goalSummary(goals: HairGoal[], budget = 46): string | undefined {
+  if (goals.length === 0) return undefined;
+
+  const named: string[] = [];
+  let used = 0;
+
+  for (const goal of goals) {
+    const label = HAIR_GOAL_LABELS[goal];
+    // The first always goes in, however long it is: a card that named
+    // none of somebody's goals would be worse than one that names a long
+    // one. ", " is the join, hence the two.
+    if (named.length > 0 && used + label.length > budget) break;
+    named.push(named.length === 0 ? label : midSentence(label));
+    used += label.length + 2;
+  }
+
+  const rest = goals.length - named.length;
+  return joinPhrases(rest > 0 ? [...named, `${rest} more`] : named);
+}
 
 /**
  * What the device measured about a photograph at the moment it was taken.
@@ -779,3 +894,43 @@ export const EMPTY_DATA: AppData = {
   products: [],
   onboardingCompletedAt: null,
 };
+
+/**
+ * One journey, brought forward to the shape this version reads.
+ *
+ * The goal question used to take a single answer and now takes several,
+ * so a journey saved by the old version carries `goal: 'hairline'` and no
+ * `goals`. It has to come out of here reading as one selected goal —
+ * somebody who updates mid-journey opens the app and finds what they
+ * said, not an empty line where it was.
+ *
+ * The old field is dropped once it has been folded in: one place a goal
+ * lives, so the two cannot drift apart the day somebody changes theirs.
+ */
+export function migrateJourney(journey: Journey): Journey {
+  const next: Journey = { ...journey, goals: journeyGoals(journey) };
+  delete next.goal;
+  return next;
+}
+
+/**
+ * Whatever was on disk, as data this version can render — or null.
+ *
+ * "Start clean" stays the only honest answer to a record written by a
+ * version that kept different things, which is what the version check
+ * is for. What it is *not* for is a field that can still be read: the
+ * note on SCHEMA_VERSION explains that a bump erases every installed
+ * journey, so the goal question took the other route, and the old shape
+ * is folded into the new one here on the way in.
+ */
+export function migrateStoredData(parsed: unknown): AppData | null {
+  if (!parsed || typeof parsed !== 'object') return null;
+
+  const stored = parsed as Partial<AppData>;
+  if (stored.schemaVersion !== SCHEMA_VERSION) return null;
+
+  // Fields added since the blob was written read their default from
+  // EMPTY_DATA; fields whose shape changed are migrated by hand.
+  const data: AppData = { ...EMPTY_DATA, ...stored };
+  return { ...data, journey: data.journey ? migrateJourney(data.journey) : null };
+}

@@ -25,7 +25,7 @@ const base: ProfileAnswers = {
   approaches: ['topical'],
   medications: ['minoxidilTopical'],
   consistency: 'onOff',
-  goal: 'fullness',
+  goals: ['fullness'],
   intervalDays: 30,
 };
 
@@ -63,6 +63,52 @@ test('profile: the goal is never promised', () => {
   }
 });
 
+test('profile: one goal, two, or several all read as things they said they want', () => {
+  // The question takes as many answers as somebody has reasons, and the
+  // closing line is the only place they are read back. Its job does not
+  // change with the count: their words in, and the same refusal to
+  // promise them out. "You want X and Y" must never become "you will
+  // get X and Y", which is the sentence a longer list invites.
+  const closing = (...goals: ProfileAnswers['goals']) =>
+    buildProfileReport({ ...base, goals }).closing;
+
+  assert.match(closing('fullness'), /^You told us what you want is more fullness\./);
+  assert.match(
+    closing('fullness', 'shedding'),
+    /^You told us what you want is more fullness and less shedding\./,
+  );
+  assert.match(
+    closing('fullness', 'shedding', 'hairline'),
+    /^You told us what you want is more fullness, less shedding and a stronger-looking hairline\./,
+  );
+
+  for (const line of [
+    closing('fullness'),
+    closing('fullness', 'shedding'),
+    closing('fullness', 'shedding', 'hairline', 'crown'),
+  ]) {
+    assert.match(line, /not ours to promise/, 'however long the list, it is still not a promise');
+    assert.ok(
+      !/\byou will\b|\bwe will\b|\bexpect\b|\bresults?\b/i.test(line),
+      `"${line}" forecasts the goals instead of echoing them`,
+    );
+  }
+});
+
+test('profile: ticking nothing, or only "not sure", states no goal at all', () => {
+  // An old record whose goal was neither shape, and somebody who said
+  // the honest thing. Neither may produce "what you want is I'm not sure
+  // yet", and neither may produce a blank where a sentence was.
+  for (const goals of [[], ['unsure']] as ProfileAnswers['goals'][]) {
+    const closing = buildProfileReport({ ...base, goals }).closing;
+    assert.equal(
+      closing,
+      'What we can do is make sure you can see what is happening, instead of wondering.',
+    );
+    assert.ok(!closing.includes('what you want'), 'nothing is put in their mouth');
+  }
+});
+
 test('profile: no card makes a claim about their hair', () => {
   // The report is built before any photograph exists. Every one of these
   // words would mean it had started describing a head nobody has seen.
@@ -70,7 +116,8 @@ test('profile: no card makes a claim about their hair', () => {
     base,
     { ...base, noticed: 'longer', preoccupation: 5, consistency: 'very' },
     { ...base, areas: ['crown', 'edges'], medications: [], approaches: [] },
-    { ...base, intervalDays: 7, goal: null, name: '' },
+    { ...base, intervalDays: 7, goals: [], name: '' },
+    { ...base, goals: ['fullness', 'shedding', 'hairline', 'routineWorking'] },
   ];
 
   for (const answers of variants) {

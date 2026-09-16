@@ -36,7 +36,7 @@ import { Text } from '@/components/ui/text';
 import { useAppStore } from '@/store/app-store';
 import { consistencyScore } from '@/store/selectors';
 import { motion, useTheme } from '@/theme';
-import { HAIR_GOAL_LABELS } from '@/types/domain';
+import { goalSummary, journeyGoals } from '@/types/domain';
 
 /**
  * Widest the card is drawn here.
@@ -104,7 +104,9 @@ export default function CardScreen() {
   const cardWidth = Math.min(MAX_CARD_WIDTH, width - (spacing.xl + EXPORT_MARGIN) * 2);
   const card = {
     name: data.profile?.displayName?.trim() || 'You',
-    goalLabel: HAIR_GOAL_LABELS[journey.goal],
+    // Undefined when they ticked nothing, which the card renders as a
+    // line that is not there rather than as an empty one.
+    goalLabel: goalSummary(journeyGoals(journey)),
     age: data.profile?.age,
     portraitUri: data.profile?.avatarUri,
     startedAt: journey.startedAt,

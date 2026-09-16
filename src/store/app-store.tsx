@@ -24,8 +24,8 @@ import {
   doseCount,
   dosesTaken,
   EMPTY_DATA,
+  migrateStoredData,
   patchPhotoIn,
-  SCHEMA_VERSION,
   type AppData,
   type JournalEntry,
   type Gender,
@@ -141,11 +141,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
         if (cancelled || !raw) return;
-        const parsed = JSON.parse(raw) as AppData;
-        // Future migrations branch here on parsed.schemaVersion.
-        if (parsed.schemaVersion === SCHEMA_VERSION) {
-          setData({ ...EMPTY_DATA, ...parsed });
-        }
+        /*
+          Every migration lives in `migrateStoredData`, where it can be
+          tested against a blob shaped like the one on a phone that has
+          not been updated yet. It hands back data this version can
+          render, or null for a record it cannot read at all.
+        */
+        const loaded = migrateStoredData(JSON.parse(raw));
+        if (loaded) setData(loaded);
       })
       .catch(() => {
         // Corrupt or unreadable storage: start clean rather than crash.

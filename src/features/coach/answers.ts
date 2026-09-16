@@ -42,6 +42,9 @@ import {
   ANGLE_LABELS,
   APPROACH_LABELS,
   HAIR_GOAL_LABELS,
+  joinPhrases,
+  journeyGoals,
+  midSentence,
   missingAngles,
   SELF_CONSISTENCY_LABELS,
   TRACKING_AREA_LABELS,
@@ -620,17 +623,36 @@ function journalAnswer(data: AppData): CoachAnswer {
 function goalsAnswer(journey: Journey): CoachAnswer {
   // Medications are not echoed here: the stack answer covers what they
   // use, in the words they typed rather than a funnel label.
+  const goals = journeyGoals(journey);
+
+  const echo = [
+    ...goals.map((g) => HAIR_GOAL_LABELS[g]),
+    ...journey.trackingAreas.map((a) => TRACKING_AREA_LABELS[a]),
+    ...journey.approaches.map((a) => APPROACH_LABELS[a]),
+  ];
+
+  /*
+    The caption names only what is under it. A journey may have several
+    goals, one, or — for a record old enough to predate the question —
+    none, and a caption promising a goal above a list that has none is
+    the app claiming somebody said something they did not.
+  */
+  const captions = [
+    goals.length === 0 ? null : goals.length === 1 ? 'Your goal' : 'What you said you want',
+    journey.trackingAreas.length > 0 ? 'The areas you watch' : null,
+    journey.approaches.length > 0 ? 'What you were doing then' : null,
+  ].filter((c): c is string => c !== null);
+
   return {
     intent: 'goals',
     source: 'From your answers at the start',
     headline: 'What you said you wanted, and where you were starting from.',
     detail: 'Kept as you said it, shown back as you said it.',
-    echoLabel: 'Your goal, the areas you watch, and what you were doing then',
-    echo: [
-      HAIR_GOAL_LABELS[journey.goal],
-      ...journey.trackingAreas.map((a) => TRACKING_AREA_LABELS[a]),
-      ...journey.approaches.map((a) => APPROACH_LABELS[a]),
-    ],
+    echoLabel:
+      captions.length > 0
+        ? joinPhrases(captions.map((c, i) => (i === 0 ? c : midSentence(c))))
+        : undefined,
+    echo: echo.length > 0 ? echo : undefined,
     refusal: false,
   };
 }

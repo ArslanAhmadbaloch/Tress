@@ -58,6 +58,9 @@ import {
   doseCount,
   dosesTaken,
   FREQUENCY_OPTIONS,
+  goalSummary,
+  journeyGoals,
+  migrateStoredData,
   weeklyTarget,
   EMPTY_DATA,
   SCHEMA_VERSION,
@@ -96,7 +99,7 @@ function journeyWith(startedDaysAgo: number, items: RoutineItem[]): AppData {
       startedAt: daysAgo(startedDaysAgo).toISOString(),
       trackingAreas: ['crown'],
       motivations: [],
-      goal: 'fullness',
+      goals: ['fullness'],
       triggers: [],
       approaches: [],
       updateIntervalDays: 30,
@@ -151,6 +154,141 @@ function takeDoses(
     ],
   };
 }
+
+/* ----------------------------- stored data ------------------------------ */
+
+/**
+ * A record exactly as an install from before the goal question took
+ * several answers left it on disk: one `goal`, no `goals`, and no
+ * `products` either, since that arrived without a version bump too.
+ *
+ * Written out as the string AsyncStorage actually holds, rather than as
+ * a typed object, because the point of the fixture is that it was
+ * written by code that no longer exists — a typed one would be kept
+ * honest by the current types and would stop proving anything the day
+ * the old shape became unspellable.
+ */
+const STORED_BEFORE_MULTI_GOAL = JSON.stringify({
+  schemaVersion: 2,
+  profile: { id: 'p1', displayName: 'Arslan', age: 31, createdAt: '2025-01-05T09:00:00.000Z' },
+  journey: {
+    id: 'j1',
+    profileId: 'p1',
+    startedAt: '2025-01-05T09:00:00.000Z',
+    trackingAreas: ['hairline'],
+    motivations: ['confidence'],
+    goal: 'hairline',
+    noticed: 'halfYear',
+    triggers: ['mirror'],
+    approaches: ['topical'],
+    updateIntervalDays: 30,
+    createdAt: '2025-01-05T09:00:00.000Z',
+  },
+  sessions: [
+    {
+      id: 's1',
+      journeyId: 'j1',
+      capturedAt: '2025-01-05T09:10:00.000Z',
+      isBaseline: true,
+      photos: [],
+    },
+  ],
+  routineItems: [],
+  routineLogs: [],
+  journal: [],
+  onboardingCompletedAt: '2025-01-05T09:12:00.000Z',
+});
+
+test('storage: an install made before the change opens with its answer intact', () => {
+  // The one that matters. Somebody mid-TestFlight updates, the app
+  // reads the blob their old build wrote, and the goal they chose is
+  // still there — as one selected goal, not as an empty list.
+  const loaded = migrateStoredData(JSON.parse(STORED_BEFORE_MULTI_GOAL));
+  assert.ok(loaded, 'the record is still readable after the update');
+
+  assert.deepEqual(loaded.journey!.goals, ['hairline']);
+  assert.deepEqual(journeyGoals(loaded.journey!), ['hairline']);
+  assert.equal(
+    loaded.journey!.goal,
+    undefined,
+    'the single field is folded in, not left beside the list to drift',
+  );
+  assert.equal(goalSummary(journeyGoals(loaded.journey!)), 'A stronger-looking hairline');
+
+  // And nothing else about their journey was lost on the way through.
+  assert.equal(loaded.profile!.displayName, 'Arslan');
+  assert.equal(loaded.journey!.noticed, 'halfYear');
+  assert.deepEqual(loaded.journey!.trackingAreas, ['hairline']);
+  assert.equal(loaded.sessions.length, 1);
+  assert.equal(loaded.onboardingCompletedAt, '2025-01-05T09:12:00.000Z');
+  assert.deepEqual(loaded.products, [], 'a field added since reads its default');
+});
+
+test('storage: the goal question did not bump the schema version', () => {
+  // A bump discards every stored journey — the note in domain.ts says
+  // so and the loader does it — which would cost every install their
+  // answers to tidy one field. This pins the decision: the version is
+  // where it was, and the old shape is migrated instead.
+  assert.equal(SCHEMA_VERSION, 2);
+
+  const older = { ...JSON.parse(STORED_BEFORE_MULTI_GOAL), schemaVersion: 1 };
+  assert.equal(migrateStoredData(older), null, 'a genuinely different schema still starts clean');
+  assert.equal(migrateStoredData(null), null);
+  assert.equal(migrateStoredData('not a record'), null);
+});
+
+test('storage: a record saved since the change is read as it stands', () => {
+  const blob = JSON.parse(STORED_BEFORE_MULTI_GOAL);
+  const stored = {
+    ...blob,
+    journey: { ...blob.journey, goal: undefined, goals: ['fullness', 'shedding'] },
+  };
+
+  const loaded = migrateStoredData(JSON.parse(JSON.stringify(stored)));
+  assert.deepEqual(loaded!.journey!.goals, ['fullness', 'shedding']);
+});
+
+test('storage: a journey with neither field reads as nothing selected', () => {
+  // Older, stranger, or hand-edited. Every screen that shows a goal has
+  // to survive it, so the readers are given an empty list rather than
+  // undefined to index into.
+  const blob = JSON.parse(STORED_BEFORE_MULTI_GOAL);
+  const stored = { ...blob, journey: { ...blob.journey, goal: undefined } };
+
+  const loaded = migrateStoredData(JSON.parse(JSON.stringify(stored)));
+  assert.deepEqual(loaded!.journey!.goals, []);
+  assert.deepEqual(journeyGoals(loaded!.journey!), []);
+  assert.equal(goalSummary([]), undefined, 'and the card simply has no line to draw');
+});
+
+test('card: several goals are named, then counted, so the line cannot run away', () => {
+  // The card gives this two short lines under the name. What it shows is
+  // what they ticked and how many more there are — never a tally on its
+  // own, and never a sentence the renderer has to cut mid-word.
+  assert.equal(goalSummary(['fullness']), 'More fullness');
+  assert.equal(goalSummary(['fullness', 'shedding']), 'More fullness and less shedding');
+  assert.equal(
+    goalSummary(['fullness', 'shedding', 'hairline']),
+    'More fullness, less shedding and 1 more',
+  );
+  assert.equal(
+    goalSummary(['fullness', 'shedding', 'hairline', 'crown']),
+    'More fullness, less shedding and 2 more',
+  );
+
+  // The longest thing anybody can tick takes the line on its own.
+  assert.equal(
+    goalSummary(['routineWorking', 'crown']),
+    'Knowing whether my routine is working and 1 more',
+  );
+
+  // "I'm not sure yet" keeps its capital: lowercasing somebody's "I"
+  // reads as a typo, wherever in the sentence it lands.
+  assert.equal(goalSummary(['fullness', 'unsure']), 'More fullness and I\'m not sure yet');
+
+  const all = goalSummary(['fullness', 'hairline', 'crown', 'shedding', 'overall']);
+  assert.ok(all!.length <= 60, `"${all}" is too long for the line the card has`);
+});
 
 /* ------------------------------ belonging ------------------------------- */
 

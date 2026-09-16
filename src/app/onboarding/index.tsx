@@ -75,7 +75,7 @@ import { persistProfilePhoto } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { MIN_TOUCH_TARGET, useTheme, typography } from '@/theme';
 import {
-  HAIR_GOAL_LABELS,
+  goalSummary,
   PREOCCUPATION_STEPS,
   type Approach,
   type Gender,
@@ -90,7 +90,8 @@ import {
 
 type Answers = {
   motivations: Motivation[];
-  goal: HairGoal | null;
+  /** Several: people rarely want one thing, and the step takes them all. */
+  goals: HairGoal[];
   noticed: Onset | null;
   areas: TrackingArea[];
   preoccupation: number | null;
@@ -120,7 +121,7 @@ type Answers = {
 
 const EMPTY: Answers = {
   motivations: [],
-  goal: null,
+  goals: [],
   noticed: null,
   areas: [],
   preoccupation: null,
@@ -143,6 +144,21 @@ const EMPTY: Answers = {
 /** Toggle membership of a multi-select answer. */
 function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+}
+
+/** Ticking this clears the rest, and the rest clear it. */
+const GOAL_EXCLUSIVE: HairGoal = 'unsure';
+
+/**
+ * As above, but "I'm not sure yet" cannot stand beside something they
+ * are sure about: an answer that says both is not an answer, and the
+ * report would read it back to them as one.
+ */
+function toggleGoal(list: HairGoal[], value: HairGoal): HairGoal[] {
+  if (value === GOAL_EXCLUSIVE) {
+    return list.includes(value) ? [] : [value];
+  }
+  return toggle(list.filter((g) => g !== GOAL_EXCLUSIVE), value);
 }
 
 /**
@@ -268,7 +284,10 @@ export default function OnboardingFunnel() {
         startedAt: new Date().toISOString(),
         trackingAreas: answers.areas,
         motivations: answers.motivations,
-        goal: answers.goal ?? 'unsure',
+        // Exactly what they ticked. The step will not let them past with
+        // nothing, and standing "I'm not sure yet" in for silence would
+        // be putting an answer in somebody's mouth.
+        goals: answers.goals,
         noticed: answers.noticed ?? undefined,
         preoccupation: answers.preoccupation ?? undefined,
         triggers: answers.triggers,
@@ -336,7 +355,8 @@ export default function OnboardingFunnel() {
   /** Puts their name into the headings written with a slot for it. */
   const named = (line: string) => withName(line, answers.name);
 
-  const goalLabel = answers.goal ? HAIR_GOAL_LABELS[answers.goal] : undefined;
+  // Two goals and a count, which is what the line under the name holds.
+  const goalLabel = goalSummary(answers.goals);
   const cardWidth = Math.min(320, width - spacing.lg * 2 - spacing.xl);
 
   switch (step) {
@@ -380,15 +400,23 @@ export default function OnboardingFunnel() {
       return shell({
         cta: COPY.goal.cta,
         onCta: next,
-        ctaDisabled: answers.goal === null,
+        // One at least: the report and the card are built from this, and
+        // there is nothing to say back to somebody who ticked nothing.
+        ctaDisabled: answers.goals.length === 0,
         children: (
           <>
             <StepTitle title={named(COPY.goal.title)} />
+            {/*
+              Several, like the question above it. The square boxes and
+              the checkbox role are what say so — a line of copy telling
+              people they may pick more than one is a line explaining a
+              control that already explains itself.
+            */}
             <Choices
               choices={content.goals}
-              multi={false}
-              selected={answers.goal ? [answers.goal] : []}
-              onToggle={(v) => set({ goal: v })}
+              multi
+              selected={answers.goals}
+              onToggle={(v) => set({ goals: toggleGoal(answers.goals, v) })}
               from={2}
             />
           </>
@@ -954,7 +982,7 @@ export default function OnboardingFunnel() {
               approaches: answers.approaches,
               medications: answers.medications,
               consistency: answers.consistency,
-              goal: answers.goal,
+              goals: answers.goals,
               intervalDays: answers.intervalDays,
             })}
           />
