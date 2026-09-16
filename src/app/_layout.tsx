@@ -214,6 +214,16 @@ function Navigation() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         {/*
+            The shelf is a place you go deeper into rather than a sheet
+            over what you were doing: it is read, scrolled and returned
+            from, and it carries no action that has to hand back to the
+            screen underneath — nothing on it adds, buys or stages
+            anything. A push, therefore, not a modal, and it behaves the
+            same whether it is opened from the routine sheet or from a
+            tab. NOTE: nothing pushes it yet; the entry point belongs in
+            src/app/routine.tsx, which no lane owns this run. */}
+        <Stack.Screen name="shelf" />
+        {/*
             What the centre "+" opens: the choice between a scan and the
             five angles. A sheet rather than a push, because it is a
             decision taken over whatever was on screen and returned from,

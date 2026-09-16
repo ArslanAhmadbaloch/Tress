@@ -9,17 +9,23 @@
  * The order is the argument. Who this is for; what better hair would mean
  * to them, before anything about hair; somebody's pair in return before
  * the next block of questions; their card; a report built from what they
- * said; and then one photograph. The report is the thing the funnel has
- * been promising, and the camera is one tap after it — everything that
- * used to sit between the two was the report repeated.
+ * said; and then the scan. The report is the thing the funnel has been
+ * promising, and the camera is one tap after it — everything that used to
+ * sit between the two was the report repeated.
+ *
+ * The last step opens the scan itself, so the reading the person is shown
+ * next is a reading of photographs they just took. On a build that cannot
+ * follow a head it opens the single front photograph instead, unchanged:
+ * see `startBaseline`.
  */
 
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, TextInput, View, useWindowDimensions } from 'react-native';
+import { AccessibilityInfo, Alert, TextInput, View, useWindowDimensions } from 'react-native';
 
+import { headTrackingAvailable, sampleCameraActive } from '@/components/capture';
 import {
   ChoiceRow,
   FunnelShell,
@@ -337,6 +343,92 @@ export default function OnboardingFunnel() {
     } catch {
       Alert.alert('That photo could not be saved', 'Try another, or skip for now.');
     }
+  };
+
+  /* ---------------------------- the last step --------------------------- */
+
+  /*
+    Whether this build can follow a head through a turn, which is what
+    decides the whole shape of the last step.
+
+    It is a property of the binary and not of the handset —
+    `headTrackingAvailable()` is `loadVision() !== null`, resolved once,
+    and it is false in Expo Go, on a simulator, and in any build without
+    the native module. The sample camera rules a turn out on its own: it
+    stands in for a camera the simulator does not have and reports no
+    faces at all, so a development build there would otherwise promise a
+    scan that nothing is watching. The same pair of tests the chooser at
+    `new.tsx` uses, so the two doors cannot disagree about what this
+    binary can do.
+  */
+  /*
+    Asked only on the step that uses the answer. `headTrackingAvailable()`
+    is `loadVision()`, and on a build with nitro that is a synchronous
+    `require('./vision-camera')` — a module whose own header says it
+    touches native code the moment it is imported, which is why nothing
+    else imports it statically. Computed in the component body without
+    this guard it ran on the first render of the first screen a new user
+    ever sees, about a dozen steps before the answer is needed, inside a
+    render phase, against the funnel's opening animation. The answer is
+    cached inside `loadVision`, so asking late costs nothing.
+  */
+  const hasDetector = step === 'baseline' && headTrackingAvailable() && !sampleCameraActive();
+
+  /*
+    A continuous turn is a visual gesture with no honest non-visual
+    analogue, so `capture-session.tsx` selects the walk on its own when a
+    screen reader is running. This screen has to know that too, or the
+    last thing read aloud to somebody before the camera opens would
+    describe a mechanism they are not about to get.
+
+    Unknown reads as no screen reader, which is what the capture screen
+    also does, so the two cannot disagree about which route was chosen.
+  */
+  const [screenReader, setScreenReader] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const answer = (on: boolean) => {
+      if (alive) setScreenReader(on);
+    };
+    AccessibilityInfo.isScreenReaderEnabled().then(answer, () => answer(false));
+    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', answer);
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+
+  /**
+   * Which camera the funnel ends at.
+   *
+   * `sweep` and `walk` are the two halves of the scan and both end in the
+   * reading — they are the same two the chooser sends, and the parameter
+   * name is read from `new.tsx` rather than invented here.
+   *
+   * `single` is the fallback, and it is not optional. Without the
+   * detector there is no turn to offer, and this is the only path a new
+   * user has into the app: it must end in a photograph on every build,
+   * so it falls back to the one front shot that has always worked here.
+   */
+  const ending: 'sweep' | 'walk' | 'single' = !hasDetector
+    ? 'single'
+    : screenReader
+      ? 'walk'
+      : 'sweep';
+
+  /** The words for that camera. They are chosen by the same value. */
+  const baselineCopy = ending === 'single' ? COPY.baseline : COPY.baseline[ending];
+
+  /*
+    Replace, not push: the funnel is walked through once, and it should
+    not be sitting behind the camera waiting to be returned to.
+  */
+  const startBaseline = () => {
+    if (ending === 'single') {
+      router.replace('/capture-intro?single=1');
+      return;
+    }
+    router.replace({ pathname: '/capture-session', params: { mode: ending } });
   };
 
   /* -------------------------------- render ------------------------------ */
@@ -994,17 +1086,21 @@ export default function OnboardingFunnel() {
     default:
       return shell({
         centred: true,
-        cta: COPY.baseline.cta,
+        cta: baselineCopy.cta,
         /*
-          `single=1` asks the capture flow for the front angle only, and
-          to hand over to the scan report as soon as it has it. One
-          photograph, then the report: that is the whole promise of the
-          funnel, and five angles between the promise and the proof was
-          where people stopped. The five-angle set is what an update
-          looks like, and Home asks for it once there is something to
-          update.
+          The scan, on any build that can run it: the turn, then the
+          reading of what it photographed, then the paywall. `mode` is
+          what the capture screen reads to know a scan was asked for
+          rather than a set of photographs — its presence is what sends
+          the session to the report instead of to the journal.
+
+          Without the detector it is `single=1` instead: the front angle
+          only, straight to the same report. That is the path this step
+          has always taken and it is the one that has to keep working,
+          because a new user on a build with no detector has no other way
+          in. See `startBaseline`.
         */
-        onCta: () => router.replace('/capture-intro?single=1'),
+        onCta: startBaseline,
         /*
           No skip. The baseline is not a feature of this app, it is the
           thing every other feature is measured against — a journey that
@@ -1014,19 +1110,22 @@ export default function OnboardingFunnel() {
           It is a real trade: somebody who cannot photograph themselves
           right now cannot get in. That is the cost of the app being worth
           opening later, and it is the same call the apps that work in
-          this category have all made. Asking for one photograph rather
-          than five is what makes the trade a fair one.
+          this category have all made. What keeps the trade a fair one is
+          that the camera on the other side of the button is the shortest
+          one the build can offer — a turn where there is a detector to
+          follow it, and one photograph where there is not.
         */
         children: (
           <>
             <Wash />
             {/*
-              The shot itself, as the hero. The reference photograph for
+              Where it starts, as the hero. The reference photograph for
               the front angle — the same framing example the capture
-              screen shows — so the person knows exactly what is being
-              asked for before the camera opens. Labelled as an example,
-              because it is one, and because a face the app did not name
-              would read as somebody's result.
+              screen shows — and the front is the first frame of all
+              three endings, so it is what is being asked for whichever
+              camera opens. Labelled as an example, because it is one,
+              and because a face the app did not name would read as
+              somebody's result.
             */}
             <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxxl }}>
               <View
@@ -1057,14 +1156,14 @@ export default function OnboardingFunnel() {
 
             <Rise index={1}>
               <Text variant="question" center accessibilityRole="header">
-                {COPY.baseline.title}
+                {baselineCopy.title}
               </Text>
               <Text
                 variant="callout"
                 color="textSecondary"
                 center
                 style={{ marginTop: spacing.lg }}>
-                {COPY.baseline.body}
+                {baselineCopy.body}
               </Text>
             </Rise>
           </>

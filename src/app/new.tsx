@@ -39,8 +39,8 @@
  */
 
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AccessibilityInfo, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -78,7 +78,34 @@ export default function NewScreen() {
     own comment says the answer depends on the build, not on the moment.
     The copy below says "build" for that reason.
   */
-  const canFollowHead = headTrackingAvailable() && !sampleCameraActive();
+  const hasDetector = headTrackingAvailable() && !sampleCameraActive();
+
+  /*
+    A continuous turn is a visual gesture with no honest non-visual
+    analogue, so with a screen reader running `capture-session.tsx`
+    selects the walk instead. This screen has to know that too: a card
+    that promises one turn of the head to somebody who is then given the
+    angles one at a time has described a mechanism they will not get, and
+    the description is read aloud to them.
+
+    Unknown reads as no screen reader, which is what the capture screen
+    also does, so the two cannot disagree about which route was chosen.
+  */
+  const [screenReader, setScreenReader] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const answer = (on: boolean) => {
+      if (alive) setScreenReader(on);
+    };
+    AccessibilityInfo.isScreenReaderEnabled().then(answer, () => answer(false));
+    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', answer);
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+
+  const canFollowHead = hasDetector && !screenReader;
 
   /*
     The entitlement gate, moved up one screen.
@@ -186,7 +213,9 @@ export default function NewScreen() {
             mechanism={
               canFollowHead
                 ? 'One turn of your head, and it photographs as you go.'
-                : 'This build cannot follow a head, so the angles are taken one at a time.'
+                : screenReader
+                  ? 'The angles are taken one at a time, each one announced.'
+                  : 'This build cannot follow a head, so the angles are taken one at a time.'
             }
             /*
               The sentence that stops the turn ever being sold as five

@@ -5,7 +5,7 @@
  * in one place and reordered without touching layout code. The order is
  * the argument: who this is for, what you want, something useful in
  * return, where you are now, a report built from what you said — and
- * then one photograph.
+ * then the scan, which is the first thing the app does rather than says.
  *
  * Every question screen is the question and its answers, and nothing
  * else. There used to be a line of helper text under each heading, and
@@ -100,8 +100,12 @@ export const STEPS: StepId[] = [
     screens here — a "your journey is ready" summary and a timeline that
     said you would be glad you started — and both were the report again
     in different clothes. Somebody who has just read where they stand
-    does not need to be told it twice more before being allowed to take
-    the photograph the whole funnel has been leading to.
+    does not need to be told it twice more before being allowed to open
+    the camera the whole funnel has been leading to.
+
+    It is the last step here, and the last one the funnel owns: the scan
+    it opens carries its own screens, and the reading on what it
+    photographed is the next thing the person sees.
   */
   'baseline',
 ];
@@ -280,9 +284,10 @@ export const CADENCE_CHOICES: Choice<string>[] = [
   Questions are short and asked the way a person would ask them. Buttons
   say "Continue" rather than "That's My Goal" or "Build My Routine": a
   button that narrates what you just did is a button trying too hard, and
-  eleven of them in a row read as a sales script. The two buttons that do
-  say something specific — the photo and the camera — say it because the
-  tap actually does that thing.
+  eleven of them in a row read as a sales script. The buttons that do say
+  something specific — the profile photo, and whichever camera the last
+  step opens — say it because the tap actually does that thing, and the
+  last step carries one label per camera for exactly that reason.
 
   No screen tells the person how to feel, and no screen says the app will
   make anything happen to their hair. The one line that comes close, on
@@ -369,22 +374,64 @@ export const COPY = {
     cta: 'Continue',
   },
   /*
-    One photograph, not five. The five-angle set is what an update looks
-    like and it is asked for later, from Home, once there is something to
-    update. The first thing somebody does after the report is take a
-    single front shot and see what the app measured in it — that is the
-    whole promise of the funnel, and five angles between the promise and
-    the proof was where people stopped.
+    The last screen, and the camera behind it.
 
-    There is no skip. The baseline is not a feature of this app, it is
-    the thing every other feature is measured against — a journey that
-    starts without one has nothing for month three to be compared with,
-    and the person finds that out in month three.
+    The funnel ends in the scan: the questions, the turn, the report on
+    what the turn photographed, and then the paywall. The report is the
+    thing the whole funnel has been promising, and it lands on something
+    the person just did rather than on a single frame.
+
+    Which camera is actually behind the button is decided by the build,
+    not by this file. `headTrackingAvailable()` is false in Expo Go, on a
+    simulator and in any binary without the detector, and there the step
+    falls back to the one front photograph it has always taken. So there
+    are three sets of words here, because a screen that says "turn" to
+    somebody who is about to be handed a shutter has described a
+    mechanism they will not get — and that screen is the last one before
+    the only path a new user has into the app.
+
+    `title`, `body` and `cta` are the fallback's, and they are the ones
+    that were already here. The fallback is the path that must not break,
+    so it keeps the copy that was written and proofread for it.
+
+    There is no skip on any of the three. The baseline is not a feature
+    of this app, it is the thing every other feature is measured against
+    — a journey that starts without one has nothing for month three to be
+    compared with, and the person finds that out in month three.
   */
   baseline: {
     title: 'One photo, from the front.',
     body: 'It stays on your phone, and it is the point everything after today is measured against.',
     cta: 'Take the photo',
+    /*
+      The turn, on a build that can follow a head. The body says what one
+      turn in front of a front-facing camera reaches and what it does
+      not, in the same terms `SCAN_COPY.sweep.scope` uses on the camera
+      screen itself — the two screens are describing one mechanism, and
+      only one of them is allowed to be the optimistic one.
+
+      The keys are the `mode` the capture screen is opened with, so the
+      words and the route cannot drift apart without the mismatch being
+      visible in one line of the screen that reads them.
+    */
+    sweep: {
+      title: 'One turn of your head.',
+      body: 'The turn takes the front and the two sides. The top and the back are two held shots.',
+      cta: 'Start the scan',
+    },
+    /*
+      The same scan with a screen reader running. A continuous turn is a
+      visual gesture with no honest non-visual analogue, so the capture
+      screen takes the shots one at a time and announces each — the
+      answer `new.tsx` and `capture-session.tsx` both arrive at on their
+      own. It is said here too, so the screen being read aloud describes
+      the screen that follows it.
+    */
+    walk: {
+      title: 'Five photos, one at a time.',
+      body: 'Each one is announced as it is taken, and they stay on your phone.',
+      cta: 'Start the scan',
+    },
   },
 } as const;
 

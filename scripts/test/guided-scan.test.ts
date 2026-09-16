@@ -420,3 +420,55 @@ test('copy: the blind angles are named in the words the person uses', () => {
   assert.equal(SCAN_COPY.captured.crown, 'Back captured');
   assert.ok(!SCAN_COPY.captured.crown.toLowerCase().includes('crown'));
 });
+
+test('the walk does not photograph a head whose angle could not be read', () => {
+  /*
+    ML Kit withholds the Euler angles in some configurations, and the
+    camera passes through whatever it is handed. Every test in `poseCue`
+    is a reason to say no, and every one of them is false of a number
+    that is not a number — so such a frame fell through all of them, read
+    as a head exactly on target and perfectly still, and fired the
+    shutter. An absent nod or tilt is a different thing and still reads as
+    level: absent is a reading, unreadable is not.
+  */
+  const ask = (f: Partial<PoseFace>) =>
+    poseCue({
+      face: face(f),
+      target,
+      angle: 'front',
+      sign: null,
+      phoneMoving: false,
+      phoneSteady: true,
+      facePace: 0.2,
+    });
+
+  assert.equal(ask({ yaw: Number.NaN }), 'searching');
+  assert.equal(ask({ pitch: Number.NaN }), 'searching');
+  assert.equal(ask({ roll: Number.NaN }), 'searching');
+  assert.equal(ask({ yaw: Number.POSITIVE_INFINITY }), 'searching');
+
+  // A reading that simply omits the two extra angles is still a reading.
+  assert.equal(ask({ pitch: undefined, roll: undefined }), 'hold');
+  assert.equal(ask({}), 'hold');
+
+  // And the shutter never fires from one, however long it is held.
+  let state = createScan({ angles: ANGLES, tracking: true, handsFree: true, motionAvailable: true });
+  const blind = face({ yaw: Number.NaN, pitch: Number.NaN, roll: Number.NaN });
+  const effects: Effect[] = [];
+  for (let now = 0; now <= HOLD_MS * 3; now += 33) {
+    const result = reduce(state, {
+      type: 'face',
+      face: blind,
+      target,
+      phoneMoving: false,
+      phoneSteady: true,
+      facePace: 0.1,
+      now,
+    });
+    state = result.state;
+    effects.push(...result.effects);
+  }
+  assert.ok(!effects.some((e) => e.type === 'capture'), 'nothing is photographed');
+  assert.equal(state.phase.kind, 'tracked');
+  assert.equal(state.phase.kind === 'tracked' && state.phase.cue, 'searching');
+});

@@ -31,6 +31,7 @@ import {
 import {
   ANGLES,
   ANGLE_LABELS,
+  isDailyItem,
   missingAngles,
   type AppData,
   type Photo,
@@ -550,10 +551,20 @@ function daysLine(stat: RoutineItemStat): string {
   return `${stat.daysDone} of the ${stat.daysTracked} days it has been in your stack.`;
 }
 
-/** The item kept best, and the one kept least, once each has a week behind it. */
+/**
+ * The item kept best, and the one kept least, once each has a week behind
+ * it.
+ *
+ * Only items expected every day are ranked. A share of days is not a
+ * score for anything else: a twice-weekly shampoo followed exactly as it
+ * was set up reaches two days in seven, and the record already says so
+ * — `selectors.ts` refuses to count it as missed on the five days it was
+ * never due, and this screen may not go behind that and call the same
+ * person lagging. `isDailyItem` is the same gate the streak uses.
+ */
 function routineEnds(stats: RoutineItemStat[]): { kept: RoutineItemStat | null; lagging: RoutineItemStat | null } {
   const ranked = stats
-    .filter((s) => s.daysTracked >= ROUTINE_MIN_DAYS)
+    .filter((s) => s.daysTracked >= ROUTINE_MIN_DAYS && isDailyItem(s.item))
     .sort((a, b) => tickedShare(b) - tickedShare(a));
   const best = ranked[0];
   const worst = ranked[ranked.length - 1];
@@ -670,12 +681,19 @@ function shortfallsFor(
     out.push({ id: `gap-${tile.id}`, tone: tile.tone, headline: tile.headline, detail: tile.detail });
   }
 
+  /*
+    The card above the sections already explains why no ring was drawn,
+    in these exact words, and it is shown to everybody. What belongs here
+    is the other half — what its absence costs the record — rather than
+    the same paragraph a second time on the same screen.
+  */
   if (coverageAbsent === COVERAGE_EMPTY) {
     out.push({
       id: 'gap-mask',
       tone: 'attention',
-      headline: `${COVERAGE_EMPTY.headline}.`,
-      detail: COVERAGE_EMPTY.detail,
+      headline: 'This set carries no hair-area figure.',
+      detail:
+        'Nothing came back from the mask, so there is no area number here for the next set to sit beside. Hair fully inside the ring, and more light in the room, is what gives the next one something to be measured against.',
     });
   }
 
@@ -696,7 +714,7 @@ function shortfallsFor(
       id: 'gap-routine',
       tone: 'attention',
       headline: `You ticked ${lagging.item.label} on ${tickedShare(lagging)}% of its days.`,
-      detail: `${daysLine(lagging)} It is the one in your stack with the most days unticked behind it.`,
+      detail: `${daysLine(lagging)} It is the daily item in your stack with the smallest share of its days ticked.`,
     });
   }
 

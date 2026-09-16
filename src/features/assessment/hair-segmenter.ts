@@ -14,13 +14,22 @@
  * renders a confident percentage.
  */
 
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { decode } from 'jpeg-js';
 import { loadTensorflowModel, type TensorflowModel } from 'react-native-fast-tflite';
 
 import MODEL from '../../../assets/models/hair_segmenter.tflite';
-import { coverageOf, hairChannel, type Coverage } from './hair-mask';
+import type { PhotoMaskTrace } from '@/types/domain';
+
+import {
+  cellsOnlyTrace,
+  coverageOf,
+  hairChannel,
+  serialiseTrace,
+  traceMask,
+  type Coverage,
+} from './hair-mask';
 
 let cached: TensorflowModel | null = null;
 let loading: Promise<TensorflowModel> | null = null;
@@ -68,13 +77,6 @@ function inputChannels(model: TensorflowModel): number {
   return shape.length >= 4 ? shape[3] : 4;
 }
 
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = globalThis.atob(base64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
 /**
  * Decodes a photo to the model's input tensor: RGBA, 0–1, square.
  *
@@ -101,15 +103,51 @@ async function inputTensor(
   channels: number,
 ): Promise<Float32Array | null> {
   try {
+    /*
+      ── THE ALIGNMENT INVARIANT ──────────────────────────────────────
+      Both dimensions are given, so this resize is non-uniform: a tall
+      photograph is squashed into a square. That is deliberate and it is
+      load-bearing. Squashing is a pure axis-wise scale — no crop, no
+      offset, no rotation — so a point in the mask maps back onto the
+      photograph by `x / side` and `y / side` and nothing else, and the
+      outline this produces lands where the hair is.
+
+      Crop-to-square would be the obvious optimisation here, and it would
+      be silent: the figures would still look reasonable, and the outline
+      would sit a few centimetres off the head with nothing to say so.
+      Whatever is fed in has to be the whole frame that gets stored. The
+      other half of this invariant lives at the call site, where the
+      measurement is taken from the shrunk capture rather than the raw
+      camera frame for exactly the same reason.
+    */
     const context = ImageManipulator.manipulate(uri).resize({ width: side, height: side });
     const rendered = await context.renderAsync();
     const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.92 });
 
-    const base64 = await FileSystem.readAsStringAsync(saved.uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    const raw = decode(base64ToBytes(base64), { useTArray: true });
-    FileSystem.deleteAsync(saved.uri, { idempotent: true }).catch(() => undefined);
+    /*
+      `File.bytes()` rather than `FileSystem.readAsStringAsync`. In
+      expo-file-system 57 the package root still exports the legacy names
+      and every one of them throws when called, so this read failed on
+      every device, the catch below swallowed it, and the mask was
+      silently absent from every photograph while the tests passed.
+    */
+    const working = new File(saved.uri);
+    let raw;
+    try {
+      raw = decode(await working.bytes(), { useTArray: true });
+    } finally {
+      /*
+        In a finally, because a decode that throws used to leave the
+        temporary JPEG behind — five per session, growing for as long as
+        the failure lasted, counted against the person's storage figure
+        with nothing on screen to say where it came from.
+      */
+      try {
+        working.delete();
+      } catch {
+        // A file that is already gone is the outcome we wanted anyway.
+      }
+    }
 
     const pixels = side * side;
     const tensor = new Float32Array(pixels * channels);
@@ -127,13 +165,39 @@ async function inputTensor(
 }
 
 /**
+ * What one photograph measured: the figures, and the shape they came from.
+ *
+ * The mask itself is not in here and never leaves the call below. It is a
+ * megabyte of `Float32Array` per photograph, and a five-angle session that
+ * held on to all five would be carrying five of them on a phone with two
+ * gigabytes of memory. What comes out instead is the outline, which is
+ * kilobytes, and which is the only part of the mask anything draws.
+ */
+export type PhotoMeasurement = {
+  coverage: Coverage;
+  /**
+   * The 0.5 boundary the coverage was counted at, and the 256 squares
+   * that figure decomposes into.
+   *
+   * Always present when the model ran at all. A mask that came back in
+   * too many pieces to trace as one shape carries an empty `contours`
+   * and its squares, which is a different statement from the absent
+   * field on a photograph taken before outlines were kept: one says the
+   * mask shattered, the other says nobody looked. Collapsing the two
+   * into "no outline" would lose the squares as well as the distinction,
+   * and the squares are the half that survives fragmentation intact.
+   */
+  maskTrace: PhotoMaskTrace;
+};
+
+/**
  * Measures hair coverage in one photograph.
  *
  * Null when the photo cannot be read or the model cannot run — callers
  * render nothing rather than a zero, because zero coverage and "we could
  * not look" are very different statements to make to somebody.
  */
-export async function measureCoverage(uri: string): Promise<Coverage | null> {
+export async function measureCoverage(uri: string): Promise<PhotoMeasurement | null> {
   try {
     const model = await segmenter();
     const side = inputSide(model);
@@ -157,7 +221,38 @@ export async function measureCoverage(uri: string): Promise<Coverage | null> {
 
     // Classes per pixel, from the output tensor rather than assumed.
     const classes = Math.max(1, Math.round(output.length / (side * side)));
-    return coverageOf(hairChannel(output, side, classes));
+
+    /*
+      The mask is reduced to its outline here, while it is in hand, and
+      dies at the end of this call exactly as it always did. Tracing it
+      later would mean carrying a megabyte per photograph up through the
+      capture screen, and tracing it in the report would mean re-running
+      the model on a file that storage may have recompressed since.
+
+      ── WHAT THIS COSTS, HONESTLY ──────────────────────────────────────
+      `model.run` above is native and asynchronous; everything from here
+      down is plain JavaScript and blocks the thread it is on until it
+      finishes. Measured at 6-16 ms per 512-square mask in Node on a
+      desktop, which is 30-245 ms in Hermes on the oldest hardware this
+      app supports. Nothing is waiting on the result — the capture beat
+      floors at 2,200 ms — but React updates and touches on the capture
+      screen are waiting on the thread, so this is a new stall at the
+      shutter and not merely "no second model run". It has not been
+      measured on a device. If the capture screen ever feels sticky at
+      the shutter on an older phone, measure here first.
+    */
+    const mask = hairChannel(output, side, classes);
+    const coverage = coverageOf(mask);
+    /*
+      A mask too fragmented to trace still keeps its squares. The
+      outline is the part that shatters; the per-square shares are
+      counted, not traced, and are as good on confetti as on a clean
+      head. Storing nothing at all here would throw away a reading that
+      was taken, and would make "the mask shattered" and "this
+      photograph predates outlines" the same stored state.
+    */
+    const trace = traceMask(mask) ?? cellsOnlyTrace(mask);
+    return { coverage, maskTrace: serialiseTrace(trace) };
   } catch {
     return null;
   }

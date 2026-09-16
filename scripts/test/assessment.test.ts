@@ -26,6 +26,7 @@ import {
   type AppData,
   type Photo,
   type PhotoSession,
+  type RoutineItem,
 } from '@/types/domain';
 
 import { assertHonest } from './honesty-words';
@@ -509,7 +510,12 @@ function atAngle(
 }
 
 /** A stack item added `added` days ago and ticked on the given day offsets. */
-function stack(label: string, added: number, ticks: number[]): Pick<AppData, 'routineItems' | 'routineLogs'> {
+function stack(
+  label: string,
+  added: number,
+  ticks: number[],
+  cadence: Partial<Pick<RoutineItem, 'cadence' | 'timesPerWeek'>> = {},
+): Pick<AppData, 'routineItems' | 'routineLogs'> {
   const id = `item_${label}`;
   const key = (d: number) => daysAgo(d).toISOString().slice(0, 10);
   return {
@@ -520,6 +526,7 @@ function stack(label: string, added: number, ticks: number[]): Pick<AppData, 'ro
         label,
         cadence: 'daily',
         createdAt: daysAgo(added).toISOString(),
+        ...cadence,
       },
     ],
     routineLogs: ticks.map((d) => ({
@@ -529,6 +536,16 @@ function stack(label: string, added: number, ticks: number[]): Pick<AppData, 'ro
       completed: true,
       loggedAt: daysAgo(d).toISOString(),
     })),
+  };
+}
+
+/** Several items in one stack, as the store holds them. */
+function stacks(
+  ...parts: Pick<AppData, 'routineItems' | 'routineLogs'>[]
+): Pick<AppData, 'routineItems' | 'routineLogs'> {
+  return {
+    routineItems: parts.flatMap((p) => p.routineItems),
+    routineLogs: parts.flatMap((p) => p.routineLogs),
   };
 }
 
@@ -983,4 +1000,89 @@ test('scan: no sentence in any of the three sections claims anything about hair'
     // The wider sweep: flattery, advice, urgency, a persona, an exclamation.
     assertHonest(assert, sentences, 'the reading');
   }
+});
+
+test('scan: an item followed exactly as it was set up is never the one held up as lagging', () => {
+  /*
+    `selectors.ts` refuses to count a twice-weekly item as missed on the
+    five days it was never due — "counting it as missed would hold
+    somebody's streak at zero for following their routine exactly as they
+    set it". A share of days cannot go behind that and call the same
+    person lagging on the one screen whose job is to be checkable: two of
+    seven is 29%, which no threshold on a share of days can ever pass.
+    Only items expected every day are ranked at all.
+  */
+  const exact = withSessions(
+    [session('s1', 0, ANGLES)],
+    stack('Ketoconazole shampoo', 28, [1, 4, 8, 11, 15, 18, 22, 25], { cadence: 'weekly', timesPerWeek: 2 }),
+  );
+  const r = buildScanReading(exact.sessions[0], exact)!;
+  assert.equal(r.shortfalls.find((n) => n.id === 'gap-routine'), undefined);
+  assert.equal(r.strengths.find((n) => n.id === 'well-routine'), undefined);
+  assert.equal(r.actions.find((a) => a.id === 'do-routine'), undefined);
+  for (const note of [...r.strengths, ...r.shortfalls]) {
+    assert.ok(!note.headline.includes('Ketoconazole'), 'nothing is said about it either way');
+    assert.ok(!note.detail.includes('Ketoconazole'));
+  }
+
+  // A daily item in the same stack is still ranked, so the filter is the
+  // only thing that changed.
+  const mixed = withSessions(
+    [session('s1', 0, ANGLES)],
+    stacks(
+      stack('Ketoconazole shampoo', 28, [1, 4, 8, 11, 15, 18, 22, 25], { cadence: 'weekly', timesPerWeek: 2 }),
+      stack('Minoxidil', 20, [1, 2, 3]),
+    ),
+  );
+  const m = buildScanReading(mixed.sessions[0], mixed)!;
+  assert.match(m.shortfalls.find((n) => n.id === 'gap-routine')!.headline, /Minoxidil/);
+});
+
+test('scan: the routine line claims only the ranking it actually made', () => {
+  /*
+    The items are ranked by the share of their days they were ticked on,
+    so that is what the sentence underneath may claim. It said "the most
+    days unticked behind it", which is a count, and a long-standing item
+    kept well has far more unticked days than a young one kept badly — so
+    on this fixture the old sentence was simply false.
+  */
+  const data = withSessions(
+    [session('s1', 0, ANGLES)],
+    stacks(
+      stack('Alpha', 100, Array.from({ length: 60 }, (_, i) => i + 1)),
+      stack('Beta', 10, [1, 2, 3]),
+    ),
+  );
+  const r = buildScanReading(data.sessions[0], data)!;
+  const gap = r.shortfalls.find((n) => n.id === 'gap-routine')!;
+
+  // Beta is the smaller share (3 of 11) and Alpha has far more unticked
+  // days behind it (41 of 101), so only one of the two sentences is true.
+  assert.match(gap.headline, /Beta/);
+  assert.match(gap.detail, /smallest share of its days ticked/);
+  assert.ok(!gap.detail.includes('most days unticked'), 'a share is not a count');
+});
+
+test('scan: no paragraph on the report is printed twice', () => {
+  /*
+    An empty mask draws its own card above the sections, in words the
+    reading also had in its shortfalls. Two identical paragraphs on one
+    screen read as a fault in the app, and the second one carries nothing
+    the first did not.
+  */
+  const empty = scan(clean, coverage(0.001, 0.0005, 0.0005, 0.5));
+  const r = buildScanReading(empty)!;
+  assert.ok(r.coverageAbsent, 'the mask came back empty');
+
+  const said = [
+    r.coverageAbsent!.headline,
+    r.coverageAbsent!.detail,
+    ...[...r.strengths, ...r.shortfalls, ...r.rings].flatMap((n) => [n.headline, n.detail]),
+    ...r.actions.flatMap((a) => [a.headline, a.detail]),
+    ...r.nextTime,
+  ].map((line) => line.trim().replace(/\.$/, ''));
+
+  assert.equal(new Set(said).size, said.length, `a line is on the screen twice: ${said.join(' | ')}`);
+  assert.ok(r.shortfalls.some((n) => n.id === 'gap-mask'), 'and the shortfall is still made');
+  assert.equal(r.shortfalls.find((n) => n.id === 'gap-mask')!.premium, false, 'still free');
 });

@@ -110,6 +110,7 @@ import {
   type Angle,
   type Photo,
   type PhotoCoverage,
+  type PhotoMaskTrace,
   type PhotoSession,
 } from '@/types/domain';
 
@@ -293,6 +294,20 @@ function clamp01(value: number): number {
 }
 
 /**
+ * What one frame measured: the figures, and the outline they came from.
+ *
+ * The outline travels with the figures rather than behind them because
+ * they are the same reading — one is the number and the other is the
+ * shape it was counted over, and a photograph carrying one without the
+ * other would be a drawing nobody could check or a figure nobody could
+ * see. Either half can be absent; both are optional on the record.
+ */
+type FrameReading = {
+  coverage: PhotoCoverage;
+  maskTrace?: PhotoMaskTrace;
+};
+
+/**
  * Measures hair coverage in one frame, on the device, and never throws.
  *
  * The segmenter is loaded lazily because importing it touches the TFLite
@@ -302,7 +317,7 @@ function clamp01(value: number): number {
  * photograph is kept regardless. Coverage is a note about the photo, not
  * a condition of keeping it.
  */
-async function measureCoverageSafely(uri: string): Promise<PhotoCoverage | undefined> {
+async function measureCoverageSafely(uri: string): Promise<FrameReading | undefined> {
   // The segmenter runs on Nitro. Without it the import itself would be
   // reported as a fatal error rather than thrown here — see `nitroAvailable`.
   if (!nitroAvailable()) return undefined;
@@ -310,12 +325,24 @@ async function measureCoverageSafely(uri: string): Promise<PhotoCoverage | undef
     const { measureCoverage } = await import('@/features/assessment/hair-segmenter');
     const reading = await measureCoverage(uri);
     if (!reading) return undefined;
+    const { coverage } = reading;
     return {
-      fraction: reading.fraction,
-      upperFraction: reading.upperFraction,
-      verticalBalance: reading.verticalBalance,
-      horizontalBalance: reading.horizontalBalance,
-      pixels: reading.pixels,
+      coverage: {
+        fraction: coverage.fraction,
+        upperFraction: coverage.upperFraction,
+        verticalBalance: coverage.verticalBalance,
+        horizontalBalance: coverage.horizontalBalance,
+        pixels: coverage.pixels,
+      },
+      /*
+        Kept whole, including the case where the mask shattered and the
+        outline came back empty. An empty outline with its squares still
+        in it is a photograph that was measured and could not be drawn
+        as one shape; no field at all is a photograph from before any of
+        this existed. A reader that cannot tell those apart has to
+        explain the second to somebody it happened to the first way.
+      */
+      maskTrace: reading.maskTrace,
     };
   } catch {
     return undefined;
@@ -537,7 +564,7 @@ export default function CaptureSessionScreen() {
    * set is analysed it is usually already done; a retake simply leaves
    * its entry behind to be ignored.
    */
-  const coverageByUri = useRef(new Map<string, Promise<PhotoCoverage | undefined>>());
+  const coverageByUri = useRef(new Map<string, Promise<FrameReading | undefined>>());
   /** How the shutter fired for each angle, kept for the saved record. */
   const captureModeByAngle = useRef(new Map<Angle, Photo['capture']>());
   /**
@@ -705,6 +732,23 @@ export default function CaptureSessionScreen() {
           next angle. It is the slowest thing the app does to a
           photograph, and this is the one moment where nobody is waiting
           on it.
+
+          ── THE ALIGNMENT INVARIANT ────────────────────────────────────
+          It is measured on `small`, not on `photo.uri`, and that is not
+          an accident of ordering. `shrinkCapture` resizes by width only
+          and crops nothing, and the file that is persisted is a re-render
+          of this same frame at this same width — so the mask, the stored
+          photograph and the outline drawn over it all share one framing,
+          and a point in the mask maps onto the photograph by a scale on
+          each axis with no crop and no offset.
+
+          Measuring the raw camera frame here would look like a saving
+          and would break every overlay alignment silently: the figures
+          would still be plausible, the outline would sit off the head,
+          no error would be thrown and no test that only reads numbers
+          would fail. If this line ever has to move, the drawing has to
+          learn the crop first. The other half of this invariant is in
+          hair-segmenter's `inputTensor`, where the square resize is.
         */
         coverageByUri.current.set(small.uri, measureCoverageSafely(small.uri));
         // A frame from the simulator's stand-in camera is recorded as
@@ -1437,7 +1481,7 @@ export default function CaptureSessionScreen() {
       const sessionKey = Date.now().toString(36);
       const stored: {
         photo: Omit<Photo, 'id' | 'sessionId'>;
-        late: Promise<PhotoCoverage | undefined> | null;
+        late: Promise<FrameReading | undefined> | null;
       }[] = [];
 
       for (const a of ordered) {
@@ -1464,11 +1508,12 @@ export default function CaptureSessionScreen() {
         );
 
         let coverage: PhotoCoverage | undefined;
-        let late: Promise<PhotoCoverage | undefined> | null = null;
+        let maskTrace: PhotoMaskTrace | undefined;
+        let late: Promise<FrameReading | undefined> | null = null;
         if (nitro) {
           const running = coverageByUri.current.get(shot.uri) ?? Promise.resolve(undefined);
           const reading = await floor(
-            withinTime<PhotoCoverage | undefined | typeof STILL_RUNNING>(
+            withinTime<FrameReading | undefined | typeof STILL_RUNNING>(
               running,
               COVERAGE_WAIT_MS,
               STILL_RUNNING,
@@ -1476,7 +1521,12 @@ export default function CaptureSessionScreen() {
             SCAN_COPY.analysing.unit.area(label),
             a,
           );
-          coverage = reading === STILL_RUNNING ? undefined : reading;
+          // The outline rides the reading it was traced from. There is no
+          // second pass over the photograph and no second model run: the
+          // mask was traced inside the measurement that produced these
+          // figures, so the two cannot be of different pixels.
+          coverage = reading === STILL_RUNNING ? undefined : reading?.coverage;
+          maskTrace = reading === STILL_RUNNING ? undefined : reading?.maskTrace;
           // Only a reading that outran the wait is worth following up;
           // one that finished without a result has nothing more to say.
           late = reading === STILL_RUNNING ? running : null;
@@ -1492,6 +1542,7 @@ export default function CaptureSessionScreen() {
             capturedAt: new Date().toISOString(),
             quality: analysis ? { ...analysis.quality } : undefined,
             coverage,
+            maskTrace,
             pose: shot.pose,
             capture: captureModeByAngle.current.get(a),
           },
@@ -1517,7 +1568,11 @@ export default function CaptureSessionScreen() {
           if (!late || !saved) continue;
           late.then(
             (reading) => {
-              if (reading) patchPhoto(session.id, saved.id, { coverage: reading });
+              if (!reading) return;
+              patchPhoto(session.id, saved.id, {
+                coverage: reading.coverage,
+                maskTrace: reading.maskTrace,
+              });
             },
             () => undefined,
           );

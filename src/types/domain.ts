@@ -511,6 +511,69 @@ export type PhotoCoverage = {
   pixels: number;
 };
 
+/**
+ * The shape the segmenter marked, traced from the same mask the figures
+ * above were counted on.
+ *
+ * Kept so the reading can be *shown* on the photograph rather than only
+ * printed as a percentage. It is the 0.5 boundary — the same threshold
+ * `coverageOf` counts at — and nothing else: no smoothing, no curve
+ * fitting, no sub-threshold gradient. Whatever draws this is drawing the
+ * counted edge or it is drawing something the numbers do not describe.
+ *
+ * Still area, not density, for exactly the reason `PhotoCoverage` says:
+ * an outline around a region cannot see between the strands inside it.
+ *
+ * Coordinates are integers in a 1024 box spanning the whole photograph,
+ * on both axes independently — `x / 1024` and `y / 1024` are fractions of
+ * the stored photograph's width and height. That is a pure axis-wise
+ * scale with no crop and no offset, and it holds only because the mask is
+ * measured on the same shrunk frame that is persisted; see the note at
+ * the measurement site in capture-session. 1024 is twice the model's 512,
+ * so every vertex lands on an even integer and the conversion is exact.
+ *
+ * Absent on builds without the native model, on every photograph taken
+ * before this existed, and on a mask too fragmented to trace. Every
+ * reader has to render the photograph correctly without one.
+ */
+export type PhotoMaskTrace = {
+  /**
+   * Closed loops of the 0.5 boundary, `"x,y x,y …"`, the first point
+   * implicitly repeated at the end. Outer boundaries and the holes
+   * inside them both appear, so this is drawn with an even-odd fill —
+   * a gap in the hair is a gap the count already excluded.
+   *
+   * Empty when the mask came back in too many pieces to trace as one
+   * shape. That is a different thing from this whole field being
+   * absent, and the two have to be said differently: empty means the
+   * mask shattered and the squares below are still good, absent means
+   * the photograph predates outlines being kept at all.
+   */
+  contours: string[];
+  /**
+   * Open polylines, same encoding: per sampled column, the highest row
+   * the mask *held* for a short run of rows. Not the highest row it
+   * touched — a strand thinner than the run sits above this line and
+   * inside the outline both, by design, because a single stray pixel
+   * would otherwise carry the line to the top of the frame. Anything
+   * describing this to a person has to describe the weaker claim.
+   *
+   * Broken where the mask broke, and never joined across a gap — a
+   * joined gap would be a line the model did not draw.
+   */
+  topEdge: string[];
+  /**
+   * A 16x16 grid as base64 of 256 bytes, each the share of that cell's
+   * own area counted as hair, times 255. The 256 values average back to
+   * `PhotoCoverage.fraction`: it is the printed figure taken apart, not
+   * a second opinion, and emphatically not a map of how much hair is in
+   * a place.
+   */
+  cells: string;
+  /** Simplification tolerance actually used, in 1024-box units. */
+  tolerance: number;
+};
+
 export type Photo = {
   id: string;
   sessionId: string;
@@ -539,6 +602,19 @@ export type Photo = {
    * also carries its marker in its own pixels.
    */
   capture?: 'guided' | 'manual' | 'timer' | 'sample';
+  /**
+   * The outline of what `coverage` was counted over, if it was kept.
+   *
+   * Optional for the same reason `horizontalBalance` is: it arrived after
+   * photographs had already been stored, and `SCHEMA_VERSION` cannot be
+   * bumped to make room for it — the loader discards a blob whose version
+   * differs, so a bump would erase every installed journey. Additive and
+   * absent is the only safe shape, and absent is the common case.
+   *
+   * Present with an empty `contours` is not the same as absent: see the
+   * note there. Present means a mask was measured on this photograph.
+   */
+  maskTrace?: PhotoMaskTrace;
 };
 
 export type PhotoSession = {
@@ -880,6 +956,12 @@ export type AppData = {
  * whose version differs, so a bump would erase every installed journey.
  * `products` and `RoutineItem.productBarcode` are additive: a record saved
  * before they existed reads `products` as [] from the EMPTY_DATA spread.
+ *
+ * NOT bumped for `Photo.maskTrace` either, for the same reason and by the
+ * same rule: a new field on a record is additive, reads as `undefined` on
+ * everything written before it, and every screen that shows one already
+ * has to handle its absence. A field that could not be read as absent
+ * would be the case for a bump — and would still cost every journey.
  */
 export const SCHEMA_VERSION = 2;
 

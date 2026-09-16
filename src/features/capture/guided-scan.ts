@@ -48,6 +48,7 @@ import {
   poseCost,
   poseOf,
   pushYaw,
+  readableFace,
   ringClosed,
   segmentGap,
   settleReady,
@@ -405,6 +406,17 @@ export function poseCue(input: {
 }): Cue {
   const { face, angle, sign, baselineSign } = input;
 
+  /*
+    A detector reading whose angles are not numbers is not a reading of a
+    head. Every test below is a reason to say no, and every one of them
+    is false of a number that is not a number — so such a frame would
+    fall through all of them, read as a head exactly on target and
+    perfectly still, and fire the shutter. An absent nod or tilt is
+    different and still reads as level: absent is a reading, unreadable
+    is not.
+  */
+  if (!readableFace(face)) return 'searching';
+
   const framing = framingOf(face, input.target, angle);
   if (framing.size === 'far') return 'closer';
   if (framing.size === 'near') return 'back';
@@ -654,17 +666,29 @@ function sweepCue(input: {
  * built from the front photograph, so rather than inventing an escape the
  * turn hands the front alone back to the one-at-a-time phase, with the
  * shutter offered.
+ *
+ * A temple is only ever filed as given up on if the turn had a chance at
+ * it. `openedAt` is set when the front photograph lands and the ring
+ * opens; before that nothing has been asked of either side, so ending the
+ * turn there is a person declining the turn, not declining two angles.
+ * Those angles go back to the walk as ordinary steps, one at a time.
  */
 function finishSweep(state: ScanState, sweep: SweepState, effects: Effect[], now: number): Result {
   let wells = sweep.wells;
   const skipped = [...state.skipped];
+  const turned = sweep.openedAt !== null;
 
   for (const key of WELL_KEYS) {
     const well = wells[key];
     if (well.status !== 'open') continue;
     if (well.angle === 'front') continue;
     wells = { ...wells, [key]: { ...well, status: 'abandoned' } };
-    if (state.order.includes(well.angle) && !state.shots[well.angle] && !skipped.includes(well.angle)) {
+    if (
+      turned &&
+      state.order.includes(well.angle) &&
+      !state.shots[well.angle] &&
+      !skipped.includes(well.angle)
+    ) {
       skipped.push(well.angle);
     }
   }
@@ -789,7 +813,16 @@ function sweepCentre(
 
   const now = event.now;
   const front = sweep.wells.front;
-  const face = event.face;
+  /*
+    A reading whose angles are not numbers is not a reading of a head at
+    the front. Every comparison in `poseCue` against a non-number is
+    false, so an unreadable frame reads as a head sitting exactly on
+    target and perfectly still — which is the one combination that fires
+    the shutter, on the one photograph the reading cannot do without. It
+    is treated as no face at all, and the pose it would have carried onto
+    the photograph never leaves this function.
+  */
+  const face = event.face && readableFace(event.face) ? event.face : null;
 
   let cue: SweepCue = face
     ? poseCue({
@@ -1195,6 +1228,14 @@ function reduceShotSoft(state: ScanState, event: Extract<Event, { type: 'shotSof
 function reduceMode(state: ScanState, event: Extract<Event, { type: 'mode' }>): Result {
   if (Object.keys(state.shots).length > 0) return { state, effects: NO_EFFECTS };
   if (event.mode === state.mode) return { state, effects: NO_EFFECTS };
+  /*
+    A photograph already in flight is a photograph that has to land
+    somewhere. Rebuilding the phase underneath it would leave the `shot`
+    with nothing to write into.
+  */
+  if (state.phase.kind === 'capturing' || state.phase.kind === 'flying') {
+    return { state, effects: NO_EFFECTS };
+  }
 
   if (event.mode === 'sweep') {
     if (!sweepAvailable(state)) return { state, effects: NO_EFFECTS };
@@ -1595,6 +1636,14 @@ export function reduce(state: ScanState, event: Event): Result {
     case 'shotSoft':
       return reduceShotSoft(state, event);
     case 'finish':
+      /*
+        Not while a photograph is being taken. `finishSweep` replaces the
+        phase, and the `shot` that comes back a few hundred milliseconds
+        later would then reach a phase that ignores it — the file written
+        to disk and nothing in the record pointing at it. The shutter has
+        already fired; finishing waits the one step for it to land.
+      */
+      if (state.phase.kind === 'capturing') return { state, effects: NO_EFFECTS };
       return state.sweep && !state.sweep.finished
         ? finishSweep(state, state.sweep, [], event.now)
         : { state, effects: NO_EFFECTS };

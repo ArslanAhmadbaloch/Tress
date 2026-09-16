@@ -14,7 +14,7 @@
  * website and in the Play data-safety declaration stays true.
  */
 
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { decode } from 'jpeg-js';
 
@@ -34,14 +34,6 @@ import {
  */
 const SIZE = 64;
 
-function base64ToBytes(base64: string): Uint8Array {
-  // `atob` exists in Hermes; Buffer does not without a polyfill.
-  const binary = globalThis.atob(base64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
 /** Decodes one photo to a small grey grid, or null if it cannot be read. */
 export async function loadGrey(uri: string): Promise<GreyImage | null> {
   try {
@@ -49,14 +41,25 @@ export async function loadGrey(uri: string): Promise<GreyImage | null> {
     const image = await context.renderAsync();
     const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
 
-    const base64 = await FileSystem.readAsStringAsync(saved.uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    const raw = decode(base64ToBytes(base64), { useTArray: true });
+    /*
+      `File.bytes()` rather than `FileSystem.readAsStringAsync`. In
+      expo-file-system 57 the package root still exports the legacy names,
+      but every one of them throws when called — so that read failed on
+      every device, the catch below swallowed it, and this function
+      returned null for every photograph ever taken while all of the tests
+      passed. It also saves the base64 and `atob` round trip, which cost a
+      third more memory than the file for nothing.
+    */
+    const working = new File(saved.uri);
+    const raw = decode(await working.bytes(), { useTArray: true });
 
     // The working file is ours, not the user's photograph. Leaving these
     // behind would quietly fill their device one scan at a time.
-    FileSystem.deleteAsync(saved.uri, { idempotent: true }).catch(() => undefined);
+    try {
+      working.delete();
+    } catch {
+      // A file that is already gone is the outcome we wanted anyway.
+    }
 
     return toGrey(raw.data as unknown as Uint8Array, raw.width, raw.height);
   } catch {

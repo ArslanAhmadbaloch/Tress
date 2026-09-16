@@ -111,6 +111,15 @@ export function dispatchSegment(input: {
   current: number;
   currentF: number;
 }): Cursor {
+  /*
+    A position that cannot be read is not a new position. Without this
+    the hysteresis below lets it through — the gap against NaN is NaN,
+    which is not less than the threshold — and NaN is written into the
+    cursor the ring draws from.
+  */
+  if (!Number.isFinite(input.theta)) {
+    return { current: input.current, currentF: input.currentF, changed: false };
+  }
   const position = fractional(input.theta);
   if (segmentGap(position, input.currentF) < SEGMENT_HYSTERESIS) {
     return { current: input.current, currentF: input.currentF, changed: false };
@@ -161,7 +170,16 @@ export function readableFace(face: PoseFace): boolean {
 /** Milliseconds since the last face, capped; zero when there was no last face. */
 export function dwellStep(lastFaceAt: number | null, now: number): number {
   if (lastFaceAt === null) return 0;
-  return Math.max(0, Math.min(now - lastFaceAt, DWELL_DT_CAP_MS));
+  const step = now - lastFaceAt;
+  /*
+    A clock that is not a number gives a step that is not a number, and
+    `dt <= 0` is false of it — so without this the frame would be
+    accepted and the segment it landed in would be set to NaN for the
+    rest of the turn, never full and never able to close the ring. An
+    unreadable clock is no time at all.
+  */
+  if (!Number.isFinite(step)) return 0;
+  return Math.max(0, Math.min(step, DWELL_DT_CAP_MS));
 }
 
 /**
@@ -638,6 +656,13 @@ export function settleReady(input: {
   */
   if (!Number.isFinite(input.cost)) return false;
   const held = input.now - input.settleSince;
+  /*
+    The same is true of the clock. Every comparison below is a reason to
+    wait, and every one of them is false of a number that is not a
+    number — so an unreadable clock would fall through all of them and
+    fire the shutter, which is the opposite of what this gate is for.
+  */
+  if (!Number.isFinite(held)) return false;
   if (held < SETTLE_MS) return false;
   if (held >= SETTLE_MAX_MS) return true;
   const falling = input.lastCost !== null && input.cost < input.lastCost;

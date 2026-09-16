@@ -418,7 +418,40 @@ test('funnel: the baseline asks for one photograph and cannot be skipped', () =>
   assert.ok(!('skip' in COPY.baseline), 'a baseline with a skip is not a baseline');
   assert.ok(
     !/five|5 angles|angles/i.test(`${COPY.baseline.title} ${COPY.baseline.body}`),
-    'the five-angle set is asked for later, from Home',
+    'the fallback takes one photograph, and its own words must not promise the set',
+  );
+});
+
+test('funnel: every ending the baseline can take has words of its own', () => {
+  /*
+    The step branches three ways — the turn, the same scan one target at
+    a time, and the one-photo fallback on a build with no face detector —
+    and the first two live one level down, at COPY.baseline.sweep and
+    COPY.baseline.walk. The assertions above are about the fallback's own
+    three strings and cannot see either variant, so a claim added to the
+    scan copy would have entered the app past every guard on this screen.
+    These are the guards for the other two endings.
+  */
+  const endings = { baseline: COPY.baseline, sweep: COPY.baseline.sweep, walk: COPY.baseline.walk };
+
+  for (const [name, copy] of Object.entries(endings)) {
+    assert.equal(typeof copy.title, 'string', `${name} has no title`);
+    assert.equal(typeof copy.body, 'string', `${name} has no body`);
+    assert.equal(typeof copy.cta, 'string', `${name} has no cta`);
+    assert.ok(copy.title.trim() && copy.body.trim() && copy.cta.trim(), `${name} is half written`);
+    assert.ok(!('skip' in copy), `${name}: a baseline with a skip is not a baseline`);
+  }
+
+  /*
+    The turn reaches three of the five angles and no more, and the camera
+    screen says so in SCAN_COPY.sweep.scope. If this screen stops naming
+    what the turn leaves out, the last thing said before the camera opens
+    is more generous than the mechanism.
+  */
+  assert.match(
+    COPY.baseline.sweep.body,
+    /top|back/i,
+    'the sweep copy must say what one turn does not reach',
   );
 });
 
@@ -476,12 +509,27 @@ test('funnel: every button says continue, or says exactly what the tap does', ()
   // "That's My Goal" and "Build My Routine" narrated what you had just
   // done; eleven of those in a row read as a sales script. A button
   // either moves on, or names the one real thing it is about to do.
-  const allowed = /^(Continue|Get started|Choose a photo|Take the photo)$/;
-  for (const [step, copy] of Object.entries(COPY)) {
-    if ('cta' in copy) {
-      assert.match(copy.cta, allowed, `${step}: "${copy.cta}" is narrating rather than acting`);
+  const allowed = /^(Continue|Get started|Choose a photo|Take the photo|Start the scan)$/;
+  /*
+    Walks nested copy, because the baseline's two scan endings keep their
+    own cta one level down. Iterating the top level only left the one
+    button this funnel has gained since the rule was written — "Start the
+    scan" — as the only button in the funnel nothing checked.
+  */
+  const walk = (node: object, path: string): void => {
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'cta') {
+        assert.match(
+          value as string,
+          allowed,
+          `${path}: "${value}" is narrating rather than acting`,
+        );
+      } else if (value && typeof value === 'object') {
+        walk(value as object, path ? `${path}.${key}` : key);
+      }
     }
-  }
+  };
+  walk(COPY, '');
 });
 
 /* ----------------------------- reference set ---------------------------- */

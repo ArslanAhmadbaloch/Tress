@@ -187,21 +187,48 @@ export default function RoutineScreen() {
         <Text variant="title3" accessibilityRole="header">
           Routine
         </Text>
-        <PressableScale
-          hitSlop={5}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 17,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.fill,
-          }}>
-          <Icon name="close" size={15} color={colors.text} />
-        </PressableScale>
+        {/*
+          The shelf is the only way into /shelf. It sits here because the
+          shelf reads this list back — it quotes the tasks below against
+          the product records the app has fetched — so the two screens
+          are about the same handful of bottles. It carries no action:
+          the shelf arranges records and adds nothing to this list, so
+          opening it from here cannot leave anything half-done.
+        */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <PressableScale
+            hitSlop={5}
+            onPress={() => router.push('/shelf')}
+            accessibilityRole="button"
+            accessibilityLabel="Your shelf"
+            style={{
+              height: 34,
+              paddingHorizontal: spacing.md,
+              borderRadius: 17,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.fill,
+            }}>
+            <Text variant="footnote" color="textSecondary">
+              Shelf
+            </Text>
+          </PressableScale>
+          <PressableScale
+            hitSlop={5}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 17,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.fill,
+            }}>
+            <Icon name="close" size={15} color={colors.text} />
+          </PressableScale>
+        </View>
       </View>
 
       <ScrollView

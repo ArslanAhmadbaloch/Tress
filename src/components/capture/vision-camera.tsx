@@ -326,8 +326,10 @@ function VisionCameraStage({
       // ML Kit reports all three Euler angles in this configuration —
       // they are withheld only when contour detection is asked for
       // alongside "fast" and no landmarks, which is not what runs here.
-      // The reducer reads an absent angle as level, so passing them
-      // through unguarded costs nothing on a build that omits them.
+      // They are passed through exactly as given, including when one of
+      // them is not a number: `poseCue` and the sweep's gates both refuse
+      // a reading they cannot read, and reporting a head at an angle this
+      // file invented would be worse than reporting the angle it got.
       pitch: best.pitchAngle,
       roll: best.rollAngle,
       at: Date.now(),

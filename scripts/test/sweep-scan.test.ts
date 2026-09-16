@@ -492,7 +492,20 @@ test('sweep: the front is never the angle left missing', () => {
   assert.equal(run.state.phase.kind === 'tracked' && run.state.phase.angle, 'front');
   assert.equal(run.state.phase.kind === 'tracked' && run.state.phase.manualHint, true);
   assert.ok(sweepOf(run).finished);
-  assert.deepEqual([...run.state.skipped].sort(), ['leftTemple', 'rightTemple']);
+  /*
+    And nothing is filed as given up on. The ring never opened, so
+    neither side was ever asked for: ending here is a person declining
+    the turn, not declining two angles. The walk picks them up one at a
+    time, which is the whole of what it is for.
+  */
+  assert.deepEqual(run.state.skipped, []);
+
+  let walked = send(run, { type: 'shutter', now: run.now });
+  walked = send(walked, { type: 'shot', uri: 'front.jpg', now: walked.now });
+  walked = send(walked, { type: 'landed', now: walked.now });
+  walked = send(walked, { type: 'tick', now: walked.now + COOLDOWN_MS });
+  assert.equal(walked.state.phase.kind, 'tracked');
+  assert.equal(walked.state.phase.kind === 'tracked' && walked.state.phase.angle, 'leftTemple');
 });
 
 test('sweep: the front is not an angle the turn may be told to do without', () => {
@@ -506,6 +519,7 @@ test('sweep: the front is not an angle the turn may be told to do without', () =
   let run = send(hold(start(), 0, 3), { type: 'skip', now: 400 });
 
   assert.ok(!run.state.skipped.includes('front'), 'the front is never recorded as skipped');
+  assert.deepEqual(run.state.skipped, [], 'and neither temple was ever asked for, so neither is given up on');
   assert.equal(sweepOf(run).wells.front.status, 'open');
   assert.equal(run.state.phase.kind, 'tracked');
   assert.equal(run.state.phase.kind === 'tracked' && run.state.phase.angle, 'front');
@@ -666,4 +680,57 @@ test('sweep: dwell only counts frames a photograph could have come from', () => 
   const lost = send({ ...level, now: level.now + 5000 }, faceEvent(null, level.now + 5000));
   assert.ok(sweepOf(lost).segments[0] >= SEGMENT_DWELL_MS);
   assert.equal(sweepOf(lost).cue, 'searching');
+});
+
+test('sweep: nothing takes the phase away from a photograph that is still coming', () => {
+  /*
+    The shutter has fired, the file is being written, and the `shot` that
+    carries its uri arrives a few hundred milliseconds later. `finish`
+    and `mode` are handled above the phase switch, so either one could
+    replace the capturing phase in that window and leave the photograph
+    with nowhere to land — written to disk, and nothing in the record
+    pointing at it.
+  */
+  const started = frame(start(), 0);
+  const firing = send({ ...started, now: started.now + HOLD_MS }, faceEvent(face(0), started.now + HOLD_MS));
+  assert.equal(firing.state.phase.kind, 'capturing');
+
+  for (const event of [{ type: 'finish' as const, now: firing.now }, { type: 'mode' as const, mode: 'walk' as const, now: firing.now }]) {
+    const pressed = send(firing, event);
+    assert.equal(pressed.state.phase.kind, 'capturing', 'the photograph keeps its phase');
+
+    const landed = send(pressed, { type: 'shot', uri: 'front.jpg', pose: { yaw: 0, pitch: 0, roll: 0 }, now: pressed.now });
+    assert.equal(landed.state.shots.front?.uri, 'front.jpg', 'and the record ends up pointing at it');
+  }
+
+  // Once it has landed, finishing works exactly as it did.
+  const done = send(send(firing, { type: 'shot', uri: 'front.jpg', now: firing.now }), {
+    type: 'finish',
+    now: firing.now + 10,
+  });
+  assert.ok(done.state.sweep?.finished);
+});
+
+test('sweep: an unreadable reading never fires the front photograph', () => {
+  /*
+    ML Kit withholds the Euler angles in some configurations. Every
+    comparison in the cue against a non-number is false, so such a frame
+    reads as a head exactly on target and perfectly still — the one
+    combination that fires the shutter, on the one photograph the reading
+    cannot do without. It is no face at all.
+  */
+  const blind = face(Number.NaN, { pitch: Number.NaN, roll: Number.NaN });
+  let run = start();
+  for (let i = 0; i < 60; i += 1) {
+    run = send(run, faceEvent(blind, run.now));
+    run = { ...run, now: run.now + DT };
+  }
+  assert.deepEqual(captured(run), []);
+  assert.equal(run.state.phase.kind, 'sweep');
+  assert.equal(sweepOf(run).holdSince, null);
+  assert.equal(sweepOf(run).lastPose, null, 'and no pose from it is kept for a tapped shutter');
+
+  // A readable head in the same place does fire, so the guard is the
+  // only thing between them.
+  assert.deepEqual(captured(takeFront(start())), ['front']);
 });

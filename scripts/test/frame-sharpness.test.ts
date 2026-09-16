@@ -25,6 +25,8 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import {
@@ -233,4 +235,59 @@ test('sharpness: a width the kernel cannot work at is refused before any work is
 test('sharpness: the sweep measures at 512, and says so', () => {
   assert.equal(SHARPNESS_WIDTH, 512);
   assert.ok(SWEEP_SOFT > 0 && Number.isFinite(SWEEP_SOFT));
+});
+
+test('nothing reads a file through an export that throws', () => {
+  /*
+    expo-file-system 57 still exports the whole legacy API from the
+    package root, and every one of those exports throws the moment it is
+    called (node_modules/expo-file-system/src/legacyWarnings.ts). Two
+    modules read photographs through `readAsStringAsync` from that root,
+    inside a try/catch — so on every real device the read threw, the
+    catch swallowed it, and the quality reading, the comparability figures
+    and the hair mask were silently absent from every photograph while
+    every test in this suite passed.
+
+    A defect that a test suite cannot see is exactly the one worth a test
+    that reads the source. `File`, `Directory` and `Paths` are the live
+    classes; the legacy names are available from `expo-file-system/legacy`
+    for anything that genuinely needs them.
+  */
+  const legacy = [
+    'readAsStringAsync',
+    'writeAsStringAsync',
+    'deleteAsync',
+    'getInfoAsync',
+    'makeDirectoryAsync',
+    'copyAsync',
+    'moveAsync',
+    'downloadAsync',
+    'EncodingType',
+  ];
+
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return walk(full);
+      return /\.tsx?$/.test(entry.name) ? [full] : [];
+    });
+
+  const offenders: string[] = [];
+  for (const file of walk('src')) {
+    // Comments stripped first: the modules that were fixed name the dead
+    // export in prose, saying why they no longer call it.
+    const source = readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/^\s*\/\/.*$/gm, ' ');
+    // Only files importing the package ROOT are at risk; the /legacy
+    // entry point exports the same names and they work there.
+    if (!/from ['"]expo-file-system['"]/.test(source)) continue;
+    for (const name of legacy) {
+      if (new RegExp(`FileSystem\\.${name}\\b|\\b${name}\\s*\\(`).test(source)) {
+        offenders.push(`${file} uses ${name}`);
+      }
+    }
+  }
+
+  assert.deepEqual(offenders, [], offenders.join('\n'));
 });

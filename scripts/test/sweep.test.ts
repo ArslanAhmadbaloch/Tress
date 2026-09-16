@@ -726,3 +726,36 @@ test('dwell: a malformed ring is refused rather than reshaped', () => {
   }
   for (const value of fillOf(segments)) assert.ok(Number.isFinite(value) && value >= 0 && value <= 1);
 });
+
+test('unreadable: a clock that is not a number stops the shutter and the ring', () => {
+  /*
+    The pose guards close the case where the head's position is unknown.
+    The clock is the other input to the same subtractions, and it fails
+    the same way: `held < SETTLE_MS` and `held >= SETTLE_MAX_MS` are both
+    false of a number that is not a number, so the settle gate would fall
+    through to firing, and `dt <= 0` is false too, so the dwell would be
+    written as NaN into a segment the ring carries for the rest of the
+    turn. Both must refuse instead.
+  */
+  assert.equal(settleReady({ settleSince: 0, now: Number.NaN, cost: 0.4, lastCost: null }), false);
+  assert.equal(settleReady({ settleSince: Number.NaN, now: 500, cost: 0.4, lastCost: null }), false);
+  // A readable clock at the same cost still fires, so the guard is the
+  // only thing that changed.
+  assert.equal(settleReady({ settleSince: 0, now: SETTLE_MAX_MS, cost: 0.4, lastCost: null }), true);
+
+  const poisoned = accrueDwell(empty(), {
+    face: face({ yaw: 15 }),
+    target,
+    now: Number.NaN,
+    lastFaceAt: 0,
+    running: true,
+  });
+  assert.equal(poisoned.dt, 0);
+  assert.equal(poisoned.index, null);
+  for (const ms of poisoned.segments) assert.equal(ms, 0);
+
+  // And a cursor reading an unreadable turn holds its last position
+  // rather than dispatching one that is not a number.
+  const held = dispatchSegment({ theta: Number.NaN, current: 2, currentF: 2.4 });
+  assert.deepEqual(held, { current: 2, currentF: 2.4, changed: false });
+});
