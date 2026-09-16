@@ -143,7 +143,7 @@ function recordSection(data: AppData, sessions: PhotoSession[]): ReportSection {
  * and the one the hairline sits in; any other measured angle is accepted
  * so a set from before the funnel changed still reads.
  */
-function coveragePhoto(session: PhotoSession): Photo | null {
+export function coveragePhoto(session: PhotoSession): Photo | null {
   return (
     session.photos.find((p) => p.angle === 'front' && p.coverage) ??
     session.photos.find((p) => p.coverage) ??
@@ -161,7 +161,7 @@ function coveragePhoto(session: PhotoSession): Photo | null {
  * which pair to hand it and how to head the result — and the heading is
  * as careful as the detail, because it is the line people read.
  */
-function coverageTrendFinding(latest: PhotoSession, previous: PhotoSession): Finding | null {
+export function coverageTrendFinding(latest: PhotoSession, previous: PhotoSession): Finding | null {
   const now = coveragePhoto(latest);
   if (!now?.coverage) return null;
   const before = previous.photos.find((p) => p.angle === now.angle && p.coverage);

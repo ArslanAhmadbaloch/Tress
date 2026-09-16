@@ -6,12 +6,19 @@ person can re-check them instead of trusting this file.
 
 ## What the code does with data
 
-**The app itself sends nothing.** There is no `fetch`, no `XMLHttpRequest`,
-no WebSocket and no HTTP client anywhere under `src/`. There is no account
-and no server. Photographs, journal entries, routine, streaks, onboarding
-answers and scan readings are written to the app's private sandbox
-(`expo-file-system` documents directory and `AsyncStorage`); the passcode
-goes to the keychain via `expo-secure-store`.
+**The app makes one kind of network request of its own: a product barcode
+lookup.** `src/features/products/open-beauty-facts.ts` sends a GET to
+`https://world.openbeautyfacts.org/api/v2/product/<barcode>.json` carrying the
+barcode digits in the path, a `fields` list, an `Accept` header and a
+`User-Agent` of `Tress/<version> (support@tresshaircare.com)` — no body, no
+cookie, no identifier, no photograph. Product photos are then loaded from
+`https://images.openbeautyfacts.org`. That is the only `fetch` under `src/`;
+there is no `XMLHttpRequest`, no WebSocket and no other HTTP client. There is
+no account and no server of ours. Photographs, journal entries, routine,
+streaks, onboarding answers and scan readings are written to the app's private
+sandbox (`expo-file-system` documents directory and `AsyncStorage`); looked-up
+products are cached in the same `AsyncStorage` record; the passcode goes to the
+keychain via `expo-secure-store`.
 
 **On-device analysis, nothing uploaded.** Two models run on the phone:
 
@@ -52,8 +59,9 @@ That is what Apple's definitions call **Purchases (Purchase History)** and
 
 **On Android none of this happens yet.** `REVENUECAT_KEYS.android` is
 `null`, so `createRevenueCatBilling()` returns null before
-`Purchases.configure` is ever called. The Android build makes no network
-request at all. The section below says what changes when that flips.
+`Purchases.configure` is ever called. The Android build's only network
+request is the barcode lookup above. The section below says what changes
+when that flips.
 
 **No analytics, no crash reporting, no ads.** Confirmed by reading
 `package.json`: no Sentry, Bugsnag, Crashlytics, Firebase, Amplitude,
@@ -63,8 +71,9 @@ used for local scheduled reminders only; `getExpoPushTokenAsync` /
 
 Permissions requested at first use, each optional: camera (photos), photo
 library (one picture for the card), Face ID / biometrics (app lock),
-notifications (reminders), motion (steadiness for the shutter). None of
-the data they expose is transmitted.
+notifications (reminders), motion (steadiness for the shutter). The camera
+also reads product barcodes; only the decoded digits are sent (above). None
+of the data they expose is otherwise transmitted.
 
 ---
 
@@ -90,6 +99,13 @@ Photographs are the obvious question and the answer is plain: they are
 written to the sandbox and read by on-device models; no copy ever leaves
 the phone, so under Apple's definition ("transmitted off the device") they
 are not collected.
+
+**Barcode lookups are not a collected data type.** A product barcode is a
+number printed on a bottle, not data about the person; it is not linked to
+identity, not stored by us, and not used for tracking. Open Beauty Facts sees
+the barcode and, as any website does, the device's IP address in the ordinary
+course of serving the request; Apple's definitions do not count that as
+collection by the app. No row in the label changes for this feature.
 
 ### Purposes
 
@@ -178,6 +194,10 @@ first build with an Android RevenueCat key.
  - Device or other IDs: none read, none sent.
  - App activity, app info and performance (crash logs, diagnostics): none
    collected — there is no crash or analytics SDK.
+ - Barcode lookup: the barcode digits go to Open Beauty Facts over HTTPS and
+   the product's name, brand, ingredient text and photo come back. Not a
+   Play data type (no personal info, no device ID, no app activity). "Does
+   your app collect or share any of the required user data types?" stays No.
 
 ### After Play Billing is switched on
 

@@ -32,9 +32,12 @@ import {
   type Journey,
   type Photo,
   type PhotoSession,
+  type Product,
   type Profile,
   type RoutineItem,
   type RoutineLog,
+  upsertProduct,
+  withoutProduct,
 } from '@/types/domain';
 
 const STORAGE_KEY = 'hj.data.v1';
@@ -104,6 +107,15 @@ type AppStore = {
   archiveRoutineItem: (itemId: string) => void;
   /** Records one more dose for today, wrapping back to none when full. */
   advanceRoutineToday: (itemId: string) => void;
+  /**
+   * Caches a looked-up or typed product. Upsert by barcode: a fresh lookup
+   * replaces a stale one, and a manual entry is replaced if the database
+   * later knows the code. Products are never deleted individually — they
+   * are database records, not personal ones; resetAll clears them.
+   */
+  saveProduct: (product: Product) => void;
+  /** Unlinks an item's product. The item and its history are untouched. */
+  detachProduct: (itemId: string) => void;
 
   addJournalEntry: (body: string, sessionId?: string) => void;
   deleteJournalEntry: (entryId: string) => void;
@@ -447,6 +459,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const saveProduct = useCallback((product: Product) => {
+    setData((prev) => ({ ...prev, products: upsertProduct(prev.products, product) }));
+  }, []);
+
+  const detachProduct = useCallback((itemId: string) => {
+    setData((prev) => ({
+      ...prev,
+      routineItems: prev.routineItems.map((item) =>
+        item.id === itemId ? withoutProduct(item) : item,
+      ),
+    }));
+  }, []);
+
   const addJournalEntry = useCallback((body: string, sessionId?: string) => {
     const trimmed = body.trim();
     if (!trimmed) return;
@@ -493,6 +518,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       archiveRoutineItem,
       advanceRoutineToday,
       updateRoutineItem,
+      saveProduct,
+      detachProduct,
       addJournalEntry,
       deleteJournalEntry,
       resetAll,
@@ -513,6 +540,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       archiveRoutineItem,
       advanceRoutineToday,
       updateRoutineItem,
+      saveProduct,
+      detachProduct,
       addJournalEntry,
       deleteJournalEntry,
       resetAll,

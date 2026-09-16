@@ -20,7 +20,7 @@ import { formatDate, formatMilestone } from '@/lib/date';
 import { useBackOrHome } from '@/lib/navigation';
 import { deletePhotoFiles } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
-import { sessionLabel } from '@/store/selectors';
+import { productFor, sessionLabel } from '@/store/selectors';
 import { useTheme, typography } from '@/theme';
 import { ANGLE_LABELS, type Photo } from '@/types/domain';
 
@@ -304,23 +304,49 @@ export default function SessionDetailScreen() {
               </Text>
             </View>
           ) : (
-            data.routineItems.map((item, i) => (
-              <View key={item.id}>
-                {i > 0 ? <Separator inset={spacing.lg} /> : null}
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: spacing.md,
-                    padding: spacing.lg,
-                  }}>
-                  <Icon name="checkCircle" size={18} color={colors.textTertiary} />
-                  <Text variant="body" style={{ flex: 1 }}>
-                    {item.label}
-                  </Text>
+            data.routineItems.map((item, i) => {
+              // The bottle in use at the time sits beside the photographs
+              // of that update; the picture is the database's, the label
+              // is the person's.
+              const product = productFor(data, item);
+              return (
+                <View key={item.id}>
+                  {i > 0 ? <Separator inset={spacing.lg} /> : null}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: spacing.md,
+                      padding: spacing.lg,
+                    }}>
+                    {product?.thumbnailUrl ? (
+                      <Image
+                        source={{ uri: product.thumbnailUrl }}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 14,
+                          backgroundColor: colors.fill,
+                        }}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                        accessible={false}
+                      />
+                    ) : (
+                      <Icon name="checkCircle" size={18} color={colors.textTertiary} />
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text variant="body">{item.label}</Text>
+                      {product?.brand ? (
+                        <Text variant="footnote" color="textTertiary" style={{ marginTop: 2 }}>
+                          {product.brand}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
         </Card>
 

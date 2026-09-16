@@ -4,12 +4,15 @@
  * App Store review expects a policy reachable from inside the app, not
  * only a URL pasted into App Store Connect. For most apps that means a
  * link out to a web page. This one can say the whole thing here, because
- * the honest version is short: nothing leaves the device.
+ * the honest version is short: nothing about you leaves the device.
  *
- * Every claim below is a fact about the code, not an intention. There is
- * no network layer in this app at all — no fetch, no analytics SDK, no
- * crash reporter, no advertising identifier. If any of that changes, this
- * screen is wrong and has to change with it.
+ * Every claim below is a fact about the code, not an intention. The app
+ * makes exactly one kind of network request of its own: a product barcode
+ * lookup to Open Beauty Facts (src/features/products/open-beauty-facts.ts),
+ * which sends the barcode digits and nothing else. There is no analytics
+ * SDK, no crash reporter, no advertising identifier. If any of that
+ * changes, this screen is wrong and has to change with it — and so are
+ * site/privacy.html and the four declaration files under store/.
  */
 
 import { useRouter } from 'expo-router';
@@ -24,7 +27,7 @@ import { useTheme } from '@/theme';
 const SECTIONS: { title: string; body: string }[] = [
   {
     title: 'What we collect',
-    body: 'Nothing. Tress has no account, no sign-in and no server of its own. The one thing that leaves your phone is the anonymous purchase check the App Store or Google Play and our subscription provider use to confirm a membership — it carries no photograph, no name and nothing you record.',
+    body: 'Nothing. Tress has no account, no sign-in and no server of its own. We cannot see your data because it is never sent to us. Apart from the product lookups described below, the one thing that leaves your phone is the anonymous purchase check the App Store or Google Play and our subscription provider use to confirm a membership — it carries no photograph, no name and nothing you record.',
   },
   {
     title: 'Where your data lives',
@@ -33,6 +36,10 @@ const SECTIONS: { title: string; body: string }[] = [
   {
     title: 'Your photographs',
     body: 'Photos you take in the app are written straight to that private storage. They are not uploaded and not shared with anyone. The reading the app gives you — light, focus, and how much of the frame the hair covers — is measured on this device, by this device, and the photograph never leaves it. Photos are not added to your camera roll unless you save one yourself.',
+  },
+  {
+    title: 'Product lookups',
+    body: 'When you scan a product barcode, the app sends that barcode number — and nothing else — to Open Beauty Facts (openbeautyfacts.org), a non-profit open database, and shows you what it lists: the product’s name, brand, photo and ingredients. No photograph, no identifier and nothing about you is sent. Like any web request, it reveals your device’s IP address to that service, and product photos are fetched from the same service. Looked-up products are kept on this device. Product data and photos are used under the Open Database License, with a link to the source on every product.',
   },
   {
     title: 'Artificial intelligence',
@@ -44,7 +51,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Permissions we ask for',
-    body: 'The camera, to take your progress photos. Your photo library, only if you choose a picture for your card. Face ID or your passcode, only if you turn on the app lock. Notifications, only if you turn on reminders. Each is asked for at the moment you first use it, and the app works without any of them.',
+    body: 'The camera, to take your progress photos and to read product barcodes. Your photo library, only if you choose a picture for your card. Face ID or your passcode, only if you turn on the app lock. Notifications, only if you turn on reminders. Each is asked for at the moment you first use it, and the app works without any of them.',
   },
   {
     title: 'Sharing',
@@ -71,7 +78,7 @@ export default function PrivacyScreen() {
           eyebrow="Privacy"
           title="Everything stays"
           titleMuted="on this device"
-          subtitle="The short version: there is no server, so there is nothing to send."
+          subtitle="The short version: no account, no server of ours, and nothing about you is ever sent."
           trailing={
             <PressableScale
               hitSlop={4}

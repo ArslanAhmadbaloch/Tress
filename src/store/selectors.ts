@@ -13,6 +13,7 @@ import {
   weeklyTarget,
   type AppData,
   type PhotoSession,
+  type Product,
   type RoutineItem,
 } from '@/types/domain';
 
@@ -695,4 +696,24 @@ export function sessionLabel(
   const named = session.title?.trim();
   if (named) return named;
   return formatMilestone(startedAt, session.capturedAt, session.isBaseline);
+}
+
+/* ------------------------------ products ------------------------------ */
+
+/** Cached products keyed by barcode. */
+export function productsByBarcode(data: AppData): Map<string, Product> {
+  return new Map(data.products.map((p) => [p.barcode, p]));
+}
+
+/**
+ * The product a routine item is, if one is linked and still cached.
+ * Every screen resolves the link through here so Home, Routine and the
+ * session screen agree on which picture and brand a row shows.
+ */
+export function productFor(
+  data: AppData,
+  item: Pick<RoutineItem, 'productBarcode'>,
+): Product | undefined {
+  if (!item.productBarcode) return undefined;
+  return data.products.find((p) => p.barcode === item.productBarcode);
 }

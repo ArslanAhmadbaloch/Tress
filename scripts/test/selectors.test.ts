@@ -76,6 +76,7 @@ function item(id: string, createdDaysAgo: number): RoutineItem {
     journeyId: 'j1',
     label: id,
     cadence: 'daily',
+    productBarcode: id === 'a' ? '5601059062534' : undefined,
     createdAt: daysAgo(createdDaysAgo).toISOString(),
   };
 }

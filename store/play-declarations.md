@@ -43,7 +43,8 @@ Store listing contains no children's content. Ads: **none**.
 
  - Photographs, journal notes, routine, streaks, onboarding answers and
    scan readings live in the app's private storage on the device. Nothing
-   is uploaded; there is no network code in the app.
+   personal is uploaded; the app's only network request is the product
+   barcode lookup below.
  - **Camera images are processed on the device and stored only in the
    app's sandbox.** The hair segmenter (a bundled MediaPipe TFLite model)
    and ML Kit face detection (bundled `com.google.mlkit:face-detection`,
@@ -52,6 +53,12 @@ Store listing contains no children's content. Ads: **none**.
    written to the app's private directory, not to the gallery. The only
    way an image leaves the sandbox is the person tapping Save or Share on
    their card, which hands one image to the system share sheet.
+ - **Product barcode lookups.** Scanning a product sends its barcode number —
+   and nothing else — to Open Beauty Facts (`world.openbeautyfacts.org`) over
+   HTTPS; the product photo is loaded from `images.openbeautyfacts.org`. No
+   photograph, identifier or account is sent. A barcode is not a Play data
+   type, so the "collect or share" answer stays No. `android.permission.INTERNET`
+   is in every Expo-built manifest already and needs no declaration.
  - Photo library: read only if the person picks a picture for their card;
    the chosen file is copied into the sandbox and not transmitted.
  - No account system, so no name, email or identifiers are collected.
@@ -91,7 +98,8 @@ Submitting "no collection" and then shipping billing without revising it is
 the kind of mismatch that gets an app pulled. Revise first, ship second.
 
 ## Permissions declarations
- - CAMERA: progress photographs, processed and stored on the device.
+ - CAMERA: progress photographs, processed and stored on the device, and
+   reading product barcodes (only the decoded number is sent, see above).
  - USE_BIOMETRIC / USE_FINGERPRINT: optional app lock.
  - RECORD_AUDIO is in `blockedPermissions` in app.json, so it is stripped
    from the merged manifest; the camera never records audio.

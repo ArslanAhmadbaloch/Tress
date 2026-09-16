@@ -55,7 +55,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Tress uses the camera to take your progress photos. They are saved on this device and never uploaded.",
+          "cameraPermission": "Tress uses the camera to take your progress photos and to read product barcodes. Photos are saved on this device and never uploaded.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }

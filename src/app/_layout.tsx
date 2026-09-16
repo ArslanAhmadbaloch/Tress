@@ -176,6 +176,15 @@ function Navigation() {
           }}
         />
         <Stack.Screen
+          name="scan-product"
+          // Full screen, like the capture session: a page sheet clips the
+          // camera preview.
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
           name="session/[id]"
           // The screen draws its own back control. The native one is
           // captioned with the route it returns to, which here is the tab
@@ -221,6 +230,10 @@ function Navigation() {
         <Stack.Screen name="learn/[slug]" />
         <Stack.Screen
           name="journal"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="ask"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen

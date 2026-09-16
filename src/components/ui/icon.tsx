@@ -70,7 +70,9 @@ export type IconName =
   | 'follicle'
   | 'bottle'
   | 'capsule'
-  | 'glass';
+  | 'glass'
+  | 'barcode'
+  | 'torch';
 
 type IconSpec = {
   /** SF Symbol name, iOS. */
@@ -144,6 +146,10 @@ const ICONS: Record<IconName, IconSpec> = {
   bottle: { sf: 'eyedropper', md: 'bottle-tonic-outline' },
   capsule: { sf: 'pill', md: 'pill' },
   glass: { sf: 'cup.and.saucer', md: 'cup-outline' },
+  // Product scanner: the viewfinder on the entry button, the torch on
+  // the scanning screen.
+  barcode: { sf: 'barcode.viewfinder', md: 'barcode-scan' },
+  torch: { sf: 'flashlight.on.fill', md: 'flashlight' },
 };
 
 export type IconProps = {

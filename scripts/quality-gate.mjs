@@ -182,6 +182,7 @@ const ALLOWED_RAW = [
   // Camera and photo viewers sit on real black, which is not a themed
   // surface: it is the absence of one.
   'src/app/capture-session.tsx',
+  'src/app/scan-product.tsx',
   'src/app/session/[id].tsx',
   'src/app/compare.tsx',
   'src/components/capture-ring.tsx',
@@ -555,6 +556,25 @@ record(
     learnLibrary.includes('never cross from education into advice') &&
     learnScreens.some((f) => f.text.includes('does not diagnose')),
   offenders.length ? `Advisory language in: ${offenders.join(', ')}` : '',
+);
+
+// The coach is the newest place the product could slide from reading a
+// record into speaking as a person about a head. Answers only — the intent
+// tables legitimately contain the words people type.
+const coachAnswers =
+  FILES.find((f) => f.rel.endsWith('features/coach/answers.ts'))?.text ?? '';
+const coachStripped = stripComments(coachAnswers);
+const persona = /\b(AI|assistant|bot)\b|\bI (think|believe|can|cannot|would|read|am|will|know)\b|\bI'm\b/;
+
+record(
+  'Safety',
+  1,
+  'The coach answers from the record: no advisory language, no persona, and the clinical hand-off is present',
+  coachAnswers.length > 0 &&
+    !advisoryLanguage.test(coachStripped) &&
+    !persona.test(coachStripped) &&
+    coachStripped.includes('qualified healthcare professional'),
+  coachAnswers.length ? '' : 'src/features/coach/answers.ts is missing',
 );
 
 /* ------------------------------- scoring ------------------------------ */

@@ -43,9 +43,9 @@ substitutions for the Android build:
  3. "The only thing that leaves your phone is the anonymous purchase check
     that the App Store and our subscription provider need to confirm your
     membership." → **drop the sentence** while Play Billing is off (the
-    Android build makes no network request at all, and the Data safety
-    form says so; a listing that admits a purchase check the build never
-    makes contradicts it). Once billing is live, put it back as "The only
+    Android build's only network request is the product barcode lookup,
+    which the Data safety form describes; a listing that admits a purchase
+    check the build never makes contradicts it). Once billing is live, put it back as "The only
     thing that leaves your phone is the anonymous purchase check that
     Google Play and our subscription provider need to confirm your
     membership."

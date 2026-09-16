@@ -600,6 +600,12 @@ export type RoutineItem = {
    * for it is whoever prescribed it.
    */
   dosesPerDay?: number;
+  /**
+   * Barcode of the product this item is, when one was scanned or typed.
+   * Optional and additive: items made before products existed have none,
+   * and absent means "no product". Resolved through `productFor`.
+   */
+  productBarcode?: string;
   createdAt: string;
   archivedAt?: string;
 };
@@ -668,6 +674,60 @@ export type JournalEntry = {
 
 /* ------------------------------------------------------------------ */
 
+/** Where a product record came from. A manual entry never had a lookup. */
+export type ProductSource = 'openBeautyFacts' | 'manual';
+
+/**
+ * A product as the database states it, or as the person typed it.
+ *
+ * Every field is verbatim from Open Beauty Facts or from the person. The
+ * app adds nothing: no rating, no category of its own, no reading of the
+ * ingredient list. `barcode` is the key — the canonical code the database
+ * returned (it pads UPC-A to thirteen digits itself), or the scanned
+ * digits for an entry the database did not know.
+ */
+export type Product = {
+  barcode: string;
+  source: ProductSource;
+  /** As listed, or as typed. Never rewritten by the app. */
+  name: string;
+  /** The raw `brands` string; the database lists several with commas. */
+  brand?: string;
+  /** e.g. "200 ml", as printed. */
+  quantity?: string;
+  /** The ingredient text exactly as listed; absent when the record has none. */
+  ingredientsText?: string;
+  /** 400px front photo (images.openbeautyfacts.org only), CC BY-SA. */
+  imageUrl?: string;
+  /** 200px front photo, for rows and orbs. */
+  thumbnailUrl?: string;
+  /**
+   * `ingredients_analysis_tags` exactly as returned, e.g. "en:palm-oil-free".
+   * Stored whole; only three definite tags are ever displayed, with the
+   * source named (see features/products/open-beauty-facts `analysisNotes`).
+   */
+  analysisTags?: string[];
+  /** When this record was fetched, or typed. Shown on the panel; the cache never ages out. */
+  fetchedAt: string;
+};
+
+/** The products list with `next` in place of any record sharing its barcode. */
+export function upsertProduct(products: Product[], next: Product): Product[] {
+  const index = products.findIndex((p) => p.barcode === next.barcode);
+  if (index === -1) return [...products, next];
+  return products.map((p, i) => (i === index ? next : p));
+}
+
+/** The item with no product linked. Returns the same item when none was. */
+export function withoutProduct(item: RoutineItem): RoutineItem {
+  if (item.productBarcode === undefined) return item;
+  const rest = { ...item };
+  delete rest.productBarcode;
+  return rest;
+}
+
+/* ------------------------------------------------------------------ */
+
 /** Everything the app persists locally, versioned for future migration. */
 export type AppData = {
   schemaVersion: number;
@@ -677,6 +737,7 @@ export type AppData = {
   routineItems: RoutineItem[];
   routineLogs: RoutineLog[];
   journal: JournalEntry[];
+  products: Product[];
   onboardingCompletedAt: string | null;
 };
 
@@ -684,6 +745,11 @@ export type AppData = {
  * Bumped for the funnel: a journey now records what the person said they
  * want and where they are starting from, and the old three-question shape
  * cannot be filled in after the fact.
+ *
+ * NOT bumped for products. The loader in app-store.tsx discards storage
+ * whose version differs, so a bump would erase every installed journey.
+ * `products` and `RoutineItem.productBarcode` are additive: a record saved
+ * before they existed reads `products` as [] from the EMPTY_DATA spread.
  */
 export const SCHEMA_VERSION = 2;
 
@@ -695,5 +761,6 @@ export const EMPTY_DATA: AppData = {
   routineItems: [],
   routineLogs: [],
   journal: [],
+  products: [],
   onboardingCompletedAt: null,
 };

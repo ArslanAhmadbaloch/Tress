@@ -22,6 +22,7 @@ import { useMemo } from 'react';
 import { View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { AskBar } from '@/components/coach';
 import { FindingRow, ReadingRing } from '@/components/report';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
@@ -125,6 +126,7 @@ export default function ReportScreen() {
           titleMuted="shows so far."
           subtitle="Built from your own photographs and ticks. Nothing here is a claim about your hair."
         />
+        <AskBar />
 
         {!report.ready ? (
           <EmptyState

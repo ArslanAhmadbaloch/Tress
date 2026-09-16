@@ -43,6 +43,7 @@ import {
   currentStreak,
   latestSession,
   nextUpdate,
+  productFor,
   sessionHistory,
   todayProgress,
   weeklyAdherenceHistory,
@@ -308,6 +309,7 @@ export default function HomeScreen() {
                   item={item}
                   taken={takenToday.get(item.id) ?? 0}
                   onToggle={() => advanceRoutineToday(item.id)}
+                  product={productFor(data, item)}
                 />
               </View>
             ))}

@@ -45,7 +45,7 @@ Your membership card is yours to keep on your phone or share. Reminders are opti
 
 What the reading is, and is not. Hair coverage is an area: the share of the frame the hair mask counts as hair. It measures area, not what lies between the strands, and it is not a medical opinion. A single reading moves with haircuts, wet hair and how far you held the phone, which is why Tress asks for the same angles under the same light and shows you the series rather than a score.
 
-There is no account, no sign-in and no server. Your photographs, notes, routine and readings live in the app's private storage on your own device, and they are gone when you delete the app or use "Delete all my data" in Settings. The only thing that leaves your phone is the anonymous purchase check that the App Store and our subscription provider need to confirm your membership.
+There is no account, no sign-in and no server. Your photographs, notes, routine and readings live in the app's private storage on your own device, and they are gone when you delete the app or use "Delete all my data" in Settings. The only thing that leaves your phone is the anonymous purchase check that the App Store and our subscription provider need to confirm your membership. When you scan a product barcode, only the barcode number goes to Open Beauty Facts, an open database, to fetch its listed ingredients.
 
 Tress is a documentation tool, not a medical device. It records; it does not treat, and nothing in it is medical advice. For anything clinical, speak to a qualified healthcare professional.
 
@@ -54,7 +54,7 @@ Tress Premium. Your first photograph and its reading are free. Premium keeps the
 Privacy policy: https://tresshaircare.com/privacy
 Terms of use: https://tresshaircare.com/terms
 
-(3,101 characters.)
+(3,236 characters.)
 
 The last sentence of the "no account" paragraph names the App Store and
 is true of the iOS build only; store/listing.md lists the substitution
@@ -119,10 +119,13 @@ Answers as of 2026 questionnaire. One line each on why.
  - Contests: **None.**
  - Gambling (real money): **No.**
  - Unrestricted web access: **No.** There is no web view and no in-app
-   browser: the privacy policy and terms are screens inside the app
-   (src/app/privacy.tsx, src/app/terms.tsx). The one outbound link is
-   "Manage subscription" in Settings, which hands the App Store
-   subscriptions page to the system with `Linking.openURL`.
+   browser of our own: the privacy policy and terms are screens inside
+   the app (src/app/privacy.tsx, src/app/terms.tsx). Two outbound links
+   exist, both to fixed pages the app names in full: "Manage subscription"
+   in Settings hands the App Store subscriptions page to the system with
+   `Linking.openURL`, and a scanned product's "source" link opens that
+   product's page on world.openbeautyfacts.org in the system browser sheet
+   (`expo-web-browser`). Neither accepts a typed URL.
  - User-generated content shared with others: **No.** Nothing is shared
    unless the person hands one card image to the system share sheet.
  - Messaging, chat or social features: **No.**
@@ -141,7 +144,8 @@ rating and the content is a rejection.
 
     First release. Take one photograph and see what your phone reads from
     it, on the device. Then keep five angles a month, side by side, with
-    your routine and a line beside every set. Nothing leaves your phone.
+    your routine and a line beside every set. Your photographs never leave
+    your phone.
 
 ## App Review notes
 
@@ -174,7 +178,10 @@ Paste into the "Notes" field of App Review Information.
     of the frame, lighting, sharpness) is computed on the phone with a
     bundled MediaPipe hair segmentation model running under TensorFlow
     Lite, and framing uses ML Kit face detection, also bundled. No image
-    or reading is uploaded; the app has no networking code of its own.
+    or reading is uploaded. The app's one network call of its own is the
+    product barcode lookup: a GET to world.openbeautyfacts.org with the
+    barcode number, and product photos from images.openbeautyfacts.org; no
+    photograph or identifier is sent.
     The reading describes the photograph and is labelled as such in the
     app; it makes no medical claim.
 
@@ -189,7 +196,8 @@ Paste into the "Notes" field of App Review Information.
     Notifications are local reminders only; no push token is generated.
 
     Export compliance: the app uses only the operating system's standard
-    encryption (HTTPS via the RevenueCat SDK), declared with
+    encryption (HTTPS via the RevenueCat SDK and the Open Beauty Facts
+    barcode lookup), declared with
     ITSAppUsesNonExemptEncryption = false.
 
 ## Pre-submission checklist

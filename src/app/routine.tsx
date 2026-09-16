@@ -1,5 +1,6 @@
-import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { Image } from 'expo-image';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, Platform, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,6 +14,7 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { RoutineGlyph } from '@/components/ui/routine-glyphs';
 import { ProgressBar } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
+import { takePrefill } from '@/features/products/handoff';
 import { inferRoutineIcon } from '@/features/routine/icons';
 import { toDateKey } from '@/lib/date';
 import { usePremiumGate } from '@/features/subscription/gate';
@@ -21,6 +23,7 @@ import { useAppStore } from '@/store/app-store';
 import {
   activeRoutineItems,
   dosesOn,
+  productFor,
   todayProgress,
 } from '@/store/selectors';
 import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
@@ -56,6 +59,7 @@ export default function RoutineScreen() {
     updateRoutineItem,
     archiveRoutineItem,
     advanceRoutineToday,
+    detachProduct,
   } = useAppStore();
 
   const [name, setName] = useState('');
@@ -82,6 +86,28 @@ export default function RoutineScreen() {
   const [adding, setAdding] = useState(false);
   const { isPremium } = usePremium();
   const gate = usePremiumGate();
+  /** The scanned or typed product this task will be, if any. */
+  const [linked, setLinked] = useState<{
+    barcode: string;
+    brand?: string;
+    source: 'openBeautyFacts' | 'manual';
+  } | null>(null);
+
+  // The scanner leaves its product here on the way out; this sheet is where
+  // the task gets built, so the form opens with the name filled in and the
+  // product linked. Nothing happens on an ordinary return.
+  useFocusEffect(
+    useCallback(() => {
+      const prefill = takePrefill();
+      if (!prefill) return;
+      setName(prefill.name);
+      setLinked({ barcode: prefill.barcode, brand: prefill.brand, source: prefill.source });
+      setAdding(true);
+    }, [setName, setLinked, setAdding]),
+  );
+  const linkedProduct = linked
+    ? data.products.find((p) => p.barcode === linked.barcode)
+    : undefined;
 
   /** 1× → 2× → 3× → 4× → 1×, so the whole range is one control. */
   const cycleDoses = (item: RoutineItem) => {
@@ -100,7 +126,9 @@ export default function RoutineScreen() {
       cadence: 'daily',
       timeOfDay: time,
       dosesPerDay: doses,
+      productBarcode: linked?.barcode,
     });
+    setLinked(null);
     setName('');
     setDetail('');
     setDoses(1);
@@ -116,13 +144,18 @@ export default function RoutineScreen() {
     }, 700);
   };
 
-  const confirmRemove = (id: string, label: string) => {
-    Alert.alert(`Remove "${label}"?`, 'Your past completion history is kept.', [
+  const confirmRemove = (item: RoutineItem) => {
+    // A linked product gets a middle way out: drop the bottle, keep the
+    // task and everything ticked off against it.
+    Alert.alert(`Remove "${item.label}"?`, 'Your past completion history is kept.', [
       { text: 'Cancel', style: 'cancel' },
+      ...(item.productBarcode
+        ? [{ text: 'Remove product only', onPress: () => detachProduct(item.id) }]
+        : []),
       {
         text: 'Remove',
-        style: 'destructive',
-        onPress: () => archiveRoutineItem(id),
+        style: 'destructive' as const,
+        onPress: () => archiveRoutineItem(item.id),
       },
     ]);
   };
@@ -219,6 +252,7 @@ export default function RoutineScreen() {
                     item={item}
                     taken={taken.get(item.id) ?? 0}
                     onToggle={() => advanceRoutineToday(item.id)}
+                    product={productFor(data, item)}
                     accessory={
                       <View
                         style={{
@@ -251,7 +285,7 @@ export default function RoutineScreen() {
                         </PressableScale>
 
                         <PressableScale
-                          onPress={() => confirmRemove(item.id, item.label)}
+                          onPress={() => confirmRemove(item)}
                           haptic="none"
                           hitSlop={10}
                           accessibilityRole="button"
@@ -320,6 +354,52 @@ export default function RoutineScreen() {
           <>
         <SectionHeader title="Add a task" />
         <Card>
+          <Button
+            label="Scan a product"
+            icon="barcode"
+            variant="secondary"
+            size="md"
+            onPress={() => router.push('/scan-product')}
+            style={{ marginBottom: spacing.md }}
+          />
+          {linked ? (
+            // The link, not the name: the field below stays the person's to
+            // fill in, so their stack says what they call the thing.
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.sm,
+                marginBottom: spacing.sm,
+                padding: spacing.sm,
+                borderRadius: radius.md,
+                backgroundColor: colors.accentSoft,
+              }}>
+              {linkedProduct?.thumbnailUrl ? (
+                <Image
+                  source={{ uri: linkedProduct.thumbnailUrl }}
+                  style={{ width: 28, height: 28, borderRadius: 14 }}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  accessible={false}
+                />
+              ) : (
+                <Icon name="barcode" size={16} color={colors.accent} />
+              )}
+              <Text variant="footnote" color="accent" style={{ flex: 1 }} numberOfLines={1}>
+                {linked.source === 'manual' ? 'Entered by you' : 'From Open Beauty Facts'}
+                {linked.brand ? ` · ${linked.brand}` : ''}
+              </Text>
+              <PressableScale
+                onPress={() => setLinked(null)}
+                haptic="none"
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Remove the linked product">
+                <Icon name="close" size={13} color={colors.accent} />
+              </PressableScale>
+            </View>
+          ) : null}
           <TextInput
             value={name}
             onChangeText={setName}
