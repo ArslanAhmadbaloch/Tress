@@ -264,7 +264,14 @@ function ItemRow({ stat }: { stat: RoutineItemStat }) {
       <View style={{ flexDirection: 'row', paddingHorizontal: spacing.xl }}>
         <Stat label="Day streak" value={String(streak)} />
         <Stat label="Days done" value={`${daysDone} of ${daysTracked}`} />
-        <Stat label="Kept to" value={adherence === null ? '—' : `${adherence}%`} />
+        {/*
+          This figure is weighted by how often the item is due, so it is
+          not the percentage form of "Days done" beside it — a twice-weekly
+          item ticked on 8 of 30 days did 93% of what it asked for. The
+          label has to say which of the two it is, or the row reads as a
+          contradiction.
+        */}
+        <Stat label="Of what's due" value={adherence === null ? '—' : `${adherence}%`} />
       </View>
     </Card>
   );

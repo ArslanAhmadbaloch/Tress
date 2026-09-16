@@ -45,9 +45,12 @@ import {
   consistencyScore,
   currentStreak,
   dailyCompletion,
+  monthlyAdherenceHistory,
   monthlySessionCounts,
   todayProgress,
   weekProgress,
+  weeklyAdherenceHistory,
+  weeklyAdherenceSeries,
 } from '@/store/selectors';
 import {
   ANGLE_GUIDANCE,
@@ -730,6 +733,245 @@ test('adherence: half the days done reads as half', () => {
 test('adherence: an item cannot be missed before it existed', () => {
   const data = completeOn(journeyWith(10, [item('late', 1)]), 'late', [0, 1]);
   assert.equal(adherencePercent(data), 100);
+});
+
+/* --- the two sides of the fraction, and the ceiling on it --- */
+
+/** Every day of a thirty-day window, most recent first. */
+const THIRTY = Array.from({ length: 30 }, (_, d) => d);
+
+test('adherence: a daily-only routine is exactly what it always was', () => {
+  // The regression risk in weighting the numerator: for daily items every
+  // weight is 7/7 and no cap can bind, so this must stay a plain sum of
+  // days done over days elapsed.
+  let data = journeyWith(29, [item('a', 29), item('b', 29)]);
+  data = completeOn(data, 'a', THIRTY);
+  data = completeOn(data, 'b', THIRTY.filter((d) => d % 2 === 0));
+
+  // 30 of 30 for one, 15 of 30 for the other: 45 days of 60.
+  assert.equal(adherencePercent(data, 30), 75);
+});
+
+test('adherence: a twice-weekly item ticked every day is 100, not 350', () => {
+  // The bug the owner saw as "134%" and "156%". Thirty ticks against an
+  // expectation of about 8.6 used to divide out at 350%.
+  const data = completeOn(journeyWith(29, [weekly('a', 29, 2)]), 'a', THIRTY);
+
+  assert.equal(adherencePercent(data, 30), 100);
+});
+
+test('adherence: nothing the app renders as a percentage climbs past 100', () => {
+  // Every figure drawn from the same over-ticked stack: the dashboard
+  // number, the score built on it, the per-item rows and every charted
+  // point behind them.
+  let data = journeyWith(29, [weekly('a', 29, 2), weekly('b', 29, 1)]);
+  data = completeOn(data, 'a', THIRTY);
+  data = completeOn(data, 'b', THIRTY);
+
+  const score = consistencyScore(data);
+  assert.equal(score.routine, 100);
+  assert.ok(score.value <= 100, `consistency read ${score.value}`);
+  assert.ok(score.capture <= 100, `capture read ${score.capture}`);
+
+  for (const stat of routineItemStats(data)) {
+    assert.ok(
+      stat.adherence !== null && stat.adherence <= 100,
+      `${stat.item.label} read ${stat.adherence}%`,
+    );
+  }
+
+  const charted = [
+    ...weeklyAdherenceHistory(data, 8),
+    ...weeklyAdherenceSeries(data, 8).map((pt) => pt.value),
+    ...monthlyAdherenceHistory(data, 6).map((pt) => pt.value),
+  ];
+  assert.ok(charted.length > 0, 'the fixture actually charts something');
+  for (const value of charted) {
+    assert.ok(value === null || (value >= 0 && value <= 100), `charted ${value}`);
+  }
+});
+
+test('adherence: a hundred is reserved for a window with nothing missed', () => {
+  /*
+    The other end of the same honesty. 100% is a claim that everything due
+    was done, so it cannot be arrived at by rounding: thirty daily items
+    across thirty days with three item-days missed is 99.67%, which used
+    to print as 100. A whole window still reads exactly 100, so this is a
+    ceiling on rounding rather than a general shave.
+  */
+  const many = Array.from({ length: 30 }, (_, i) => item(`i${i}`, 29));
+  let data = journeyWith(29, many);
+  for (const it of many) {
+    // Every item ticked every day but one — except three, which each miss
+    // a single day. 897 of 900.
+    data = completeOn(data, it.id, THIRTY);
+  }
+  assert.equal(adherencePercent(data, 30), 100, 'a whole window is a whole hundred');
+
+  let missed = journeyWith(29, many);
+  for (const [i, it] of many.entries()) {
+    missed = completeOn(missed, it.id, i < 3 ? THIRTY.slice(1) : THIRTY);
+  }
+  assert.equal(adherencePercent(missed, 30), 99, '897 of 900 is not all of it');
+
+  // And the same rule on a single item's own row.
+  const one = completeOn(journeyWith(99, [item('a', 99)]), 'a', THIRTY.concat(
+    Array.from({ length: 70 }, (_, d) => d + 30),
+  ).filter((d) => d !== 50));
+  const stat = routineItemStats(one)[0];
+  assert.ok(stat.daysDonePercent !== null && stat.daysDonePercent <= 99, `read ${stat.daysDonePercent}`);
+});
+
+test('adherence: an over-done item cannot hide one that was never done', () => {
+  // Why the ceiling is per item rather than on the total. A daily item
+  // missed every single day, next to a twice-weekly one ticked daily.
+  let data = journeyWith(29, [item('missed', 29), weekly('overdone', 29, 2)]);
+  data = completeOn(data, 'overdone', THIRTY);
+
+  // Due: 30 days + 30 × 2/7 ≈ 38.6. Done: the weekly item's own 8.6 and
+  // nothing else — 22%. Capping the total instead would have credited all
+  // thirty of its ticks and reported 78%, with the missed item invisible.
+  const pct = adherencePercent(data, 30);
+  assert.equal(pct, 22);
+  assert.notEqual(pct, 78, 'a total-level cap would have covered the missed item');
+});
+
+test('adherence: an item added mid-window is judged from the day it arrived', () => {
+  // A daily item kept half the time for thirty days, and a twice-weekly
+  // one added ten days ago and never ticked.
+  let data = journeyWith(29, [item('old', 29), weekly('new', 9, 2)]);
+  data = completeOn(data, 'old', THIRTY.filter((d) => d % 2 === 0));
+
+  // Due: 30 + 10 × 2/7 ≈ 32.9, of which 15 days are done.
+  assert.equal(adherencePercent(data, 30), 46);
+  // Had the new item been expected across the twenty days before it
+  // existed, the denominator would have been 38.6 and the figure 39%.
+  assert.notEqual(adherencePercent(data, 30), 39);
+});
+
+test('adherence: a stack where nothing was done reads as zero, not as null', () => {
+  // Zero is a real answer here; null means "no basis to judge", and there
+  // is a basis — thirty days of it.
+  const data = journeyWith(29, [item('a', 29), weekly('b', 29, 3)]);
+  assert.equal(adherencePercent(data, 30), 0);
+});
+
+test('adherence: a weekly item done exactly as often as asked reads as kept', () => {
+  // Per item, on the row the Routine screen shows: twice a week for two
+  // weeks, done four times. Judged against all fourteen days it used to
+  // read as 29% — somebody following their own routine exactly, told they
+  // were failing it.
+  const data = completeOn(journeyWith(13, [weekly('a', 13, 2)]), 'a', [0, 3, 7, 10]);
+  const [stat] = routineItemStats(data);
+
+  assert.equal(stat.adherence, 100);
+  assert.equal(stat.daysDone, 4);
+  // Four ticks in fourteen days is not four days in fourteen: the share
+  // of days it was ticked on is its own figure, and a smaller one.
+  assert.equal(stat.daysDonePercent, 29);
+});
+
+test('item stats: a share of what was due is not a share of days', () => {
+  // Weighting `adherence` made it stop meaning "of its days", so the
+  // reading copy actually claims has to exist separately. A twice-weekly
+  // shampoo ticked on eight of the last thirty days is keeping pace —
+  // and is nowhere near being ticked on 93% of its days.
+  const data = completeOn(
+    journeyWith(29, [weekly('shampoo', 29, 2)]),
+    'shampoo',
+    [0, 4, 8, 12, 16, 20, 24, 28],
+  );
+  const [stat] = routineItemStats(data);
+
+  assert.equal(stat.daysDone, 8);
+  assert.equal(stat.adherence, 93, 'eight ticks against the 8.6 that were due');
+  assert.equal(stat.daysDonePercent, 27, 'eight of the thirty days it existed');
+});
+
+test('item stats: for a daily item the two readings are the same number', () => {
+  // Every weight is 7/7, so nothing has been changed for a daily routine —
+  // which is what makes swapping the figure in a sentence safe.
+  const data = completeOn(
+    journeyWith(29, [item('a', 29)]),
+    'a',
+    THIRTY.filter((d) => d % 2 === 0),
+  );
+  const [stat] = routineItemStats(data);
+
+  assert.equal(stat.adherence, 50);
+  assert.equal(stat.daysDonePercent, 50);
+});
+
+test('item stats: the least-ticked item is not the lowest adherence', () => {
+  // Why both figures exist. Finasteride ticked on 25 of 30 days next to a
+  // twice-weekly shampoo ticked on 8: ranking by pace calls finasteride
+  // the worst kept, which is true of pace and false of days. Anything
+  // naming "the one ticked least often" has to rank by days.
+  let data = journeyWith(29, [item('finasteride', 29), weekly('shampoo', 29, 2)]);
+  data = completeOn(data, 'finasteride', THIRTY.filter((d) => d < 25));
+  data = completeOn(data, 'shampoo', [0, 4, 8, 12, 16, 20, 24, 28]);
+
+  const stats = routineItemStats(data);
+  const byPace = [...stats].sort((a, b) => (a.adherence ?? 0) - (b.adherence ?? 0));
+  const byDays = [...stats].sort(
+    (a, b) => (a.daysDonePercent ?? 0) - (b.daysDonePercent ?? 0),
+  );
+
+  assert.equal(byPace[0].item.id, 'finasteride', '83% of what was due, against 93%');
+  assert.equal(byDays[0].item.id, 'shampoo', '27% of its days, against 83%');
+});
+
+test('item stats: nothing added today is judged before the day is out', () => {
+  const [stat] = routineItemStats(journeyWith(10, [weekly('a', 0, 2)]));
+  assert.equal(stat.adherence, null);
+  assert.equal(stat.daysDonePercent, null, 'no days to take a share of yet');
+});
+
+/* --------------------------- the weekly chart --------------------------- */
+
+/** Days of the current Monday-first week that have happened, today included. */
+function daysIntoThisWeek(): number {
+  return ((new Date().getDay() + 6) % 7) + 1;
+}
+
+test('chart: a week still running is judged on the days it has had', () => {
+  // The rule is the same one daily items have always had: three days in,
+  // three ticks, 100 — not 43% of a week that is not over. A twice-weekly
+  // item that has done its pro-rated share so far reads the same way.
+  const elapsed = daysIntoThisWeek();
+  const thisWeek = Array.from({ length: elapsed }, (_, d) => d);
+  const owed = Math.ceil((elapsed * 2) / 7);
+
+  const daily = completeOn(journeyWith(29, [item('a', 29)]), 'a', thisWeek);
+  const twiceWeekly = completeOn(
+    journeyWith(29, [weekly('a', 29, 2)]),
+    'a',
+    thisWeek.slice(0, owed),
+  );
+
+  const last = (data: AppData) => weeklyAdherenceSeries(data, 8).at(-1)?.value;
+  assert.equal(last(daily), 100, 'every day of the week so far');
+  assert.equal(last(twiceWeekly), 100, 'everything due in the days so far');
+});
+
+test('chart: a week still running is not a week completed early', () => {
+  // The other half of the same rule, and the guard on it: the point is
+  // about the days so far, so nothing ticked in them reads as zero.
+  const twiceWeekly = journeyWith(29, [weekly('a', 29, 2)]);
+  assert.equal(weeklyAdherenceSeries(twiceWeekly, 8).at(-1)?.value, 0);
+});
+
+test('chart: a finished week is judged against everything it asked for', () => {
+  // Once the week is complete the pro-rating is exact — two ticks owed,
+  // one done — so a past week cannot round itself up.
+  const elapsed = daysIntoThisWeek();
+  // Somewhere inside last week: the week before this one runs from
+  // `elapsed` days ago through `elapsed + 6`.
+  const midLastWeek = elapsed + 2;
+  const data = completeOn(journeyWith(29, [weekly('a', 29, 2)]), 'a', [midLastWeek]);
+
+  const series = weeklyAdherenceSeries(data, 8);
+  assert.equal(series.at(-2)?.value, 50, 'one of the two it owed that week');
 });
 
 /* ---------------------------- today / week ----------------------------- */

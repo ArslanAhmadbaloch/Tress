@@ -5,14 +5,43 @@
  * can be left out — so these check the assignment is stable and even, and
  * sweep every sentence on the screen for the patterns that work by making
  * somebody believe something untrue: manufactured urgency, promised
- * outcomes, and — new with the hero — any suggestion of a before and an
- * after.
+ * outcomes, any suggestion of a before and an after, and — since the list
+ * grew to name what Premium includes — any feature the app does not have.
+ *
+ * Two things the sweep now pins down that it did not before:
+ *
+ *   No trial. The offer is a straight subscription, so the words "free"
+ *   and "trial" must not reach any line on the screen, and no function
+ *   that builds one of those lines may have a branch that could put them
+ *   there.
+ *
+ *   No recommendations. The app has no recommendation engine — no model,
+ *   no rules table, no lookup — so the paywall must not sell one. This is
+ *   the one that would cost a submission: advertising a feature that does
+ *   not exist is an App Store 2.3 rejection, and it is money taken for
+ *   something the customer will go looking for and not find.
+ *
+ * ── Why the benefits are not checked with existsSync ──────────────────
+ * They were, and it was not a test. A bullet was pointed at a filename,
+ * the filename existed, and the assertion passed — while the sentence on
+ * the screen said the report covered "every reading, for every set" and
+ * the screen it named covered one photograph from the first set only. A
+ * file existing is not the app doing the thing.
+ *
+ * So each claim now carries the assertion that would actually fail if the
+ * claim stopped being true: the gate that makes it Premium, read out of
+ * the screen that enforces it, or — for the report line — the behaviour
+ * itself, by building a report from one set and from two and checking the
+ * comparison appears only in the second. A well-written lie can pass an
+ * existsSync. It cannot pass buildReport.
  */
 
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { PLANS, type PlanConfig } from '@/features/subscription/config';
+import { buildReport } from '@/features/assessment/engine';
+import { PLANS } from '@/features/subscription/config';
 import {
   CTA_COPY,
   HERO_COPY,
@@ -32,6 +61,30 @@ import {
 import { EMPTY_DATA, type AppData, type Photo, type PhotoSession } from '@/types/domain';
 
 /* ------------------------------ fixtures ----------------------------- */
+
+/** A repo-relative path, so a claim can be checked against a real file. */
+const repoFile = (rel: string) => new URL(`../../${rel}`, import.meta.url);
+
+/**
+ * The text of a repo file, so a claim can be checked against the code that
+ * has to satisfy it rather than against the mere existence of a filename.
+ */
+const source = (rel: string) => readFileSync(repoFile(rel), 'utf8');
+
+/** A reading of the kind the segmenter leaves on a photograph. */
+function withCoverage(s: PhotoSession, fraction: number, verticalBalance: number): PhotoSession {
+  return {
+    ...s,
+    photos: s.photos.map((p) =>
+      p.angle === 'front'
+        ? {
+            ...p,
+            coverage: { fraction, upperFraction: fraction * 0.9, verticalBalance, pixels: 60_000 },
+          }
+        : p,
+    ),
+  };
+}
 
 function photo(angle: Photo['angle'], sessionId: string, capturedAt: string): Photo {
   return {
@@ -65,7 +118,6 @@ const profile: AppData['profile'] = {
 
 /** Every sentence a person can read on the paywall, lower-cased. */
 function everyLine(): string {
-  const yearlyTrial: PlanConfig = { ...PLANS.yearly, trial: { duration: '7 days' } };
   return [
     ...Object.values(PAYWALL_VARIANTS).map((v) => `${v.headline} ${v.body}`),
     `${SECOND_ASK.headline} ${SECOND_ASK.body} ${SECOND_ASK.accept} ${SECOND_ASK.decline}`,
@@ -73,9 +125,11 @@ function everyLine(): string {
     ...PREMIUM_BENEFITS.map((b) => `${b.title} ${b.body}`),
     ...Object.values(CTA_COPY),
     priceLine(PLANS.yearly),
-    priceLine(yearlyTrial),
+    priceLine(PLANS.monthly),
+    renewalTerms(PLANS.yearly),
     renewalTerms(PLANS.monthly),
-    renewalTerms(yearlyTrial),
+    ctaLabel(false),
+    ctaLabel(true),
   ]
     .join(' ')
     .toLowerCase();
@@ -119,10 +173,77 @@ test('copy: nothing on the paywall promises an outcome', () => {
   const copy = everyLine();
   for (const promise of [
     'regrow', 'thicker', 'fuller', 'restore your', 'guarantee', 'improve',
-    'results', 'transform', 'reverse', 'diagnos', 'norwood', 'severe', 'advanced',
+    'results', 'transform', 'reverse', 'diagnos', 'norwood', 'ludwig',
+    'severe', 'advanced',
+    // The scan line names a real model, so the sweep now has to hold the
+    // line on what that model is allowed to have measured. It reports the
+    // hair mask's share of the frame: area. A mask cannot see between
+    // strands, so density and thickness are not available to it, and a
+    // stage is not available to anything on a phone.
+    'density', 'thickness', 'thinning', 'hair loss stage', 'stage of',
+    'how much hair you have', 'detect', 'predict', 'forecast',
   ]) {
     assert.ok(!copy.includes(promise), `paywall copy must not promise "${promise}"`);
   }
+});
+
+test('copy: the paywall sells nothing the app has not built', () => {
+  /*
+    The owner asked for "product suggestions for their hair type" on this
+    list. There is no recommendation engine in this repository — no model,
+    no rules table, no lookup — so it is not on the list, and this test is
+    what keeps it off until one ships.
+
+    The barcode line is the near miss it has to survive: the app really
+    does scan a barcode and really does show what Open Beauty Facts holds,
+    and the difference between "here is what the database lists" and "here
+    is what you should use" is the whole of the claim.
+  */
+  const copy = everyLine();
+  for (const unbuilt of [
+    'recommend', 'suggests', 'suggestion', 'personalised', 'personalized',
+    'tailored to', 'matched to your', 'for your hair type', 'built for your',
+    'picks for you', 'chosen for you', 'what to use', 'best products',
+    'expert review', 'dermatologist',
+  ]) {
+    assert.ok(!copy.includes(unbuilt), `paywall copy must not sell "${unbuilt}"`);
+  }
+});
+
+test('copy: no free trial reaches the screen, and no branch could put one there', () => {
+  /*
+    The offer is a straight subscription. Not "7 days free", not "then
+    $49.99" — one price, charged on the tap.
+
+    Matched as word boundaries rather than as substrings with a leading
+    space. `everyLine()` joins with a space but the first element is a
+    variant headline, so " free" could not have caught a line that opened
+    with the word; and "trial" as a bare substring catches "industrial"
+    while missing nothing it needs to. The boundary form does both jobs.
+  */
+  const copy = everyLine();
+  for (const pattern of [
+    /\bfree\b/,
+    /\btrials?\b/,
+    /\bdays free\b/,
+    /\bthen\s*[$£€]/,
+    /\bno charge\b/,
+    /\bstart(ing)? free\b/,
+  ]) {
+    assert.ok(!pattern.test(copy), `paywall copy must not mention ${pattern}`);
+  }
+
+  // Not just absent from the defaults: absent whatever the store hands
+  // back. A stray introductory offer must not resurrect the old copy.
+  for (const plan of [PLANS.yearly, PLANS.monthly]) {
+    const withTrial = { ...plan, trial: { duration: '7 days' } };
+    assert.equal(priceLine(withTrial), priceLine(plan), 'the price line has no trial branch');
+    assert.equal(renewalTerms(withTrial), renewalTerms(plan), 'the terms have no trial branch');
+    for (const line of [priceLine(withTrial), renewalTerms(withTrial)]) {
+      assert.ok(!/free|trial/i.test(line), line);
+    }
+  }
+  assert.ok(!Object.keys(CTA_COPY).includes('trial'), 'no trial label is left to reach for');
 });
 
 test('copy: nothing on the paywall is a testimonial or a borrowed face', () => {
@@ -225,10 +346,11 @@ test('hero: the caption is the angle and the date, nothing else', () => {
 /* ------------------------------ benefits ----------------------------- */
 
 test('benefits: each names a thing the app does, and one of them is privacy', () => {
-  assert.ok(PREMIUM_BENEFITS.length >= 3 && PREMIUM_BENEFITS.length <= 5, 'short list');
+  assert.ok(PREMIUM_BENEFITS.length >= 5 && PREMIUM_BENEFITS.length <= 8, 'a list, not a brochure');
   for (const b of PREMIUM_BENEFITS) {
     assert.ok(b.title.trim().length > 0 && b.body.trim().length > 0);
     assert.ok(b.body.length <= 80, `one line each: "${b.body}"`);
+    assert.ok(b.title.length <= 30, `a title, not a sentence: "${b.title}"`);
   }
   assert.ok(
     PREMIUM_BENEFITS.some((b) => /device/i.test(b.body)),
@@ -236,54 +358,221 @@ test('benefits: each names a thing the app does, and one of them is privacy', ()
   );
   const titles = new Set(PREMIUM_BENEFITS.map((b) => b.title));
   assert.equal(titles.size, PREMIUM_BENEFITS.length, 'no repeated benefit');
+  const icons = new Set(PREMIUM_BENEFITS.map((b) => b.icon));
+  assert.equal(icons.size, PREMIUM_BENEFITS.length, 'no repeated glyph');
+});
+
+/**
+ * What has to be true of a bullet, beyond the file behind it existing.
+ *
+ *   'capture'  The entitlement decides it through capture-intro.tsx: a
+ *              non-subscriber is sent here the moment they reach for a
+ *              set after the free baseline. Anything that needs a second
+ *              set — the comparison, the report's framing half — is
+ *              behind this gate whether or not it names it.
+ *   'stack'    routine.tsx puts it behind gate('buildStack').
+ *   'fact'     Not gated, and not claiming to be: a true statement about
+ *              what is being paid for. Exactly one line may be this, and
+ *              the test below pins which.
+ */
+type Gated = 'capture' | 'stack' | 'fact';
+
+const CLAIMS: { match: RegExp; screen: string; gated: Gated }[] = [
+  { match: /photo sets/i, screen: 'src/app/capture-intro.tsx', gated: 'capture' },
+  {
+    // The reading has to be named on a screen, not merely computed in a
+    // module. One reading per set is displayed: the report tab's coverage
+    // line for every set after the first. The model itself lives in
+    // src/features/assessment/hair-segmenter.ts, which is not a screen and
+    // so cannot carry the claim on its own.
+    match: /scan on your phone/i,
+    screen: 'src/app/(tabs)/report.tsx',
+    gated: 'capture',
+  },
+  { match: /your report/i, screen: 'src/app/(tabs)/report.tsx', gated: 'capture' },
+  { match: /side-by-side/i, screen: 'src/app/compare.tsx', gated: 'capture' },
+  { match: /routine and stack/i, screen: 'src/app/routine.tsx', gated: 'stack' },
+  { match: /barcode/i, screen: 'src/app/scan-product.tsx', gated: 'stack' },
+  { match: /kept on this device/i, screen: 'src/app/privacy.tsx', gated: 'fact' },
+];
+
+test('benefits: every line names a screen, and nothing on the list is unaccounted for', () => {
+  for (const claim of CLAIMS) {
+    assert.ok(
+      PREMIUM_BENEFITS.some((b) => claim.match.test(b.title)),
+      `${claim.screen} ships, so the list should name it: ${claim.match}`,
+    );
+    assert.ok(existsSync(repoFile(claim.screen)), `${claim.screen} must exist to be sold`);
+  }
+  for (const b of PREMIUM_BENEFITS) {
+    assert.ok(
+      CLAIMS.some((c) => c.match.test(b.title)),
+      `"${b.title}" is on the paywall with no screen behind it`,
+    );
+  }
+});
+
+test('benefits: the gates the list leans on are really in the code', () => {
+  /*
+    This is the half the old existsSync check could not do. A screen can
+    exist and be free; a bullet that sells it is then selling something
+    the customer already has. Premium is enforced in exactly two places
+    in this app, and both of them are read here — if either is deleted,
+    the bullets resting on it fail rather than quietly becoming untrue.
+  */
+  const captureIntro = source('src/app/capture-intro.tsx');
+  assert.match(
+    captureIntro,
+    /!isPremium\s*&&\s*!isBaseline\)\s*router\.replace\('\/paywall'\)/,
+    'capture-intro.tsx must send a non-subscriber reaching past the baseline to the paywall',
+  );
+
+  const routine = source('src/app/routine.tsx');
+  assert.match(routine, /gate\('buildStack'/, "routine.tsx must gate adding to the stack");
+  assert.match(
+    routine,
+    /router\.push\('\/scan-product'\)/,
+    'the barcode line is sold as part of the stack, so the stack screen must be the way in',
+  );
+
+  // Exactly one line is allowed to be an ungated fact, and it is the one
+  // about where the photographs sit. A second would mean the list had
+  // started charging for things a free user already has.
+  const facts = CLAIMS.filter((c) => c.gated === 'fact');
+  assert.equal(facts.length, 1, 'only one line on the list may be ungated');
+  assert.match(facts[0].match.source, /device/i);
+});
+
+test('benefits: "set after set" is a thing the report does, not a thing it is called', () => {
+  /*
+    The claim is that a new set is read into the report and lined up
+    against the one before. That is checkable, so it is checked: build a
+    report from one set and from two, and assert the comparison shows up
+    only in the second. This is the assertion the previous version of
+    this file was missing — its bullet named a screen that reports on one
+    photograph from the first set, and a filename check waved it through.
+  */
+  const first = withCoverage(session('s1', '2026-01-10T10:00:00.000Z', ['front', 'top'], true), 0.30, 0.55);
+  const second = withCoverage(session('s2', '2026-03-01T10:00:00.000Z', ['front', 'top']), 0.36, 0.56);
+
+  const alone = buildReport({ ...EMPTY_DATA, profile, sessions: [first] });
+  const framingAlone = alone.sections.find((s) => s.kind === 'framing')!;
+  assert.equal(framingAlone.score, null, 'one set is not a comparison');
+  assert.equal(
+    framingAlone.findings.find((f) => f.id === 'framing-coverage'),
+    undefined,
+    'with one set there is nothing to line up against',
+  );
+
+  // Newest first, as the store keeps them.
+  const paired = buildReport({ ...EMPTY_DATA, profile, sessions: [second, first] });
+  const framingPaired = paired.sections.find((s) => s.kind === 'framing')!;
+  assert.notEqual(framingPaired.score, null, 'two sets are comparable');
+  assert.ok(
+    framingPaired.findings.some((f) => f.id === 'framing-matched'),
+    'the second set is lined up angle for angle against the first',
+  );
+  const trend = framingPaired.findings.find((f) => f.id === 'framing-coverage');
+  assert.ok(trend, 'and the newest hair-area reading is put beside the one before it');
+  // Area, and only area — the same rule the scan line is held to. The
+  // detail is allowed to say "not thickness", because saying so is the
+  // point; what it may not do is claim density.
+  const said = `${trend.headline} ${trend.detail}`;
+  assert.match(said, /area/i, 'area is what a mask can measure');
+  assert.ok(!/density/i.test(said), 'and density is what it cannot');
+
+  const line = PREMIUM_BENEFITS.find((b) => /your report/i.test(b.title));
+  assert.ok(line, 'the report is one of the things being paid for and should be named');
+  assert.match(`${line.title} ${line.body}`, /set/i, 'the line says what makes it Premium');
+});
+
+test('benefits: the list does not sell the free first-photograph report', () => {
+  /*
+    src/app/scan-report.tsx is real, and it is free: capture-session.tsx
+    routes to it only for the first set or a single scan, it is headed
+    "Your first reading", and buildScanReading reports on one photograph
+    rather than on all five. A bullet promising "the full scan report" or
+    "every reading, for every set" is therefore false twice over, and it
+    is the bullet this list is most tempted to write.
+  */
+  const benefits = PREMIUM_BENEFITS.map((b) => `${b.title} ${b.body}`).join(' ').toLowerCase();
+  for (const overclaim of [
+    'scan report',
+    'every reading',
+    'for every set you take',
+    'all five readings',
+    'full report',
+    // A reading per photograph is measured and never shown: only one
+    // photograph per set is ever read back to a person. Selling the other
+    // four is the same overclaim rotated onto the per-photograph axis.
+    'each photograph',
+    'every photograph',
+  ]) {
+    assert.ok(!benefits.includes(overclaim), `the benefits must not claim "${overclaim}"`);
+  }
+});
+
+test('benefits: the on-device scan claims area, and nothing a mask cannot see', () => {
+  const scan = PREMIUM_BENEFITS.find((b) => /scan on your phone/i.test(b.title));
+  assert.ok(scan, 'the scan is one of the things being paid for and should be named');
+  assert.match(scan.body, /area/i, 'area is what the hair mask measures');
+  // "AI" is allowed because there is a real model in the binary — see
+  // src/features/assessment/hair-segmenter.ts — and the line says where
+  // it runs, which is the part that is worth the customer knowing.
+  assert.match(scan.title, /\bAI\b/, 'the model is real, so it can be named');
+  assert.match(`${scan.title} ${scan.body}`, /phone|device/i, 'say where it runs');
+});
+
+test('benefits: the barcode line credits the database rather than the app', () => {
+  const barcode = PREMIUM_BENEFITS.find((b) => /barcode/i.test(b.title));
+  assert.ok(barcode);
+  assert.match(barcode.body, /database/i, 'scan-product.tsx shows what Open Beauty Facts holds');
+  assert.ok(
+    !/recommend|suggest|best|should/i.test(barcode.body),
+    'a lookup is not advice',
+  );
 });
 
 /* ------------------------------- price ------------------------------- */
 
-test('price: a trial always names the price it turns into', () => {
-  const yearly: PlanConfig = { ...PLANS.yearly, trial: { duration: '7 days' } };
-  const line = priceLine(yearly);
-  assert.ok(line.startsWith('7 days free, then '));
-  assert.ok(line.includes(PLANS.yearly.formattedPrice));
-  assert.ok(line.includes(PLANS.yearly.formattedMonthlyEquivalent!));
-
-  const monthly: PlanConfig = { ...PLANS.monthly, trial: { duration: '1 month' } };
-  assert.equal(priceLine(monthly), `1 month free, then ${PLANS.monthly.formattedPrice} a month`);
-});
-
-test('price: without a trial the line is the price, and never mentions one', () => {
+test('price: the line is the price, and never mentions a trial', () => {
   assert.equal(
     priceLine(PLANS.yearly),
     `${PLANS.yearly.formattedPrice} a year · about ${PLANS.yearly.formattedMonthlyEquivalent} a month`,
   );
   assert.equal(priceLine(PLANS.monthly), `${PLANS.monthly.formattedPrice} a month`);
   for (const plan of [PLANS.yearly, PLANS.monthly]) {
-    assert.ok(!/free|trial/i.test(priceLine(plan)));
+    assert.ok(!/free|trial|then /i.test(priceLine(plan)));
     assert.ok(!/free|trial/i.test(renewalTerms(plan)));
-    assert.ok(!/free|trial/i.test(ctaLabel(plan, false)));
   }
+  assert.ok(!/free|trial/i.test(ctaLabel(false)));
 });
 
 test('price: the renewal terms carry every clause the stores require', () => {
-  const trial: PlanConfig = { ...PLANS.yearly, trial: { duration: '7 days' } };
-  const terms = renewalTerms(trial);
-  assert.match(terms, /7 days are free/);
-  assert.match(terms, /renews automatically/);
-  assert.ok(terms.includes(PLANS.yearly.formattedPrice));
-  assert.match(terms, /24 hours/);
-  assert.match(terms, /Cancel anytime/);
-
-  const plain = renewalTerms(PLANS.monthly);
-  assert.match(plain, /renew automatically unless cancelled/);
-  assert.match(plain, /Cancel anytime/);
+  // Apple wants these whether or not there is an introductory offer, so
+  // dropping the trial does not drop them.
+  for (const plan of [PLANS.yearly, PLANS.monthly]) {
+    const terms = renewalTerms(plan);
+    assert.match(terms, /renews automatically/);
+    assert.ok(terms.includes(plan.formattedPrice), 'the terms name the price that will be charged');
+    // And how often, in the same sentence. This one has to stand on its
+    // own in a review, and a price with no period attached does not say
+    // what the subscription costs.
+    assert.ok(
+      terms.includes(`${plan.formattedPrice} a ${plan.period}`),
+      `the terms must name the billing period: "${terms}"`,
+    );
+    assert.match(terms, /unless cancelled/);
+    assert.match(terms, /App Store or Google Play/);
+    assert.match(terms, /Cancel anytime/);
+  }
 });
 
-test('cta: the button says what the tap does', () => {
-  const trial: PlanConfig = { ...PLANS.yearly, trial: { duration: '7 days' } };
-  assert.equal(ctaLabel(trial, false), CTA_COPY.trial);
-  assert.equal(ctaLabel(PLANS.yearly, false), CTA_COPY.subscribe);
-  assert.equal(ctaLabel(trial, true), CTA_COPY.done);
-  assert.match(CTA_COPY.trial, /free trial/i);
+test('cta: the button says what the tap does, and has one thing to say', () => {
+  assert.equal(ctaLabel(false), CTA_COPY.subscribe);
+  assert.equal(ctaLabel(true), CTA_COPY.done);
+  assert.equal(ctaLabel.length, 1, 'the label takes no plan, so no plan can reintroduce a trial');
+  assert.ok(!/free|trial/i.test(Object.values(CTA_COPY).join(' ')));
 });
 
 /* ----------------------------- second ask ---------------------------- */
@@ -325,8 +614,7 @@ test('second ask: the price and the terms are not part of the copy it swaps', ()
   // A second ask that moved the price would be a different offer wearing
   // the first one's clothes. The swap has no hook to touch either.
   const copy = paywallCopy(PAYWALL_VARIANTS.record, true);
-  const yearlyTrial: PlanConfig = { ...PLANS.yearly, trial: { duration: '7 days' } };
-  for (const line of [priceLine(PLANS.yearly), priceLine(yearlyTrial), renewalTerms(yearlyTrial)]) {
+  for (const line of [priceLine(PLANS.yearly), priceLine(PLANS.monthly), renewalTerms(PLANS.yearly)]) {
     assert.ok(!copy.body.includes(line) && !copy.headline.includes(line));
   }
   assert.ok(!/\$|£|€|\d/.test(`${copy.headline} ${copy.body}`), 'the second ask names no number');

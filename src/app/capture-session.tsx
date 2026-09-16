@@ -57,6 +57,12 @@ import {
   type GuideTarget,
   type TrackedCameraHandle,
 } from '@/components/capture';
+/*
+  Straight from the module rather than the barrel: RingScrim is the lower
+  half of the FaceFrame — the dimming, which has to sit under the ghost
+  and the flash — and the barrel does not name it yet.
+*/
+import { RingScrim } from '@/components/capture/face-frame';
 import { BASELINE_THANKS } from '@/features/content/belonging';
 import { useHairContent } from '@/features/content/use-hair-content';
 import {
@@ -92,6 +98,15 @@ import {
 } from '@/types/domain';
 
 const SHUTTER_SIZE = 78;
+
+/**
+ * The weight of the guide ring's track.
+ *
+ * Stated here rather than left to a default because two things draw on
+ * that circle — the ring's segments and the glow that answers the head —
+ * and a point and a half of disagreement between them is a second ring.
+ */
+const RING_STROKE = 3;
 
 /** The single-scan set: one photograph, from the front. */
 const SINGLE_ANGLES: readonly Angle[] = ['front'];
@@ -395,9 +410,11 @@ export default function CaptureSessionScreen() {
           ),
         );
       }
-      // The oval beats too. On a guided shot the eye is on the head
-      // outline, not on the shutter it never touched, so the flash alone
-      // would fire where nobody is looking. No-ops under Reduce Motion.
+      // The ring beats too. On a guided shot the eye is on the ring the
+      // head is sitting in, not on the shutter it never touched, so the
+      // flash alone would fire where nobody is looking. The beat is
+      // weight and light, never size — a ring that swells would be two
+      // rings again. No-ops under Reduce Motion.
       faceFrameRef.current?.pulse();
 
       try {
@@ -628,6 +645,19 @@ export default function CaptureSessionScreen() {
   const faceFrameRef = useRef<FaceFrameHandle>(null);
 
   /*
+    How close the head is to sitting in the ring, 0 to 1.
+
+    There is one target on this screen and both halves of it read from
+    this: the FaceFrame adds the approach to the hold and publishes the
+    sum here, glows on it, and the CaptureRing firms up on it. One number,
+    so the two can never disagree about how lit the ring is. Shared rather
+    than state — it changes at camera rate, and a re-render of a screen
+    carrying a live camera thirty times a second is not a price worth
+    paying to move an opacity.
+  */
+  const lockValue = useSharedValue(0);
+
+  /*
     Per-frame state lives in refs. Faces arrive at camera rate and most
     of them change nothing the person can see.
   */
@@ -643,9 +673,10 @@ export default function CaptureSessionScreen() {
 
   /*
     The scan's own answer, not the camera's. `manual=1` forces tracking
-    off whatever the build reports, and the oval has to go off with it:
-    a guide that follows the head and can never fire is the wrong promise
-    on the screen somebody opened because they cannot turn their head.
+    off whatever the build reports, and the ring's response has to go off
+    with it: a guide that answers the head and can never fire is the wrong
+    promise on the screen somebody opened because they cannot turn their
+    head.
   */
   const trackingThisAngle = scan.tracking && framing && tracksFace(angle);
 
@@ -681,7 +712,7 @@ export default function CaptureSessionScreen() {
         missedFrames.current = 0;
       } else {
         // A single dropped frame is not a face leaving. Holding the last
-        // sighting for a few frames keeps the oval from blinking.
+        // sighting for a few frames keeps the ring from blinking.
         missedFrames.current += 1;
         if (missedFrames.current < FACE_LOST_AFTER) face = lastFace.current;
         else lastFace.current = null;
@@ -721,7 +752,11 @@ export default function CaptureSessionScreen() {
     lastPose.current = null;
     faceFrameRef.current?.update(null);
     faceFrameRef.current?.setAligned(false);
-  }, [trackingThisAngle]);
+    // The FaceFrame is unmounted by now, so the value it would have wound
+    // down has to be put back by hand; otherwise the next angle's ring
+    // opens at whatever the last head left it at.
+    lockValue.set(0);
+  }, [trackingThisAngle, lockValue]);
 
   /*
     The clock. Motion reaches the reducer from here rather than from an
@@ -1259,6 +1294,14 @@ export default function CaptureSessionScreen() {
         sampleSource={guidance.example}
       />
 
+      {/*
+        The dimming, down here on the camera itself. Above the ghost it
+        would veil the one thing the ghost is for — lining this shot up
+        against last month's — and above the flash it would punch a bright
+        disc through it at the moment of capture.
+      */}
+      {trackingThisAngle ? <RingScrim target={target} lock={lockValue} /> : null}
+
       <GhostOverlay
         uri={previous?.thumbnailUri ?? previous?.uri ?? null}
         visible={ghostOn && previous !== null}
@@ -1284,9 +1327,23 @@ export default function CaptureSessionScreen() {
         ]}
       />
 
-      {/* Alignment guide, and the oval that follows the head */}
+      {/*
+        The target: one ring, with the head going inside it. What used to
+        be a second shape following the face is now the ring's own
+        response — the world outside it dims, its edge warms and thickens
+        — so there is nothing on screen to line up against and nothing to
+        work out.
+      */}
       <View pointerEvents="none" style={{ position: 'absolute', inset: 0 }}>
-        {trackingThisAngle ? <FaceFrame ref={faceFrameRef} target={target} /> : null}
+        {trackingThisAngle ? (
+          <FaceFrame
+            ref={faceFrameRef}
+            target={target}
+            ringStroke={RING_STROKE}
+            lock={lockValue}
+            hold={holdValue}
+          />
+        ) : null}
 
         <View
           style={{
@@ -1299,10 +1356,12 @@ export default function CaptureSessionScreen() {
           <View style={{ alignItems: 'center', justifyContent: 'center' }}>
             <CaptureRing
               size={RING}
+              stroke={RING_STROKE}
               total={scan.order.length}
               done={shotCount}
               current={scan.index}
               hold={phase.kind === 'tracked' ? holdValue : null}
+              lock={trackingThisAngle ? lockValue : null}
               pulse={armedSoon}
               countdownProgress={countdown === null ? null : countdown.left / countdown.from}
             />

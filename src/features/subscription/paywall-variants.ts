@@ -19,12 +19,17 @@
  * stay in one arm long enough to convert.
  *
  * ── What the variants are allowed to differ on ────────────────────────
- * The framing, and nothing else. Every variant names the same price, the
- * same trial and the same features, because the thing being tested is
- * which true sentence lands — not how much can be left out. There is no
- * countdown, no struck-through price, no invented scarcity and no "3
- * spots left", because those work by making somebody believe a thing that
- * is not so, and the refunds come back with the reason attached.
+ * The framing, and nothing else. Every variant names the same price and
+ * the same features, because the thing being tested is which true
+ * sentence lands — not how much can be left out. There is no countdown,
+ * no struck-through price, no invented scarcity and no "3 spots left",
+ * because those work by making somebody believe a thing that is not so,
+ * and the refunds come back with the reason attached.
+ *
+ * There is also no free trial, anywhere on this screen. The offer is a
+ * straight subscription at a price stated above the button that charges
+ * it, which is the version of this screen with nothing to forget to
+ * cancel. See TrialTerms in config.ts for what is left of the idea.
  */
 
 import type { IconName } from '@/components/ui/icon';
@@ -193,10 +198,85 @@ export function heroAccessibilityLabel(hero: PaywallHero | null): string {
 /* ------------------------------------------------------------------ *
  * What Premium actually gives you
  *
- * Four lines, each a thing the app does rather than a thing it promises
- * will happen to your hair. Nothing here claims growth, and nothing here
- * implies the app produces a medical outcome — what is being sold is the
- * record and the clarity, which is the part we can actually deliver.
+ * Two rules, and the second one is the one that is easy to lose.
+ *
+ *   1. Every line is a thing the app does, on a screen that exists in
+ *      this repository, and a reviewer with the source open can find it.
+ *   2. Every line is a thing the entitlement actually decides. A feature
+ *      a free user already has in full does not become a Premium benefit
+ *      by being printed under the word Premium.
+ *
+ * Rule 2 is enforced through exactly two checks, because those are the
+ * only two in the app: src/app/capture-intro.tsx:121 sends anyone
+ * without the entitlement to this screen the moment they reach for a set
+ * after the free baseline, and src/app/routine.tsx:321 puts adding to
+ * the stack behind gate('buildStack'). Everything below hangs off one of
+ * those — directly, or because it needs a second set, and the capture
+ * gate is what a second set costs.
+ *
+ * Where each line can be found, and what makes it Premium:
+ *
+ *   Unlimited photo sets   src/app/capture-intro.tsx:121. The gate
+ *                          itself. The free baseline is the exception,
+ *                          and deliberately so.
+ *   On-device scan         src/features/assessment/hair-segmenter.ts —
+ *                          MediaPipe's hair segmenter, bundled as a
+ *                          763 KB tflite file and run through
+ *                          react-native-fast-tflite on the phone. It
+ *                          reports the hair mask's share of the frame,
+ *                          which is AREA. Never density, never
+ *                          thickness — a mask cannot see between
+ *                          strands, and the word for what it measured
+ *                          is the word on the card. Run per angle in
+ *                          capture-session.tsx, so it is measured on
+ *                          every set the capture gate lets through.
+ *   Your report            src/app/(tabs)/report.tsx, built by
+ *                          features/assessment/engine.ts. The framing
+ *                          section is the Premium half: buildReport
+ *                          holds it at null on one set (engine.ts:262)
+ *                          and only compares once a second exists —
+ *                          matched angles, the gap between the dates,
+ *                          and coverageTrendFinding at engine.ts:164
+ *                          putting the newest hair-area reading beside
+ *                          the one before it.
+ *   Side-by-side           src/app/compare.tsx. Two dates, so it needs
+ *                          two sets, so it needs the capture gate.
+ *   Routine and stack      src/app/routine.tsx:321 — adding to the stack
+ *                          is gated on 'buildStack'.
+ *   Barcode lookup         src/app/scan-product.tsx, reached from the
+ *                          add-a-task form inside that same gate
+ *                          (routine.tsx:362). It asks Open Beauty Facts
+ *                          and shows what Open Beauty Facts says, which
+ *                          is why the line names the database rather
+ *                          than implying the app knows something about
+ *                          the bottle.
+ *   Kept on this device    the one line here that is not gated, and it
+ *                          is not pretending to be: it is a fact about
+ *                          what is being paid for — where the
+ *                          photographs sit — not a feature unlocked by
+ *                          paying. Somebody about to buy a year of photo
+ *                          storage should be told that before they tap,
+ *                          not after. See privacy.tsx.
+ *
+ * What is deliberately NOT here:
+ *
+ *   Product suggestions for somebody's hair type. There is no
+ *   recommendation engine in this repository — not a model, not a rules
+ *   table, not a lookup. Until one exists and ships, it does not go on
+ *   the paywall, however well it would sell.
+ *
+ *   The scan report at the end of the funnel (src/app/scan-report.tsx).
+ *   It is a real screen and a good one, but it is the FREE one: it reads
+ *   "Your first reading" at :110, it is reached from capture-session.tsx
+ *   :979 only for the first set or a single scan, and buildScanReading
+ *   reports on one photograph — heroPhoto(session) at scan-reading.ts
+ *   :354 — not on all five. "Every reading, for every set" was false in
+ *   both halves and has been struck. What replaced it is the report tab,
+ *   which really does read every set.
+ *
+ *   Ask Tress, the journal and the history. All real, all shipping, none
+ *   gated. Free users have them in full, so charging for them here would
+ *   be the same lie in a friendlier font.
  * ------------------------------------------------------------------ */
 
 export type PremiumBenefit = { icon: IconName; title: string; body: string };
@@ -208,6 +288,33 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
     body: 'Every five-angle update, kept in the order you took it.',
   },
   {
+    icon: 'sparkle',
+    /*
+     * "AI" is doing honest work here: there is a real neural network in
+     * the binary. "On your phone" is the part worth leading with, and
+     * "area" is the only thing it is allowed to claim it measured.
+     *
+     * It says "set", not "photograph". Every angle is measured on the way
+     * in (capture-session.tsx), but the reading a person is ever shown is
+     * one per set — scan-report.tsx for the first, and the report tab's
+     * coverage line for each one after. Claiming a reading per photograph
+     * would be selling four fifths of a measurement nobody can see.
+     */
+    title: 'AI scan on your phone',
+    body: 'Every set you take is read for hair area by a model in the app.',
+  },
+  {
+    icon: 'chart',
+    /*
+     * What the report tab does with a second set, which is the half of
+     * it a free user never reaches. Not "every reading, for every set":
+     * the funnel's scan report is the free one and speaks for a single
+     * photograph. See the note above.
+     */
+    title: 'Your report, set after set',
+    body: 'Every new set is read into your report and lined up against the one before.',
+  },
+  {
     icon: 'compare',
     title: 'Side-by-side comparison',
     body: 'Any two dates in your record, next to each other.',
@@ -216,6 +323,11 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
     icon: 'bottle',
     title: 'Your routine and stack',
     body: 'What you use, and how steadily you keep to it.',
+  },
+  {
+    icon: 'barcode',
+    title: 'Barcode product scanning',
+    body: 'Scan a bottle to see what an open database lists for it.',
   },
   {
     icon: 'shield',
@@ -234,39 +346,36 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
 /* ------------------------------------------------------------------ *
  * The price, in words
  *
- * The line directly above the button that charges them. When the store
- * is offering this person a trial it has to lead with that and still
- * name the price the trial turns into — a "7 days free" with no number
- * after it is the pattern the App Store rejects, and deserves to.
+ * One line, directly above the button that charges them, naming the one
+ * thing that will be taken from their account and when. There is no
+ * trial to lead with and therefore no "then" construction — the number
+ * on this line is the number on the receipt.
  * ------------------------------------------------------------------ */
 
 /** "$49.99 a year · about $4.17 a month", or "$7.99 a month". */
-export function recurringLine(plan: PlanConfig): string {
+export function priceLine(plan: PlanConfig): string {
   return plan.period === 'year'
     ? `${plan.formattedPrice} a year · about ${plan.formattedMonthlyEquivalent} a month`
     : `${plan.formattedPrice} a month`;
 }
 
-/** The recurring line, led by the trial when there is one. */
-export function priceLine(plan: PlanConfig): string {
-  const recurring = recurringLine(plan);
-  return plan.trial ? `${plan.trial.duration} free, then ${recurring}` : recurring;
-}
-
 /**
  * The renewal terms under the button. Every clause the stores require,
- * in one sentence a person can read: what renews, at what price, and
- * how to stop it.
+ * in one sentence a person can read: what renews, and how to stop it.
+ *
+ * Apple requires these whether or not there is a trial, so they stay.
+ * The price is named again rather than left to the line above, because
+ * this sentence is the one that has to stand on its own in a review —
+ * and standing on its own means naming the period too. "$49.99 unless
+ * cancelled" leaves a reader to work out from somewhere else how often
+ * that happens, which is the one number in the sentence that decides
+ * what it costs them.
  */
 export function renewalTerms(plan: PlanConfig): string {
-  const lead = plan.trial
-    ? `Your first ${plan.trial.duration} are free. After that the subscription renews automatically at ${plan.formattedPrice} unless cancelled at least 24 hours before the trial ends.`
-    : 'Subscriptions renew automatically unless cancelled.';
-  return `${lead} Payment is charged to your App Store or Google Play account. Cancel anytime in your account settings.`;
+  return `Your subscription renews automatically at ${plan.formattedPrice} a ${plan.period} unless cancelled. Payment is charged to your App Store or Google Play account. Cancel anytime in your account settings.`;
 }
 
 export const CTA_COPY = {
-  trial: 'Start My Free Trial',
   subscribe: 'Start My Journey',
   /** Shown briefly after a purchase goes through, before the sheet closes. */
   done: 'Your journey is ready',
@@ -274,9 +383,13 @@ export const CTA_COPY = {
   restoring: 'Checking your purchases…',
 } as const;
 
-export function ctaLabel(plan: PlanConfig, succeeded: boolean): string {
-  if (succeeded) return CTA_COPY.done;
-  return plan.trial ? CTA_COPY.trial : CTA_COPY.subscribe;
+/**
+ * The button's label. It takes no plan, because there is only one thing
+ * the tap can do — a signature with nowhere to put a trial is a signature
+ * that cannot grow one back by accident.
+ */
+export function ctaLabel(succeeded: boolean): string {
+  return succeeded ? CTA_COPY.done : CTA_COPY.subscribe;
 }
 
 /**

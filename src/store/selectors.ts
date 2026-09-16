@@ -87,6 +87,103 @@ export function todayProgress(data: AppData): { done: number; total: number } {
 }
 
 /**
+ * One item's share of a window: how much of it was due, and how many days
+ * of it were actually ticked.
+ */
+type Tally = { expected: number; done: number };
+
+/**
+ * Adherence across a given set of days, as a 0-100 integer, or null when
+ * nothing was due in them at all.
+ *
+ * BOTH SIDES ARE COUNTED IN DAYS. A tick is worth one day, because that
+ * is the only unit a tick comes in — you either did it that day or you
+ * did not — so the expectation has to be in days too: an item is due
+ * `weeklyTarget / 7` of a day for each day it has existed. Weighting only
+ * the denominator was what let a twice-weekly item ticked every day score
+ * 350%, and a routine of such items push the whole figure past 100.
+ *
+ * THE CAP IS PER ITEM, NOT ON THE TOTAL. Over a thirty-day window a
+ * twice-weekly item is expected about 8.6 times, so thirty ticks is 100%
+ * and no further: doing more than you asked of yourself is fine, but it
+ * is not credit that can be spent elsewhere. Capping only the total would
+ * let that surplus quietly cover a daily item missed every single day and
+ * still report 100%, and the item somebody has dropped is precisely what
+ * they opened the screen to find. `capturePunctuality` below already
+ * treated photographs this way; adherence never got the same treatment.
+ *
+ * A routine of only daily items is untouched by any of this: every weight
+ * is 7/7, nothing can be ticked twice in one day so no cap ever binds,
+ * and the result reduces exactly to the days-done over days-elapsed sum
+ * it was before frequency existed.
+ *
+ * EVERY WINDOW IS JUDGED ON THE DAYS IN IT, INCLUDING ONE STILL RUNNING.
+ * Three days into a week a twice-weekly item is due 6/7 of a tick, so one
+ * tick reads as 100 for that week so far — not as half of the two it will
+ * owe by Sunday. That is the same rule a daily item has always been given
+ * (three days in, three ticks, 100) and it cannot be swapped for "share of
+ * the full week" without making a daily routine kept every day so far read
+ * as 43% on a Wednesday. The number is honest about the days it covers;
+ * what it does not do is finish the week early, so anything drawing the
+ * current week beside completed ones has to say that point is in progress.
+ */
+function adherenceOver(
+  data: AppData,
+  items: RoutineItem[],
+  days: Date[],
+): number | null {
+  const tallies = new Map<string, Tally>();
+
+  for (const day of days) {
+    const iso = day.toISOString();
+    const doneThatDay = completedOn(data, toDateKey(day));
+
+    for (const item of items) {
+      // An item can't be missed before it existed.
+      if (daysBetween(item.createdAt, iso) < 0) continue;
+
+      let tally = tallies.get(item.id);
+      if (!tally) {
+        tally = { expected: 0, done: 0 };
+        tallies.set(item.id, tally);
+      }
+
+      tally.expected += weeklyTarget(item) / 7;
+      if (doneThatDay.has(item.id)) tally.done += 1;
+    }
+  }
+
+  let expected = 0;
+  let completed = 0;
+  for (const tally of tallies.values()) {
+    expected += tally.expected;
+    completed += Math.min(tally.done, tally.expected);
+  }
+
+  if (expected === 0) return null;
+  return wholePercent(completed, expected);
+}
+
+/**
+ * A ratio as a 0-100 integer, where 100 means all of it.
+ *
+ * Plain rounding gives a hundred to somebody who missed something: 897 of
+ * 900 item-days is 99.67%, and "100% of what your routine asked for" on a
+ * month with a missed day is the one number in this app nobody would
+ * forgive. So the last point is reserved for a whole one, and everything
+ * short of it rounds no higher than 99.
+ *
+ * Because `completed` is built from the same addends as `expected`, a
+ * genuinely complete window compares exactly equal rather than landing a
+ * float short of it.
+ */
+function wholePercent(completed: number, expected: number): number {
+  const ratio = completed / expected;
+  if (ratio >= 1) return 100;
+  return Math.max(0, Math.min(99, Math.round(ratio * 100)));
+}
+
+/**
  * Adherence over a trailing window, as a 0-100 integer.
  *
  * Only days on or after the journey start count, and the window never
@@ -111,31 +208,16 @@ export function adherencePercent(
   if (elapsed <= 0) return null;
   const days = Math.max(1, Math.min(windowDays, elapsed));
 
-  let expected = 0;
-  let completed = 0;
   const today = new Date();
+  const window: Date[] = [];
 
   for (let i = 0; i < days; i += 1) {
-    const offset = i + endingDaysAgo;
     const day = new Date(today);
-    day.setDate(day.getDate() - offset);
-    const key = toDateKey(day);
-
-    const doneThatDay = completedOn(data, key);
-    for (const item of items) {
-      // An item can't be missed before it existed.
-      if (daysBetween(item.createdAt, day.toISOString()) < 0) continue;
-      // A daily item is expected once a day; a twice-weekly one is
-      // expected two-sevenths of a day. Everything divides by seven, so
-      // a routine of only daily items gives exactly the figure it always
-      // did — weight 1, the way it was written before frequency existed.
-      expected += weeklyTarget(item) / 7;
-      if (doneThatDay.has(item.id)) completed += 1;
-    }
+    day.setDate(day.getDate() - (i + endingDaysAgo));
+    window.push(day);
   }
 
-  if (expected === 0) return null;
-  return Math.round((completed / expected) * 100);
+  return adherenceOver(data, items, window);
 }
 
 /** Consecutive days, ending today or yesterday, with everything ticked. */
@@ -327,8 +409,7 @@ export function weeklyAdherenceHistory(data: AppData, weeks = 8): number[] {
   const today = new Date();
 
   for (let w = weeks - 1; w >= 0; w -= 1) {
-    let expected = 0;
-    let completed = 0;
+    const week: Date[] = [];
 
     for (let d = 0; d < 7; d += 1) {
       const day = new Date(today);
@@ -336,16 +417,13 @@ export function weeklyAdherenceHistory(data: AppData, weeks = 8): number[] {
 
       if (daysBetween(data.journey.startedAt, day.toISOString()) < 0) continue;
       if (daysBetween(day.toISOString()) < 0) continue;
-
-      const done = completedOn(data, toDateKey(day));
-      for (const item of items) {
-        if (daysBetween(item.createdAt, day.toISOString()) < 0) continue;
-        expected += 1;
-        if (done.has(item.id)) completed += 1;
-      }
+      week.push(day);
     }
 
-    if (expected > 0) series.push(Math.round((completed / expected) * 100));
+    // Same arithmetic as the dashboard figure, so the sparkline and the
+    // number above it cannot disagree about a week.
+    const value = adherenceOver(data, items, week);
+    if (value !== null) series.push(value);
   }
 
   return series;
@@ -396,28 +474,21 @@ export function monthlyAdherenceHistory(data: AppData, months = 6): MonthPoint[]
     const first = new Date(now.getFullYear(), now.getMonth() - m, 1);
     const last = new Date(now.getFullYear(), now.getMonth() - m + 1, 0);
 
-    let expected = 0;
-    let completed = 0;
+    const month: Date[] = [];
 
     if (data.journey && items.length > 0) {
       for (let day = new Date(first); day <= last; day.setDate(day.getDate() + 1)) {
         const iso = day.toISOString();
         if (daysBetween(iso) < 0) break; // the future
         if (daysBetween(data.journey.startedAt, iso) < 0) continue;
-
-        const done = completedOn(data, toDateKey(day));
-        for (const item of items) {
-          if (daysBetween(item.createdAt, iso) < 0) continue;
-          expected += 1;
-          if (done.has(item.id)) completed += 1;
-        }
+        month.push(new Date(day));
       }
     }
 
     out.push({
       key: `${first.getFullYear()}-${first.getMonth()}`,
       label: first.toLocaleDateString(undefined, { month: 'short' }),
-      value: expected > 0 ? Math.round((completed / expected) * 100) : null,
+      value: adherenceOver(data, items, month),
     });
   }
 
@@ -448,8 +519,7 @@ export function weeklyAdherenceSeries(data: AppData, weeks = 8): SeriesPoint[] {
   for (let w = weeks - 1; w >= 0; w -= 1) {
     const start = new Date(thisMonday);
     start.setDate(start.getDate() - w * 7);
-    let expected = 0;
-    let completed = 0;
+    const week: Date[] = [];
 
     if (data.journey && items.length > 0) {
       for (let d = 0; d < 7; d += 1) {
@@ -458,20 +528,14 @@ export function weeklyAdherenceSeries(data: AppData, weeks = 8): SeriesPoint[] {
         const iso = day.toISOString();
         if (daysBetween(iso) < 0) break; // the future
         if (daysBetween(data.journey.startedAt, iso) < 0) continue;
-
-        const done = completedOn(data, toDateKey(day));
-        for (const item of items) {
-          if (daysBetween(item.createdAt, iso) < 0) continue;
-          expected += 1;
-          if (done.has(item.id)) completed += 1;
-        }
+        week.push(day);
       }
     }
 
     out.push({
       key: toDateKey(start),
       label: shortDay(start),
-      value: expected > 0 ? Math.round((completed / expected) * 100) : null,
+      value: adherenceOver(data, items, week),
     });
   }
   return out;
@@ -607,11 +671,38 @@ export type RoutineItemStat = {
   /** Consecutive days up to today; today may still be pending. */
   streak: number;
   /**
-   * Share of the days it could have been done, 0-100. Null on the day it
+   * Share of what was due that has been done, 0-100. Null on the day it
    * was added, before it has been ticked — there is nothing to average yet
    * and a bare 0% would read as a failure on day one.
+   *
+   * Weighted by how often the item is meant to happen and capped at 100,
+   * for the reasons set out on `adherenceOver`: a twice-weekly item was
+   * previously judged against all seven days, so somebody following their
+   * own routine exactly read as 29%, and one ticked every day would have
+   * read as 350% once the weighting arrived unpaired with a cap.
+   *
+   * Because of that weighting this is NO LONGER a share of days, and copy
+   * that says "on X% of its days" wants `daysDonePercent` instead.
    */
   adherence: number | null;
+  /**
+   * Share of the days it has existed on which it was actually ticked,
+   * 0-100. Same basis as `adherence` — an unfinished today is not counted
+   * against it — and null in the same case.
+   *
+   * The two are not interchangeable, and the gap between them is the
+   * reason both exist. `adherence` answers "how much of what was due did
+   * they do", so a twice-weekly shampoo ticked on eight of thirty days
+   * reads 93. This answers "how often did they tick it", which for the
+   * same item is 27.
+   *
+   * Any sentence phrased as a share of days, and any ranking of "the one
+   * ticked least often", means this figure: ordering by `adherence` puts
+   * a daily item ticked on 25 of 30 days (83) below a twice-weekly one
+   * ticked on 8 (93), which is a true statement about pace and a false
+   * one about days.
+   */
+  daysDonePercent: number | null;
   /** Date key of the last day it was ticked, if ever. */
   lastDone: string | null;
 };
@@ -674,10 +765,17 @@ export function routineItemStats(data: AppData): RoutineItemStat[] {
 
     // Today only counts against you once it is done; the day is not over.
     const elapsed = daysTracked - (done.has(todayKey) ? 0 : 1);
-    const adherence =
-      elapsed > 0 ? Math.round((daysDone / elapsed) * 100) : null;
+    // Days due, in the same unit as `daysDone`: a twice-weekly item is
+    // due two-sevenths of each day it has existed. Capped, because doing
+    // it more often than asked is fine but is not above 100%.
+    const dueDays = elapsed * (weeklyTarget(item) / 7);
+    const adherence = elapsed > 0 ? wholePercent(daysDone, dueDays) : null;
+    // The unweighted reading, for copy that talks about days rather than
+    // about what was due. Clamped only for safety: a log dated ahead of
+    // today is the sole way `daysDone` could outrun the days elapsed.
+    const daysDonePercent = elapsed > 0 ? wholePercent(daysDone, elapsed) : null;
 
-    return { item, daysTracked, daysDone, streak, adherence, lastDone };
+    return { item, daysTracked, daysDone, streak, adherence, daysDonePercent, lastDone };
   });
 }
 

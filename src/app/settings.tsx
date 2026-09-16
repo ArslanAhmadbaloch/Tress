@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Alert } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, AppState, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -28,22 +28,32 @@ import {
   REMINDER_HOUR_LABELS,
   REMINDER_HOUR_TIMES,
   currentReminderHour,
+  currentReminderIntervalDays,
   hapticsAreEnabled,
   loadCaptureTimer,
+  routineReminderIsEnabled,
   saveCaptureTimer,
   setHapticsEnabled,
   setReminderHour,
+  setReminderIntervalDays,
+  setRoutineReminderEnabled,
+  setUpdateReminderEnabled,
+  updateReminderIsEnabled,
   type CaptureTimer,
   type ReminderHour,
 } from '@/lib/device-preferences';
 import { clearAllPhotos, formatBytes, photoStorageBytes } from '@/lib/photo-storage';
 import {
   cancelAllReminders,
+  enableRemindersWithPrompt,
+  notificationPermissionStatus,
   remindersSupported,
   remindersUnavailableReason,
-  requestNotificationPermission,
-  scheduleRoutineReminder,
-  scheduleUpdateReminder,
+  rescheduleReminders,
+  rescheduleRoutineReminder,
+  syncReminders,
+  type NotificationPermission,
+  type ReminderPlan,
 } from '@/lib/notifications';
 import {
   BIOMETRIC_LABELS,
@@ -87,8 +97,15 @@ export default function SettingsScreen() {
   const { data, updateJourney, updateProfile, resetAll } = useAppStore();
   const lock = useAppLock();
 
-  const [routineReminder, setRoutineReminder] = useState(false);
-  const [updateReminder, setUpdateReminder] = useState(false);
+  // Both switches start from what is stored, and storage starts them on.
+  // Because they already read on, nobody has a switch left to flip — so the
+  // card below carries its own "Allow notifications" action, which is the
+  // route to the system prompt for anyone who opens this screen.
+  const [routineReminder, setRoutineReminder] = useState(routineReminderIsEnabled);
+  const [updateReminder, setUpdateReminder] = useState(updateReminderIsEnabled);
+  // Null until the first read comes back: showing "your phone is blocking
+  // these" for a frame, before anything has been asked, would be a lie.
+  const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [reminderAt, setReminderAt] = useState<ReminderHour>(currentReminderHour);
   const [haptics, setHaptics] = useState(hapticsAreEnabled);
   const [timer, setTimer] = useState<CaptureTimer>(0);
@@ -100,11 +117,58 @@ export default function SettingsScreen() {
   // The passcode sheet writes to the keychain and closes; this screen has
   // to re-read on the way back or its toggle would still say "off".
   const refreshLock = lock.refresh;
+  const intervalDays = data.journey?.updateIntervalDays;
   useFocusEffect(
     useCallback(() => {
       refreshLock();
-    }, [refreshLock]),
+
+      // The launch sync runs before any screen exists and cannot read the
+      // journey, so the interval it schedules on is mirrored from here.
+      if (intervalDays) setReminderIntervalDays(intervalDays);
+
+      // Notifications can be switched off for the app while this screen is
+      // in the background, so the row cannot trust what it read last time.
+      let alive = true;
+      notificationPermissionStatus().then((status) => {
+        if (alive) setPermission(status);
+      });
+      return () => {
+        alive = false;
+      };
+    }, [refreshLock, intervalDays]),
   );
+
+  /*
+   * The return journey from the system Settings app.
+   *
+   * Sending somebody there is only half a route: backgrounding the app
+   * does not blur a focused screen, so the effect above never re-runs when
+   * they come back. Without this, a person who taps "Open device settings",
+   * allows notifications and returns sees a card still telling them they
+   * are blocked, with nothing scheduled, until the next cold launch.
+   *
+   * It re-reads the phone's answer and, if it has become yes, brings the
+   * schedule in line with the switches. It never prompts — syncReminders
+   * cannot — so returning from anywhere else is silent and free.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      notificationPermissionStatus()
+        .then((status) => {
+          setPermission(status);
+          if (status !== 'granted') return undefined;
+          return syncReminders({
+            routine: routineReminderIsEnabled(),
+            update: updateReminderIsEnabled(),
+            hour: currentReminderHour(),
+            intervalDays: intervalDays ?? currentReminderIntervalDays(),
+          });
+        })
+        .catch(() => undefined);
+    });
+    return () => sub.remove();
+  }, [intervalDays]);
 
   // Reading the directory size is synchronous and cheap; recompute it when
   // the session list changes rather than mirroring it into state.
@@ -119,68 +183,94 @@ export default function SettingsScreen() {
   const journey = data.journey;
   if (!journey) return null;
 
-  const permissionRefused = () =>
+  /**
+   * The plan the two switches describe right now. Built from arguments
+   * rather than read back out of state, so a toggle that has just flipped
+   * schedules on its new value instead of the render it came from.
+   */
+  const plan = (over: Partial<ReminderPlan>): ReminderPlan => ({
+    routine: routineReminder,
+    update: updateReminder,
+    hour: reminderAt,
+    intervalDays: journey.updateIntervalDays,
+    ...over,
+  });
+
+  const openSystemSettings = () => {
+    Linking.openSettings().catch(() => undefined);
+  };
+
+  /**
+   * The switch is the app's own preference and stays where it was put; the
+   * alert exists because the phone, not the app, is the thing saying no.
+   */
+  const explainBlocked = (status: NotificationPermission) =>
     Alert.alert(
-      'Notifications are off',
-      'Turn on notifications for Tress in your device Settings to get reminders.',
+      status === 'denied'
+        ? 'Your phone is blocking reminders'
+        : 'Reminders are not allowed yet',
+      status === 'denied'
+        ? 'Notifications are turned off for Tress. The reminder is saved, but nothing can be delivered until you allow them in your device settings.'
+        : 'The reminder is saved, but nothing can be delivered until notifications are allowed for Tress.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open settings', onPress: openSystemSettings },
+      ],
     );
 
-  const toggleRoutineReminder = async (next: boolean) => {
-    if (!next) {
-      setRoutineReminder(false);
-      await cancelAllReminders();
-      if (updateReminder) await scheduleUpdateReminder(journey.updateIntervalDays);
-      return;
-    }
+  /**
+   * Asks the OS only when a switch is being turned on, and only when the
+   * prompt has never been answered. A refusal is reported, never retried.
+   */
+  const applyReminders = async (next: ReminderPlan, wantsOn: boolean) => {
+    if (wantsOn) await enableRemindersWithPrompt(next);
+    else await syncReminders(next);
 
-    const granted = await requestNotificationPermission();
-    if (!granted) {
-      permissionRefused();
-      return;
+    const status = await notificationPermissionStatus();
+    setPermission(status);
+    if (wantsOn && status !== 'granted' && status !== 'unsupported') {
+      explainBlocked(status);
     }
-    await scheduleRoutineReminder();
-    setRoutineReminder(true);
+  };
+
+  /**
+   * The route to the system prompt for the person who never touches a
+   * switch — which, now that both start on, is nearly everybody who opens
+   * this screen. It sits under an explanation of what it is for, so the
+   * prompt arrives as the answer to a sentence somebody has just read.
+   * A refusal needs no alert: the card rewrites itself to say so.
+   */
+  const allowNotifications = async () => {
+    await enableRemindersWithPrompt(plan({}));
+    setPermission(await notificationPermissionStatus());
+  };
+
+  const toggleRoutineReminder = async (next: boolean) => {
+    setRoutineReminder(next);
+    setRoutineReminderEnabled(next);
+    await applyReminders(plan({ routine: next }), next);
   };
 
   const toggleUpdateReminder = async (next: boolean) => {
-    if (!next) {
-      setUpdateReminder(false);
-      await cancelAllReminders();
-      if (routineReminder) await scheduleRoutineReminder();
-      return;
-    }
-
-    const granted = await requestNotificationPermission();
-    if (!granted) {
-      permissionRefused();
-      return;
-    }
-    await scheduleUpdateReminder(journey.updateIntervalDays);
-    setUpdateReminder(true);
-  };
-
-  /** Anything already scheduled has to be rebuilt on the new terms. */
-  const reschedule = async () => {
-    if (!routineReminder && !updateReminder) return;
-    await cancelAllReminders();
-    if (routineReminder) await scheduleRoutineReminder();
-    if (updateReminder) await scheduleUpdateReminder(journey.updateIntervalDays);
+    setUpdateReminder(next);
+    setUpdateReminderEnabled(next);
+    await applyReminders(plan({ update: next }), next);
   };
 
   const chooseReminderHour = (hour: ReminderHour) => {
     setReminderAt(hour);
     setReminderHour(hour);
-    reschedule();
+    // A new hour means the daily trigger has to be built again — and only
+    // that one. Rebuilding the photo reminder too would restart its
+    // interval from now, so trying all three hours would push photo day
+    // out by three intervals.
+    rescheduleRoutineReminder(plan({ hour })).catch(() => undefined);
   };
 
   const chooseInterval = (days: number) => {
     updateJourney({ updateIntervalDays: days });
-    if (updateReminder) {
-      cancelAllReminders().then(() => {
-        if (routineReminder) scheduleRoutineReminder();
-        scheduleUpdateReminder(days);
-      });
-    }
+    setReminderIntervalDays(days);
+    rescheduleReminders(plan({ intervalDays: days })).catch(() => undefined);
   };
 
   const chooseTimer = (seconds: CaptureTimer) => {
@@ -354,6 +444,48 @@ export default function SettingsScreen() {
         </SettingsGroup>
         {remindersUnavailableReason ? (
           <SettingsNote icon="info">{remindersUnavailableReason}</SettingsNote>
+        ) : null}
+        {/*
+          The switches above are the app's own preference, and permission is
+          the phone's. Two different sentences, so two different cards: one
+          asks, because nobody has been asked yet; the other explains, and
+          points at the only place that can undo a refusal. Blaming the
+          phone for a prompt the app never raised would be neither.
+        */}
+        {remindersSupported &&
+        permission !== null &&
+        permission !== 'granted' &&
+        permission !== 'unsupported' &&
+        (routineReminder || updateReminder) ? (
+          <>
+            <SettingsNote icon="info">
+              {/*
+                It says notifications are not allowed yet, not that the
+                phone has never been asked. On Android 13+ a declined
+                POST_NOTIFICATIONS prompt leaves `canAskAgain` true, so
+                this branch is also reached straight after somebody has
+                been asked and said no; telling them the app never asked
+                would be false on that path.
+              */}
+              {permission === 'undetermined'
+                ? 'These reminders are on, but notifications are not allowed for Tress yet. Nothing is delivered until they are.'
+                : 'Your phone is not showing notifications for Tress, so these reminders are saved but nothing is being delivered.'}
+            </SettingsNote>
+            <Button
+              label={
+                permission === 'undetermined'
+                  ? 'Allow notifications'
+                  : 'Open device settings'
+              }
+              variant="secondary"
+              style={{ marginTop: spacing.sm }}
+              onPress={
+                permission === 'undetermined'
+                  ? allowNotifications
+                  : openSystemSettings
+              }
+            />
+          </>
         ) : null}
 
         <SectionHeader title="Capture" />

@@ -30,7 +30,7 @@
  */
 
 import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
@@ -49,6 +49,14 @@ import { EmptyState, Screen, ScreenScroll } from '@/components/ui/layout';
 import { Text } from '@/components/ui/text';
 import { buildScanReading } from '@/features/assessment/scan-reading';
 import { formatDateShort } from '@/lib/date';
+import {
+  currentReminderHour,
+  markRemindersOffered,
+  remindersAlreadyOffered,
+  routineReminderIsEnabled,
+  updateReminderIsEnabled,
+} from '@/lib/device-preferences';
+import { enableRemindersWithPrompt } from '@/lib/notifications';
 import { useAppStore } from '@/store/app-store';
 import { iconSize, useTheme } from '@/theme';
 import { ANGLE_LABELS } from '@/types/domain';
@@ -57,6 +65,41 @@ export default function ScanReportScreen() {
   const { data } = useAppStore();
   const { colors, radius, spacing } = useTheme();
   const router = useRouter();
+
+  /*
+    The one place the app asks for notifications.
+
+    The reminder switches are on by default, but a default is not
+    permission — the system still has to ask, and it only ever asks once
+    per install. This screen is the moment the offer is self-explanatory:
+    a first reading is on the screen, and the only thing that turns it
+    into a comparison is coming back. Asking at launch instead would
+    spend the single prompt on somebody who does not yet know what the
+    app does, and "Don't Allow" cannot be undone from inside the app.
+
+    It runs once, it never blocks the render, and a refusal is final and
+    silent: the switches stay on, nothing is scheduled, and Settings is
+    where the system prompt is explained.
+  */
+  useEffect(() => {
+    if (remindersAlreadyOffered()) return;
+    const interval = data.journey?.updateIntervalDays;
+    if (!interval) return;
+
+    let cancelled = false;
+    void (async () => {
+      await enableRemindersWithPrompt({
+        routine: routineReminderIsEnabled(),
+        update: updateReminderIsEnabled(),
+        hour: currentReminderHour(),
+        intervalDays: interval,
+      });
+      if (!cancelled) await markRemindersOffered();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [data.journey?.updateIntervalDays]);
 
   // Sessions are stored newest-first, so the latest is the head.
   const latest = data.sessions[0];

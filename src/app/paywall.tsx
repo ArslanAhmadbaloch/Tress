@@ -16,8 +16,14 @@
  * ── The page, top to bottom ────────────────────────────────────────────
  * One headline, centred, in the display face. The person's own first
  * photograph in a white frame, because the thing being sold is a record
- * and the record is of them. Four lines on what Premium keeps. Two plans.
- * Then, pinned, the price and the button that charges it.
+ * and the record is of them. Then the list of what Premium includes —
+ * every line of it a screen that exists, which is the only test a bullet
+ * on this page has to pass. Two plans. Then, pinned, the price and the
+ * button that charges it.
+ *
+ * There is no free trial on this screen and no code path that could draw
+ * one. The offer is a straight subscription: one price, stated above the
+ * button, charged when they tap it.
  *
  * Every sentence on it lives in paywall-variants.ts, where the tests can
  * read it. This file is layout.
@@ -185,10 +191,10 @@ export default function PaywallScreen() {
         {/*
           Centred, like the funnel's questions. Which framing somebody sees
           is fixed for the life of their install — see paywall-variants.ts.
-          All three name the same price, the same trial and the same
-          features; only the door in is different. The one exception is
-          the visit after a dismissal, which swaps these two lines for the
-          second ask and nothing else.
+          All three name the same price and the same features; only the
+          door in is different. The one exception is the visit after a
+          dismissal, which swaps these two lines for the second ask and
+          nothing else.
         */}
         <Rise index={0} style={{ alignItems: 'center', marginTop: spacing.lg }}>
           <Text variant="overline" color="textSecondary" center>
@@ -294,7 +300,7 @@ export default function PaywallScreen() {
         </Text>
 
         <Button
-          label={ctaLabel(plan, succeeded)}
+          label={ctaLabel(succeeded)}
           onPress={() => purchase(selected)}
           loading={purchaseState.kind === 'working'}
           succeeded={succeeded}
@@ -333,7 +339,15 @@ export default function PaywallScreen() {
               accessibilityLabel={CTA_COPY.restore}
               accessibilityHint="Looks for a Premium subscription already bought with this store account"
               style={{ paddingVertical: spacing.xs, paddingHorizontal: spacing.sm }}>
-              <Text variant="footnote" color="textSecondary" style={{ fontWeight: '600' }}>
+              {/*
+                Restore has to read as a control rather than as another
+                line of small print, and the weight that does that comes
+                from the scale — `subhead` is the emphasised small step —
+                not from a fontWeight written here. A weight set inline
+                is a weight the type scale cannot change, and on Android
+                it asks for a face that is not bundled.
+              */}
+              <Text variant="subhead" color="textSecondary">
                 {CTA_COPY.restore}
               </Text>
             </PressableScale>

@@ -220,9 +220,9 @@ function routineSection(data: AppData): ReportSection {
     headline:
       thirty === null
         ? 'Not enough days recorded to judge the last month.'
-        : `You kept to your routine on ${Math.round(thirty)}% of the last 30 days.`,
+        : `You did ${Math.round(thirty)}% of what your routine asked for over the last 30 days.`,
     detail:
-      'This counts days where every item due was ticked. It measures what you did, not whether it worked.',
+      'Each item counts as often as it is due — a twice-weekly item across 30 days is about 8.6 ticks — and doing more than asked does not score above 100%. It measures what you did, not whether it worked.',
   });
 
   if (best > 0) {

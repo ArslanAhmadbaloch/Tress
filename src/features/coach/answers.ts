@@ -179,16 +179,24 @@ function consistencyAnswer(data: AppData, journey: Journey): CoachAnswer {
 
   // Which item is dropped most is the useful half of "how consistent";
   // it only means something once two items have a figure to compare.
-  const measured = stats.filter((s) => s.adherence !== null);
+  // "Ticked least often" is a question about days, so it is ranked and
+  // reported on `daysDonePercent`. Ranking on `adherence` would put a
+  // daily item ticked on 25 of 30 days below a twice-weekly one ticked
+  // on 8 — true about pace, false about days, and this sentence says days.
+  const measured = stats.filter((s) => s.daysDonePercent !== null);
   let weakest: RoutineItemStat | null = null;
   if (stats.length > 1 && measured.length >= 2) {
     // Stats are oldest-first, so a strict comparison keeps the earliest of a tie.
     for (const s of measured) {
-      if (weakest === null || (s.adherence as number) < (weakest.adherence as number)) weakest = s;
+      if (
+        weakest === null ||
+        (s.daysDonePercent as number) < (weakest.daysDonePercent as number)
+      )
+        weakest = s;
     }
   }
   const detail = weakest
-    ? `${run} ${weakest.item.label} is the one ticked least often, on ${weakest.adherence}% of its days.`
+    ? `${run} ${weakest.item.label} is the one ticked least often, on ${weakest.daysDonePercent}% of its days.`
     : run;
 
   return {
@@ -289,7 +297,10 @@ function itemAdherenceAnswer(data: AppData, itemId: string | undefined): CoachAn
   return {
     intent,
     source,
-    headline: `${item.label} since ${formatDate(item.createdAt)} — ticked on ${stat.adherence}% of its days.`,
+    // A share of days, so `daysDonePercent` — not `adherence`, which is a
+    // share of what the item's cadence asked for. Null in the same case,
+    // so the guard above still covers it.
+    headline: `${item.label} since ${formatDate(item.createdAt)} — ticked on ${stat.daysDonePercent}% of its days.`,
     detail: `${tick} ${today}`,
     refusal: false,
   };

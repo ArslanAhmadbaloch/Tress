@@ -8,9 +8,13 @@
  * asked for: the full five on an update, a single front shot on the
  * first scan, where the ring is one arc and there is nothing to count.
  *
- * Nothing here fills because of where the head is. Following the head is
- * the FaceFrame oval's job, on the builds and angles that can do it; this
- * ring only ever shows what has been captured.
+ * Nothing here fills because of where the head is. There is one target on
+ * the capture screen and this is it — the head goes inside it — so what
+ * the ring owes the person is a response, not a rival shape to line up
+ * against. The response is `lock`: the waiting segments firm up as the
+ * head approaches and stand at full strength when the pose is held,
+ * which is the same number FaceFrame glows on. It still says nothing
+ * about the hair; only about where a head is against a circle.
  *
  * Two things do sweep the active arc, and both are real. The countdown
  * is the seconds left on the person's own timer. The hold is how long
@@ -37,9 +41,24 @@ import Svg, { Circle, G } from 'react-native-svg';
 import { useTheme } from '@/theme';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedG = Animated.createAnimatedComponent(G);
 
 /** Gap between segments, in degrees. */
 const GAP = 5;
+
+/**
+ * How visible a segment still waiting on you is, with no head anywhere
+ * near the ring and with one sitting in it.
+ *
+ * The lower end is a shade below where the ring used to sit at rest: a
+ * ring nobody is aiming at should be quiet, so that arriving at it is a
+ * change you can see without being told about it.
+ */
+const WAITING_FAR = 0.6;
+const WAITING_LOCKED = 1;
+
+/** Where it sits when there is no head to respond to at all. */
+const WAITING_STATIC = 0.75;
 
 /*
  * Chrome over a live camera, which is real black rather than a themed
@@ -81,6 +100,14 @@ export function CaptureRing({
    * self-timer are never armed at the same time.
    */
   hold,
+  /**
+   * 0-1, how close a head is to sitting in the ring: written by the
+   * FaceFrame at camera rate and read here so the ring responds to the
+   * person rather than waiting to be aligned with. Null on the angles and
+   * builds where nothing is tracking, and the ring rests where it always
+   * did.
+   */
+  lock,
   /** True once every angle is captured: one sweep, then it settles. */
   complete,
   /** True while a hands-free countdown is armed and waiting. */
@@ -93,6 +120,7 @@ export function CaptureRing({
   current: number;
   countdownProgress?: number | null;
   hold?: SharedValue<number> | null;
+  lock?: SharedValue<number> | null;
   complete?: boolean;
   pulse?: boolean;
   stroke?: number;
@@ -103,54 +131,71 @@ export function CaptureRing({
   const circumference = 2 * Math.PI * radius;
   const segment = 360 / total;
 
+  const segments = Array.from({ length: total }, (_, i) => ({
+    index: i,
+    ...arcOf(circumference, segment, i),
+    // A finished set reads as finished everywhere: there is no "current"
+    // angle left to be on.
+    isDone: complete === true || i < done,
+    isCurrent: complete !== true && i === current,
+  }));
+  const currentSegment = segments.find((s) => s.isCurrent);
+  const captured = segments.filter((s) => !s.isCurrent && s.isDone);
+  const waiting = segments.filter((s) => !s.isCurrent && !s.isDone);
+
   return (
     <View style={{ width: size, height: size }} pointerEvents="none">
       <Svg width={size} height={size}>
         {/* Rotated so segment zero starts at the top. */}
         <G rotation={-90} origin={`${size / 2}, ${size / 2}`}>
-          {Array.from({ length: total }, (_, i) => {
-            const { full, offset } = arcOf(circumference, segment, i);
+          {captured.map((s) => (
+            <Circle
+              key={s.index}
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              stroke={DONE}
+              strokeWidth={stroke}
+              strokeLinecap="round"
+              fill="none"
+              strokeDasharray={`${s.full} ${circumference}`}
+              strokeDashoffset={s.offset}
+            />
+          ))}
 
-            // A finished set reads as finished everywhere: there is no
-            // "current" angle left to be on.
-            const isDone = complete === true || i < done;
-            const isCurrent = complete !== true && i === current;
+          {/*
+            The angles still to come, as one group: their strength is a
+            single property of the ring rather than a value re-derived on
+            each arc, so they brighten together as the head arrives.
+          */}
+          <WaitingTrack
+            size={size}
+            radius={radius}
+            circumference={circumference}
+            stroke={stroke}
+            segments={waiting}
+            lock={lock ?? null}
+          />
 
-            if (isCurrent) {
-              return (
-                <CurrentSegment
-                  key={i}
-                  size={size}
-                  radius={radius}
-                  circumference={circumference}
-                  length={full}
-                  offset={offset}
-                  stroke={stroke + 1}
-                  // A retake lands on a segment that is already captured;
-                  // it keeps the white it earned rather than going back
-                  // to "waiting on you".
-                  color={isDone ? DONE : active}
-                  pulse={pulse === true}
-                />
-              );
-            }
-
-            return (
-              <Circle
-                key={i}
-                cx={size / 2}
-                cy={size / 2}
-                r={radius}
-                stroke={isDone ? DONE : TRACK}
-                strokeWidth={stroke}
-                strokeLinecap="round"
-                fill="none"
-                strokeDasharray={`${full} ${circumference}`}
-                strokeDashoffset={offset}
-                opacity={isDone ? 1 : 0.75}
-              />
-            );
-          })}
+          {currentSegment ? (
+            <CurrentSegment
+              // Keyed by the angle it is on, so moving to the next one
+              // gets a fresh instance rather than inheriting the last
+              // segment's breathing mid-cycle.
+              key={currentSegment.index}
+              size={size}
+              radius={radius}
+              circumference={circumference}
+              length={currentSegment.full}
+              offset={currentSegment.offset}
+              stroke={stroke + 1}
+              // A retake lands on a segment that is already captured; it
+              // keeps the white it earned rather than going back to
+              // "waiting on you".
+              color={currentSegment.isDone ? DONE : active}
+              pulse={pulse === true}
+            />
+          ) : null}
 
           {hold ? (
             <HoldArc
@@ -186,6 +231,66 @@ export function CaptureRing({
       </Svg>
     </View>
   );
+}
+
+/** One arc's place on the ring, and whether it is behind or ahead of you. */
+type Segment = {
+  index: number;
+  full: number;
+  offset: number;
+  isDone: boolean;
+  isCurrent: boolean;
+};
+
+/**
+ * The angles still to come, brightening as a head approaches the ring.
+ *
+ * The whole point of the group is that one animated property carries all
+ * of them: the ring firms up as a single object, which is the thing that
+ * makes it read as one target responding rather than as a set of arcs
+ * each doing its own thing. With nothing tracking — a blind angle, a
+ * build with no detector — it is a plain group at its resting strength
+ * and no animation runs at all.
+ */
+function WaitingTrack({
+  size,
+  radius,
+  circumference,
+  stroke,
+  segments,
+  lock,
+}: {
+  size: number;
+  radius: number;
+  circumference: number;
+  stroke: number;
+  segments: Segment[];
+  lock: SharedValue<number> | null;
+}) {
+  const animated = useAnimatedProps(() => {
+    const value = lock ? lock.get() : 0;
+    const level = value < 0 ? 0 : value > 1 ? 1 : value;
+    return { opacity: WAITING_FAR + (WAITING_LOCKED - WAITING_FAR) * level };
+  });
+
+  const arcs = segments.map((s) => (
+    <Circle
+      key={s.index}
+      cx={size / 2}
+      cy={size / 2}
+      r={radius}
+      stroke={TRACK}
+      strokeWidth={stroke}
+      strokeLinecap="round"
+      fill="none"
+      strokeDasharray={`${s.full} ${circumference}`}
+      strokeDashoffset={s.offset}
+    />
+  ));
+
+  if (!lock) return <G opacity={WAITING_STATIC}>{arcs}</G>;
+
+  return <AnimatedG animatedProps={animated}>{arcs}</AnimatedG>;
 }
 
 /**

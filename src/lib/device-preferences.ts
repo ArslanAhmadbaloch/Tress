@@ -13,10 +13,17 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { cancelAllReminders, syncReminders } from './notifications';
+
 const TIMER_KEY = 'hj.captureTimer';
 const HAPTICS_KEY = 'hj.haptics';
 const REMINDER_HOUR_KEY = 'hj.reminderHour';
+const REMINDER_PROMPT_KEY = 'hj.remindersOffered';
 const PAYWALL_ASK_KEY = 'hj.paywallAsk';
+const ROUTINE_REMINDER_KEY = 'hj.reminderRoutine';
+const UPDATE_REMINDER_KEY = 'hj.reminderUpdate';
+const REMINDER_INTERVAL_KEY = 'hj.reminderIntervalDays';
+const REMINDER_IDS_KEY = 'hj.reminderIdsAdopted';
 
 /* ----------------------------- capture timer ---------------------------- */
 
@@ -87,6 +94,72 @@ export function setReminderHour(hour: ReminderHour): void {
   AsyncStorage.setItem(REMINDER_HOUR_KEY, String(hour)).catch(() => undefined);
 }
 
+/* --------------------------- reminder switches --------------------------- */
+
+/**
+ * The two reminder switches, and the interval the photo one runs on.
+ *
+ * Both are on from the first launch: somebody who never opens this screen
+ * should still be told when the next set of photos is due and when their
+ * routine is waiting. What they are NOT is permission — the operating
+ * system owns that, and these flags only say what the app would schedule
+ * if it had it.
+ *
+ * On disk each is tri-state on purpose. Absent means never chosen, which
+ * is on; `'0'` is somebody reaching into Settings and switching it off,
+ * and that has to survive every launch afterwards. Storing a bare boolean
+ * would make "never asked" and "said no" the same byte, and the next
+ * default change would quietly switch something back on under them.
+ */
+let routineReminderEnabled = true;
+let updateReminderEnabled = true;
+
+export function routineReminderIsEnabled(): boolean {
+  return routineReminderEnabled;
+}
+
+export function updateReminderIsEnabled(): boolean {
+  return updateReminderEnabled;
+}
+
+export function setRoutineReminderEnabled(enabled: boolean): void {
+  routineReminderEnabled = enabled;
+  AsyncStorage.setItem(ROUTINE_REMINDER_KEY, enabled ? '1' : '0').catch(
+    () => undefined,
+  );
+}
+
+export function setUpdateReminderEnabled(enabled: boolean): void {
+  updateReminderEnabled = enabled;
+  AsyncStorage.setItem(UPDATE_REMINDER_KEY, enabled ? '1' : '0').catch(
+    () => undefined,
+  );
+}
+
+/**
+ * A device-side copy of the journey's photo interval.
+ *
+ * The interval itself belongs to the journey, but the launch sync runs
+ * before any screen has mounted and cannot read a React store, so the
+ * chosen number is mirrored here whenever Settings sees it. Thirty days
+ * is the fallback for the first launch after an install, and is corrected
+ * the moment a screen that knows the real answer appears.
+ */
+let reminderIntervalDays = 30;
+
+export function currentReminderIntervalDays(): number {
+  return reminderIntervalDays;
+}
+
+export function setReminderIntervalDays(days: number): void {
+  if (!Number.isFinite(days) || days <= 0) return;
+  if (days === reminderIntervalDays) return;
+  reminderIntervalDays = days;
+  AsyncStorage.setItem(REMINDER_INTERVAL_KEY, String(days)).catch(
+    () => undefined,
+  );
+}
+
 /* ------------------------------ paywall ask ----------------------------- */
 
 /**
@@ -114,16 +187,73 @@ export function setPaywallAsk(stage: PaywallAskStage): void {
 /* --------------------------------- boot --------------------------------- */
 
 /**
+ * Whether this install's reminders already carry the stable identifiers.
+ *
+ * Earlier builds scheduled the same two reminders without an identifier,
+ * so the operating system gave them generated UUIDs. `syncReminders` looks
+ * the schedule up by identifier and would see none of them, so it would
+ * schedule a second routine reminder and a second photo reminder on top of
+ * the originals — every reminder twice, for good. One sweep, once per
+ * install, clears whatever is there before the first identified sync.
+ */
+let reminderIdsAdopted = false;
+
+/**
+ * Brings the schedule in line with the switches, without ever raising the
+ * system prompt: this runs moments after launch, where nobody has been
+ * told what the prompt would be for. `syncReminders` only adds what is
+ * missing, so a photo reminder already counting down is left alone rather
+ * than restarted by every launch.
+ */
+async function bootstrapReminders(): Promise<void> {
+  /*
+   * The sweep is in a try of its own, and the flag is written before it
+   * runs. Sharing one try with the sync below meant a failed setItem took
+   * the sync down with it AND left the flag absent, so the sweep would run
+   * again on the next launch — cancelling and rebuilding the photo
+   * reminder every day, which is precisely the restarted countdown the
+   * one-time guard exists to avoid.
+   */
+  if (!reminderIdsAdopted) {
+    reminderIdsAdopted = true;
+    try {
+      await AsyncStorage.setItem(REMINDER_IDS_KEY, '1');
+      await cancelAllReminders();
+    } catch {
+      // Nothing schedulable, or the store refused the flag. Either way the
+      // sync below still runs; the worst case is one stale duplicate.
+    }
+  }
+
+  try {
+    await syncReminders({
+      routine: routineReminderEnabled,
+      update: updateReminderEnabled,
+      hour: reminderHour,
+      intervalDays: reminderIntervalDays,
+    });
+  } catch {
+    // Nothing schedulable in this runtime; the switches still read true.
+  }
+}
+
+/**
  * Reads the cached preferences from disk. Called once while the launch
  * screen is still up, so nothing has had a chance to read a default yet.
  */
 export async function loadDevicePreferences(): Promise<void> {
   try {
-    const [haptics, hour, ask] = await AsyncStorage.multiGet([
-      HAPTICS_KEY,
-      REMINDER_HOUR_KEY,
-      PAYWALL_ASK_KEY,
-    ]);
+    const [haptics, hour, ask, routine, update, interval, ids, offered] =
+      await AsyncStorage.multiGet([
+        HAPTICS_KEY,
+        REMINDER_HOUR_KEY,
+        PAYWALL_ASK_KEY,
+        ROUTINE_REMINDER_KEY,
+        UPDATE_REMINDER_KEY,
+        REMINDER_INTERVAL_KEY,
+        REMINDER_IDS_KEY,
+        REMINDER_PROMPT_KEY,
+      ]);
     // Absent means never set, which is on: the app has always buzzed.
     hapticsEnabled = haptics[1] !== '0';
     const stored = Number(hour[1]);
@@ -133,7 +263,50 @@ export async function loadDevicePreferences(): Promise<void> {
     if (ask[1] === 'second' || ask[1] === 'settled') {
       paywallAsk = ask[1];
     }
+    // Absent means never chosen, which is on; only an explicit '0' is off.
+    routineReminderEnabled = routine[1] !== '0';
+    updateReminderEnabled = update[1] !== '0';
+    const days = Number(interval[1]);
+    if (Number.isFinite(days) && days > 0) reminderIntervalDays = days;
+    reminderIdsAdopted = ids[1] === '1';
+    remindersOffered = offered[1] === '1';
   } catch {
     // Defaults are already in place; an unreadable store is not an error.
   }
+
+  /*
+   * Deliberately after the current tick rather than inside it. The
+   * notifications module is required synchronously on the first call into
+   * it, and this function is awaited by the splash — so doing the work
+   * here would put a native module load on the boot critical path of every
+   * launch, including the launches of people who will never allow a
+   * notification.
+   */
+  setTimeout(() => {
+    void bootstrapReminders();
+  }, 0);
+}
+
+/* ------------------------- the reminder prompt ------------------------- */
+
+let remindersOffered = false;
+
+/**
+ * Whether the app has already offered to turn reminders on.
+ *
+ * The reminder switches default to on, but a default is not permission:
+ * iOS and Android still have to ask, and the prompt can only be shown
+ * once per install. Asking at launch, before anybody knows what the app
+ * is for, is the reliable way to be told no for ever — so the ask waits
+ * until the first reading is on screen, which is the moment the offer
+ * makes sense ("come back next month and this becomes a comparison").
+ * This flag is what stops it being asked a second time.
+ */
+export function remindersAlreadyOffered(): boolean {
+  return remindersOffered;
+}
+
+export async function markRemindersOffered(): Promise<void> {
+  remindersOffered = true;
+  await AsyncStorage.setItem(REMINDER_PROMPT_KEY, '1').catch(() => undefined);
 }

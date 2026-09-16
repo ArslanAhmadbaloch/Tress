@@ -482,13 +482,62 @@ test('coach: numbers agree with Home and Report', () => {
 
   const topical = routineItemStats(data).find((s) => s.item.label === 'Topical')!;
   assert.ok(topical.adherence !== null);
+  assert.ok(topical.daysDonePercent !== null);
   const perItem = answerFor({ intent: 'itemAdherence', itemId: topical.item.id }, data);
   assert.equal(perItem.intent, 'itemAdherence');
-  assert.ok(perItem.headline.includes(`${topical.adherence}%`), perItem.headline);
+  // The sentence says "on X% of its days", so it must carry the share of
+  // days, not the cadence-weighted figure.
+  assert.ok(perItem.headline.includes(`${topical.daysDonePercent}%`), perItem.headline);
 
   const streak9 = FIXTURES.streak9;
   assert.equal(currentStreak(streak9), 9);
   assert.equal(ask('streak', streak9).headline, '9 days in a row.');
+});
+
+test('coach: "ticked least often" counts days, not cadence', () => {
+  /*
+    The two figures on a stat disagree by design, and this sentence is the
+    place it matters. A twice-weekly shampoo ticked on 8 of the last 30
+    days has done most of what it asked for; a daily tablet ticked on 25
+    of 30 has done less of what it asked for but was ticked on three times
+    as many days. Ranked by `adherence` the coach would name the tablet as
+    "the one ticked least often", which is true about pace and false about
+    days — the sentence says days, so it has to rank on days.
+  */
+  const data: AppData = {
+    ...base(),
+    routineItems: [
+      item('tablet', 'Tablet', 40),
+      item('shampoo', 'Shampoo', 40, 'weekly'),
+    ],
+    routineLogs: [
+      ...Array.from({ length: 25 }, (_, d) => log('tablet', d + 1)),
+      ...Array.from({ length: 8 }, (_, d) => log('shampoo', (d + 1) * 3)),
+    ],
+  };
+
+  const stats = routineItemStats(data);
+  const tablet = stats.find((s) => s.item.id === 'tablet')!;
+  const shampoo = stats.find((s) => s.item.id === 'shampoo')!;
+
+  // The inversion the sentence has to survive, asserted rather than assumed.
+  assert.ok(
+    (shampoo.adherence as number) > (tablet.adherence as number),
+    'the weekly item is further along its own cadence',
+  );
+  assert.ok(
+    (shampoo.daysDonePercent as number) < (tablet.daysDonePercent as number),
+    'and yet it was ticked on far fewer days',
+  );
+
+  const detail = ask('consistency', data).detail ?? '';
+  assert.match(detail, /ticked least often/);
+  assert.match(detail, /Shampoo/, detail);
+  assert.ok(!detail.includes('Tablet'), detail);
+  assert.ok(
+    detail.includes(`${shampoo.daysDonePercent}%`),
+    'and the number beside the name is the share of days',
+  );
 });
 
 /* ---------------------------------- echo ----------------------------------- */

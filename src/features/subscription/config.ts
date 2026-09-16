@@ -17,14 +17,22 @@
 export type PlanId = 'yearly' | 'monthly';
 
 /**
- * An introductory free trial, when the store is offering this person one.
+ * An introductory free trial, as a store would describe one.
  *
- * Null is the important case. A trial is offered per *subscription group*
- * and only once: somebody who subscribed last year and came back is not
- * eligible, and telling them "7 days free" would be a promise the App
- * Store will not keep. So this is populated only when the store says this
- * particular customer is eligible, and every piece of copy that mentions
- * a trial is written to disappear when it is null.
+ * TRESS DOES NOT OFFER A TRIAL. The offer is a straight subscription: no
+ * "7 days free", no "then $49.99", no countdown to a charge somebody
+ * forgot was coming. The paywall has no code path that renders a trial —
+ * `priceLine`, `renewalTerms` and `ctaLabel` in paywall-variants.ts each
+ * describe exactly one offer, and the tests there assert that the words
+ * "free" and "trial" appear on none of them.
+ *
+ * This type and the `trial` field below survive only because
+ * revenuecat.ts still reads an introductory offer off the store package
+ * and writes it here. Nothing downstream reads it. They should both go
+ * when that file is next opened; until then the invariant that keeps the
+ * screen honest is upstream of the code: no introductory offer is
+ * configured in App Store Connect or the Play Console, so the store
+ * returns none and this field is always null in production.
  */
 export type TrialTerms = {
   /** "7 days", "1 month" — as the sentence needs it. */
@@ -49,7 +57,10 @@ export type PlanConfig = {
   /** Raw amount, kept only to compute the comparisons above. */
   amount: number;
   currency: string;
-  /** A free trial this person can actually have, or null. */
+  /**
+   * Always null in practice — see TrialTerms. Kept so revenuecat.ts still
+   * compiles; read by nothing, and shown by nothing.
+   */
   trial: TrialTerms | null;
 };
 
@@ -75,7 +86,7 @@ export const PLANS: Record<PlanId, PlanConfig> = {
     formattedSaving: usd(yearlySaving),
     amount: YEARLY_AMOUNT,
     currency: CURRENCY,
-    // Null in the defaults: eligibility is the store's answer, never ours.
+    // No trial is offered, so there is nothing here to describe.
     trial: null,
   },
   monthly: {

@@ -3,12 +3,18 @@
  *
  * The copy lives in paywall-variants.ts with the rest of the paywall's
  * sentences, where the honesty tests can read it. This file only draws
- * it: four rows on the ground, each a neutral disc holding a glyph, a
- * title in the display face and one line under it.
+ * it: a row per thing Premium includes, each a neutral disc holding a
+ * glyph, a title in the display face and one line under it.
  *
  * Neutral discs, not sage ones. The screen has one accent and it points
- * at the selected plan and the button; four green beads above them would
- * be four more things asking to be looked at.
+ * at the selected plan and the button; a column of green beads above
+ * them would be a column of things asking to be looked at.
+ *
+ * The rows sit on spacing.lg rather than spacing.xl. The list grew past
+ * four when it started naming everything Premium actually includes, and
+ * at seven the wider gap stopped reading as breathing room and started
+ * reading as a scroll — each row is already two lines tall, which is its
+ * own separation.
  */
 
 import { View } from 'react-native';
@@ -30,7 +36,7 @@ export function PremiumFeatureList({ benefits = PREMIUM_BENEFITS }: { benefits?:
   const { colors, spacing } = useTheme();
 
   return (
-    <View style={{ gap: spacing.xl }}>
+    <View style={{ gap: spacing.lg }}>
       {benefits.map((benefit) => (
         <View
           key={benefit.title}
