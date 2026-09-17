@@ -602,10 +602,11 @@ test('alignment: cropping the frame before measuring moves the outline', () => {
  * Reading the two files themselves, because nothing else can.
  *
  * `hair-segmenter.ts` imports the TFLite native module and a 763 KB
- * model asset, and `capture-session.tsx` is a screen; neither can be
- * imported into a Node test at all. So the invariant that lives in them
- * — measure the whole shrunk frame, squash it, never crop — is pinned
- * the way the quality gate pins its own rules, by reading the source.
+ * model asset, and `scanner-camera.tsx` is a camera component; neither
+ * can be imported into a Node test at all. So the invariant that lives
+ * in them — measure the whole shrunk frame, squash it, never crop — is
+ * pinned the way the quality gate pins its own rules, by reading the
+ * source.
  *
  * This is a coarse instrument and it is worth saying so: it holds the
  * exact spelling of two lines, and a rewrite that keeps the invariant
@@ -647,22 +648,27 @@ test('alignment: the segmenter squashes the whole frame and never crops it', () 
   );
 });
 
-test('alignment: the capture screen measures the frame it stores, not the raw one', () => {
-  // The other half. `small` is the shrunk capture that is then
-  // persisted; `photo.uri` is the raw camera frame, which is a
-  // different size and, on some devices, a different shape.
-  const source = code('src/app/capture-session.tsx');
+test('alignment: the scan measures the frame it stores, not the raw one', () => {
+  // The other half, now in the hair scan. Every camera the scanner can
+  // resolve to hands back `shrinkCapture(...)` from `takePhoto`, so the
+  // frame the engine keeps is already the shrunk file; the analysis
+  // measures that file (`frame.uri`) and the journal persists it. A
+  // camera that returned the raw frame would put a different size — and,
+  // on some devices, a different shape — under the overlay.
+  const camera = code('src/components/hair-scan/scanner-camera.tsx');
+  const shutters = (camera.match(/async takePhoto\(\)/g) ?? []).length;
+  const shrunk = (camera.match(/return shrinkCapture\(/g) ?? []).length;
+  assert.ok(shutters >= 2, 'the scanner has more than one camera behind takePhoto');
+  assert.equal(shrunk, shutters, 'every takePhoto hands back the shrunk capture');
+
+  const analysis = code('src/features/hair-scan/analysis.ts');
   assert.ok(
-    source.includes('measureCoverageSafely(small.uri)'),
-    'the mask must be measured on the shrunk capture that gets persisted',
+    analysis.includes('measureCoverage(frame.uri)'),
+    'the mask must be measured on the kept frame, which is the shrunk capture',
   );
   assert.ok(
-    !source.includes('measureCoverageSafely(photo.uri)'),
+    !/measureCoverage\((?:photo|raw)\.uri\)/.test(analysis),
     'measuring the raw camera frame breaks every overlay with no error and no wrong number',
-  );
-  assert.ok(
-    readFileSync(repoFile('src/app/capture-session.tsx'), 'utf8').includes('ALIGNMENT INVARIANT'),
-    'and the reason has to be readable at the line, not only in a test',
   );
 });
 
@@ -677,8 +683,12 @@ test('alignment: a shattered mask still stores its squares at the measurement si
     'a mask too fragmented to trace still has squares worth keeping',
   );
   assert.ok(
-    code('src/app/capture-session.tsx').includes('maskTrace: reading.maskTrace'),
-    'and the capture screen has to carry what came back rather than dropping it',
+    code('src/features/hair-scan/analysis.ts').includes('frame.maskTrace = reading.maskTrace'),
+    'and the scan has to carry what came back rather than dropping it',
+  );
+  assert.ok(
+    code('src/features/hair-scan/result.ts').includes('maskTrace: frame.maskTrace'),
+    'all the way into the photograph the journal keeps',
   );
 });
 

@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import {
   addMissingAngles,
   ANGLES,
+  isScanSession,
   missingAngles,
   patchPhotoIn,
   sessionToExtend,
@@ -99,6 +100,42 @@ test('sessionToExtend: an explicit id is honoured only for the session the rule 
   assert.equal(sessionToExtend([scan], 'gone'), null);
   const full = session('base', ANGLES, { isBaseline: true });
   assert.equal(sessionToExtend([full], 'base'), null);
+});
+
+/* ------------------------- the hair scan's baseline --------------------- */
+
+/** The scan block the scanner writes beside a session. */
+const SCAN_BLOCK = { durationMs: 20000, completion: 1, frameCount: 40, lighting: 0.6, version: 1 as const };
+
+test('isScanSession: either mark the scanner leaves says so', () => {
+  // The scan block alone.
+  assert.equal(isScanSession(session('s', ['front'], { scan: SCAN_BLOCK })), true);
+  // A photograph whose shutter was the scan's, with no block.
+  const byShutter = session('s', ['front'], {
+    photos: [{ ...photo('s', 'front'), capture: 'scan' }],
+  });
+  assert.equal(isScanSession(byShutter), true);
+  // Neither: a session from before the scan existed, whatever its shutter.
+  assert.equal(isScanSession(scan), false);
+  assert.equal(
+    isScanSession(session('s', ['front'], { photos: [{ ...photo('s', 'front'), capture: 'guided' }] })),
+    false,
+  );
+});
+
+test('sessionToExtend: a scan baseline is never extended, however few angles it reached', () => {
+  // The free tier hangs off this: a lone scan baseline is a first session
+  // already taken, so the next scan is a second one, not the same one.
+  const scanBaseline = session('base', ['front'], { isBaseline: true, scan: SCAN_BLOCK });
+  assert.equal(sessionToExtend([scanBaseline]), null);
+  assert.equal(sessionToExtend([scanBaseline], 'base'), null);
+  const byShutter = session('base', ['front'], {
+    isBaseline: true,
+    photos: [{ ...photo('base', 'front'), capture: 'scan' }],
+  });
+  assert.equal(sessionToExtend([byShutter]), null);
+  // Without either mark the same one-photograph baseline is still extended.
+  assert.equal(sessionToExtend([scan]), scan);
 });
 
 /* ---------------------------- extending -------------------------------- */

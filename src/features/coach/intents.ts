@@ -165,11 +165,11 @@ const DATA_TABLES: Readonly<Record<string, Table>> = {
     'how do you measure', 'what is measured', 'area',
   ],
   record: [
-    'how many', 'how many sets', 'how many photos', 'how many sessions', 'how many angles',
+    'how many', 'how many sets', 'how many scans', 'how many photos', 'how many sessions', 'how many angles',
     'angles in', 'missing angle*', 'which angles', 'my record', 'the record', 'baseline',
     'how long have i', 'since i started', 'when did i start', 'when i started', 'did i start',
     'journey', 'history', 'timeline', 'so far', 'recorded', 'sets have i', 'photos have i',
-    'first set', 'oldest', 'day one', 'day 1', 'how long ago',
+    'first set', 'first scan', 'scans have i', 'oldest', 'day one', 'day 1', 'how long ago',
   ],
   stack: [
     'stack', 'my routine', 'the routine', 'routine', 'what do i take', 'what am i taking',

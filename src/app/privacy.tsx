@@ -66,7 +66,7 @@ import { Text } from '@/components/ui/text';
 import { useTheme } from '@/theme';
 
 /** The date shown under the title. Move it whenever a section changes. */
-const LAST_UPDATED = '16 September 2026';
+const LAST_UPDATED = '17 September 2026';
 
 const SECTIONS: { title: string; body: string }[] = [
   {
@@ -79,7 +79,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Your photographs',
-    body: 'Photos you take in the app go straight to that private storage. The app starts no transfer of its own — there is no upload code in it and no server of ours for one to reach. A photograph leaves this phone when you hand it to the share sheet yourself, which the Sharing section below describes, and the files are within reach of your device backup if you have one on. On the phone they are read: where the build has the face detector, it runs while the camera is open to help line the shot up, and where it is missing the camera works the same way without it. After the shutter the app measures light, focus and how much of the frame the hair covers. Both of those models are built into the app and run on the device, and the photograph does not leave it to be read. Scanning a barcode uses the camera to read the barcode and nothing else — no face or hair detector runs on that screen. Photos are not added to your camera roll unless you save one yourself.',
+    body: 'Photos you take in the app go straight to that private storage. The app starts no transfer of its own — there is no upload code in it and no server of ours for one to reach. A photograph leaves this phone when you hand it to the share sheet yourself, which the Sharing section below describes, and the files are within reach of your device backup if you have one on. On the phone they are read: where the build has the face detector, it runs while the camera is open to follow your head, so a hair scan can take its several frames on its own as you turn, and where it is missing the scan says so and stops. After a scan, the app measures light, focus and how much of each frame the hair covers. Both of those models are built into the app and run on the device, and the photograph does not leave it to be read. Scanning a barcode uses the camera to read the barcode and nothing else — no face or hair detector runs on that screen. Photos are not added to your camera roll unless you save one yourself.',
   },
   {
     title: 'The subscription check',
@@ -91,7 +91,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Artificial intelligence',
-    body: 'It runs on this phone. The models the app uses are built into it: one finds a face so the camera can line your shot up, one separates hair from background so the app can measure how much of the frame it covers, and the barcode screen uses a reader of the same kind. Both are bundled in the app rather than downloaded, and neither sends a photograph anywhere — a frame goes into the detector on this device and comes back as a few numbers. The face detector is Google’s ML Kit; whether its own SDK layer reports usage to Google is not something the app’s code can show, so we claim it neither way. There is no AI service, and nothing you record is used to train anything. Tress does not diagnose anything or generate advice — it measures the picture and shows you the numbers, and what your hair does is yours to find out.',
+    body: 'It runs on this phone. The models the app uses are built into it: one finds a face so the camera can follow your head through a scan, one separates hair from background so the app can measure how much of the frame it covers, and the barcode screen uses a reader of the same kind. Both are bundled in the app rather than downloaded, and neither sends a photograph anywhere — a frame goes into the detector on this device and comes back as a few numbers. The face detector is Google’s ML Kit; whether its own SDK layer reports usage to Google is not something the app’s code can show, so we claim it neither way. There is no AI service, and nothing you record is used to train anything. Tress does not diagnose anything or generate advice — it measures the picture and shows you the numbers, and what your hair does is yours to find out.',
   },
   {
     title: 'Analytics and tracking',
@@ -99,7 +99,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: 'Permissions we ask for',
-    body: 'The camera, to take your progress photos and to read product barcodes. That one is not optional where it is used: the capture screen and the barcode scanner ask for it the first time you open them and show you why instead of a viewfinder if you say no. The motion sensor, while the camera is open, to tell whether the phone is holding still; it does not ask, because the accelerometer is read directly while the camera screen is open, covered on iPhone by the motion note that ships in the app rather than by a prompt. Your photo library, only if you choose a picture for your card. Face ID or your passcode, only if you turn on the app lock — the passcode is kept in your phone’s keychain. Notifications, only if you turn on reminders, and those are scheduled by your phone rather than sent from anywhere. Those last three are asked for at the moment you first use the feature that needs them, and saying no costs you that feature rather than the app. On Android, the libraries the app is built from add a few permissions to its list that Tress never requests and never reads — activity recognition, which comes in with the motion library, is one.',
+    body: 'The camera, to scan your hair and to read product barcodes. That one is not optional where it is used: the hair scan and the barcode scanner ask for it the first time you open them and show you why instead of a viewfinder if you say no. Your photo library, only if you choose a picture for your card. Face ID or your passcode, only if you turn on the app lock — the passcode is kept in your phone’s keychain. Notifications, only if you turn on reminders, and those are scheduled by your phone rather than sent from anywhere. Those three are asked for at the moment you first use the feature that needs them, and saying no costs you that feature rather than the app. The app is built with a motion-sensor library it no longer reads, so a motion note ships inside it on iPhone; no motion prompt is ever shown and no motion data is read. On Android, the libraries the app is built from add a few permissions to its list that Tress never requests and never reads — activity recognition, which comes in with that motion library, is one.',
   },
   {
     title: 'Sharing',

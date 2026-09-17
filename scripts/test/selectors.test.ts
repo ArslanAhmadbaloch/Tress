@@ -412,47 +412,25 @@ test('funnel: the report is followed by the camera, and nothing else', () => {
   assert.ok(!STEPS.includes('future' as never));
 });
 
-test('funnel: the baseline asks for one photograph and cannot be skipped', () => {
-  assert.match(COPY.baseline.title, /one photo/i);
-  assert.match(COPY.baseline.cta, /photo/i, 'the button says what the tap does');
-  assert.ok(!('skip' in COPY.baseline), 'a baseline with a skip is not a baseline');
+test('funnel: the baseline is one scan and cannot be skipped', () => {
+  /*
+    The step has one ending. The walk for a screen reader and the
+    one-photograph fallback for a build with no face detector went with
+    the per-angle capture that needed them: the scan announces its own
+    cues and reports its own missing detector. The words are swept in
+    onboarding.test.ts; this guard is that no second description, and no
+    skip, can come back.
+  */
+  assert.deepEqual(Object.keys(COPY.baseline), ['scan']);
+  const copy = COPY.baseline.scan;
+  assert.match(copy.title, /scan/i);
+  assert.match(copy.cta, /scan/i, 'the button says what the tap does');
+  assert.ok(!('skip' in copy), 'a baseline with a skip is not a baseline');
   assert.ok(
-    !/five|5 angles|angles/i.test(`${COPY.baseline.title} ${COPY.baseline.body}`),
-    'the fallback takes one photograph, and its own words must not promise the set',
+    !/five|5 angles/i.test(`${copy.title} ${copy.body}`),
+    'one scan must not be sold as the old set of five',
   );
-});
-
-test('funnel: every ending the baseline can take has words of its own', () => {
-  /*
-    The step branches three ways — the turn, the same scan one target at
-    a time, and the one-photo fallback on a build with no face detector —
-    and the first two live one level down, at COPY.baseline.sweep and
-    COPY.baseline.walk. The assertions above are about the fallback's own
-    three strings and cannot see either variant, so a claim added to the
-    scan copy would have entered the app past every guard on this screen.
-    These are the guards for the other two endings.
-  */
-  const endings = { baseline: COPY.baseline, sweep: COPY.baseline.sweep, walk: COPY.baseline.walk };
-
-  for (const [name, copy] of Object.entries(endings)) {
-    assert.equal(typeof copy.title, 'string', `${name} has no title`);
-    assert.equal(typeof copy.body, 'string', `${name} has no body`);
-    assert.equal(typeof copy.cta, 'string', `${name} has no cta`);
-    assert.ok(copy.title.trim() && copy.body.trim() && copy.cta.trim(), `${name} is half written`);
-    assert.ok(!('skip' in copy), `${name}: a baseline with a skip is not a baseline`);
-  }
-
-  /*
-    The turn reaches three of the five angles and no more, and the camera
-    screen says so in SCAN_COPY.sweep.scope. If this screen stops naming
-    what the turn leaves out, the last thing said before the camera opens
-    is more generous than the mechanism.
-  */
-  assert.match(
-    COPY.baseline.sweep.body,
-    /top|back/i,
-    'the sweep copy must say what one turn does not reach',
-  );
+  assert.match(copy.body, /back/i, 'the scan copy must say what one turn does not reach');
 });
 
 test('funnel: nothing in the script claims an outcome or manufactures urgency', () => {

@@ -32,6 +32,7 @@ import {
   type Journey,
   type Photo,
   type PhotoSession,
+  type PhotoSessionScan,
   type Product,
   type Profile,
   type RoutineItem,
@@ -78,7 +79,17 @@ type AppStore = {
   updateJourney: (patch: Partial<Omit<Journey, 'id' | 'profileId'>>) => void;
   updateProfile: (patch: Partial<Omit<Profile, 'id' | 'createdAt'>>) => void;
 
-  addSession: (photos: Omit<Photo, 'id' | 'sessionId'>[], note?: string) => PhotoSession | null;
+  /**
+   * Saves a new set. `scan` is the continuous hair scan's own record of
+   * its run (see `PhotoSessionScan`); a set taken one angle at a time
+   * passes none, and the session it makes is exactly the session it
+   * always made.
+   */
+  addSession: (
+    photos: Omit<Photo, 'id' | 'sessionId'>[],
+    note?: string,
+    scan?: PhotoSessionScan,
+  ) => PhotoSession | null;
   /**
    * Adds the angles an existing session lacks; photographs for angles it
    * already holds are dropped. See `sessionToExtend` for when a capture
@@ -238,7 +249,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   );
 
   const addSession = useCallback(
-    (photos: Omit<Photo, 'id' | 'sessionId'>[], note?: string) => {
+    (photos: Omit<Photo, 'id' | 'sessionId'>[], note?: string, scan?: PhotoSessionScan) => {
       let created: PhotoSession | null = null;
 
       setData((prev) => {
@@ -252,6 +263,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           isBaseline: prev.sessions.length === 0,
           photos: photos.map((p) => ({ ...p, id: makeId('pho'), sessionId })),
           note: note?.trim() || undefined,
+          // Spread in rather than set, so a set with no scan block stores
+          // no `scan` key at all — an absent field, not an undefined one.
+          ...(scan ? { scan } : {}),
         };
         created = session;
 

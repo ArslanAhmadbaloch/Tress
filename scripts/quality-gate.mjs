@@ -181,14 +181,10 @@ const ALLOWED_RAW = [
   'scripts/',
   // Camera and photo viewers sit on real black, which is not a themed
   // surface: it is the absence of one.
-  'src/app/capture-session.tsx',
   'src/app/scan-product.tsx',
   'src/app/session/[id].tsx',
   'src/app/compare.tsx',
-  'src/components/capture-ring.tsx',
-  'src/components/capture/frame-stack.tsx',
   'src/components/capture/sample-camera.tsx',
-  'src/components/capture/sweep-ring.tsx',
   'src/components/ui/glass-surface.tsx',
 ];
 
@@ -268,12 +264,44 @@ record(
   '',
 );
 
+/**
+ * A screen groups its adjacent glass either in its own JSX or in the
+ * chrome component it composes — the hair scan's top bar is a component,
+ * not inline JSX, and that is the right way round. So a screen counts
+ * when it, or a `@/components/...` module it imports, renders a
+ * <GlassGroup>. Following the import is what ties the grouping to a
+ * real screen; a GlassGroup in a component nothing renders would not
+ * count. The import is resolved exactly: the module file itself, or a
+ * directory's index plus the modules that index re-exports — never
+ * every file that happens to share the directory.
+ */
+const rendersGlassGroup = (f) => f.text.includes('<GlassGroup');
+const fileAt = (rel) => FILES.find((f) => f.rel === rel) ?? null;
+const resolveModule = (base) => fileAt(`${base}.tsx`) ?? fileAt(`${base}.ts`) ?? null;
+const resolveIndex = (base) => fileAt(`${base}/index.ts`) ?? fileAt(`${base}/index.tsx`) ?? null;
+/** The files an import of `base` actually reaches: the module, or its index and what that re-exports. */
+const importReaches = (base) => {
+  const module = resolveModule(base);
+  if (module) return [module];
+  const index = resolveIndex(base);
+  if (!index) return [];
+  const reExports = [...index.text.matchAll(/from '\.\/([^']+)'/g)]
+    .map((m) => resolveModule(`${base}/${m[1]}`))
+    .filter(Boolean);
+  return [index, ...reExports];
+};
+const screenGroupsGlass = screenFiles.some((screen) => {
+  if (rendersGlassGroup(screen)) return true;
+  return [...screen.text.matchAll(/from '@\/components\/([^']+)'/g)]
+    .flatMap((m) => importReaches(`src/components/${m[1]}`))
+    .some(rendersGlassGroup);
+});
+
 record(
   'Liquid Glass',
   1,
   'Adjacent glass surfaces share a container rather than stacking',
-  glassSource.includes('GlassContainer') &&
-    FILES.some((f) => f.rel.includes('src/app/') && f.text.includes('GlassGroup')),
+  glassSource.includes('GlassContainer') && screenGroupsGlass,
   '',
 );
 
@@ -377,20 +405,27 @@ record(
     : '',
 );
 
-const captureText =
-  FILES.find((f) => f.rel.endsWith('capture-session.tsx'))?.text ?? '';
+// The hair scan is the one camera in the app now, so it is the one screen
+// these two have to hold for.
+const scanText = FILES.find((f) => f.rel.endsWith('src/app/hair-scan.tsx'))?.text ?? '';
+const scanCopy =
+  FILES.find((f) => f.rel.endsWith('src/features/hair-scan/copy.ts'))?.text ?? '';
 record(
   'Robustness',
   1,
   'Camera permission denial is handled, including "never ask again"',
-  captureText.includes('canAskAgain') && captureText.includes('PermissionGate'),
+  scanText.includes('canAskAgain') && scanText.includes('<PermissionView'),
   '',
 );
+// A save that fails has to become a state the screen draws, with a
+// sentence a person can read — not a swallowed promise.
 record(
   'Robustness',
   1,
   'Photo save failure surfaces a human-readable error',
-  captureText.includes('Alert.alert') && captureText.includes("Couldn't save"),
+  scanText.includes("'processingFailed'") &&
+    scanText.includes('copy.reason[') &&
+    /processingFailed:\s*'[^']{20,}'/.test(scanCopy),
   '',
 );
 
@@ -432,7 +467,7 @@ record(
 // The paywall hero is one large image on a detail-like screen, loaded at
 // full resolution with the thumbnail as its placeholder on purpose — the
 // 320px thumbnail would blur across a 340pt frame. Not a list.
-const FULL_RES_OK = ['session/[id].tsx', 'compare.tsx', 'capture-session.tsx', 'subscription/hero.tsx'];
+const FULL_RES_OK = ['session/[id].tsx', 'compare.tsx', 'subscription/hero.tsx'];
 const listImageOffenders = FILES.filter((f) => {
   if (FULL_RES_OK.some((ok) => f.rel.endsWith(ok))) return false;
   if (!f.text.includes('<Image')) return false;

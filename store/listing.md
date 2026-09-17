@@ -31,9 +31,9 @@ Tress - Haircare Journal
 Your hair, month by month
 
 ## Short description (Play, 80 max)
-Photograph your hair from the same five angles and see the change over months.
+Scan your hair on your phone, the same angles each time, and see the change.
 
-(78 characters.)
+(76 characters.)
 
 ## Keywords (App Store, 100 max)
 See store/app-store-metadata.md. Play has no keyword field; its ranking
@@ -74,12 +74,12 @@ runs on the unconfigured provider: it shows the plans and a purchase
 button, the button's accessibility hint says Premium is not open for
 purchase in this version, and tapping it shows a "Not available yet"
 dialog — there is no visible copy about it on arrival. And
-src/app/capture-intro.tsx sends anyone without Premium who already has a
-first set to that paywall, so the Android build cannot deliver "five
-angles" or "any two dates side by side" beyond the first set. Either ship
+the Hair Scan sends anyone without Premium who already has a first scan
+to that paywall, so the Android build cannot deliver "the same angles
+each time" or "any two dates side by side" beyond the first scan. Either ship
 Play in the same release that adds the Android key (description complete,
 with the substitutions above), or, if a free-tier-only Android release is
-ever wanted, cut the description to the first photograph and its reading,
+ever wanted, cut the description to the first scan and its report,
 the journal line, the routine and the streak — and nothing the paywall
 gates.
 

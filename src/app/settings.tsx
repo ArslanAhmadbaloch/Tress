@@ -23,23 +23,19 @@ import {
 import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { Text } from '@/components/ui/text';
 import {
-  CAPTURE_TIMERS,
   REMINDER_HOURS,
   REMINDER_HOUR_LABELS,
   REMINDER_HOUR_TIMES,
   currentReminderHour,
   currentReminderIntervalDays,
   hapticsAreEnabled,
-  loadCaptureTimer,
   routineReminderIsEnabled,
-  saveCaptureTimer,
   setHapticsEnabled,
   setReminderHour,
   setReminderIntervalDays,
   setRoutineReminderEnabled,
   setUpdateReminderEnabled,
   updateReminderIsEnabled,
-  type CaptureTimer,
   type ReminderHour,
 } from '@/lib/device-preferences';
 import { clearAllPhotos, formatBytes, photoStorageBytes } from '@/lib/photo-storage';
@@ -84,12 +80,6 @@ const GENDERS: { value: Gender; label: string }[] = [
   { value: 'female', label: GENDER_LABELS.female },
 ];
 
-const TIMER_LABELS: Record<CaptureTimer, string> = {
-  0: 'Off',
-  3: '3 seconds',
-  5: '5 seconds',
-};
-
 export default function SettingsScreen() {
   const { spacing, preference, setPreference } = useTheme();
   const insets = useSafeAreaInsets();
@@ -108,12 +98,6 @@ export default function SettingsScreen() {
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [reminderAt, setReminderAt] = useState<ReminderHour>(currentReminderHour);
   const [haptics, setHaptics] = useState(hapticsAreEnabled);
-  const [timer, setTimer] = useState<CaptureTimer>(0);
-
-  useMemo(() => {
-    loadCaptureTimer().then(setTimer);
-  }, []);
-
   // The passcode sheet writes to the keychain and closes; this screen has
   // to re-read on the way back or its toggle would still say "off".
   const refreshLock = lock.refresh;
@@ -273,11 +257,6 @@ export default function SettingsScreen() {
     rescheduleReminders(plan({ intervalDays: days })).catch(() => undefined);
   };
 
-  const chooseTimer = (seconds: CaptureTimer) => {
-    setTimer(seconds);
-    saveCaptureTimer(seconds);
-  };
-
   const toggleHaptics = (next: boolean) => {
     setHaptics(next);
     setHapticsEnabled(next);
@@ -351,12 +330,18 @@ export default function SettingsScreen() {
         <SectionHeader title="Subscription" />
         <SubscriptionStatus />
 
-        <SectionHeader title="Reference photos" />
+        {/*
+          The gender picks whose head the example photographs show — the
+          labelled sample on Home before there is a comparison, and the
+          example frame in the funnel. The Hair Scan reads nothing from it:
+          the scanner follows whoever is in front of the camera.
+        */}
+        <SectionHeader title="Example photos" />
         <SettingsGroup>
           <SettingsField
             icon="camera"
             label="Examples"
-            detail="Whose photos the capture guide shows you.">
+            detail="Whose head the example photographs show.">
             <SegmentedTabs
               surface="fill"
               options={GENDERS}
@@ -366,8 +351,8 @@ export default function SettingsScreen() {
           </SettingsField>
         </SettingsGroup>
         <SettingsNote icon="info">
-          This only changes the example photographs and the wording beside
-          them. Your own photos are untouched.
+          This only changes the example photographs. Your own scans are
+          untouched, and the scan itself does not use it.
         </SettingsNote>
 
         <SectionHeader title="Appearance" />
@@ -430,7 +415,7 @@ export default function SettingsScreen() {
           <SettingsField
             icon="calendar"
             label="How often"
-            detail="How much time passes before your next set of photos is due.">
+            detail="How much time passes before your next scan is due.">
             <SegmentedTabs
               surface="fill"
               options={INTERVALS.map((days) => ({
@@ -487,28 +472,6 @@ export default function SettingsScreen() {
             />
           </>
         ) : null}
-
-        <SectionHeader title="Capture" />
-        <SettingsGroup>
-          <SettingsField
-            icon="retake"
-            label="Self-timer"
-            detail="A countdown before each shot, so you can get into position.">
-            <SegmentedTabs
-              surface="fill"
-              options={CAPTURE_TIMERS.map((seconds) => ({
-                value: String(seconds),
-                label: TIMER_LABELS[seconds],
-              }))}
-              value={String(timer)}
-              onChange={(next) => chooseTimer(Number(next) as CaptureTimer)}
-            />
-          </SettingsField>
-        </SettingsGroup>
-        <SettingsNote>
-          The top and back angles are shot blind, so a few seconds to settle
-          the phone makes them far easier to repeat.
-        </SettingsNote>
 
         <SectionHeader title="Security" />
         <SettingsGroup>

@@ -47,7 +47,7 @@ export type IntentMatch = {
 
 export type CoachActionHref =
   | '/routine'
-  | '/capture-intro'
+  | '/hair-scan'
   | '/compare'
   | '/journal'
   | '/journal?compose=1';

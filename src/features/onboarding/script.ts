@@ -294,6 +294,17 @@ export const CADENCE_CHOICES: Choice<string>[] = [
   the camera screen, says only what the photograph is for: it is the point
   later photographs are measured against, which is true of any baseline.
 */
+/**
+ * The baseline as one continuous scan, in the owner's words. The funnel
+ * screen reads it as `COPY.baseline.scan`, and nothing else describes
+ * the mechanism, so the words before the camera cannot drift from it.
+ */
+const SCAN_BASELINE = {
+  title: 'One scan of your head.',
+  body: 'Turn slowly in front of the camera and Tress captures the important angles automatically: the front, both sides and the top. A front camera cannot see the back. Every image stays on your phone, and this is the point everything after today is measured against.',
+  cta: 'Start the scan',
+} as const;
+
 export const COPY = {
   welcome: {
     cta: 'Get started',
@@ -376,62 +387,33 @@ export const COPY = {
   /*
     The last screen, and the camera behind it.
 
-    The funnel ends in the scan: the questions, the turn, the report on
-    what the turn photographed, and then the paywall. The report is the
-    thing the whole funnel has been promising, and it lands on something
-    the person just did rather than on a single frame.
+    The funnel ends in the Hair Scan: the questions, one continuous scan,
+    the report on what the scan captured, and then the paywall. The
+    report is the thing the whole funnel has been promising, and it lands
+    on something the person just did rather than on a single frame.
 
-    Which camera is actually behind the button is decided by the build,
-    not by this file. `headTrackingAvailable()` is false in Expo Go, on a
-    simulator and in any binary without the detector, and there the step
-    falls back to the one front photograph it has always taken. So there
-    are three sets of words here, because a screen that says "turn" to
-    somebody who is about to be handed a shutter has described a
-    mechanism they will not get — and that screen is the last one before
-    the only path a new user has into the app.
+    `scan` is the step as the owner describes it: you turn your head, and
+    Tress captures the important angles automatically. There is no
+    per-angle capture behind this button any more — no orbit of five to
+    read first, no shutter to line up five times — so the words here must
+    not describe one. It is also the only ending: with a screen reader
+    running, the scanner announces every cue it shows and finishes on its
+    own, so there is no separate walk to read aloud; and a build with no
+    face detector is told so by the scan itself, so there is no
+    one-photograph fallback to fall to. One mechanism, one set of words.
 
-    `title`, `body` and `cta` are the fallback's, and they are the ones
-    that were already here. The fallback is the path that must not break,
-    so it keeps the copy that was written and proofread for it.
+    The body says what happens and where the images go, in the same terms
+    the scanner's own chrome uses, so the screen before the camera and the
+    camera agree about the mechanism. It promises nothing about what the
+    images will show.
 
-    There is no skip on any of the three. The baseline is not a feature
-    of this app, it is the thing every other feature is measured against
-    — a journey that starts without one has nothing for month three to be
-    compared with, and the person finds that out in month three.
+    There is no skip. The baseline is not a feature of this app, it is the
+    thing every other feature is measured against — a journey that starts
+    without one has nothing for month three to be compared with, and the
+    person finds that out in month three.
   */
   baseline: {
-    title: 'One photo, from the front.',
-    body: 'It stays on your phone, and it is the point everything after today is measured against.',
-    cta: 'Take the photo',
-    /*
-      The turn, on a build that can follow a head. The body says what one
-      turn in front of a front-facing camera reaches and what it does
-      not, in the same terms `SCAN_COPY.sweep.scope` uses on the camera
-      screen itself — the two screens are describing one mechanism, and
-      only one of them is allowed to be the optimistic one.
-
-      The keys are the `mode` the capture screen is opened with, so the
-      words and the route cannot drift apart without the mismatch being
-      visible in one line of the screen that reads them.
-    */
-    sweep: {
-      title: 'One turn of your head.',
-      body: 'The turn takes the front and the two sides. The top and the back are two held shots.',
-      cta: 'Start the scan',
-    },
-    /*
-      The same scan with a screen reader running. A continuous turn is a
-      visual gesture with no honest non-visual analogue, so the capture
-      screen takes the shots one at a time and announces each — the
-      answer `new.tsx` and `capture-session.tsx` both arrive at on their
-      own. It is said here too, so the screen being read aloud describes
-      the screen that follows it.
-    */
-    walk: {
-      title: 'Five photos, one at a time.',
-      body: 'Each one is announced as it is taken, and they stay on your phone.',
-      cta: 'Start the scan',
-    },
+    scan: SCAN_BASELINE,
   },
 } as const;
 

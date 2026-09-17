@@ -649,10 +649,10 @@ test('coach: compare mirrors the engine', () => {
 
   assert.match(
     ask('compare', FIXTURES.twoDropped).detail!,
-    /Right Side is in your previous set but not your latest/,
+    /Right Side is in your previous scan but not your latest/,
   );
-  assert.match(ask('compare', FIXTURES.oneMeasured).headline, /only one set/);
-  assert.match(ask('compare', FIXTURES.empty).headline, /no set yet/);
+  assert.match(ask('compare', FIXTURES.oneMeasured).headline, /only one scan/);
+  assert.match(ask('compare', FIXTURES.empty).headline, /no scan yet/);
 });
 
 /* ------------------------------ empty states ------------------------------- */
@@ -662,7 +662,8 @@ test('coach: empty states', () => {
   for (const intent of ['lastScan', 'nextSet', 'compare', 'record'] as const) {
     const a = ask(intent, empty);
     assert.ok(!answerSentences(a).join(' ').includes('%'), `${intent} has no percentage to give`);
-    assert.equal(a.action?.href, '/capture-intro', intent);
+    // The old five-angle capture is gone: an empty record is answered with the Hair Scan.
+    assert.equal(a.action?.href, '/hair-scan', intent);
   }
   assert.match(ask('keepSame', empty).headline, /Same spot/);
 
@@ -683,7 +684,7 @@ test('coach: empty states', () => {
 
   const overdue = ask('nextSet', FIXTURES.overdue);
   assert.match(overdue.headline, /was due .* days ago/);
-  assert.ok(overdue.action, 'an overdue set offers the next one');
+  assert.ok(overdue.action, 'an overdue scan offers the next one');
   assert.match(ask('nextSet', FIXTURES.dueToday).headline, /due today/);
 });
 

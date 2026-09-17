@@ -169,10 +169,15 @@ function Navigation() {
         <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
         <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
         <Stack.Screen
-          name="capture-session"
+          name="hair-scan"
+          // The continuous hair scan — the one way a session is made. A
+          // live camera under a full-screen instrument, presented full
+          // screen so nothing clips the preview. The centre "+" opens it,
+          // and so does the last step of onboarding.
           options={{
             presentation: 'fullScreenModal',
             animation: 'slide_from_bottom',
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen
@@ -223,19 +228,6 @@ function Navigation() {
             tab. NOTE: nothing pushes it yet; the entry point belongs in
             src/app/routine.tsx, which no lane owns this run. */}
         <Stack.Screen name="shelf" />
-        {/*
-            What the centre "+" opens: the choice between a scan and the
-            five angles. A sheet rather than a push, because it is a
-            decision taken over whatever was on screen and returned from,
-            and because both of its doors replace it with a camera. */}
-        <Stack.Screen
-          name="new"
-          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-        />
-        <Stack.Screen
-          name="capture-intro"
-          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-        />
         <Stack.Screen name="calendar" />
         <Stack.Screen name="streak" />
         <Stack.Screen name="privacy" />

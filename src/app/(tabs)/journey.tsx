@@ -72,7 +72,7 @@ function milestonesFor(data: AppData): Milestone[] {
     { label: 'Journey started', date: formatDate(start), done: true },
     baseline
       ? { label: 'Baseline photos', date: formatDate(baseline.capturedAt), done: true }
-      : { label: 'Capture your baseline', date: 'Next step', done: false },
+      : { label: 'Scan your baseline', date: 'Next step', done: false },
     { label: '1 month tracked', date: formatDate(addDays(start, 30)), done: elapsed >= 30 },
     { label: '3 months tracked', date: formatDate(addDays(start, 91)), done: elapsed >= 91 },
     { label: '6 month review', date: formatDate(addDays(start, 182)), done: elapsed >= 182 },
@@ -201,7 +201,7 @@ export default function JourneyScreen() {
             <PhotoStrip
               items={strip}
               onOpen={(id) => router.push(`/session/${id}`)}
-              onCapture={() => router.push('/capture-intro')}
+              onCapture={() => router.push('/hair-scan')}
               onSeeAll={() => setTab('photos')}
               style={{ marginTop: spacing.lg }}
             />
@@ -229,9 +229,9 @@ export default function JourneyScreen() {
             <EmptyState
               icon="journey"
               title="Your journey starts here"
-              body="Once you capture your baseline, every update lands on this timeline so you can see what changed."
-              actionLabel="Create First Update"
-              onAction={() => router.push('/capture-intro')}
+              body="Once you scan your baseline, every scan after it lands on this timeline so you can see what changed."
+              actionLabel="Scan your hair"
+              onAction={() => router.push('/hair-scan')}
             />
           ) : (
             <SessionTimeline
@@ -433,11 +433,11 @@ function SessionTimeline({
       })}
 
       <Button
-        label="Add Update"
+        label="Scan again"
         icon="camera"
         variant="secondary"
         style={{ marginTop: spacing.sm }}
-        onPress={() => router.push('/capture-intro')}
+        onPress={() => router.push('/hair-scan')}
       />
     </View>
   );

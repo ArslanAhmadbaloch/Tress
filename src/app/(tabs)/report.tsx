@@ -132,9 +132,9 @@ export default function ReportScreen() {
           <EmptyState
             icon="camera"
             title="Nothing to report yet"
-            body="Take your first photograph and this fills in. It reads your own record back to you — what you have captured, whether it can be compared, and how the routine has gone."
-            actionLabel="Take My First Photo"
-            onAction={() => router.push('/capture-intro')}
+            body="Scan your hair and this fills in. It reads your own record back to you — what you have captured, whether it can be compared, and how the routine has gone."
+            actionLabel="Scan your hair"
+            onAction={() => router.push('/hair-scan')}
           />
         ) : (
           <>

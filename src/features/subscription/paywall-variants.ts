@@ -207,18 +207,19 @@ export function heroAccessibilityLabel(hero: PaywallHero | null): string {
  *      by being printed under the word Premium.
  *
  * Rule 2 is enforced through exactly two checks, because those are the
- * only two in the app: src/app/capture-intro.tsx:121 sends anyone
- * without the entitlement to this screen the moment they reach for a set
+ * only two in the app: src/app/hair-scan.tsx sends anyone without the
+ * entitlement to this screen the moment they reach for a second scan
  * after the free baseline, and src/app/routine.tsx:321 puts adding to
  * the stack behind gate('buildStack'). Everything below hangs off one of
- * those — directly, or because it needs a second set, and the capture
- * gate is what a second set costs.
+ * those — directly, or because it needs a second scan, and the scan
+ * gate is what a second scan costs.
  *
  * Where each line can be found, and what makes it Premium:
  *
- *   Unlimited photo sets   src/app/capture-intro.tsx:121. The gate
- *                          itself. The free baseline is the exception,
- *                          and deliberately so.
+ *   Unlimited scans        src/app/hair-scan.tsx, the free-tier effect
+ *                          in `Scanner`. The gate itself. The free
+ *                          baseline is the exception, and deliberately
+ *                          so.
  *   On-device scan         src/features/assessment/hair-segmenter.ts —
  *                          MediaPipe's hair segmenter, bundled as a
  *                          763 KB tflite file and run through
@@ -227,9 +228,10 @@ export function heroAccessibilityLabel(hero: PaywallHero | null): string {
  *                          which is AREA. Never density, never
  *                          thickness — a mask cannot see between
  *                          strands, and the word for what it measured
- *                          is the word on the card. Run per angle in
- *                          capture-session.tsx, so it is measured on
- *                          every set the capture gate lets through.
+ *                          is the word on the card. Run on the frames
+ *                          the scan keeps (features/hair-scan/analysis.ts),
+ *                          so it is measured on every scan the gate
+ *                          lets through.
  *   Your report            src/app/(tabs)/report.tsx, built by
  *                          features/assessment/engine.ts. The framing
  *                          section is the Premium half: buildReport
@@ -240,7 +242,7 @@ export function heroAccessibilityLabel(hero: PaywallHero | null): string {
  *                          putting the newest hair-area reading beside
  *                          the one before it.
  *   Side-by-side           src/app/compare.tsx. Two dates, so it needs
- *                          two sets, so it needs the capture gate.
+ *                          two scans, so it needs the scan gate.
  *   Routine and stack      src/app/routine.tsx:321 — adding to the stack
  *                          is gated on 'buildStack'.
  *   Barcode lookup         src/app/scan-product.tsx, reached from the
@@ -265,14 +267,12 @@ export function heroAccessibilityLabel(hero: PaywallHero | null): string {
  *   table, not a lookup. Until one exists and ships, it does not go on
  *   the paywall, however well it would sell.
  *
- *   The scan report at the end of the funnel (src/app/scan-report.tsx).
- *   It is a real screen and a good one, but it is the FREE one: it reads
- *   "Your first reading" at :110, it is reached from capture-session.tsx
- *   :979 only for the first set or a single scan, and buildScanReading
- *   reports on one photograph — heroPhoto(session) at scan-reading.ts
- *   :354 — not on all five. "Every reading, for every set" was false in
- *   both halves and has been struck. What replaced it is the report tab,
- *   which really does read every set.
+ *   The scan report at the end of the funnel (the HairScanReport that
+ *   src/app/hair-scan.tsx shows once a scan is saved). It is a real
+ *   screen and a good one, but the first one is FREE: the baseline scan
+ *   costs nothing, and its report is what the paywall follows. "Every
+ *   reading, for every set" was false and has been struck. What replaced
+ *   it is the report tab, which really does read every scan.
  *
  *   Ask Tress, the journal and the history. All real, all shipping, none
  *   gated. Free users have them in full, so charging for them here would
@@ -284,8 +284,8 @@ export type PremiumBenefit = { icon: IconName; title: string; body: string };
 export const PREMIUM_BENEFITS: PremiumBenefit[] = [
   {
     icon: 'camera',
-    title: 'Unlimited photo sets',
-    body: 'Every five-angle update, kept in the order you took it.',
+    title: 'Unlimited scans',
+    body: 'Every scan after the first, kept in the order you took it.',
   },
   {
     icon: 'sparkle',
@@ -294,25 +294,25 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
      * the binary. "On your phone" is the part worth leading with, and
      * "area" is the only thing it is allowed to claim it measured.
      *
-     * It says "set", not "photograph". Every angle is measured on the way
-     * in (capture-session.tsx), but the reading a person is ever shown is
-     * one per set — scan-report.tsx for the first, and the report tab's
-     * coverage line for each one after. Claiming a reading per photograph
-     * would be selling four fifths of a measurement nobody can see.
+     * It says "scan", not "photograph". Every kept frame is measured on
+     * the way in (features/hair-scan/analysis.ts), but the reading a
+     * person is ever shown is one per scan — the scan's own report for
+     * the first, and the report tab's coverage line for each one after.
+     * Claiming a reading per photograph would be selling four fifths of
+     * a measurement nobody can see.
      */
     title: 'AI scan on your phone',
-    body: 'Every set you take is read for hair area by a model in the app.',
+    body: 'Every scan you take is read for hair area by a model in the app.',
   },
   {
     icon: 'chart',
     /*
-     * What the report tab does with a second set, which is the half of
+     * What the report tab does with a second scan, which is the half of
      * it a free user never reaches. Not "every reading, for every set":
-     * the funnel's scan report is the free one and speaks for a single
-     * photograph. See the note above.
+     * the funnel's scan report is the free one. See the note above.
      */
-    title: 'Your report, set after set',
-    body: 'Every new set is read into your report and lined up against the one before.',
+    title: 'Your report, scan after scan',
+    body: 'Every new scan is read into your report and set beside the one before.',
   },
   {
     icon: 'compare',

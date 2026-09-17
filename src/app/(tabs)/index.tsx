@@ -50,7 +50,13 @@ import {
   sessionLabel,
 } from '@/store/selectors';
 import { spacing, useTheme } from '@/theme';
-import { ANGLES, sessionToExtend, type Angle, type PhotoSession } from '@/types/domain';
+import {
+  ANGLES,
+  isScanSession,
+  sessionToExtend,
+  type Angle,
+  type PhotoSession,
+} from '@/types/domain';
 
 /** The angle the progress card leads with — the crown shows most change. */
 const HERO_ANGLE: Angle = 'crown';
@@ -141,13 +147,18 @@ export default function HomeScreen() {
       daysBetween(baseline.capturedAt, latest.capturedAt) >= 1,
   );
 
-  /* The funnel's first scan is one angle; the five-angle set is what
-     every later comparison needs. The card shows for exactly the session
-     a capture would extend, so it leaves once the baseline has all five
-     angles — or once a second session exists, after which the baseline is
-     what it is. See baseline-card.tsx. */
+  /*
+    Two kinds of baseline can be the only session. One from before the
+    hair scan existed may still lack angles, and the card for that shows
+    for exactly the session a capture would extend (see baseline-card.tsx).
+    A scan baseline is never "incomplete": a scan keeps the angles the
+    turn reached, and nothing here nags about the ones it did not — the
+    only thing to offer is the next scan.
+  */
   const toExtend = sessionToExtend(data.sessions);
   const needsBaseline = toExtend !== null;
+  const only = data.sessions.length === 1 ? data.sessions[0] : null;
+  const scanBaselineOnly = only !== null && isScanSession(only);
 
   return (
     <Screen>
@@ -200,25 +211,43 @@ export default function HomeScreen() {
             afterLabel="Month 6"
             beforeDate="Example"
             afterDate="Example"
-            onPress={() => router.push('/capture-intro')}
+            onPress={() => router.push('/hair-scan')}
           />
         )}
 
         {/*
           Directly under the hero, because it is about the hero: the
-          example photographs above it stay examples until this is done.
-          It leaves the screen on its own once five angles exist.
+          example photographs above it stay examples until there is a
+          second session. A pre-scan baseline that lacks angles gets the
+          card that says so; a scan baseline gets the next scan offered
+          plainly, and no talk of missing angles. Neither shows once the
+          update is overdue — the reminder below turns into the ask then.
+          (`due` is never null here: the screen has already returned on a
+          missing journey, and that is the only case nextUpdate has none.)
         */}
         {toExtend ? (
           <BaselineCard
             session={toExtend}
-            // Straight to the camera with the session named: the
-            // remaining angles go into this baseline, not a new update.
-            onCapture={() =>
-              router.push({ pathname: '/capture-session', params: { extend: toExtend.id } })
-            }
+            onCapture={() => router.push('/hair-scan')}
             style={{ marginTop: CARD_GAP }}
           />
+        ) : scanBaselineOnly && due !== null && !due.isOverdue ? (
+          <Card style={{ marginTop: CARD_GAP }}>
+            <Text variant="title3" accessibilityRole="header">
+              Baseline saved
+            </Text>
+            <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
+              Your next scan is set beside this one. Same light, same distance, and
+              the comparison is yours to make.
+            </Text>
+            <Button
+              label="Scan again"
+              size="md"
+              block={false}
+              onPress={() => router.push('/hair-scan')}
+              style={{ marginTop: spacing.xl }}
+            />
+          </Card>
         ) : null}
 
         {/* Three metrics. */}
@@ -375,15 +404,14 @@ export default function HomeScreen() {
 
         {/*
           A reminder, not a metric, so it sits below the fold. Not shown
-          while the baseline is still one angle: "same five angles as
-          last time" is not true of a last time that had one, and the
-          baseline card above is already the ask.
+          while a pre-scan baseline still lacks angles: the baseline card
+          above is already the ask.
         */}
         {due && data.sessions.length > 0 && !needsBaseline ? (
           <Card
             style={{ marginTop: CARD_GAP }}
-            onPress={() => router.push('/capture-intro')}
-            accessibilityLabel="Start a photo update">
+            onPress={() => router.push('/hair-scan')}
+            accessibilityLabel="Start a scan">
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
               <View
                 style={{
@@ -405,11 +433,11 @@ export default function HomeScreen() {
               <View style={{ flex: 1 }}>
                 <Text variant="headline">
                   {due.isOverdue
-                    ? 'Photo update due now'
-                    : `Next update ${formatRelative(due.dueISO)}`}
+                    ? 'Scan due now'
+                    : `Next scan ${formatRelative(due.dueISO)}`}
                 </Text>
                 <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
-                  Same five angles, same conditions as last time.
+                  Same light, same distance as last time.
                 </Text>
               </View>
               <Icon name="chevronRight" size={15} color={colors.textTertiary} />
@@ -421,9 +449,9 @@ export default function HomeScreen() {
           <EmptyState
             icon="camera"
             title="Your journey starts here"
-            body="Your first photos become your baseline. Everything you capture later is compared against them."
-            actionLabel="Capture baseline"
-            onAction={() => router.push('/capture-intro')}
+            body="Your first scan becomes your baseline. Every scan after it is set beside it."
+            actionLabel="Scan your hair"
+            onAction={() => router.push('/hair-scan')}
           />
         ) : null}
       </ScreenScroll>
@@ -473,7 +501,7 @@ const EXPLAINERS: Record<
     title: 'Photos',
     body: 'Every photograph stored on this device, across all your sessions.',
     points: [
-      'Five angles per complete session',
+      'Each scan keeps the angles the turn reached, up to five',
       'Kept in the app’s private storage — nothing is uploaded',
       'Deleting a session deletes its photographs too',
       'The ring fills across your first six sessions',

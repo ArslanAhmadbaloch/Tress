@@ -8,14 +8,13 @@
  * on the system material, not a reimplementation of it.
  *
  * The centre "+" is deliberately not a tab. It is the app's primary action
- * and opens the capture flow over the top of whatever is showing, so it
- * never takes a selected state.
+ * and opens the hair scan over the top of whatever is showing, so it never
+ * takes a selected state.
  *
- * What it opens is a choice, not a camera. There are two things behind the
- * Plus now — a scan that ends in a reading, and the five angles kept as a
- * record — and they are different enough that picking for somebody would
- * be picking wrong half the time. `/new` asks; the cameras are one tap
- * further in.
+ * One door, not a choice. There used to be a chooser behind the Plus —
+ * a scan, or the five angles one at a time — and the owner's call was
+ * that there is no scanner choice: the scan is the one way a session is
+ * made, so the button opens it directly.
  */
 
 import * as Haptics from 'expo-haptics';
@@ -124,7 +123,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
           shadow.lifted,
         ]}>
         {TABS.slice(0, CENTRE_INDEX).map(renderTab)}
-        <CentreAction onPress={() => router.push('/new')} />
+        <CentreAction onPress={() => router.push('/hair-scan')} />
         {TABS.slice(CENTRE_INDEX).map(renderTab)}
       </GlassSurface>
     </View>
@@ -351,9 +350,8 @@ function CentreAction({ onPress }: { onPress: () => void }) {
         haptic="none"
         scaleTo={1}
         accessibilityRole="button"
-        // Two things sit behind it, so it is named for the choice rather
-        // than for either one of them.
-        accessibilityLabel="New scan or photos">
+        // Named for what it opens, which is the one thing behind it.
+        accessibilityLabel="Scan your hair">
         <GlassOrb size={CENTRE_SIZE} ring={false} tone="neutral" emphasis="strong">
           <ScanSweep size={CENTRE_SIZE} />
           <PlusGlyph size={24} color={colors.text} />

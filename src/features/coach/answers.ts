@@ -74,11 +74,11 @@ export const COMPOSER_PLACEHOLDER = 'Ask about your record…';
 export const CHIPS: readonly Chip[] = [
   { label: 'What did my last scan say?', intent: 'lastScan' },
   { label: 'How consistent have I been?', intent: 'consistency' },
-  { label: 'When is my next set due?', intent: 'nextSet' },
-  { label: 'What changed between my last two sets?', intent: 'compare' },
+  { label: 'When is my next scan due?', intent: 'nextSet' },
+  { label: 'What changed between my last two scans?', intent: 'compare' },
   { label: 'What should I keep the same next photo?', intent: 'keepSame' },
   { label: 'What does area mean?', intent: 'areaMeaning' },
-  { label: 'How many sets have I taken?', intent: 'record' },
+  { label: 'How many scans have I taken?', intent: 'record' },
   { label: "What's in my stack?", intent: 'stack' },
   { label: "What's my streak?", intent: 'streak' },
   { label: 'What did I write last?', intent: 'journal' },
@@ -121,8 +121,9 @@ function latestJournal(data: AppData): JournalEntry | undefined {
 }
 
 const OPEN_ROUTINE: CoachAction = { label: 'Open routine', href: '/routine' };
-const FIRST_PHOTO: CoachAction = { label: 'Take My First Photo', href: '/capture-intro' };
-const NEXT_SET: CoachAction = { label: 'Take the next set', href: '/capture-intro' };
+// Both open the hair scan, which is the one way a session is made now.
+const FIRST_PHOTO: CoachAction = { label: 'Scan your hair', href: '/hair-scan' };
+const NEXT_SET: CoachAction = { label: 'Scan again', href: '/hair-scan' };
 const COMPARE: CoachAction = { label: 'Compare photographs', href: '/compare' };
 
 /** The refusals carry nothing from the record: no number, no label, no action. */
@@ -368,7 +369,7 @@ function lastScanAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
     return {
       intent,
       source: shot,
-      headline: 'Your last set carries no reading.',
+      headline: 'Your last scan carries no reading.',
       detail:
         'It was photographed before the device measured anything, and nothing is re-read after the fact.',
       action: NEXT_SET,
@@ -407,7 +408,7 @@ function nextSetAnswer(data: AppData, journey: Journey, chrono: PhotoSession[]):
     return {
       intent,
       source,
-      headline: 'Nothing is due until there is a first set.',
+      headline: 'Nothing is due until there is a first scan.',
       detail: `You set updates every ${n} days; the count starts from the first photograph.`,
       action: FIRST_PHOTO,
       refusal: false,
@@ -420,7 +421,7 @@ function nextSetAnswer(data: AppData, journey: Journey, chrono: PhotoSession[]):
     return {
       intent,
       source,
-      headline: `Your next set was due ${formatRelative(due.dueISO)}.`,
+      headline: `Your next scan was due ${formatRelative(due.dueISO)}.`,
       detail: `Every ${n} days, counted from ${label}, taken ${formatRelative(latest.capturedAt)}. The gap is recorded as it is.`,
       action: NEXT_SET,
       refusal: false,
@@ -431,7 +432,7 @@ function nextSetAnswer(data: AppData, journey: Journey, chrono: PhotoSession[]):
     return {
       intent,
       source,
-      headline: 'Your next set is due today.',
+      headline: 'Your next scan is due today.',
       detail: `Every ${n} days, counted from ${label}.`,
       action: NEXT_SET,
       refusal: false,
@@ -441,7 +442,7 @@ function nextSetAnswer(data: AppData, journey: Journey, chrono: PhotoSession[]):
   return {
     intent,
     source,
-    headline: `Your next set is due ${formatRelative(due.dueISO)}, on ${formatDate(due.dueISO)}.`,
+    headline: `Your next scan is due ${formatRelative(due.dueISO)}, on ${formatDate(due.dueISO)}.`,
     detail: `Every ${n} days, counted from ${label}.`,
     refusal: false,
   };
@@ -467,8 +468,8 @@ function compareAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
     return {
       intent,
       source: 'From your photographs',
-      headline: 'There is no set yet, so there is nothing to compare.',
-      detail: 'The first set is what every later one is measured against.',
+      headline: 'There is no scan yet, so there is nothing to compare.',
+      detail: 'The first scan is what every later one is measured against.',
       action: FIRST_PHOTO,
       refusal: false,
     };
@@ -477,8 +478,8 @@ function compareAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
     return {
       intent,
       source: 'From your photographs',
-      headline: 'There is only one set, so there is nothing to compare yet.',
-      detail: 'The second set is where a comparison starts.',
+      headline: 'There is only one scan, so there is nothing to compare yet.',
+      detail: 'The second scan is where a comparison starts.',
       action: NEXT_SET,
       refusal: false,
     };
@@ -497,13 +498,13 @@ function compareAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
     const matched = ANGLES.filter((a) => thenHave.has(a) && nowHave.has(a));
     return {
       intent,
-      source: `From your ${label(previous)} and ${label(latest)} sets · ${gap} days apart`,
+      source: `From your ${label(previous)} and ${label(latest)} scans · ${gap} days apart`,
       headline:
-        'There is no area reading on both sets for the same angle, so there is no number to set side by side.',
+        'There is no area reading on both scans for the same angle, so there is no number to set side by side.',
       detail:
         dropped.length === 0
-          ? `All ${matched.length} angles line up with your previous set, so the photographs can be compared by eye.`
-          : `${ANGLE_LABELS[dropped[0]]} is in your previous set but not your latest, so that pair cannot be lined up.`,
+          ? `All ${matched.length} angles line up with your previous scan, so the photographs can be compared by eye.`
+          : `${ANGLE_LABELS[dropped[0]]} is in your previous scan but not your latest, so that pair cannot be lined up.`,
       action: COMPARE,
       refusal: false,
     };
@@ -552,7 +553,7 @@ function keepSameAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
     detail:
       lines.length > 1
         ? lines.slice(1).join(' ')
-        : 'Nothing in your last set needed a fix; matching it is the whole job.',
+        : 'Nothing in your last scan needed a fix; matching it is the whole job.',
     refusal: false,
   };
 }
@@ -567,7 +568,7 @@ function recordAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
       intent,
       source,
       headline: 'There is nothing in your record yet.',
-      detail: 'The first set is the one every later set is measured against.',
+      detail: 'The first scan is the one every later scan is measured against.',
       action: FIRST_PHOTO,
       refusal: false,
     };
@@ -583,9 +584,9 @@ function recordAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
     source,
     headline:
       chrono.length === 1
-        ? `One set, ${label}, taken ${formatDate(latest.capturedAt)}.`
-        : `${chrono.length} sets since ${formatDate(chrono[0].capturedAt)} — ${formatDuration(journey.startedAt)} into your journey.`,
-    detail: `Your last set, ${label}, holds ${k} of ${ANGLES.length} angles${gaps}.`,
+        ? `One scan, ${label}, taken ${formatDate(latest.capturedAt)}.`
+        : `${chrono.length} scans since ${formatDate(chrono[0].capturedAt)} — ${formatDuration(journey.startedAt)} into your journey.`,
+    detail: `Your last scan, ${label}, holds ${k} of ${ANGLES.length} angles${gaps}.`,
     refusal: false,
   };
 }
@@ -602,7 +603,7 @@ function journalAnswer(data: AppData): CoachAnswer {
       intent,
       source,
       headline: 'No journal entries yet.',
-      detail: 'A note beside a set is what explains the photographs later.',
+      detail: 'A note beside a scan is what explains the photographs later.',
       action: { label: 'Write one', href: '/journal?compose=1' },
       refusal: false,
     };
@@ -716,7 +717,7 @@ export function answerFor(match: IntentMatch, data: AppData): CoachAnswer {
       return refusal(
         intent,
         "Tress can't say what will happen to your hair.",
-        'Nothing in your record predicts anything — it shows what was photographed and what you did. When the next set exists, Tress can set it beside this one.',
+        'Nothing in your record predicts anything — it shows what was photographed and what you did. When the next scan exists, Tress can set it beside this one.',
       );
     case 'unknown':
       return refusal(

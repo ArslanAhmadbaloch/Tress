@@ -235,27 +235,27 @@ binary's usage strings:
  - **Notifications has no usage string** and needs none: there is no
    `NSUserNotificationsUsageDescription`, the prompt text is the system's. Its
    absence from `app.json` is correct, not an omission.
- - **Motion is declared and never requested.** `NSMotionUsageDescription` ships
-   (`app.json:66`), but there is no `Accelerometer.requestPermissionsAsync`
-   anywhere under `src/`; `src/features/capture/use-steadiness.ts:56,66,68`
-   calls `isAvailableAsync`, `setUpdateInterval` and `addListener` and reads the
-   sensor directly. So the string is carried in the binary but the person is
-   never shown a motion prompt. Any document that says each permission is asked
-   for at the moment you first use it is wrong about this one; say instead that
-   the app works without any of them and that motion is read while the camera is
-   open.
+ - **Motion is declared, never requested, and no longer read.**
+   `NSMotionUsageDescription` ships (`app.json`, `motionPermission`) because
+   `expo-sensors` is still in `package.json`, but there is no
+   `Accelerometer`, `DeviceMotion` or `expo-sensors` import anywhere under
+   `src/`: the steadiness check that used to read the sensor went with the
+   per-angle camera, and the Hair Scan follows the head with the face
+   detector alone. So the string is carried in the binary, the person is
+   never shown a motion prompt, and no motion data is collected. Any document
+   that says motion is read while the camera is open is now wrong about this
+   one; say instead that the app works without any of them and that motion is
+   not read at all.
 
-**Decided: the motion usage string is rewritten before submission, and motion
-stays.** The string in `app.json:66` reads "Tress uses motion to tell when your
-phone is steady, so it can take the photo for you." The second clause describes
-a behaviour that was removed — `src/features/capture/use-steadiness.ts:13-16`
-records that it no longer fires the shutter, and the self-timer does. A usage
-string that describes a feature the binary does not have is a review question
-with no good answer, and it is the one text a reviewer sees at the prompt.
-Replace it with a sentence about steadiness alone; keep the capability, because
-`expo-sensors` reads CoreMotion and the string has to be there for that. The
-edit is one line in `app.json`, which is not this file's to change, so it is in
-openIssues.
+**Decided: the motion capability goes before submission.** The string in
+`app.json` reads "Tress uses motion to tell when your phone is steady, so it can
+take the photo for you." Both clauses describe behaviour that has been removed.
+A usage string for a sensor the app never touches is a review question with no
+good answer, and it is the one text a reviewer would see at a prompt that is
+never shown. Remove `expo-sensors` and the `motionPermission` string together;
+if the library has to stay for some other reason, cut the string to steadiness
+alone and say so here. `package.json` and `app.json` are not this file's to
+change, so it is in openIssues.
 
 The camera also reads product barcodes. The request that carries the decoded
 digits is described at the top of this file, headers and all; no image and

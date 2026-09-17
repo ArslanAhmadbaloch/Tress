@@ -32,6 +32,7 @@ import {
   ANGLES,
   ANGLE_LABELS,
   isDailyItem,
+  isScanSession,
   missingAngles,
   type AppData,
   type Photo,
@@ -104,7 +105,7 @@ export type ReportNote = {
 /** A screen that carries out an action, when the action has one. */
 export type ActionLink = {
   label: string;
-  route: '/capture-intro' | '/routine' | '/journal';
+  route: '/hair-scan' | '/routine' | '/journal';
 };
 
 export type ReportAction = {
@@ -421,7 +422,7 @@ function nextTimeFor(tiles: TileReading[], coverage: ScanCoverage | null): strin
   hair, because none of its inputs are.
 */
 
-/** Days past the chosen interval before a set counts as late. */
+/** Days past the chosen interval before a scan counts as late. */
 const INTERVAL_GRACE = 3;
 /** Brightness gap between two shots that makes the light a suspect. Mirrors image-quality.ts. */
 const EXPOSURE_SHIFT = 38;
@@ -448,7 +449,7 @@ export const FREE_NOTES = 2;
  * all. Holding one back would leave the unpaid reading more confident
  * than the paid one about the same photograph, which is the one
  * direction this gate must never go. Counting by position cannot
- * promise that — an ordinary late single-angle set pushes the exposure
+ * promise that — an ordinary late single-angle scan pushes the exposure
  * caveat to third — so these are exempt by name and do not consume a
  * free slot.
  */
@@ -480,13 +481,13 @@ type RecordContext = {
   /** False when no record was passed — then nothing outside the photograph is claimed. */
   known: boolean;
   previous: PhotoSession | null;
-  /** The previous set's photograph at the same angle, when there is one. */
+  /** The previous scan's photograph at the same angle, when there is one. */
   previousPhoto: Photo | null;
   gapDays: number | null;
   intervalDays: number | null;
   stats: RoutineItemStat[];
   hasStack: boolean;
-  /** Journal entries written since the previous set. */
+  /** Journal entries written since the previous scan. */
   notesSinceLast: number;
 };
 
@@ -595,8 +596,8 @@ function strengthsFor(
     out.push({
       id: 'well-angles',
       tone: 'good',
-      headline: `${held.length} of the five angles are on the record.`,
-      detail: `${held.map((a) => ANGLE_LABELS[a]).join(', ')}. Each one has something for the next set to be laid beside.`,
+      headline: `${held.length} angles are on the record.`,
+      detail: `${held.map((a) => ANGLE_LABELS[a]).join(', ')}. Each one has something for the next scan to be laid beside.`,
     });
   }
 
@@ -604,8 +605,8 @@ function strengthsFor(
     out.push({
       id: 'well-interval',
       tone: 'good',
-      headline: `This set came ${ctx.gapDays} day${ctx.gapDays === 1 ? '' : 's'} after the last one.`,
-      detail: `The interval you chose is ${ctx.intervalDays} days, so this one landed on the schedule you set. Sets taken to a schedule are the ones that can be compared without arguing about the gap.`,
+      headline: `This scan came ${ctx.gapDays} day${ctx.gapDays === 1 ? '' : 's'} after the last one.`,
+      detail: `The interval you chose is ${ctx.intervalDays} days, so this one landed on the schedule you set. Scans taken to a schedule are the ones that can be compared without arguing about the gap.`,
     });
   }
 
@@ -634,14 +635,22 @@ function shortfallsFor(
 ): Draft[] {
   const out: Draft[] = [];
 
-  const missing = missingAngles(session);
+  /*
+    Only a session from before the hair scan existed can be short of
+    angles in a way a scan would mend: its one hairline photograph left
+    the top and the temples untaken. A scan files whatever the turn
+    reached and never the crown, so a scan session is never nagged about
+    angles — every one of them would come up short on the crown, and the
+    "scan again" it would be told to do could not supply it.
+  */
+  const missing = isScanSession(session) ? [] : missingAngles(session);
   if (missing.length > 0) {
     const have = ANGLES.length - missing.length;
     out.push({
       id: 'gap-angles',
       tone: 'attention',
-      headline: `Only ${have} of the five angles ${have === 1 ? 'is' : 'are'} on the record.`,
-      detail: `No ${missing.map((a) => ANGLE_LABELS[a]).join(', ')} shot, so ${missing.length} of the five comparisons ${missing.length === 1 ? 'does' : 'do'} not exist yet.`,
+      headline: `Only ${have} angle${have === 1 ? ' is' : 's are'} on the record.`,
+      detail: `No ${missing.map((a) => ANGLE_LABELS[a]).join(', ')} shot, so ${missing.length === 1 ? 'that comparison does' : 'those comparisons do'} not exist yet.`,
     });
   }
 
@@ -649,7 +658,7 @@ function shortfallsFor(
     out.push({
       id: 'gap-interval',
       tone: 'attention',
-      headline: `The last set was ${ctx.gapDays} days ago, and the interval you chose is ${ctx.intervalDays} days.`,
+      headline: `The last scan was ${ctx.gapDays} days ago, and the interval you chose is ${ctx.intervalDays} days.`,
       detail: `${ctx.gapDays - ctx.intervalDays} days over. The gap does no harm on its own — it only means these two photographs sit further apart than the schedule assumes.`,
     });
   }
@@ -691,9 +700,9 @@ function shortfallsFor(
     out.push({
       id: 'gap-mask',
       tone: 'attention',
-      headline: 'This set carries no hair-area figure.',
+      headline: 'This scan carries no hair-area figure.',
       detail:
-        'Nothing came back from the mask, so there is no area number here for the next set to sit beside. Hair fully inside the ring, and more light in the room, is what gives the next one something to be measured against.',
+        'Nothing came back from the mask, so there is no area number here for the next scan to sit beside. Hair fully inside the ring, and more light in the room, is what gives the next one something to be measured against.',
     });
   }
 
@@ -722,7 +731,7 @@ function shortfallsFor(
     out.push({
       id: 'gap-journal',
       tone: 'neutral',
-      headline: 'Nothing was written in the journal between these two sets.',
+      headline: 'Nothing was written in the journal between these two scans.',
       detail:
         'A photograph records what a month looked like. A note is the only thing that records what you changed during it.',
     });
@@ -750,18 +759,18 @@ function actionFor(
       return {
         id: 'do-angles',
         topic: 'angles',
-        headline: `Take the ${missing.length} remaining angle${missing.length === 1 ? '' : 's'}.`,
-        detail: `${missing.map((a) => ANGLE_LABELS[a]).join(', ')}. Each one you add gives the next set something to be laid beside.`,
-        link: { label: 'Take the remaining angles', route: '/capture-intro' },
+        headline: 'Scan your hair to add the angles a turn reaches.',
+        detail: `${missing.map((a) => ANGLE_LABELS[a]).join(', ')} not yet on the record. One slow turn files the front, the top and both temples, and each one gives the next scan something to be laid beside.`,
+        link: { label: 'Scan again', route: '/hair-scan' },
       };
     }
     case 'gap-interval':
       return {
         id: 'do-interval',
         topic: 'interval',
-        headline: 'Take the next set on the day it falls due.',
-        detail: `Your interval is ${ctx.intervalDays} days, counted from the last set. Settings is where the reminder for it lives.`,
-        link: { label: 'Take a set now', route: '/capture-intro' },
+        headline: 'Scan again on the day it falls due.',
+        detail: `Your interval is ${ctx.intervalDays} days, counted from the last scan. Settings is where the reminder for it lives.`,
+        link: { label: 'Scan now', route: '/hair-scan' },
       };
     case 'gap-exposure':
       return {
@@ -867,7 +876,7 @@ function actionFor(
         id: 'do-journal',
         topic: 'journal',
         headline: 'Write down what you changed this month.',
-        detail: 'One line is enough: a product started, a week missed, a haircut. It is what makes the next set readable.',
+        detail: 'One line is enough: a product started, a week missed, a haircut. It is what makes the next scan readable.',
         link: { label: 'Open your journal', route: '/journal' },
       };
     default:
@@ -1006,7 +1015,7 @@ export function heroPhoto(session: PhotoSession): Photo | null {
 }
 
 /**
- * The reading for one set.
+ * The reading for one scan.
  *
  * `data` is optional, and what it changes is the reach of the middle two
  * sections rather than their honesty: without it the reading describes

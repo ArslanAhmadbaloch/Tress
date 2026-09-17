@@ -528,8 +528,9 @@ export type PhotoCoverage = {
  * on both axes independently — `x / 1024` and `y / 1024` are fractions of
  * the stored photograph's width and height. That is a pure axis-wise
  * scale with no crop and no offset, and it holds only because the mask is
- * measured on the same shrunk frame that is persisted; see the note at
- * the measurement site in capture-session. 1024 is twice the model's 512,
+ * measured on the same shrunk frame that is persisted; the scanner hands
+ * back the shrunk capture from every camera and the analysis measures
+ * that file (see features/hair-scan/analysis.ts). 1024 is twice the model's 512,
  * so every vertex lands on an even integer and the conversion is exact.
  *
  * Absent on builds without the native model, on every photograph taken
@@ -599,9 +600,11 @@ export type Photo = {
    * How the shutter fired. Absent on photographs from before it was
    * recorded. 'sample' is a development build's simulator stand-in for a
    * camera (see components/capture/sample-camera.tsx); such a photograph
-   * also carries its marker in its own pixels.
+   * also carries its marker in its own pixels. 'scan' is a frame the
+   * continuous hair scan kept out of the turn — one the person never saw
+   * as a photograph while it was taken (see features/hair-scan/result.ts).
    */
-  capture?: 'guided' | 'manual' | 'timer' | 'sample';
+  capture?: 'guided' | 'manual' | 'timer' | 'sample' | 'scan';
   /**
    * The outline of what `coverage` was counted over, if it was kept.
    *
@@ -634,6 +637,51 @@ export type PhotoSession = {
   title?: string;
   photos: Photo[];
   note?: string;
+  /**
+   * What the continuous hair scan recorded about the scan itself, when
+   * this session came out of one.
+   *
+   * Optional and additive, by the same rule as `Photo.maskTrace`: absent
+   * on every session written before the scan existed and on every set
+   * taken one angle at a time, and `SCHEMA_VERSION` is not bumped for it
+   * because the loader discards a blob whose version differs. Every reader
+   * has to render a session correctly without it, and the photographs
+   * remain ordinary photographs at the five ordinary angles, so Journey,
+   * Timeline and Compare are none the wiser.
+   */
+  scan?: PhotoSessionScan;
+};
+
+/**
+ * The scan-level record: facts about the turn, never about the head.
+ *
+ * Every field is something the scanner measured about its own run — how
+ * long it took, how much of the ring closed, how many frames it kept and
+ * what the live lighting reading averaged — and that is all this block is
+ * for. Anything about hair belongs on the photographs, where the per-still
+ * readings already live, or nowhere.
+ */
+export type PhotoSessionScan = {
+  /** Milliseconds from Start to the ring closing, or to the scan being stopped. */
+  durationMs: number;
+  /**
+   * How much of the ring had filled when the scan ended, 0–1. One means
+   * the turn reached every part it asks for; anything less is a scan that
+   * was stopped, or that ran out of time, part-way round.
+   */
+  completion: number;
+  /** Frames the scanner kept before curating them down to the angles. */
+  frameCount: number;
+  /**
+   * Mean of the live lighting reading over the scan, 0–1, when the
+   * scanner reported one. Null means the lighting lane had nothing to
+   * report — not that the light was bad — and the report says so.
+   */
+  lighting: number | null;
+  /** Share of the scan the detector held a face for, 0–1, when tracked. */
+  tracked?: number;
+  /** Shape version of this block, for a future reader. */
+  version: 1;
 };
 
 /* ------------------------------------------------------------------ */
@@ -645,16 +693,34 @@ export function missingAngles(session: Pick<PhotoSession, 'photos'>): Angle[] {
 }
 
 /**
+ * Whether a session came out of the continuous hair scan.
+ *
+ * Either mark says so: the scan block the scanner writes, or a
+ * photograph whose shutter was the scan's. Both are additive fields, so
+ * a session from before the scan existed reads as not a scan, which is
+ * what it is.
+ */
+export function isScanSession(session: Pick<PhotoSession, 'photos' | 'scan'>): boolean {
+  return session.scan !== undefined || session.photos.some((p) => p.capture === 'scan');
+}
+
+/**
  * The session a new capture extends instead of sitting beside.
  *
- * The funnel's scan saves one photograph as the baseline. The five-angle
- * set taken afterwards belongs to that same baseline: saved as a session
- * of its own it would be "Day 1", and every comparison from then on
- * would be between one hairline photograph and a set taken an hour
- * later. So a capture extends the baseline while the baseline still
- * lacks angles and is the only session there is. Once a second session
- * exists the baseline is whatever it was, and a later capture is an
- * update however few angles it holds.
+ * A baseline from before the hair scan existed could be one photograph,
+ * with the other angles taken afterwards, one at a time, into the same
+ * session: saved as a session of their own they would be "Day 1", and
+ * every comparison from then on would be between one hairline
+ * photograph and a set taken an hour later. So such a baseline is
+ * "extended" while it still lacks angles and is the only session there
+ * is. Once a second session exists the baseline is whatever it was.
+ *
+ * A scan baseline is never extended. A scan keeps the angles the turn
+ * reached, and there is no camera left that takes one angle to order;
+ * the next scan is a session of its own, and nothing should nag about
+ * the angles a turn did not reach. The rule still matters for the free
+ * tier: completing a pre-scan baseline is the same free first session,
+ * not a second one.
  *
  * `requestedId` is the explicit route in from Home's baseline card. It
  * is honoured only where the same rule holds for that session: a stale
@@ -668,6 +734,7 @@ export function sessionToExtend(
 ): PhotoSession | null {
   const only = sessions.length === 1 ? sessions[0] : null;
   if (!only?.isBaseline) return null;
+  if (isScanSession(only)) return null;
   if (requestedId !== undefined && only.id !== requestedId) return null;
   return missingAngles(only).length > 0 ? only : null;
 }
@@ -962,6 +1029,9 @@ export type AppData = {
  * everything written before it, and every screen that shows one already
  * has to handle its absence. A field that could not be read as absent
  * would be the case for a bump — and would still cost every journey.
+ *
+ * NOT bumped for `PhotoSession.scan` or `Photo.capture: 'scan'` either,
+ * by the same rule again.
  */
 export const SCHEMA_VERSION = 2;
 

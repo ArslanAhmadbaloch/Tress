@@ -493,7 +493,7 @@ test('report: the coverage findings claim nothing about hair either', () => {
  */
 
 /** Every route an action is allowed to send somebody to. */
-const ACTION_ROUTES = ['/capture-intro', '/routine', '/journal'];
+const ACTION_ROUTES = ['/hair-scan', '/routine', '/journal'];
 
 /** Attaches the same measurement to every photograph in a set. */
 function measured(s: PhotoSession, q: Photo['quality'] = clean): PhotoSession {
@@ -565,17 +565,41 @@ test('scan: the reading opens with what went well, and every line of it is a mea
   assert.match(r.strengths[0].detail, /Mean brightness 128 of 255/);
 });
 
-test('scan: a single-angle scan says how many comparisons do not exist yet', () => {
+test('scan: a pre-scan single-angle baseline says which comparisons do not exist yet', () => {
   const r = buildScanReading(scan(clean, undefined))!;
   const gap = r.shortfalls[0];
   assert.equal(gap.id, 'gap-angles');
-  assert.match(gap.headline, /Only 1 of the five angles is on the record\./);
-  assert.match(gap.detail, /4 of the five comparisons do not exist yet/);
+  assert.match(gap.headline, /Only 1 angle is on the record\./);
+  assert.match(gap.detail, /those comparisons do not exist yet/);
+  assert.ok(!/\bfive\b/i.test(gap.headline + gap.detail), 'the old five-angle count is gone');
 
   const action = r.actions.find((a) => a.answers === 'gap-angles')!;
   assert.ok(action, 'a shortfall with a screen behind it gets the screen');
-  assert.equal(action.link?.route, '/capture-intro');
-  assert.match(action.headline, /Take the 4 remaining angles\./);
+  assert.equal(action.link?.route, '/hair-scan');
+  assert.match(action.headline, /Scan your hair to add the angles a turn reaches\./);
+});
+
+test('scan: a session the hair scan made is never nagged about angles', () => {
+  // A scan files what the turn reached and never the crown, so every
+  // scan is short of at least one angle by the old count. Told to "scan
+  // again for the crown", the person would do so and be told it again.
+  const base = scan(clean, undefined);
+  const byBlock: PhotoSession = {
+    ...base,
+    scan: { durationMs: 20000, completion: 1, frameCount: 40, lighting: 0.6, version: 1 },
+  };
+  const byShutter: PhotoSession = {
+    ...base,
+    photos: base.photos.map((p) => ({ ...p, capture: 'scan' as const })),
+  };
+  for (const s of [byBlock, byShutter]) {
+    const r = buildScanReading(s)!;
+    assert.ok(!r.shortfalls.some((g) => g.id === 'gap-angles'), 'no angle shortfall for a scan');
+    assert.ok(!r.actions.some((a) => a.answers === 'gap-angles'), 'no rescan-for-angles action');
+    for (const line of [...r.strengths, ...r.shortfalls, ...r.actions]) {
+      assert.ok(!/\bfive\b/i.test(line.headline + line.detail), `"${line.headline}" counts five angles`);
+    }
+  }
 });
 
 test('scan: a complete, clean set is a short report rather than a padded one', () => {
@@ -613,11 +637,11 @@ test('scan: a late set names the gap and the interval, and hands over the camera
 
   const gap = r.shortfalls.find((g) => g.id === 'gap-interval')!;
   assert.ok(gap, 'a set taken past the chosen interval is worth raising');
-  assert.match(gap.headline, /The last set was 90 days ago, and the interval you chose is 30 days\./);
+  assert.match(gap.headline, /The last scan was 90 days ago, and the interval you chose is 30 days\./);
   assert.match(gap.detail, /60 days over/);
 
   const action = r.actions.find((a) => a.answers === 'gap-interval')!;
-  assert.equal(action.link?.route, '/capture-intro');
+  assert.equal(action.link?.route, '/hair-scan');
 });
 
 test('scan: a set taken on the schedule is said so, and raises nothing', () => {
@@ -625,7 +649,7 @@ test('scan: a set taken on the schedule is said so, and raises nothing', () => {
   const r = buildScanReading(data.sessions[0], data)!;
 
   const well = r.strengths.find((n) => n.id === 'well-interval')!;
-  assert.match(well.headline, /This set came 30 days after the last one\./);
+  assert.match(well.headline, /This scan came 30 days after the last one\./);
   assert.match(well.detail, /interval you chose is 30 days/);
   assert.equal(r.shortfalls.find((g) => g.id === 'gap-interval'), undefined);
 });

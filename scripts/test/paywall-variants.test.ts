@@ -365,10 +365,10 @@ test('benefits: each names a thing the app does, and one of them is privacy', ()
 /**
  * What has to be true of a bullet, beyond the file behind it existing.
  *
- *   'capture'  The entitlement decides it through capture-intro.tsx: a
+ *   'capture'  The entitlement decides it through hair-scan.tsx: a
  *              non-subscriber is sent here the moment they reach for a
- *              set after the free baseline. Anything that needs a second
- *              set — the comparison, the report's framing half — is
+ *              scan after the free baseline. Anything that needs a second
+ *              scan — the comparison, the report's framing half — is
  *              behind this gate whether or not it names it.
  *   'stack'    routine.tsx puts it behind gate('buildStack').
  *   'fact'     Not gated, and not claiming to be: a true statement about
@@ -378,7 +378,7 @@ test('benefits: each names a thing the app does, and one of them is privacy', ()
 type Gated = 'capture' | 'stack' | 'fact';
 
 const CLAIMS: { match: RegExp; screen: string; gated: Gated }[] = [
-  { match: /photo sets/i, screen: 'src/app/capture-intro.tsx', gated: 'capture' },
+  { match: /unlimited scans/i, screen: 'src/app/hair-scan.tsx', gated: 'capture' },
   {
     // The reading has to be named on a screen, not merely computed in a
     // module. One reading per set is displayed: the report tab's coverage
@@ -420,11 +420,11 @@ test('benefits: the gates the list leans on are really in the code', () => {
     in this app, and both of them are read here — if either is deleted,
     the bullets resting on it fail rather than quietly becoming untrue.
   */
-  const captureIntro = source('src/app/capture-intro.tsx');
+  const hairScan = source('src/app/hair-scan.tsx');
   assert.match(
-    captureIntro,
+    hairScan,
     /!isPremium\s*&&\s*!isBaseline\)\s*router\.replace\('\/paywall'\)/,
-    'capture-intro.tsx must send a non-subscriber reaching past the baseline to the paywall',
+    'hair-scan.tsx must send a non-subscriber reaching past the baseline to the paywall',
   );
 
   const routine = source('src/app/routine.tsx');
@@ -488,12 +488,11 @@ test('benefits: "set after set" is a thing the report does, not a thing it is ca
 
 test('benefits: the list does not sell the free first-photograph report', () => {
   /*
-    src/app/scan-report.tsx is real, and it is free: capture-session.tsx
-    routes to it only for the first set or a single scan, it is headed
-    "Your first reading", and buildScanReading reports on one photograph
-    rather than on all five. A bullet promising "the full scan report" or
-    "every reading, for every set" is therefore false twice over, and it
-    is the bullet this list is most tempted to write.
+    The report at the end of the baseline scan is real, and it is free:
+    the first scan costs nothing and hair-scan.tsx shows its report before
+    the paywall. A bullet promising "the full scan report" or "every
+    reading, for every set" is therefore false, and it is the bullet this
+    list is most tempted to write.
   */
   const benefits = PREMIUM_BENEFITS.map((b) => `${b.title} ${b.body}`).join(' ').toLowerCase();
   for (const overclaim of [

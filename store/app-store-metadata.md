@@ -45,37 +45,37 @@ stores read as one product.
 
 ## Promotional text (170 max)
 
-    One photograph, read on your phone and never uploaded. Then five angles
-    a month, side by side, with a line beside each set. A private record of
-    your hair.
+    One scan, read on your phone and never uploaded. Then a scan a month,
+    side by side, with a line beside each one. A private record of your
+    hair.
 
-154 characters. Promotional text can be changed without a new build; keep
+143 characters. Promotional text can be changed without a new build; keep
 it a description of the product, not an offer.
 
 ## Description (4000 max)
 
 Hair changes slowly. Too slowly to see in a mirror, and too slowly to remember. Tress is a private photo journal for that change, kept on your own phone.
 
-It starts with one photograph. Tress frames the shot for you, using on-device face detection to line you up the same way each time, then reads the photograph it took: how much of the frame the hair covers, where that area sits, how evenly it is lit and how sharp it is. Each of those numbers is a measurement of pixels, made on your phone and drawn over your own picture. The photograph is not uploaded, and neither it nor the reading is sent anywhere.
+It starts with one scan. Turn your head slowly in front of the camera and Tress captures the important angles on its own, using on-device face detection to follow you, then reads the frames it took: how much of each frame the hair covers, where that area sits, how evenly it is lit and how sharp it is. Each of those numbers is a measurement of pixels, made on your phone and drawn over your own picture. The frames are not uploaded, and neither they nor the report is sent anywhere.
 
-From there, Tress keeps five angles: hairline, top, left side, right side and back. On-screen guides line each shot up with your last one, so what you compare next month is your hair rather than where you happened to stand. Put any two dates side by side and drag between them. Change that is invisible day to day is plain across a slider.
+Every scan is filed under the same angles: hairline, top, left side and right side. The scanner follows your head and takes each frame at the same point of the turn, so what you compare next month is your hair rather than where you happened to stand. Put any two dates side by side and drag between them. Change that is invisible day to day is plain across a slider.
 
-Write a line beside every set. What you changed, how the month went, what you noticed: the part you will not remember in March. Keep your routine in one list, whatever you already use, and tick off the days you actually did it. Tress shows how steadily you have kept to it, as a streak and a start date beside each item. It does not tell you whether any of it is working, because a phone cannot know that.
+Write a line beside every scan. What you changed, how the month went, what you noticed: the part you will not remember in March. Keep your routine in one list, whatever you already use, and tick off the days you actually did it. Tress shows how steadily you have kept to it, as a streak and a start date beside each item. It does not tell you whether any of it is working, because a phone cannot know that.
 
 Your membership card is yours to keep on your phone or share. Reminders are optional and stay on the device. Lock the app with Face ID or a passcode if you like.
 
-What the reading is, and is not. Hair coverage is an area: the share of the frame the hair mask counts as hair. It measures area, not what lies between the strands, and it is not a medical opinion. A single reading moves with haircuts, wet hair and how far you held the phone, which is why Tress asks for the same angles under the same light and shows you the series rather than a score.
+What the reading is, and is not. Hair coverage is an area: the share of the frame the hair mask counts as hair. It measures area, not what lies between the strands, and it is not a medical opinion. A single reading moves with haircuts, wet hair and how far you held the phone, which is why Tress files every scan under the same angles, asks for the same light, and shows you the series rather than a score.
 
 There is no account, no sign-in, and no server of ours holding your journey. Your photographs, notes, routine and readings live in the app's private storage on your own device. Some things do leave your phone, and the privacy policy describes them. When you open the Premium screen, or buy or restore a subscription, Tress asks our subscription provider whether this install has a membership — that sends a random identifier for the install, and nothing about you. If you never open it, that question is never asked. Scanning a product barcode sends the digits to Open Beauty Facts, an open database, to fetch what it lists. No photograph, and nothing you write, is part of any of that. If your phone is backed up, that backup includes your photographs, because they are files on your phone. Settings has "Delete all my data", and deleting the app takes your photographs and your journey with it.
 
 Tress is a documentation tool, not a medical device. It records; it does not treat, and nothing in it is medical advice. For anything clinical, speak to a qualified healthcare professional.
 
-Tress Premium. Your first photograph and its reading are free. Premium keeps the record going: unlimited five-angle updates, side-by-side comparison of any two dates, your routine and stack, and your full history. New subscribers get a 7-day free trial where the App Store offers one, then a monthly or yearly subscription at the price shown in the app for your country. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel any time in your App Store account settings.
+Tress Premium. Your first scan and its report are free. Premium keeps the record going: unlimited scans, side-by-side comparison of any two dates, your routine and stack, and your full history. New subscribers get a 7-day free trial where the App Store offers one, then a monthly or yearly subscription at the price shown in the app for your country. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel any time in your App Store account settings.
 
 Privacy policy: https://tresshaircare.com/privacy
 Terms of use: https://tresshaircare.com/terms
 
-(3,634 characters, counted from "Hair" to the last URL with the paragraph
+(3,692 characters, counted from "Hair" to the last URL with the paragraph
 breaks included. Apple's limit is 4,000.)
 
 Four notes on the "no account" paragraph, because it is the one a
@@ -311,10 +311,10 @@ either store starts asking the other's question.
 
 ## What's New (1.0)
 
-    First release. Take one photograph and see what your phone reads from
-    it, on the device. Then keep five angles a month, side by side, with
-    your routine and a line beside every set. Tress does not upload your
-    photographs.
+    First release. Scan your hair once and see what your phone reads from
+    it, on the device. Then a scan a month, side by side, with your
+    routine and a line beside each one. Tress does not upload your
+    images.
 
 ## App Review notes
 
@@ -384,11 +384,12 @@ Paste into the "Notes" field of App Review Information.
     Permissions: the app works without any of them. Camera, photo
     library, Face ID and notifications are each requested at the moment
     they are first used. Motion is the exception and is worth stating
-    plainly: NSMotionUsageDescription ships in the binary, but the app
-    never calls a motion permission request — it reads the accelerometer
-    directly, only while the camera is open, to tell whether the phone is
-    holding still so the framing guide can say so. It does not fire the
-    shutter; the self-timer does that.
+    plainly: NSMotionUsageDescription ships in the binary because
+    `expo-sensors` is still installed, but nothing under `src/` reads the
+    sensor any more — the steadiness check went with the per-angle camera,
+    and the Hair Scan follows the head with the face detector alone. No
+    motion permission is requested and no motion data is read. The string
+    describes a feature the binary does not have; see the checklist.
     Notifications are local reminders only; no push token is generated,
     and no google-services.json is present.
 
@@ -410,10 +411,13 @@ Paste into the "Notes" field of App Review Information.
  - [ ] "not analysed" removed from the landing page in
        `scripts/build-site.mjs`, and the site redeployed. Apple opens the
        Marketing URL.
- - [ ] `app.json`: motion usage string rewritten to drop "so it can take the
-       photo for you", `ACTIVITY_RECOGNITION` added to blockedPermissions,
-       and the contradictory `RECORD_AUDIO` line removed from
-       `android.permissions`. See store/play-declarations.md.
+ - [ ] `app.json` / `package.json`: nothing under `src/` reads motion any
+       more, so remove `expo-sensors` and the `motionPermission` string
+       (a usage string for a sensor the app never touches is a review
+       question with no good answer); or, if the library must stay, cut the
+       string to steadiness alone. `ACTIVITY_RECOGNITION` added to
+       blockedPermissions, and the contradictory `RECORD_AUDIO` line removed
+       from `android.permissions`. See store/play-declarations.md.
  - [ ] Both subscriptions created in App Store Connect with a 7-day free
        trial introductory offer, in one subscription group, and attached to
        the RevenueCat "default" offering as `$rc_annual` / `$rc_monthly`.

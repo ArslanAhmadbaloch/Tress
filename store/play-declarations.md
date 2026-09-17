@@ -37,9 +37,9 @@ paywall shows the plans and a purchase button, but there is no Play
 product behind it: tapping the button shows a "Not available yet" dialog
 (the button's accessibility hint says the same), and nothing on the
 screen says so before the tap. Anyone without Premium who already has a
-first set is routed to that paywall when they start another update, so
-the Android build cannot deliver the five-angle updates or comparisons
-the description promises beyond the first set. **Do not publish the Play
+first scan is routed to that paywall when they start another, so the
+Android build cannot deliver the further scans or comparisons the
+description promises beyond the first scan. **Do not publish the Play
 listing before Play Billing is live**; see the billing note below and
 store/listing.md.
 
@@ -190,23 +190,21 @@ the kind of mismatch that gets an app pulled. Revise first, ship second.
    the headers described above; no image goes with it.
  - USE_BIOMETRIC / USE_FINGERPRINT: optional app lock.
  - **Motion / accelerometer** (`expo-sensors`, `motionPermission` in app.json):
-   read only while the camera is open, to tell whether the phone is holding
-   still. **Declared, never requested.** The `motionPermission` string ships as
-   `NSMotionUsageDescription` on iOS, and on Android the library contributes
-   `ACTIVITY_RECOGNITION` (below); the app asks for neither at runtime. There
-   is no `Accelerometer.requestPermissionsAsync` anywhere under `src/` —
-   `src/features/capture/use-steadiness.ts:56,66,68` reads the sensor directly.
-   Say "read while the camera is open", not "asked for at first use". Motion
-   is described the same way here, in `store/privacy-labels.md` and in
-   `src/app/privacy.tsx`.
+   **declared, never requested, and no longer read.** The `motionPermission`
+   string ships as `NSMotionUsageDescription` on iOS, and on Android the
+   library contributes `ACTIVITY_RECOGNITION` (below); the app asks for
+   neither at runtime, and nothing under `src/` imports `expo-sensors`,
+   `Accelerometer` or `DeviceMotion` any more — the steadiness check went
+   with the per-angle camera, and the Hair Scan follows the head with the
+   face detector alone. Say "not read", not "read while the camera is open".
+   Motion is described the same way here and in `store/privacy-labels.md`.
 
-   **Decided: the usage string is rewritten before submission, and motion
-   stays.** The string in `app.json:66` ends "so it can take the photo for
-   you", which describes a behaviour that was removed —
-   `src/features/capture/use-steadiness.ts:13-16` records that it no longer
-   fires the shutter. The capability is still needed (`expo-sensors` reads
-   CoreMotion), so the fix is to describe steadiness alone. One line in
-   `app.json`, which is not this file's to edit; it is in openIssues.
+   **Decided: the motion capability goes before submission.** The string in
+   `app.json` says motion tells "when your phone is steady, so it can take
+   the photo for you"; both halves describe removed behaviour. Remove
+   `expo-sensors` and the string together, or — if the library must stay —
+   cut the string to steadiness alone. `package.json` and `app.json` are not
+   this file's to edit; it is in openIssues.
  - RECORD_AUDIO is in `blockedPermissions` in app.json, so it is stripped
    from the merged manifest; the camera never records audio. Note that
    `app.json` also lists `android.permission.RECORD_AUDIO` in
@@ -234,9 +232,8 @@ the kind of mismatch that gets an app pulled. Revise first, ship second.
 
    **Decided: `ACTIVITY_RECOGNITION` is removed rather than explained.** It is
    a runtime-dangerous permission that this app never requests and cannot use:
-   `src/features/capture/use-steadiness.ts` reads the raw accelerometer through
-   `Accelerometer.isAvailableAsync`, `setUpdateInterval` and `addListener`
-   (`:56,66,68`), none of which is gated on it. Shipping a dangerous permission
+   nothing under `src/` reads the accelerometer at all now, and the library
+   contributes the permission on its own. Shipping a dangerous permission
    the binary never exercises puts it in the Play listing's permission list and
    invites a question with no good answer. Add
    `"android.permission.ACTIVITY_RECOGNITION"` to `android.blockedPermissions`

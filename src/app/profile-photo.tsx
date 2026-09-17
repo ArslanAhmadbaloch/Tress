@@ -1,9 +1,9 @@
 /**
  * Choose the picture on the journey card.
  *
- * Two sources, and the distinction matters. The five-angle progress
- * photographs are in-app only and stay that way — their whole worth is
- * that they were taken here under known conditions, and a library import
+ * Two sources, and the distinction matters. The images the hair scan
+ * keeps are in-app only and stay that way — their whole worth is that
+ * they were taken here under known conditions, and a library import
  * among them would quietly break the comparison.
  *
  * The card portrait is not one of those. It is a picture of a person on a
@@ -181,10 +181,10 @@ export default function ProfilePhotoScreen() {
           <View style={{ marginTop: spacing.xl }}>
             <EmptyState
               icon="camera"
-              title="No photos taken yet"
-              body="Photos you take in the app appear here too, so you can use one of those instead."
-              actionLabel="Take photos"
-              onAction={() => router.replace('/capture-intro')}
+              title="No scans yet"
+              body="The images your scans keep appear here too, so you can use one of those instead."
+              actionLabel="Scan your hair"
+              onAction={() => router.replace('/hair-scan')}
             />
           </View>
         ) : (
