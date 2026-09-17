@@ -270,10 +270,13 @@ export const HERO_PARALLAX = 0.35;
  * Motion the still does not move — a picture that drifts against the
  * finger is the canonical thing that setting turns off.
  */
-export function heroShift(scrollY: number, reduceMotion: boolean, share = HERO_PARALLAX): number {
+export function heroShift(scrollY: number, reduceMotion: boolean, share?: number): number {
   'worklet';
+  // Not a default parameter: the worklet plugin does not capture a module
+  // constant referenced there, and the UI runtime would throw on it.
+  const s = share === undefined ? HERO_PARALLAX : share;
   if (reduceMotion || !(scrollY > 0)) return 0;
-  return -scrollY * share;
+  return -scrollY * s;
 }
 
 /**
@@ -342,9 +345,10 @@ export const SETTLE_EVERY = 32;
  * far enough since the last one, or it has crossed one of the lines the
  * JS side switches on — the status bar's flip and the tab row's sticking.
  */
-export function shouldSettle(previous: number, next: number, lines: readonly number[], every = SETTLE_EVERY): boolean {
+export function shouldSettle(previous: number, next: number, lines: readonly number[], every?: number): boolean {
   'worklet';
-  if (Math.abs(next - previous) >= every) return true;
+  const step = every === undefined ? SETTLE_EVERY : every;
+  if (Math.abs(next - previous) >= step) return true;
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     if (previous < line !== next < line) return true;
