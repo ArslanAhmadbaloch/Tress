@@ -192,9 +192,46 @@ test('chrome: every component takes its words from the scan copy and reads reduc
   for (const file of ['instruction-sheet.tsx', 'permission-view.tsx', 'top-bar.tsx', 'guidance.tsx']) {
     assert.ok(read(file).includes("from '@/features/hair-scan/copy'"), `${file} hardcodes copy`);
   }
-  for (const file of ['scan-ring.tsx', 'start-button.tsx', 'status-pill.tsx', 'top-bar.tsx']) {
+  for (const file of [
+    'instruction-sheet.tsx',
+    'scan-ring.tsx',
+    'start-button.tsx',
+    'status-pill.tsx',
+    'top-bar.tsx',
+  ]) {
     assert.ok(read(file).includes('useReducedMotion'), `${file} ignores Reduce Motion`);
   }
+});
+
+test('chrome: the instruction sheet shows the scanner beside each of its three steps', () => {
+  const sheet = read('instruction-sheet.tsx');
+  const thumbs = read('instruction-thumbs.tsx');
+
+  // Three rows, numbered, each with a thumbnail of the state it describes.
+  assert.ok(sheet.includes("from './instruction-thumbs'"), 'the sheet draws no tiles of its own');
+  assert.ok(sheet.includes('<InstructionThumb step={step}'), 'each row carries its step thumbnail');
+  assert.ok(sheet.includes('readonly InstructionStep[] = [0, 1, 2]'), 'three steps, in order');
+  assert.ok(sheet.includes('{step + 1}'), 'rows are numbered from one');
+  assert.ok(sheet.includes('name="close"'), 'the X is there');
+  assert.ok(sheet.includes('variant="secondary"'), 'Continue is the full-width grey pill');
+  assert.ok(sheet.includes('HAIR_SCAN_COPY.instructions'), 'the words come from the scan copy');
+
+  // The tiles are the real scanner's parts, not pictures of a person.
+  assert.ok(thumbs.includes("from './scan-ring'"), 'the ring tiles hold the real ScanRing');
+  assert.ok(thumbs.includes('<ScanRing'), 'the ring is rendered, not redrawn');
+  assert.ok(thumbs.includes('scanRingMargin(RING_TICK)'), 'the window oval tracks the ring');
+  assert.ok(!/source=\{require\(/.test(thumbs), 'no photograph is bundled in place of a drawing');
+  assert.ok(!/withTiming|withSpring|withRepeat|useAnimatedStyle/.test(thumbs), 'the tiles are still');
+
+  // Real frames can be dropped in later without touching the sheet.
+  assert.ok(thumbs.includes('image?: ImageSource | number'), 'the tile takes a real image');
+  assert.ok(thumbs.includes("from 'expo-image'"), 'a real image renders through expo-image');
+  assert.ok(sheet.includes('thumbnails?: InstructionThumbnails'), 'the sheet takes the three');
+  assert.ok(sheet.includes('image={thumbnails?.[step]}'), 'each row passes its own');
+
+  // The tiles are decorative: the row's label carries the words.
+  assert.ok(thumbs.includes('accessibilityElementsHidden'), 'a tile must not be read aloud');
+  assert.ok(sheet.includes('accessibilityLabel={`${step + 1}. ${title}. ${body}`}'));
 });
 
 test('chrome: nothing disables a lint rule', () => {
@@ -202,6 +239,7 @@ test('chrome: nothing disables a lint rule', () => {
     'guidance.tsx',
     'index.ts',
     'instruction-sheet.tsx',
+    'instruction-thumbs.tsx',
     'permission-view.tsx',
     'scan-ring.tsx',
     'start-button.tsx',

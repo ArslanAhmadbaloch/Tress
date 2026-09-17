@@ -1110,3 +1110,66 @@ test('scan: no paragraph on the report is printed twice', () => {
   assert.ok(r.shortfalls.some((n) => n.id === 'gap-mask'), 'and the shortfall is still made');
   assert.equal(r.shortfalls.find((n) => n.id === 'gap-mask')!.premium, false, 'still free');
 });
+
+/* ------------------------------- scan sessions ------------------------------ */
+
+/** A session the continuous hair scan wrote: frames from the turn, tagged with the angles it reached. */
+function scanSession(id: string, dAgo: number, angles: readonly string[]): PhotoSession {
+  const s = session(id, dAgo, angles);
+  return {
+    ...s,
+    photos: s.photos.map((p) => ({ ...p, capture: 'scan' as const })),
+    scan: { durationMs: 12_000, completion: 1, frameCount: 40, lighting: 0.6, version: 1 },
+  };
+}
+
+test('report: a scan is never counted short of the back shot it cannot take', () => {
+  const data = { ...base(), sessions: [scanSession('s1', 30, ['front', 'leftTemple', 'rightTemple', 'top'])] };
+  const report = buildReport(data);
+  const record = report.sections.find((s) => s.kind === 'record')!;
+
+  assert.equal(record.findings.find((f) => f.id === 'record-missing'), undefined, 'no gap finding for a scan');
+  assert.equal(record.findings.find((f) => f.id === 'record-complete'), undefined, 'the five-angle line is not for a scan');
+  const scan = record.findings.find((f) => f.id === 'record-scan')!;
+  assert.ok(scan, 'the record says what the scan captured');
+  assert.equal(scan.tone, 'good');
+  assert.equal(scan.headline, 'Your last scan captured the front, both sides and the top.');
+  assert.equal(record.score, 1, 'scored against the four angles a scan reaches');
+  assert.equal(record.scoreLabel, '4 of 4 angles in your last scan');
+  assert.match(record.findings.find((f) => f.id === 'record-span')!.headline, /^One scan recorded/);
+  assert.ok(!/five|\bBack\b|\bset\b/.test(report.nextStep), report.nextStep);
+  assert.match(report.nextStep, /next scan/);
+
+  const all = record.findings.flatMap((f) => [f.headline, f.detail]).concat(report.nextStep);
+  for (const line of all) {
+    assert.ok(!/\bfive\b/i.test(line), `"${line}" counts the old five angles`);
+    assert.ok(!/\bset\b/i.test(line), `"${line}" calls a scan a set`);
+  }
+  assertHonest(assert, all, 'scan record');
+});
+
+test('report: a scan stopped part-way is described by what it kept, in words, not as a shortfall', () => {
+  // Only the photographs carry the scan mark here: either mark must be enough.
+  const s = session('s1', 30, ['front', 'leftTemple']);
+  const data = { ...base(), sessions: [{ ...s, photos: s.photos.map((p) => ({ ...p, capture: 'scan' as const })) }] };
+  const report = buildReport(data);
+  const record = report.sections.find((s) => s.kind === 'record')!;
+
+  assert.equal(record.findings.find((f) => f.id === 'record-missing'), undefined);
+  const scan = record.findings.find((f) => f.id === 'record-scan')!;
+  assert.equal(scan.tone, 'neutral', 'a partial turn is a fact, not a fault');
+  assert.equal(scan.headline, 'Your last scan captured the front and the left side.');
+  assert.match(scan.detail, /also reaches the right side and the top/);
+  assert.equal(record.score, 0.5);
+  assert.equal(record.scoreLabel, '2 of 4 angles in your last scan');
+  assert.ok(!/Add the .* shot/.test(report.nextStep), 'a scan is not topped up one angle at a time');
+  assertHonest(assert, [scan.headline, scan.detail, report.nextStep], 'partial scan record');
+});
+
+test('report: the old five-angle set is still counted the old way', () => {
+  const data = { ...base(), sessions: [session('s1', 60, ['top', 'front', 'crown'])] };
+  const record = buildReport(data).sections.find((s) => s.kind === 'record')!;
+  assert.ok(record.findings.find((f) => f.id === 'record-missing'));
+  assert.equal(record.findings.find((f) => f.id === 'record-scan'), undefined);
+  assert.equal(record.scoreLabel, '3 of 5 angles in your last set');
+});

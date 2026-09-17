@@ -190,6 +190,13 @@ function Navigation() {
           }}
         />
         <Stack.Screen
+          name="hair-report"
+          // A saved scan's report, reopened from an update: the still
+          // under the status bar and the sheet over it draw their own
+          // chrome, so no header.
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
           name="session/[id]"
           // The screen draws its own back control. The native one is
           // captioned with the route it returns to, which here is the tab

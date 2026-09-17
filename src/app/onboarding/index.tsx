@@ -13,11 +13,14 @@
  * promising, and the camera is one tap after it — everything that used to
  * sit between the two was the report repeated.
  *
- * The last step opens the hair scan itself, so the reading the person is
- * shown next is a reading of images they just took. There is one scan and
- * it is the same for everyone: it speaks its cues aloud for a screen
- * reader and finishes on its own at the forced finish, so no other ending
- * is needed. See `startBaseline`.
+ * The last step is the invitation into the hair scan itself, so the
+ * reading the person is shown next is a reading of images they just took.
+ * There is one scan and it is the same for everyone: it speaks its cues
+ * aloud for a screen reader and finishes on its own at the forced finish,
+ * so no other ending is needed. It can be declined — "Not now" finishes
+ * the funnel without a baseline and lands on Home, where the first-scan
+ * card carries the same invitation. See `startBaseline` and
+ * `skipBaseline`.
  */
 
 import { Image } from 'expo-image';
@@ -47,10 +50,12 @@ import {
   ANALYSING_TITLE,
   welcomeTitle,
 } from '@/features/content/belonging';
-import { hairContent } from '@/features/content/hair-content';
-import { Analysing } from '@/components/onboarding/analysing';
-import { ProfileReportScreen } from '@/components/onboarding/profile-report-screen';
-import { HowItWorks } from '@/components/onboarding/how-it-works';
+import {
+  Analysing,
+  HowItWorks,
+  ProfileReportScreen,
+  ScanInvite,
+} from '@/components/onboarding';
 import { caseStudies, type CaseStudy } from '@/features/onboarding/case-studies';
 import { buildProfileReport } from '@/features/onboarding/profile-report';
 import {
@@ -66,6 +71,8 @@ import {
   COPY,
   funnelContent,
   GENDER_CHOICES,
+  inviteCallouts,
+  inviteHeadline,
   MEANING_CHOICES,
   MEDICATION_EXCLUSIVE,
   NEEDS_SYSTEM,
@@ -180,7 +187,7 @@ function toggleMedication(list: Medication[], value: Medication): Medication[] {
 }
 
 export default function OnboardingFunnel() {
-  const { colors, spacing, radius, shadow } = useTheme();
+  const { colors, spacing, radius } = useTheme();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const { createJourney } = useAppStore();
@@ -363,10 +370,25 @@ export default function OnboardingFunnel() {
     Replace, not push: the funnel is walked through once, and it should
     not be sitting behind the camera waiting to be returned to. `origin`
     is how the scan knows this is the funnel, so its report ends in
-    Continue and the paywall rather than in Done.
+    Continue and the paywall rather than in Done. The first scan is the
+    free baseline — the scanner reads the empty record and lets it
+    through without the entitlement — so nothing here has to know about
+    the paywall at all.
   */
   const startBaseline = () => {
     router.replace({ pathname: '/hair-scan', params: { origin: 'onboarding' } });
+  };
+
+  /*
+    Declining the scan. The journey, profile and routine were written on
+    arrival at the card (`commit`), and that write is what marks
+    onboarding complete, so there is nothing left to save here: the
+    funnel is simply left, and Home opens on the card that offers the
+    first scan. Replace for the same reason as above — the funnel is not
+    a screen to come back to.
+  */
+  const skipBaseline = () => {
+    router.replace('/');
   };
 
   /* -------------------------------- render ------------------------------ */
@@ -1023,7 +1045,6 @@ export default function OnboardingFunnel() {
     case 'baseline':
     default:
       return shell({
-        centred: true,
         cta: baselineCopy.cta,
         /*
           The scan: the turn, then the reading of what it captured, then
@@ -1031,67 +1052,37 @@ export default function OnboardingFunnel() {
         */
         onCta: startBaseline,
         /*
-          No skip. The baseline is not a feature of this app, it is the
-          thing every other feature is measured against — a journey that
-          starts without one has nothing for month three to be compared
-          with, and the person finds that out in month three.
-
-          It is a real trade: somebody who cannot photograph themselves
-          right now cannot get in. That is the cost of the app being worth
-          opening later, and it is the same call the apps that work in
-          this category have all made. What keeps the trade a fair one is
-          that the camera on the other side of the button is the shortest
-          one there is — one turn, and it stops on its own.
+          The way past. The baseline used to be compulsory, on the
+          argument that a journey without one has nothing for month three
+          to be compared with. That is still true, and it is still the
+          person's call: somebody who cannot scan right now should be let
+          into the app rather than turned away at its door, and the Home
+          screen keeps asking until they do. See `skipBaseline`.
+        */
+        secondary: baselineCopy.notNow,
+        onSecondary: skipBaseline,
+        /*
+          The invitation: their name, the reference photograph with three
+          of their own answers pinned to it, and one line about the
+          record. The cards are labels of what they chose in the funnel,
+          placed where the scan is about to look — never findings, since
+          nothing has been photographed yet.
         */
         children: (
           <>
             <Wash />
-            {/*
-              Where it starts, as the hero. The reference photograph for
-              the front angle, because the scan begins facing the camera
-              and the front is the first frame it keeps. Labelled as an
-              example, because it is one, and because a face the app did
-              not name would read as somebody's result.
-            */}
-            <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxxl }}>
-              <View
-                style={[
-                  {
-                    width: Math.min(220, width - spacing.xl * 2 - spacing.giant),
-                    aspectRatio: 4 / 5,
-                    borderRadius: radius.xl,
-                    backgroundColor: colors.surface,
-                  },
-                  shadow.lifted,
-                ]}>
-                <Image
-                  source={hairContent(answers.gender).angles.front.example}
-                  style={{ width: '100%', height: '100%', borderRadius: radius.xl }}
-                  contentFit="cover"
-                  accessibilityLabel="Example of the framing: a face, straight on, hair off the forehead"
-                />
-              </View>
-              <Text
-                variant="caption"
-                color="textTertiary"
-                center
-                style={{ marginTop: spacing.md }}>
-                Example framing
-              </Text>
-            </Rise>
-
-            <Rise index={1}>
-              <Text variant="question" center accessibilityRole="header">
-                {baselineCopy.title}
-              </Text>
-              <Text
-                variant="callout"
-                color="textSecondary"
-                center
-                style={{ marginTop: spacing.lg }}>
-                {baselineCopy.body}
-              </Text>
-            </Rise>
+            <ScanInvite
+              gender={answers.gender}
+              headline={inviteHeadline(answers.name)}
+              body={baselineCopy.body}
+              callouts={inviteCallouts({
+                gender: answers.gender,
+                goals: answers.goals,
+                areas: answers.areas,
+                noticed: answers.noticed,
+                approaches: answers.approaches,
+              })}
+            />
           </>
         ),
       });

@@ -2,7 +2,7 @@
  * Local reminders.
  *
  * Two kinds, both scheduled on-device: a daily routine nudge and a
- * photo-update reminder on the user's chosen interval. Both switches are
+ * scan reminder on the user's chosen interval. Both switches are
  * on from the first launch (see `device-preferences`), but a switch is not
  * permission: nothing reaches the lock screen until the operating system
  * has granted it, and this module never schedules without checking.
@@ -31,7 +31,7 @@ export const remindersUnavailableReason = remindersSupported
  * Stable identifiers, so the schedule can be read back and compared.
  *
  * Without them every sync would have to cancel everything and schedule it
- * again, which restarts the photo reminder's countdown — an interval
+ * again, which restarts the scan reminder's countdown — an interval
  * reminder rebuilt on every launch fires the day the phone is left alone,
  * which is the one day it is not needed.
  *
@@ -163,9 +163,9 @@ export async function scheduleRoutineReminder(hour: number): Promise<boolean> {
 }
 
 /**
- * The photo reminder, on a repeating interval.
+ * The scan reminder, on a repeating interval.
  *
- * The copy says nothing about when the next set is *due*, because this
+ * The copy says nothing about when the next scan is *due*, because this
  * trigger cannot know: it counts from the moment it was scheduled, which
  * is whenever permission was granted, not from the last capture. Only
  * re-anchoring it on a saved session — `reanchorUpdateReminder` — lines
@@ -182,8 +182,8 @@ export async function scheduleUpdateReminder(
     await Notifications.scheduleNotificationAsync({
       identifier: UPDATE_ID,
       content: {
-        title: 'Photo day',
-        body: 'Time for your next set of five angles.',
+        title: 'Scan day',
+        body: 'Time for your next hair scan.',
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -284,8 +284,8 @@ export async function rescheduleReminders(plan: ReminderPlan): Promise<boolean> 
  * Rebuilds the daily routine reminder alone, on a new hour.
  *
  * The hour governs the daily trigger and nothing else, so rebuilding both
- * would re-anchor the photo reminder's interval to now — somebody trying
- * Morning, then Midday, then Evening would push photo day out by a full
+ * would re-anchor the scan reminder's interval to now — somebody trying
+ * Morning, then Midday, then Evening would push scan day out by a full
  * interval on each tap. That is the exact failure the stable identifiers
  * exist to prevent, so the hour never touches UPDATE_ID.
  */
@@ -302,9 +302,9 @@ export async function rescheduleRoutineReminder(
 }
 
 /**
- * Restarts the photo reminder's countdown from now.
+ * Restarts the scan reminder's countdown from now.
  *
- * Called when a set of photographs has just been saved: that moment, and
+ * Called when a scan has just been saved: that moment, and
  * only that moment, is what the interval is measured from. The routine
  * reminder is left alone — it is a daily clock and has nothing to do with
  * a capture.

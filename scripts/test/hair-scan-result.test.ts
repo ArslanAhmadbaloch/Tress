@@ -13,6 +13,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { regionRectsFor } from '@/features/hair-scan/region-crops';
 import {
   FRONT_PITCH_MAX,
   FRONT_YAW_MAX,
@@ -218,6 +219,43 @@ test('scanPhotos: every reading on the frame travels onto the photograph', () =>
   assert.deepEqual(p.coverage, area(0.4));
   assert.equal(p.maskTrace, trace);
   assert.deepEqual(p.pose, { yaw: 1, pitch: 2, roll: 3 });
+});
+
+test('scanPhotos: a frame with a mesh persists the report’s region rectangles, as fractions of the still', () => {
+  const mesh = {
+    bounds: { x: 0.27, y: 0.12, width: 0.46, height: 0.6 },
+    contours: {},
+    viewAspect: 9 / 16,
+  };
+  const [p] = scanPhotos([frame({ uri: 'a', angle: 'front', mesh })]);
+  assert.ok(p.regions, 'regions were placed');
+  const regions = p.regions;
+  for (const region of ['hairline', 'leftTemple', 'rightTemple', 'top', 'crown'] as const) {
+    const r = regions[region];
+    assert.ok(r, `${region} was not placed`);
+    assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= 1 + 1e-9 && r.y + r.h <= 1 + 1e-9, `${region} is off the image`);
+  }
+  assert.deepEqual(regions, regionRectsFor(mesh, { width: 900, height: 1200 }), 'the same mapping the crops module uses');
+
+  // The mesh itself is transient: it does not travel onto the photograph.
+  assert.ok(!('mesh' in p));
+
+  // Without a mesh there is no key at all — absent, not empty — and an old blob still loads.
+  const [bare] = scanPhotos([frame({ uri: 'b', angle: 'front' })]);
+  assert.ok(!('regions' in bare), 'a frame with no mesh stores no regions key');
+  const [sizeless] = scanPhotos([frame({ uri: 'c', angle: 'front', mesh: { ...mesh, bounds: { ...mesh.bounds, width: 0 } } })]);
+  assert.ok(!('regions' in sizeless), 'a mesh with no size places nothing');
+});
+
+test('Photo.regions is additive: the schema version is untouched and a photograph with one survives the loader', () => {
+  assert.equal(SCHEMA_VERSION, 2);
+  const kept = photo('front', { regions: { hairline: { x: 0.1, y: 0.05, w: 0.8, h: 0.3 } } });
+  const loaded = migrateStoredData({ ...EMPTY_DATA, sessions: [session([kept])] });
+  assert.ok(loaded);
+  assert.deepEqual(loaded.sessions[0].photos[0].regions, kept.regions);
+  const old = migrateStoredData({ ...EMPTY_DATA, sessions: [session([photo('front')])] });
+  assert.ok(old);
+  assert.equal(old.sessions[0].photos[0].regions, undefined);
 });
 
 /* ------------------------------- the block ----------------------------- */

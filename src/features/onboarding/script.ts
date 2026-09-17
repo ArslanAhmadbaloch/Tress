@@ -29,7 +29,13 @@
  */
 
 import { inferRoutineIcon } from '@/features/routine/icons';
-import { GENDER_LABELS } from '@/types/domain';
+import {
+  APPROACH_LABELS,
+  GENDER_LABELS,
+  HAIR_GOAL_LABELS,
+  ONSET_LABELS,
+  TRACKING_AREA_LABELS,
+} from '@/types/domain';
 import type {
   Approach,
   Gender,
@@ -295,15 +301,346 @@ export const CADENCE_CHOICES: Choice<string>[] = [
   later photographs are measured against, which is true of any baseline.
 */
 /**
- * The baseline as one continuous scan, in the owner's words. The funnel
- * screen reads it as `COPY.baseline.scan`, and nothing else describes
- * the mechanism, so the words before the camera cannot drift from it.
+ * The invitation into the Hair Scan — the funnel's last page.
+ *
+ * The screen reads it as `COPY.baseline.scan`, and nothing else describes
+ * the step, so the words before the camera cannot drift from it. The
+ * title is the no-name form; `inviteHeadline` puts the person's name in
+ * front of it. The body is the line under the headline: what one turn
+ * gives the camera and what it does not, then the record — a scan set
+ * beside the last one — because that is what the app does with the
+ * images. It promises nothing about what they will show.
+ *
+ * `notNow` is the way past. The baseline used to be compulsory, and the
+ * cost of that was somebody who could not scan right now could not get
+ * in at all. Now the funnel finishes without one and the Home screen
+ * carries the same invitation until they take it.
  */
 const SCAN_BASELINE = {
-  title: 'One scan of your head.',
-  body: 'Turn slowly in front of the camera and Tress captures the important angles automatically: the front, both sides and the top. A front camera cannot see the back. Every image stays on your phone, and this is the point everything after today is measured against.',
-  cta: 'Start the scan',
+  title: 'Let’s look at your hair with the Hair Scan.',
+  /*
+    Two sentences, and the first is the one limitation worth saying
+    before the camera opens: a phone held in front of you cannot see the
+    back of your head, and a person who does not hear that here hears it
+    first from the report. The second is what the app does with the
+    images, and it promises nothing about what they will show.
+  */
+  body: 'One slow turn gives the camera the front, both sides and the top — not the back of your head. Every scan stays on your phone beside the last one, so months from now you have a record instead of a memory.',
+  cta: 'Scan my hair',
+  notNow: 'Not now',
 } as const;
+
+/**
+ * The headline with the person's name in front of it.
+ *
+ * "Sam, let's look at your hair with the Hair Scan." — the sentence
+ * carries on in lower case after the name, and with no name it starts
+ * itself. Not `withName`: that slot sits mid-sentence, and a name at the
+ * front of a sentence is punctuated differently.
+ */
+export function inviteHeadline(name: string): string {
+  const trimmed = name.trim();
+  const title = SCAN_BASELINE.title;
+  if (!trimmed) return title;
+  return `${trimmed}, ${title.charAt(0).toLowerCase()}${title.slice(1)}`;
+}
+
+/* ------------------------------ callouts ------------------------------- */
+
+/** Where a callout is pinned on the hero photograph. */
+export type InviteAnchor = 'hairline' | 'temple' | 'crown';
+
+export type InviteCallout = {
+  id: 'focus' | 'noticed' | 'tried';
+  anchor: InviteAnchor;
+  /** The label of the choice they made, exactly as the funnel showed it. */
+  title: string;
+  /** Which question it answers. */
+  pill: string;
+};
+
+/**
+ * The pills under each callout title. They name the question, never a
+ * finding: "Your focus" says what they chose to watch, and the scan is
+ * what decides whether that region was covered.
+ */
+export const INVITE_PILLS: Record<InviteCallout['id'], string> = {
+  focus: 'Your focus',
+  noticed: 'When you noticed',
+  tried: 'What you’ve tried',
+};
+
+/**
+ * Areas that sit on top of the head rather than at the front of it, so
+ * the focus card points at the crown of the photograph rather than the
+ * hairline. Purely where the pin lands; it decides nothing else.
+ */
+const TOP_AREAS: TrackingArea[] = ['crown', 'widerPart', 'ponytail'];
+const SIDE_AREAS: TrackingArea[] = ['edges'];
+
+/**
+ * The three cards pinned to the hero, built from what they chose.
+ *
+ * Each card is a label the funnel already showed them and a pill naming
+ * the question it answered. Nothing is inferred: the focus is the first
+ * area they said they notice most (or the first goal, if the area step
+ * was somehow skipped), the onset is the one they picked, and what they
+ * have tried is the first approach they ticked. The focus title is the
+ * choice's own label from this gender's funnel — "Hair feels less
+ * dense", not the app's "Hair density" — because a card that quotes
+ * the person has to quote them exactly; the app's own name for the area
+ * is only the fallback for a value this funnel never showed. A missing
+ * answer drops its card rather than inventing one — and so does an
+ * answer that is itself a shrug. "I'm not sure yet" is not a focus,
+ * "Something else" is not a place, "I'm not sure" is not a time, and
+ * "I'm still figuring it out" is not a thing tried: a ring on the head
+ * pointing at any of them would be pointing at nothing.
+ *
+ * The focus card is pinned where they said they look — a crown answer
+ * points at the top of the photograph — and the other two take the
+ * anchors left over, so no two cards share a point.
+ */
+/** The label the funnel showed for an area, as this gender's step listed it; the app's own name only for a value it never showed. */
+export function areaChoiceLabel(gender: Gender, area: TrackingArea): string {
+  const shown = funnelContent(gender).areas.find((c) => c.value === area);
+  return shown ? shown.label : TRACKING_AREA_LABELS[area];
+}
+
+export function inviteCallouts(a: {
+  gender: Gender;
+  goals: HairGoal[];
+  areas: TrackingArea[];
+  noticed: Onset | null;
+  approaches: Approach[];
+}): InviteCallout[] {
+  const cards: Omit<InviteCallout, 'anchor'>[] = [];
+  const area = a.areas.find((x) => x !== 'generalChanges');
+  const goal = a.goals.find((g) => g !== 'unsure');
+  const noticed = a.noticed && a.noticed !== 'unsure' ? a.noticed : null;
+  const tried = a.approaches.find((approach) => approach !== 'figuring');
+
+  if (area) {
+    cards.push({ id: 'focus', title: areaChoiceLabel(a.gender, area), pill: INVITE_PILLS.focus });
+  } else if (goal) {
+    cards.push({ id: 'focus', title: HAIR_GOAL_LABELS[goal], pill: INVITE_PILLS.focus });
+  }
+  if (noticed) {
+    cards.push({ id: 'noticed', title: ONSET_LABELS[noticed], pill: INVITE_PILLS.noticed });
+  }
+  if (tried) {
+    cards.push({ id: 'tried', title: APPROACH_LABELS[tried], pill: INVITE_PILLS.tried });
+  }
+
+  const focusAnchor: InviteAnchor =
+    area && TOP_AREAS.includes(area) ? 'crown' : area && SIDE_AREAS.includes(area) ? 'temple' : 'hairline';
+  const spare: InviteAnchor[] = (['hairline', 'temple', 'crown'] as InviteAnchor[]).filter(
+    (anchor) => anchor !== focusAnchor,
+  );
+
+  return cards.map((card) => ({
+    ...card,
+    anchor: card.id === 'focus' ? focusAnchor : (spare.shift() ?? 'hairline'),
+  }));
+}
+
+/* ------------------------------ the hero ------------------------------- */
+
+/**
+ * Where the three pins land on each reference photograph, and where the
+ * card for each one sits — the plan the invitation screen draws from.
+ *
+ * ── The problem this solves ───────────────────────────────────────────
+ * A card sits at the edge of the hero and overhangs the photograph; a
+ * temple sits at the edge of a head, at mid-height. Put the temple's
+ * card on the temple's side at the temple's height and the card covers
+ * the ring it is meant to point at. So the layout is three bands — one
+ * card at the top, one in the middle, one at the bottom — with the two
+ * cards on the temple's side taking the top and bottom bands, and the
+ * middle band on the other side. Each pin then sits in a band its own
+ * side leaves clear, and the numbers below are checked against every
+ * card at every width in `inviteGeometry` (and in onboarding.test.ts).
+ *
+ * The male reference is a front view with the hairline across its
+ * middle: the crown is the mass of hair top-right of centre, the
+ * hairline is the front edge left of centre, and the temple is the
+ * left corner where that edge turns down. The female reference is the
+ * part seen from above with a hand holding the hair back at the left,
+ * so every pin keeps to the hair: the hairline is the top of the part,
+ * the temple is the side of the head at the right, and the crown is the
+ * hair beside the whorl. Nothing points at the hand. The portrait —
+ * for a record with no gender on it — is a whole face, so its hairline
+ * sits a quarter of the way down rather than across the middle: the
+ * crown is the top of the hair, the hairline is the front edge above
+ * the forehead, and the temple is the hair at the left, level with the
+ * brow. Its pins are its own; the front view's pins on this photograph
+ * would ring an eye and a cheek.
+ */
+export type InvitePoint = { x: number; y: number };
+
+export type InviteSlot = { side: 'left' | 'right'; band: 'top' | 'middle' | 'bottom' };
+
+export type InviteHeroPlan = {
+  /** Where each ring sits, as fractions of the photograph's side. */
+  anchors: Record<InviteAnchor, InvitePoint>;
+  /** Which side and band the card for each ring takes. */
+  slots: Record<InviteAnchor, InviteSlot>;
+  /** Sparkle points in the hair, with their size in points. */
+  sparkles: (InvitePoint & { size: number })[];
+};
+
+export const INVITE_HERO_PLANS: Record<'male' | 'female' | 'portrait', InviteHeroPlan> = {
+  male: {
+    anchors: {
+      crown: { x: 0.6, y: 0.18 },
+      hairline: { x: 0.4, y: 0.49 },
+      temple: { x: 0.28, y: 0.52 },
+    },
+    slots: {
+      crown: { side: 'left', band: 'top' },
+      hairline: { side: 'right', band: 'middle' },
+      temple: { side: 'left', band: 'bottom' },
+    },
+    sparkles: [
+      { x: 0.36, y: 0.32, size: 4 },
+      { x: 0.64, y: 0.3, size: 3 },
+      { x: 0.48, y: 0.42, size: 5 },
+      { x: 0.72, y: 0.46, size: 3 },
+      { x: 0.56, y: 0.36, size: 3 },
+    ],
+  },
+  female: {
+    anchors: {
+      hairline: { x: 0.45, y: 0.13 },
+      temple: { x: 0.74, y: 0.46 },
+      crown: { x: 0.44, y: 0.6 },
+    },
+    slots: {
+      hairline: { side: 'right', band: 'top' },
+      temple: { side: 'left', band: 'middle' },
+      crown: { side: 'right', band: 'bottom' },
+    },
+    sparkles: [
+      { x: 0.56, y: 0.26, size: 4 },
+      { x: 0.66, y: 0.2, size: 3 },
+      { x: 0.62, y: 0.46, size: 5 },
+      { x: 0.7, y: 0.58, size: 3 },
+      { x: 0.54, y: 0.76, size: 3 },
+    ],
+  },
+  portrait: {
+    anchors: {
+      crown: { x: 0.55, y: 0.1 },
+      hairline: { x: 0.45, y: 0.27 },
+      temple: { x: 0.26, y: 0.4 },
+    },
+    slots: {
+      crown: { side: 'left', band: 'top' },
+      hairline: { side: 'right', band: 'middle' },
+      temple: { side: 'left', band: 'bottom' },
+    },
+    sparkles: [
+      { x: 0.4, y: 0.15, size: 4 },
+      { x: 0.62, y: 0.13, size: 3 },
+      { x: 0.5, y: 0.2, size: 5 },
+      { x: 0.31, y: 0.27, size: 3 },
+      { x: 0.7, y: 0.24, size: 3 },
+    ],
+  },
+};
+
+export type InviteRect = { x: number; y: number; width: number; height: number };
+
+export type InviteGeometry = {
+  /** The hero frame: the content width, and the photograph plus its overhang. */
+  width: number;
+  height: number;
+  /** The photograph, square, centred in the frame. */
+  photo: InviteRect;
+  cardWidth: number;
+  /** A card's top edge in the frame, by band; `bottom` is bottom-aligned, so its top depends on its height. */
+  cardTop: (band: InviteSlot['band'], cardHeight: number) => number;
+  /** Where each ring's centre sits in the frame. */
+  point: (anchor: InvitePoint) => InvitePoint;
+};
+
+/**
+ * The hero's numbers for a content width.
+ *
+ * The photograph takes 0.58 of the width and the cards 0.38 of it, so
+ * the photograph outweighs the three cards rather than the other way
+ * round — in the reference the face is the subject and the cards are
+ * notes pinned to it — and each card still overhangs the photograph by
+ * about a sixth of the width, enough to read as pinned to it, not
+ * beside it. The frame runs `INVITE_OVERHANG` above and below the
+ * photograph so the top and bottom cards can sit outside its corners.
+ * The middle card starts a little above the photograph's centre line.
+ *
+ * The card's width has a floor set by its longest word: "Dermatologist"
+ * is 112pt in the card's type, and the card has `INVITE_CARD_PAD` of
+ * padding each side, so a card narrower than `INVITE_CARD_MIN` breaks
+ * the word in the middle. At 0.38 the floor only bites on the narrowest
+ * phone (335 of content), and every label the funnel can put on a card
+ * fits in two lines.
+ */
+export const INVITE_OVERHANG = 60;
+/** A card's horizontal padding, in points. */
+export const INVITE_CARD_PAD = 10;
+/** The narrowest card that keeps the funnel's longest label whole. */
+export const INVITE_CARD_MIN = 112 + INVITE_CARD_PAD * 2;
+
+export function inviteGeometry(width: number): InviteGeometry {
+  const side = Math.round(width * 0.58);
+  const height = side + INVITE_OVERHANG * 2;
+  const photo = { x: (width - side) / 2, y: INVITE_OVERHANG, width: side, height: side };
+  return {
+    width,
+    height,
+    photo,
+    cardWidth: Math.max(INVITE_CARD_MIN, Math.round(width * 0.38)),
+    cardTop: (band, cardHeight) =>
+      band === 'top'
+        ? 0
+        : band === 'middle'
+          ? Math.round(photo.y + side * 0.38)
+          : height - cardHeight,
+    point: (anchor) => ({ x: photo.x + anchor.x * side, y: photo.y + anchor.y * side }),
+  };
+}
+
+/**
+ * The card's rectangle in the frame, for a slot, a width and a height.
+ */
+export function inviteCardRect(
+  geometry: InviteGeometry,
+  slot: InviteSlot,
+  cardHeight: number,
+): InviteRect {
+  return {
+    x: slot.side === 'left' ? 0 : geometry.width - geometry.cardWidth,
+    y: geometry.cardTop(slot.band, cardHeight),
+    width: geometry.cardWidth,
+    height: cardHeight,
+  };
+}
+
+/**
+ * Where a line leaves a card on its way to a point: the spot on the
+ * card's border where the ray from the card's centre to the point
+ * crosses it. A card beside its ring sends the line out of its inner
+ * edge; a card below its ring sends it out of the top. The line never
+ * crosses the card that owns it.
+ */
+export function inviteExitPoint(rect: InviteRect, to: InvitePoint): InvitePoint {
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const dx = to.x - cx;
+  const dy = to.y - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const tx = dx === 0 ? Infinity : (rect.width / 2) / Math.abs(dx);
+  const ty = dy === 0 ? Infinity : (rect.height / 2) / Math.abs(dy);
+  const t = Math.min(tx, ty);
+  return { x: cx + dx * t, y: cy + dy * t };
+}
 
 export const COPY = {
   welcome: {
@@ -402,15 +739,16 @@ export const COPY = {
     face detector is told so by the scan itself, so there is no
     one-photograph fallback to fall to. One mechanism, one set of words.
 
-    The body says what happens and where the images go, in the same terms
-    the scanner's own chrome uses, so the screen before the camera and the
-    camera agree about the mechanism. It promises nothing about what the
+    The screen is an invitation rather than an instruction: their name,
+    the photograph with three of their own answers pinned to it, and the
+    button. The scanner's own instruction sheet explains the mechanism —
+    the turn, the ring, where the images stay — one tap later, so the
+    invitation does not repeat it. It promises nothing about what the
     images will show.
 
-    There is no skip. The baseline is not a feature of this app, it is the
-    thing every other feature is measured against — a journey that starts
-    without one has nothing for month three to be compared with, and the
-    person finds that out in month three.
+    `notNow` finishes the funnel without a baseline. The journey already
+    exists by this step, so declining lands on Home, where the first-scan
+    card carries the same invitation until it is taken.
   */
   baseline: {
     scan: SCAN_BASELINE,

@@ -575,6 +575,22 @@ export type PhotoMaskTrace = {
   tolerance: number;
 };
 
+/**
+ * The parts of the head the scan report shows a crop of.
+ *
+ * Names of places on a photograph, never findings about them: `hairline`
+ * is the band above the face, the temples are the corners beside it, and
+ * `top`/`crown` are the upper part of a frame taken with the head tipped
+ * down or from behind.
+ */
+export type PhotoRegion = 'hairline' | 'leftTemple' | 'rightTemple' | 'crown' | 'top';
+
+/**
+ * A rectangle on a photograph, every side a fraction of the image (0–1),
+ * `x`/`y` the top-left corner. Clamped to the image when it is written.
+ */
+export type PhotoRegionRect = { x: number; y: number; w: number; h: number };
+
 export type Photo = {
   id: string;
   sessionId: string;
@@ -618,6 +634,20 @@ export type Photo = {
    * note there. Present means a mask was measured on this photograph.
    */
   maskTrace?: PhotoMaskTrace;
+  /**
+   * Where on this photograph the report's region crops sit, when the
+   * scanner had a tracked face at the shutter to place them from.
+   *
+   * Geometry, not a reading: each rectangle is a band or corner beside
+   * the face box the detector held on the live preview, mapped into the
+   * still through the same cover-fit the processing screen draws the
+   * mesh by (see features/hair-scan/region-crops.ts). Kept so the report
+   * can crop the same places when it is reopened months later, when the
+   * live mesh is long gone. Additive and absent by the same rule as
+   * `maskTrace`: a photograph without it is cropped by a fallback the
+   * report marks as approximate, and `SCHEMA_VERSION` is not bumped.
+   */
+  regions?: Partial<Record<PhotoRegion, PhotoRegionRect>>;
 };
 
 export type PhotoSession = {
@@ -1031,7 +1061,8 @@ export type AppData = {
  * would be the case for a bump — and would still cost every journey.
  *
  * NOT bumped for `PhotoSession.scan` or `Photo.capture: 'scan'` either,
- * by the same rule again.
+ * by the same rule again — nor for `Photo.regions`, which the report
+ * reads as "crop by the fallback" when it is absent.
  */
 export const SCHEMA_VERSION = 2;
 

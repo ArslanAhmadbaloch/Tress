@@ -243,12 +243,25 @@ export default function SessionDetailScreen() {
           ))}
         </View>
 
+        {/*
+          The report the scan ended on, for any update the scanner saved:
+          the same sheet, reopened from the record.
+        */}
+        {session.photos.some((p) => p.capture === 'scan') ? (
+          <Button
+            label="View report"
+            icon="chart"
+            style={{ marginTop: spacing.xl }}
+            onPress={() => router.push(`/hair-report?id=${session.id}`)}
+          />
+        ) : null}
+
         {session.photos.length > 0 ? (
           <Button
             label={SHARE_COPY.button}
             icon="share"
             variant="secondary"
-            style={{ marginTop: spacing.xl }}
+            style={{ marginTop: session.photos.some((p) => p.capture === 'scan') ? spacing.sm : spacing.xl }}
             onPress={() => setSharing(true)}
             accessibilityHint={SHARE_COPY.buttonHint}
           />

@@ -19,16 +19,16 @@
  * read as a legal notice in the middle of a story. The label stays.
  *
  * ── What they are about ───────────────────────────────────────────────
- * The habit, not the hair. Each story is about somebody photographing
- * the same five angles on a schedule and writing a line beside each set,
- * which is a thing this app genuinely does. None of them credits the app
+ * The habit, not the hair. Each story is about somebody taking the same
+ * scan on a schedule — one slow turn in front of the camera — and writing
+ * a line beside each one, which is a thing this app genuinely does. None of them credits the app
  * with the change in the photographs: the app records, it does not treat,
  * and a funnel that implies otherwise is selling a drug it does not have.
  *
  * ── What is deliberately absent ───────────────────────────────────────
  * No percentages, no "X% saw results", no averages. There is no cohort
  * to average. The counts below describe what the person in the story did
- * — sets taken, entries written — and never what their hair did.
+ * — scans taken, entries written — and never what their hair did.
  */
 
 import type { Gender } from '@/types/domain';
@@ -64,9 +64,9 @@ const MALE: CaseStudy[] = [
     before: require('@/assets/images/case-daniel-before.jpg'),
     after: require('@/assets/images/case-daniel-after.jpg'),
     story:
-      'He took the same five angles on the first Sunday of every month, and wrote a line in the journal afterwards. When he wanted to know whether anything had changed, he scrubbed back through the timeline instead of trying to remember.',
+      'He scanned on the first Sunday of every month — one slow turn in front of the camera, in the same light — and wrote a line in the journal afterwards. When he wanted to know whether anything had changed, he scrubbed back through the timeline instead of trying to remember.',
     stats: [
-      { value: '9', label: 'Photo sets' },
+      { value: '9', label: 'Scans' },
       { value: '41', label: 'Journal entries' },
       { value: '0', label: 'Months missed' },
     ],
@@ -82,11 +82,11 @@ const MALE: CaseStudy[] = [
     before: require('@/assets/images/case-marco-before.jpg'),
     after: require('@/assets/images/case-marco-after.jpg'),
     story:
-      'He nearly stopped at month three, because the photographs looked identical to him. He kept taking them anyway. It was the journal rather than the mirror that showed him what he had been doing, on the months he could not see it.',
+      'He nearly stopped at month three, because the scans looked identical to him. He kept taking them anyway. It was the journal rather than the mirror that showed him what he had been doing, on the months he could not see it.',
     stats: [
-      { value: '12', label: 'Photo sets' },
+      { value: '12', label: 'Scans' },
       { value: '60', label: 'Journal entries' },
-      { value: '5', label: 'Angles each time' },
+      { value: '1', label: 'Scan a month' },
     ],
   },
 ];
@@ -104,15 +104,15 @@ const FEMALE: CaseStudy[] = [
     name: 'Leila',
     age: 24,
     span: '8 months',
-    headline: 'Eight months, the same five angles.',
+    headline: 'Eight months, the same scan each time.',
     beforeLabel: 'Month 0',
     afterLabel: 'Month 8',
     before: require('@/assets/images/case-leila-before.jpg'),
     after: require('@/assets/images/case-leila-after.jpg'),
     story:
-      'She photographed the same five angles at the end of every month, part in the same place and the light from the same window, and wrote a line underneath each set. Any two months running looked identical to her, so she stopped comparing them by eye and let the timeline hold the first set beside the latest.',
+      'She scanned at the end of every month, part in the same place and the light from the same window, and wrote a line underneath each scan. Any two months running looked identical to her, so she stopped comparing them by eye and let the timeline hold the first scan beside the latest.',
     stats: [
-      { value: '8', label: 'Photo sets' },
+      { value: '8', label: 'Scans' },
       { value: '34', label: 'Journal entries' },
       { value: '0', label: 'Months missed' },
     ],
@@ -128,11 +128,11 @@ const FEMALE: CaseStudy[] = [
     before: require('@/assets/images/case-hannah-before.jpg'),
     after: require('@/assets/images/case-hannah-after.jpg'),
     story:
-      'She started because she could not tell whether her part had widened or she had been looking at it too hard. Ten months of photographs taken the same way gave her something to check against that was not her memory of last spring.',
+      'She started because she could not tell whether her part had widened or she had been looking at it too hard. Ten months of scans taken the same way gave her something to check against that was not her memory of last spring.',
     stats: [
-      { value: '10', label: 'Photo sets' },
+      { value: '10', label: 'Scans' },
       { value: '47', label: 'Journal entries' },
-      { value: '5', label: 'Angles each time' },
+      { value: '1', label: 'Scan a month' },
     ],
   },
 ];

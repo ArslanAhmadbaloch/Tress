@@ -8,10 +8,11 @@
  * rather than about software, which this app is not in a position to
  * make about anybody. The figures below are about the product instead.
  *
- * Two of them a person can settle by using the app: the capture screen
- * asks for five angles, and nothing anywhere asks them to sign in. The
- * third is a fact about the code rather than something a screen shows,
- * so it is worded as what the app does — see the note on it below.
+ * Two of them a person can settle by using the app: an update is one
+ * scan — one slow turn in front of the camera — and nothing anywhere
+ * asks them to sign in. The third is a fact about the code rather than
+ * something a screen shows, so it is worded as what the app does — see
+ * the note on it below.
  *
  * If real numbers ever exist — from a study, or from members who have
  * opted in — they belong here, sourced, with the denominator shown.
@@ -33,8 +34,16 @@ export const HELP_SUBTITLE =
 export const HELP_BEATS: HelpBeat[] = [
   {
     icon: 'camera',
-    title: 'Five angles, framed the same way',
-    body: 'Guides line each shot up with the last one, so what you compare next month is your hair rather than where you happened to stand.',
+    title: 'One scan, the same views every time',
+    /*
+      What the code does: the scan keeps a frame for each of the front,
+      both sides and the top, labelled by the view it caught, and the
+      compare screen pairs a view with the same view from an earlier
+      scan. It does not line a scan up with the last one — there is no
+      guide or overlay from a previous session — so the sentence says
+      what is kept and how it is paired, and nothing about alignment.
+    */
+    body: 'Turn slowly in front of the camera and Tress keeps the front, both sides and the top, each labelled by the view it caught, so next month’s front sits beside this month’s front rather than beside whatever the camera happened to see.',
   },
   {
     icon: 'compare',
@@ -43,7 +52,7 @@ export const HELP_BEATS: HelpBeat[] = [
   },
   {
     icon: 'pencil',
-    title: 'A line beside every set',
+    title: 'A line beside every scan',
     body: 'What you changed, how the month went, what you noticed. It is the part you will not remember in March, and the part that explains the photographs.',
   },
   {
@@ -69,7 +78,7 @@ export const HELP_BEATS: HelpBeat[] = [
  * figure on an onboarding card and is not trying to be that document.
  */
 export const HELP_FIGURES: { value: string; label: string }[] = [
-  { value: '5', label: 'Angles an update' },
+  { value: '1', label: 'Scan an update' },
   { value: '0', label: 'Photos the app uploads' },
   { value: '0', label: 'Accounts needed' },
 ];

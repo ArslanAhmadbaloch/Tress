@@ -62,16 +62,16 @@ test('hair scan copy: nothing hurries anybody or speaks as a person', () => {
 
 test('hair scan copy: the owner’s wording is used verbatim', () => {
   const c = HAIR_SCAN_COPY;
-  assert.equal(c.instructions.title, 'Hair Scan');
-  assert.equal(c.instructions.body, 'Capture a detailed snapshot of your hair and scalp.');
+  assert.equal(c.instructions.title, 'Scan Instructions');
   assert.deepEqual(
     c.instructions.steps.map((s) => `${s.title} — ${s.body}`),
     [
-      'Find good lighting — Natural, even light works best',
-      'Keep your head steady — We’ll guide you through the scan',
-      'Move slowly — Tress captures the important angles automatically',
+      'Take glasses off — And find a well-lit spot',
+      'Keep your head straight — And press Start',
+      'Turn slowly, all the way round — Tress captures the angles as the ring fills',
     ],
   );
+  assert.equal(c.instructions.cta, 'Continue');
   assert.equal(c.permission.title, 'Camera access');
   assert.equal(
     c.permission.body,

@@ -19,7 +19,11 @@
  * way it loads engine.ts.
  */
 
-import { coveragePhoto, coverageTrendFinding } from '@/features/assessment/engine';
+import {
+  coveragePhoto,
+  coverageTrendFinding,
+  scanCapturedPhrase,
+} from '@/features/assessment/engine';
 import { compareCoverage, type CoverageTrend } from '@/features/assessment/hair-mask';
 import { buildScanReading } from '@/features/assessment/scan-reading';
 import { daysBetween, formatDate, formatDuration, formatRelative, toDateKey } from '@/lib/date';
@@ -42,6 +46,7 @@ import {
   ANGLE_LABELS,
   APPROACH_LABELS,
   HAIR_GOAL_LABELS,
+  isScanSession,
   joinPhrases,
   journeyGoals,
   midSentence,
@@ -575,9 +580,6 @@ function recordAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
   }
 
   const label = sessionLabel(journey.startedAt, latest);
-  const missing = missingAngles(latest);
-  const k = ANGLES.length - missing.length;
-  const gaps = missing.length ? ` — no ${missing.map((a) => ANGLE_LABELS[a]).join(', ')}` : '';
 
   return {
     intent,
@@ -586,9 +588,33 @@ function recordAnswer(journey: Journey, chrono: PhotoSession[]): CoachAnswer {
       chrono.length === 1
         ? `One scan, ${label}, taken ${formatDate(latest.capturedAt)}.`
         : `${chrono.length} scans since ${formatDate(chrono[0].capturedAt)} — ${formatDuration(journey.startedAt)} into your journey.`,
-    detail: `Your last scan, ${label}, holds ${k} of ${ANGLES.length} angles${gaps}.`,
+    detail: recordDetail(label, latest),
     refusal: false,
   };
+}
+
+/**
+ * What the last session holds, in the terms it was taken in.
+ *
+ * A scan is one turn that reaches the front, both sides and the top, so
+ * it is described by what it captured and never counted against the old
+ * five — a turn made facing the phone cannot take a back shot, and "no
+ * Back" would be the coach blaming somebody for a photograph the app no
+ * longer asks for. A set from the old capture is still counted the old
+ * way, because those were five separate shots and a missing one is a
+ * missing one.
+ */
+function recordDetail(label: string, latest: PhotoSession): string {
+  if (isScanSession(latest)) {
+    const captured = scanCapturedPhrase(latest);
+    return captured === ''
+      ? `Your last scan, ${label}, kept no frames.`
+      : `Your last scan, ${label}, captured ${captured}.`;
+  }
+  const missing = missingAngles(latest);
+  const k = ANGLES.length - missing.length;
+  const gaps = missing.length ? ` — no ${missing.map((a) => ANGLE_LABELS[a]).join(', ')}` : '';
+  return `Your last set, ${label}, holds ${k} of ${ANGLES.length} angles${gaps}.`;
 }
 
 /* ------------------------------ their own words -------------------------- */

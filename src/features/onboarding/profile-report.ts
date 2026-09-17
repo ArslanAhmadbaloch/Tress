@@ -98,7 +98,7 @@ function watchingCard(a: ProfileAnswers): ProfileCard | null {
     eyebrow: 'What we’ll watch',
     echo: `You said you notice it most at the ${areas}.`,
     meaning:
-      'Your updates will still cover all five angles — the one you are not watching is the one that makes the others readable — but this is the one the comparisons will open on.',
+      'Every scan still captures the front, both sides and the top — the one you are not watching is the one that makes the others readable — but this is the one the comparisons will open on.',
   };
 }
 
@@ -137,7 +137,7 @@ function rhythmCard(a: ProfileAnswers): ProfileCard {
       : `You chose to check in every ${a.intervalDays} days.`,
     meaning: monthly
       ? 'Which matches how hair actually moves. Anything more often mostly measures the weather, your last wash, and where you were standing.'
-      : 'More often than most people need. It is your record — but expect the difference between two close-together sets to be lighting rather than hair.',
+      : 'More often than most people need. It is your record — but expect the difference between two close-together scans to be lighting rather than hair.',
   };
 }
 

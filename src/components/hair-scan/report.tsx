@@ -2,89 +2,90 @@
  * The hair scan report: the payoff at the end of the turn.
  *
  * ── The shape ─────────────────────────────────────────────────────────
- * The scan's main image first and large, the date on a chip in its
- * corner and what was measured drawn over it; then the five tabs —
- * Overview, Hairline, Temples, Coverage, Scalp — and under them the
- * "Hair Analysis" heading and the rows, in that order, because that is
- * the order the reference's report reads in: picture, then the way in,
- * then the words. Overview lists the four observations the way the
- * reference lists its regions, then the scan's own facts about its run
- * and the images it kept; each other tab opens one observation with its
- * images, its ring and its working.
+ * One long sheet over the main still. The still fills the top of the
+ * screen with the mesh held on it and the date on a chip; a white sheet
+ * with rounded corners rises over its foot and carries, in order, the
+ * tab row that filters the analysis rows, the rows themselves — a crop
+ * of the actual frame, the place, the headline, the working in a bubble
+ * — then what is working, the profile tiles, whether the turn reached
+ * the person's own focus, the care notes, the routine shelf and the
+ * coach's paragraph. A pill at the bottom right walks the sections and
+ * becomes the way out on the last. The structure, density and pacing
+ * are the reference report's; the words, the palette and the claims are
+ * not.
  *
  * ── What it can say, and what it cannot ───────────────────────────────
- * Every figure here was counted on this device from the pixels the scan
- * kept: light, focus and clipping per still, and — where the segmenter
- * ran — the share of each frame the mask marked as hair and how that
- * area sat left to right. Those are readings of the pictures. None of
- * them is a reading of the head in them, and the screen a person opens
- * hoping for a verdict is exactly the screen where inventing one would
- * be believed. The words are built in features/hair-scan/result.ts from
- * features/hair-scan/report-copy.ts, and the tests sweep both.
+ * Nothing. The screen computes no sentence: every string, crop, count
+ * and lock is built by `buildHairScanReport` in
+ * features/hair-scan/report-model.ts, which the honesty sweep reads by
+ * building it. What this file owns is arrangement and motion — which
+ * tab is open, which sections have entered the screen, where the pill
+ * goes next — and the few chrome labels in report-sections/ui-copy.ts.
+ * A row is an observation about the frames; a tile is the label of a
+ * choice; the focus block is coverage of a region, never a reading of
+ * it. The screen draws them and adds nothing.
  *
  * ── The pacing ────────────────────────────────────────────────────────
- * The image first, on its own for a beat; the mask draws; the tiles and
- * the tabs land; then the four cards, one after another, rings filling
- * as they arrive. A report that is simply there is skimmed; one that is
- * delivered is read. The stagger runs once — switching tabs afterwards
- * is a plain fade, because a report that re-performs itself on every
- * tap is a tic.
+ * The still first, on its own for a beat; the mesh lands on it; then
+ * the sections arrive as they are reached, each one rising into place a
+ * little after the last in its batch, so a report read top to bottom is
+ * delivered rather than dumped and one skimmed by scrolling fast is
+ * simply there. Switching tabs re-filters the rows without a
+ * performance. The still's slide under the sheet and the fade of the
+ * chrome over it follow the scroll on the UI thread, frame for frame;
+ * the JS side hears about the scroll only every few dozen points and at
+ * the lines it switches on. Under Reduce Motion everything is static:
+ * the still does not move, the chrome steps, the sections are there.
  *
- * The screen owns two pieces of state: which tab is open, and whether
- * the first reveal has already run. The rest is the session, read
- * through `buildHairScanResult`, and the hero's reading, read through
- * the same `buildScanReading` the funnel report uses — so the overlay,
- * the callouts and the toggle on the photograph are the ones the person
- * has already met.
+ * ── The strip under the status bar ────────────────────────────────────
+ * The sheet's scroll view starts under the status bar and the still
+ * slides more slowly than the sheet, so the still would stay under the
+ * clock for as long as anybody reads. A strip in the sheet's own colour
+ * is painted there as the sheet's top comes up to meet it, and the
+ * status bar takes the theme's ink half-way through; before that it is
+ * light over the photograph. The tab row drops its corners and gutters
+ * the moment it sticks, so strip and row read as one header.
  *
  * ── What Premium adds ─────────────────────────────────────────────────
- * Depth, and only depth. The Overview is free in full — every headline,
- * every working line, the tiles and the strip — and so is the closing
- * paragraph. Each card's own tab is where the images sit at full size
- * with the ring, the figures and the comparison line, and for a reader
- * without Premium that tab shows the headline, its working and its
- * caveat over a block that stands for the rest, with one button to the
- * paywall. The decision is `gateObservation` in
- * features/hair-scan/result.ts, and a card that says nothing was kept
- * is never locked, because an absence is not a feature.
+ * Depth. The hero, every row's headline, the strengths, the profile and
+ * the coach's paragraph are free; each row's working, the focus block,
+ * the care notes past the first and the routine builder are held behind
+ * translucent blocks — shapes, never fake text — with one button to the
+ * paywall under the rows and the same one in the routine block. The
+ * model decides every lock; the screen draws the block.
  *
  * ── The funnel ────────────────────────────────────────────────────────
  * Reached from onboarding, this is the report before the paywall, and
  * the primary action is Continue → `onContinue`; the screen that renders
- * it routes that to the paywall. Done and Scan again step back to quiet
- * buttons under it. Otherwise Done is the way out and Scan again the way
- * round.
+ * it routes that to the paywall. Otherwise Done is the way out and Scan
+ * again the way round. Reopened from the journal (app/hair-report.tsx)
+ * it draws a way back over the still.
  *
  * ── The one ask ───────────────────────────────────────────────────────
  * This is the one place the app asks for notifications, and it asks
- * once per install, the moment the report is on screen rather than
- * while the scan is still processing. See the effect below for why here
- * and not at launch.
+ * once per install, the moment the report is on screen — the scan's own
+ * report, not one reopened from the journal (`ask`). See the effect
+ * below for why here and not at launch.
  */
 
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
-import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import Animated, {
+  runOnJS,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Reveal, ScanHero, revealDelay } from '@/components/report';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Icon } from '@/components/ui/icon';
-import { ScreenScroll } from '@/components/ui/layout';
-import { SegmentedTabs } from '@/components/ui/segmented-tabs';
-import { Text } from '@/components/ui/text';
-import { buildScanReading } from '@/features/assessment/scan-reading';
-import { HAIR_SCAN_REPORT_COPY as COPY } from '@/features/hair-scan/report-copy';
-import {
-  buildHairScanResult,
-  gateObservation,
-  observationsOf,
-  reminderOfferInterval,
-  type ScanObservationId,
-} from '@/features/hair-scan/result';
+import { buildHairScanReport, type ReportTab } from '@/features/hair-scan/report-model';
+import { reminderOfferInterval } from '@/features/hair-scan/result';
+import type { StillMesh } from '@/features/hair-scan/types';
 import { usePremium } from '@/features/subscription/provider';
-import { formatDateShort } from '@/lib/date';
 import {
   currentReminderHour,
   markRemindersOffered,
@@ -94,38 +95,52 @@ import {
 } from '@/lib/device-preferences';
 import { enableRemindersWithPrompt } from '@/lib/notifications';
 import { useAppStore } from '@/store/app-store';
-import { iconSize, useTheme } from '@/theme';
-import { ANGLE_LABELS, type PhotoSession } from '@/types/domain';
+import { useTheme } from '@/theme';
+import type { PhotoSession } from '@/types/domain';
 
+import { AnalysisRows } from './report-sections/analysis-rows';
+import { FocusBlockView } from './report-sections/focus';
+import { HeroChrome, ReportHero } from './report-sections/hero';
 import {
-  FrameStrip,
-  LockedObservationCard,
-  ObservationCard,
-  ObservationRow,
-  ScanMetaTiles,
-} from './report-cards';
+  SHEET_OVERLAP,
+  heroHeight,
+  heroShift,
+  nextSectionIndex,
+  pillReturnsAfterDrag,
+  rowsForTab,
+  sectionsInView,
+  shouldSettle,
+  statusFlipAt,
+  stripOpacity,
+} from './report-sections/layout';
+import { NEXT_PILL_HEIGHT, NextPill } from './report-sections/next-pill';
+import { ProfileTiles } from './report-sections/profile';
+import { RoutineBlockView } from './report-sections/routine';
+import { SaysBlockView } from './report-sections/says';
+import { SHEET_INSET, SectionReveal, SheetBlock } from './report-sections/section';
+import { StrengthCards } from './report-sections/strengths';
+import { ReportTabs, TAB_ROW_HEIGHT } from './report-sections/tabs';
+import { TipList } from './report-sections/tips';
+import { HAIR_SCAN_REPORT_UI_COPY as UI } from './report-sections/ui-copy';
 
-export type ReportTab = 'overview' | ScanObservationId;
-
-export const REPORT_TABS: { value: ReportTab; label: string }[] = [
-  { value: 'overview', label: COPY.tabs.overview },
-  { value: 'hairline', label: COPY.tabs.hairline },
-  { value: 'temples', label: COPY.tabs.temples },
-  { value: 'coverage', label: COPY.tabs.coverage },
-  { value: 'scalp', label: COPY.tabs.scalp },
-];
-
-/** How long a tab's content takes to fade in once the reveal has run. */
-const TAB_FADE_MS = 220;
+export type { ReportTab };
 
 export type HairScanReportProps = {
   /** The session the scan saved. */
   session: PhotoSession;
+  /**
+   * The main still's shutter-time mesh, when the screen that ran the
+   * scan still has it. A report reopened later has only the record, and
+   * the hero places the mesh from the stored regions instead.
+   */
+  mesh?: StillMesh | null;
   initialTab?: ReportTab;
   /** Closes the report. Absent hides the button. */
   onDone?: () => void;
   /** Starts another scan. Absent hides the button. */
   onRescan?: () => void;
+  /** Draws a way back over the still, for a report reopened from the journal. */
+  onBack?: () => void;
   /**
    * True when this report is the one before the paywall — reached from
    * onboarding. Continue becomes the primary action and Done and Scan
@@ -134,51 +149,192 @@ export type HairScanReportProps = {
   funnel?: boolean;
   /** The funnel's Continue. The screen routes it to the paywall. */
   onContinue?: () => void;
+  /**
+   * Whether this report may spend the one notifications ask. True for
+   * the report a scan ends on; false for one reopened from the journal,
+   * so the single system prompt is spent on a scan's own report.
+   */
+  ask?: boolean;
 };
 
 export function HairScanReport({
   session,
-  initialTab = 'overview',
+  mesh = null,
+  initialTab = 'all',
   onDone,
   onRescan,
+  onBack,
   funnel = false,
   onContinue,
+  ask = true,
 }: HairScanReportProps) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
+  const window = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { isPremium } = usePremium();
   const { data } = useAppStore();
 
-  const result = useMemo(() => buildHairScanResult(session), [session]);
-  const reading = useMemo(() => buildScanReading(session), [session]);
-  const observations = useMemo(() => observationsOf(result), [result]);
+  const model = useMemo(
+    () => buildHairScanReport(data, session, { premium: isPremium }),
+    [data, session, isPremium],
+  );
 
-  /*
-    The two pieces of state. `settled` flips on the first tab change and
-    never back: from then on cards arrive with a plain fade rather than
-    the staggered reveal, which belongs to the first reading only.
-  */
+  /** The photograph a crop was cut from, by its file, for the mask. */
+  const photoByUri = useMemo(() => new Map(session.photos.map((p) => [p.uri, p])), [session.photos]);
+  const photoFor = useCallback((uri: string) => photoByUri.get(uri) ?? null, [photoByUri]);
+  const heroPhoto = useMemo(() => photoByUri.get(model.hero.uri) ?? session.photos[0] ?? null, [photoByUri, model.hero.uri, session.photos]);
+
+  /* ------------------------------- state ------------------------------ */
+
   const [tab, setTab] = useState<ReportTab>(initialTab);
-  const [settled, setSettled] = useState(false);
-  const openTab = useCallback((next: ReportTab) => {
-    setTab(next);
-    setSettled(true);
-  }, []);
+  const rows = useMemo(() => rowsForTab(model.analysis.rows, tab), [model.analysis.rows, tab]);
 
   /*
-    Numbered slots, so each block knows when to land: the image, the
-    tabs, the heading, then the cards. The hero's slot is taken by the
-    "nothing kept" card when there is no image, so nothing lands early.
+    The still's height on this screen, and where the sheet begins: the
+    tab row sits SHEET_OVERLAP above the still's foot, and the scroll
+    view itself starts under the status bar so the row sticks below it.
   */
-  let slot = 0;
-  const next = () => slot++;
-  const heroSlot = next();
-  const tabsSlot = next();
-  const headingSlot = next();
-  const firstCardSlot = slot;
-  /** The closing paragraph and the buttons: the last block to land. */
-  const closeSlot = firstCardSlot + observations.length + 2;
+  const heroH = heroHeight({ width: model.hero.width, height: model.hero.height }, window);
+  const spacerH = Math.max(0, heroH - SHEET_OVERLAP - insets.top);
+  /** The scroll at which the status bar takes the sheet's ink; the tab row sticks at `spacerH`. */
+  const flipAt = statusFlipAt(spacerH, insets.top, reduceMotion);
+
+  /* -------------------------- scroll bookkeeping ---------------------- */
+
+  const scrollRef = useRef<Animated.ScrollView>(null);
+  const scrollY = useSharedValue(0);
+  const scrollYRef = useRef(0);
+  const viewportRef = useRef(0);
+  /** Each section's top, in content points, once measured. */
+  const offsetsRef = useRef<Record<string, number>>({});
+  const sectionIds = useMemo(() => model.sections.map((s) => s.id), [model.sections]);
+
+  /** The order each section landed in, once it has entered the screen. */
+  const [seen, setSeen] = useState<Record<string, number>>({});
+  const [nextIndex, setNextIndex] = useState<number | null>(0);
+  const [pillVisible, setPillVisible] = useState(true);
+  /** The status bar has left the still. */
+  const [pastHero, setPastHero] = useState(false);
+  /** The tab row is stuck under the status bar. */
+  const [stuck, setStuck] = useState(false);
+
+  const offsetsInOrder = useCallback(
+    () => sectionIds.map((id) => offsetsRef.current[id] ?? null),
+    [sectionIds],
+  );
+
+  /** Re-reads what is in view and what is next from the latest scroll and layout. */
+  const settle = useCallback(() => {
+    const y = scrollYRef.current;
+    const offsets = offsetsInOrder();
+    const inView = sectionsInView(offsets, y, viewportRef.current);
+    setSeen((prev) => {
+      const fresh = inView.filter((i) => !(sectionIds[i] in prev));
+      if (fresh.length === 0) return prev;
+      const next = { ...prev };
+      fresh.forEach((i, order) => {
+        next[sectionIds[i]] = order;
+      });
+      return next;
+    });
+    // The reader's line is under the stuck tab row, not at the very top.
+    setNextIndex(nextSectionIndex(offsets, y + TAB_ROW_HEIGHT));
+    setPastHero(y >= flipAt);
+    setStuck(y >= spacerH);
+  }, [offsetsInOrder, sectionIds, spacerH, flipAt]);
+
+  /** The JS side's reading of the scroll: every few dozen points, and at every line it switches on. */
+  const settleAt = useCallback(
+    (y: number) => {
+      scrollYRef.current = y;
+      settle();
+    },
+    [settle],
+  );
+
+  /*
+    The scroll, on the UI thread. `scrollY` drives the still's slide and
+    the chrome's fade frame for frame; the JS side is told only when the
+    sheet has moved far enough to change what it keeps, or has crossed
+    the status bar's flip or the tab row's sticking, and when a drag or
+    a glide ends. The pill goes while the sheet moves and comes back when
+    it has stopped — after a drag only if no glide follows.
+  */
+  const settledY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      const y = e.contentOffset.y;
+      scrollY.set(y);
+      if (shouldSettle(settledY.get(), y, [flipAt, spacerH])) {
+        settledY.set(y);
+        runOnJS(settleAt)(y);
+      }
+    },
+    onBeginDrag: () => {
+      runOnJS(setPillVisible)(false);
+    },
+    onEndDrag: (e) => {
+      settledY.set(e.contentOffset.y);
+      runOnJS(settleAt)(e.contentOffset.y);
+      if (pillReturnsAfterDrag(e.velocity?.y)) runOnJS(setPillVisible)(true);
+    },
+    onMomentumBegin: () => {
+      runOnJS(setPillVisible)(false);
+    },
+    onMomentumEnd: (e) => {
+      settledY.set(e.contentOffset.y);
+      runOnJS(settleAt)(e.contentOffset.y);
+      runOnJS(setPillVisible)(true);
+    },
+  });
+
+  const onViewport = useCallback(
+    (e: LayoutChangeEvent) => {
+      viewportRef.current = e.nativeEvent.layout.height;
+      settle();
+    },
+    [settle],
+  );
+
+  const onSectionLayout = useCallback(
+    (id: string) => (e: LayoutChangeEvent) => {
+      offsetsRef.current[id] = e.nativeEvent.layout.y;
+      settle();
+    },
+    [settle],
+  );
+
+  /* The still slides under the sheet; not under Reduce Motion. */
+  const parallax = useAnimatedStyle(() => ({
+    transform: [{ translateY: heroShift(scrollY.get(), reduceMotion) }],
+  }));
+
+  /* The strip under the status bar, painted as the sheet comes up to meet it. */
+  const strip = useAnimatedStyle(() => ({
+    opacity: stripOpacity(scrollY.get(), spacerH, insets.top, reduceMotion),
+  }));
+
+  /* ------------------------------ the pill ---------------------------- */
+
+  const finalAction = funnel ? onContinue : onDone;
+  const finalLabel = funnel ? UI.actions.continue : UI.actions.done;
+  const nextSection = nextIndex === null ? null : model.sections[nextIndex];
+  const showPill = nextSection !== null || finalAction !== undefined;
+
+  const onNext = useCallback(() => {
+    if (nextSection) {
+      const y = offsetsRef.current[nextSection.id];
+      if (y !== undefined) {
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - TAB_ROW_HEIGHT), animated: !reduceMotion });
+      }
+      return;
+    }
+    finalAction?.();
+  }, [nextSection, finalAction, reduceMotion]);
+
+  /* ------------------------------ the ask ----------------------------- */
 
   /*
     The one place the app asks for notifications.
@@ -192,19 +348,23 @@ export function HairScanReport({
     app does, and "Don't Allow" cannot be undone from inside the app.
 
     It fires the moment this component mounts, which is the moment the
-    scan's processing pass has ended and the report is on screen — the
-    same moment the funnel report it replaces fired on. It is not
-    deferred past the reveal: a deferred ask has a window in which
+    scan's processing pass has ended and the report is on screen. It is
+    not deferred past the reveal: a deferred ask has a window in which
     leaving the report cancels it and the single ask moves to the next
-    report instead of being spent here, and the reveal is the wrong
-    thing to trade that for. It runs once, it never blocks the render,
-    and a refusal is final and silent: the switches stay on, nothing is
-    scheduled, and Settings is where the system prompt is explained.
-    `reminderOfferInterval` holds the once-per-install rule and is tested
-    on its own.
+    report instead of being spent here. It runs once, it never blocks
+    the render, and a refusal is final and silent: the switches stay
+    on, nothing is scheduled, and Settings is where the system prompt
+    is explained. `reminderOfferInterval` holds the once-per-install
+    rule and is tested on its own.
+
+    A report reopened from the journal mounts this same component and
+    passes `ask={false}`: the once-per-install guard would stop a second
+    prompt either way, but without the gate the single prompt could be
+    spent on an old report rather than the scan's own.
   */
   const journeyInterval = data.journey?.updateIntervalDays;
   useEffect(() => {
+    if (!ask) return;
     const intervalDays = reminderOfferInterval(remindersAlreadyOffered(), journeyInterval);
     if (intervalDays === null) return;
 
@@ -221,135 +381,168 @@ export function HairScanReport({
     return () => {
       cancelled = true;
     };
-  }, [journeyInterval]);
+  }, [ask, journeyInterval]);
 
   const seeFullReport = useCallback(() => router.push('/paywall'), [router]);
+  const buildRoutine = useCallback(() => router.push('/routine'), [router]);
 
-  const eyebrow = reading
-    ? `${ANGLE_LABELS[reading.photo.angle]} · ${formatDateShort(reading.photo.capturedAt)}`
-    : undefined;
+  /* ----------------------------- the sections ------------------------- */
 
-  const enter = (index: number) =>
-    reduceMotion ? undefined : FadeIn.delay(settled ? 0 : revealDelay(index)).duration(TAB_FADE_MS);
+  const section = (id: string, node: ReactNode) => {
+    const order = seen[id];
+    return (
+      <SectionReveal key={id} shown={order !== undefined} order={order ?? 0} onLayout={onSectionLayout(id)}>
+        {node}
+      </SectionReveal>
+    );
+  };
 
-  const current = observations.find((o) => o.id === tab) ?? null;
-  const gated = useMemo(() => (current ? gateObservation(current, isPremium) : null), [current, isPremium]);
+  const blocks = model.sections.map((s) => {
+    switch (s.id) {
+      case 'analysis':
+        return section(
+          s.id,
+          <SheetBlock continues heading={model.analysis.heading} subheading={model.analysis.subheading}>
+            <AnalysisRows rows={rows} marks={model.analysis.marks} photoFor={photoFor} onSeeFull={seeFullReport} />
+          </SheetBlock>,
+        );
+      case 'strengths':
+        return section(
+          s.id,
+          <SheetBlock heading={model.strengths.heading}>
+            <StrengthCards cards={model.strengths.cards} />
+          </SheetBlock>,
+        );
+      case 'profile':
+        return section(
+          s.id,
+          <SheetBlock plain heading={model.profile.heading} headingTone="textSecondary">
+            <ProfileTiles tiles={model.profile.tiles} />
+          </SheetBlock>,
+        );
+      case 'focus':
+        return model.focus
+          ? section(
+              s.id,
+              <SheetBlock heading={model.focus.heading}>
+                <FocusBlockView focus={model.focus} photoFor={photoFor} />
+              </SheetBlock>,
+            )
+          : null;
+      case 'tips':
+        return section(
+          s.id,
+          <SheetBlock heading={model.tips.heading} subheading={model.tips.subheading}>
+            <TipList items={model.tips.items} locked={model.tips.locked} />
+          </SheetBlock>,
+        );
+      case 'routine':
+        return section(
+          s.id,
+          <SheetBlock heading={model.routine.heading}>
+            <RoutineBlockView routine={model.routine} onBuild={buildRoutine} onSeeFull={seeFullReport} />
+          </SheetBlock>,
+        );
+      case 'says':
+        return section(
+          s.id,
+          <SheetBlock heading={`${model.says.heading}:`}>
+            <SaysBlockView says={model.says} />
+          </SheetBlock>,
+        );
+      default:
+        return null;
+    }
+  });
 
   return (
-    <ScreenScroll clearsTabBar={false} contentContainerStyle={{ paddingTop: spacing.md }}>
-      {/*
-        The scan's main image first, with the date on it and what was
-        measured drawn over it. When nothing was kept the same place says
-        so, and the report goes on to say what each card would have shown.
-      */}
-      {reading ? (
-        <Reveal index={heroSlot}>
-          <ScanHero reading={reading} eyebrow={eyebrow} />
-        </Reveal>
-      ) : (
-        <Animated.View entering={enter(heroSlot)}>
-          <Card tone="subtle">
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Icon name="info" size={iconSize.sm} color={colors.textSecondary} />
-              <Text variant="headline" style={{ flex: 1 }}>
-                {COPY.frames.none}
-              </Text>
-            </View>
-            <Text variant="footnote" color="textSecondary" style={{ marginTop: spacing.sm }}>
-              {COPY.frames.noneBody}
-            </Text>
-          </Card>
-        </Animated.View>
-      )}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* Light over the still; the theme's own once the strip under it is painted. */}
+      <StatusBar style={pastHero ? 'auto' : 'light'} />
 
-      <Reveal index={tabsSlot} style={{ marginTop: spacing.xl }}>
-        <SegmentedTabs options={REPORT_TABS} value={tab} onChange={openTab} />
-      </Reveal>
-
-      <Reveal index={headingSlot} style={{ marginTop: spacing.xl }}>
-        <Text variant="subhead" color="textSecondary">
-          {COPY.eyebrow(formatDateShort(session.capturedAt))}
-        </Text>
-        <Text variant="title2" accessibilityRole="header" style={{ marginTop: spacing.xs }}>
-          {COPY.title}
-        </Text>
-        <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
-          {COPY.subtitle}
-        </Text>
-      </Reveal>
-
-      {/*
-        Keyed on the tab, so a change remounts the block and its entrance
-        runs. On the first reading the cards land one after another; after
-        the first tap they fade in together, from zero.
-      */}
-      <View key={tab} style={{ marginTop: spacing.xl }}>
-        {tab === 'overview' ? (
-          <View style={{ gap: spacing.lg }}>
-            {observations.map((observation, i) => (
-              <Animated.View key={observation.id} entering={enter(firstCardSlot + i)}>
-                <ObservationRow observation={observation} onOpen={openTab} />
-              </Animated.View>
-            ))}
-            {/* The scan's facts about its own run, then the images it kept. */}
-            <Animated.View entering={enter(firstCardSlot + observations.length)}>
-              <ScanMetaTiles result={result} />
-            </Animated.View>
-            <Animated.View entering={enter(firstCardSlot + observations.length + 1)}>
-              <FrameStrip result={result} />
-            </Animated.View>
-          </View>
-        ) : gated ? (
-          <Animated.View entering={enter(firstCardSlot)}>
-            {gated.locked ? (
-              <LockedObservationCard gated={gated} onSeeFull={seeFullReport} />
-            ) : (
-              <ObservationCard
-                observation={gated.observation}
-                delay={settled || reduceMotion ? 0 : revealDelay(firstCardSlot)}
-              />
-            )}
-          </Animated.View>
-        ) : null}
-      </View>
-
-      {/*
-        Said plainly, on the screen where it matters most. Somebody
-        arriving here expects a verdict about their hair, and the honest
-        answer is that no scan taken today can give them one — only the
-        second can, and that is the whole proposition.
-      */}
       <Animated.View
-        entering={enter(closeSlot)}
-        style={{ marginTop: spacing.xxl, paddingHorizontal: spacing.md, gap: spacing.xl }}>
-        <Text variant="footnote" color="textSecondary" center>
-          {result.scope}
-        </Text>
+        pointerEvents="box-none"
+        style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: heroH }, parallax]}>
+        <ReportHero hero={model.hero} photo={heroPhoto} mesh={mesh} height={heroH} />
+      </Animated.View>
+
+      {/* The strip under the status bar, in the sheet's colour, as the sheet comes up to meet it. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          { position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: colors.surface },
+          strip,
+        ]}
+      />
+
+      <Animated.ScrollView
+        ref={scrollRef}
+        style={{ flex: 1, marginTop: insets.top }}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
+        stickyHeaderIndices={[1]}
+        scrollEventThrottle={16}
+        onScroll={onScroll}
+        onLayout={onViewport}
+        contentContainerStyle={{ paddingBottom: insets.bottom + NEXT_PILL_HEIGHT + spacing.xxxl }}>
+        {/* The still shows through here; the sheet begins under it. */}
+        <View pointerEvents="none" style={{ height: spacerH }} />
+
+        {/*
+          The top of the sheet: the tab row, which sticks under the status
+          bar. Stuck, it drops its corners and gutters so it and the strip
+          above it read as one header; the change lands the moment it
+          sticks, under the status bar, where nothing is looking.
+        */}
+        <View
+          style={{
+            marginHorizontal: stuck ? 0 : SHEET_INSET,
+            backgroundColor: colors.surface,
+            borderTopLeftRadius: stuck ? 0 : radius.lg,
+            borderTopRightRadius: stuck ? 0 : radius.lg,
+            overflow: 'hidden',
+          }}>
+          <ReportTabs tabs={model.tabs} value={tab} onChange={setTab} />
+        </View>
+
+        {blocks}
+
         {/*
           In the funnel, Continue is the whole point of the screen — the
           paywall comes next, and the report is what earns it — so it is
           the one filled button and the others are quiet. Outside it,
           Done is the way out and Scan again the way round.
         */}
-        {funnel ? (
-          onContinue || onDone || onRescan ? (
-            <View style={{ gap: spacing.md }}>
-              {onContinue ? <Button label={COPY.actions.continue} onPress={onContinue} /> : null}
-              {onRescan ? (
-                <Button label={COPY.actions.rescan} variant="ghost" icon="retake" onPress={onRescan} />
-              ) : null}
-              {onDone ? <Button label={COPY.actions.done} variant="ghost" onPress={onDone} /> : null}
-            </View>
-          ) : null
-        ) : onDone || onRescan ? (
-          <View style={{ gap: spacing.md }}>
-            {onDone ? <Button label={COPY.actions.done} onPress={onDone} /> : null}
-            {onRescan ? (
-              <Button label={COPY.actions.rescan} variant="ghost" icon="retake" onPress={onRescan} />
-            ) : null}
-          </View>
-        ) : null}
-      </Animated.View>
-    </ScreenScroll>
+        <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xxl, gap: spacing.md }}>
+          {funnel ? (
+            <>
+              {onContinue ? <Button label={UI.actions.continue} onPress={onContinue} /> : null}
+              {onRescan ? <Button label={UI.actions.rescan} variant="ghost" icon="retake" onPress={onRescan} /> : null}
+              {onDone ? <Button label={UI.actions.done} variant="ghost" onPress={onDone} /> : null}
+            </>
+          ) : (
+            <>
+              {onDone ? <Button label={UI.actions.done} onPress={onDone} /> : null}
+              {onRescan ? <Button label={UI.actions.rescan} variant="ghost" icon="retake" onPress={onRescan} /> : null}
+            </>
+          )}
+        </View>
+      </Animated.ScrollView>
+
+      {/* Above the sheet, so the still's controls take the tap; gone once the sheet has risen. */}
+      <View pointerEvents={pastHero ? 'none' : 'box-none'} style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+        <HeroChrome dateLabel={model.hero.dateLabel} onBack={onBack} scrollY={scrollY} fadeBy={Math.max(1, spacerH * 0.6)} />
+      </View>
+
+      {showPill ? (
+        <NextPill
+          label={nextSection ? UI.actions.next : finalLabel}
+          hint={nextSection ? UI.a11y.nextHint(nextSection.label) : undefined}
+          visible={pillVisible}
+          final={nextSection === null}
+          onPress={onNext}
+        />
+      ) : null}
+    </View>
   );
 }

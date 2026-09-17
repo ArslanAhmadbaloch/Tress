@@ -763,3 +763,37 @@ test('coach: no journey', () => {
     assert.deepEqual(ask(intent, data), ask(intent, FIXTURES.full), `${intent} needs no journey`);
   }
 });
+
+/* ------------------------------ scan sessions ----------------------------- */
+
+/** A session the continuous hair scan wrote: the angles a turn reaches, tagged as scan frames. */
+function scanSession(id: string, dAgo: number, angles: readonly string[]): PhotoSession {
+  const s = session(id, dAgo, angles);
+  return {
+    ...s,
+    photos: s.photos.map((p) => ({ ...p, capture: 'scan' as const })),
+    scan: { durationMs: 12_000, completion: 1, frameCount: 40, lighting: 0.6, version: 1 },
+  };
+}
+
+test('coach: record describes a scan by what it captured, never as four of five', () => {
+  const full = withSessions(base(), scanSession('s1', 30, ['front', 'leftTemple', 'rightTemple', 'top']));
+  const a = ask('record', full);
+  assert.equal(a.refusal, false);
+  assert.match(a.headline, /^One scan, /);
+  assert.match(a.detail!, /^Your last scan, .*, captured the front, both sides and the top\.$/);
+  const text = answerSentences(a).join(' ');
+  assert.ok(!/\bfive\b|\b\d of \d\b|\bBack\b|\bset\b/i.test(text), text);
+  assertHonest(assert, answerSentences(a), 'scan/record');
+
+  // A turn that stopped part-way is described by the frames it kept.
+  const partial = withSessions(base(), scanSession('s1', 30, ['front', 'rightTemple']));
+  const p = ask('record', partial);
+  assert.match(p.detail!, /captured the front and the right side\.$/);
+  assert.ok(!/\bno\b|\bmissing\b|\d of \d/i.test(p.detail!), p.detail);
+  assertHonest(assert, answerSentences(p), 'partial scan/record');
+
+  // The old capture is still counted the old way.
+  const old = ask('record', FIXTURES.twoDropped);
+  assert.match(old.detail!, /holds 4 of 5 angles — no Right Side\.$/);
+});

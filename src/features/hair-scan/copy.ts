@@ -15,12 +15,19 @@ import type { GuidanceCue, ScanErrorReason, ScanRegion, ScanStatus } from './typ
 
 export const HAIR_SCAN_COPY = {
   instructions: {
-    title: 'Hair Scan',
-    body: 'Capture a detailed snapshot of your hair and scalp.',
+    title: 'Scan Instructions',
+    /**
+     * One row per state of the scanner: glasses off in good light, head
+     * straight and Start pressed, a slow full turn while the ring fills.
+     * The sheet draws (or later photographs) each state beside its row.
+     */
     steps: [
-      { title: 'Find good lighting', body: 'Natural, even light works best' },
-      { title: 'Keep your head steady', body: 'We’ll guide you through the scan' },
-      { title: 'Move slowly', body: 'Tress captures the important angles automatically' },
+      { title: 'Take glasses off', body: 'And find a well-lit spot' },
+      { title: 'Keep your head straight', body: 'And press Start' },
+      {
+        title: 'Turn slowly, all the way round',
+        body: 'Tress captures the angles as the ring fills',
+      },
     ],
     privacy: 'Your images stay on this device.',
     cta: 'Continue',

@@ -487,12 +487,12 @@ test('funnel: every button says continue, or says exactly what the tap does', ()
   // "That's My Goal" and "Build My Routine" narrated what you had just
   // done; eleven of those in a row read as a sales script. A button
   // either moves on, or names the one real thing it is about to do.
-  const allowed = /^(Continue|Get started|Choose a photo|Take the photo|Start the scan)$/;
+  const allowed = /^(Continue|Get started|Choose a photo|Take the photo|Scan my hair)$/;
   /*
-    Walks nested copy, because the baseline's two scan endings keep their
-    own cta one level down. Iterating the top level only left the one
-    button this funnel has gained since the rule was written — "Start the
-    scan" — as the only button in the funnel nothing checked.
+    Walks nested copy, because the baseline's scan keeps its own cta one
+    level down. Iterating the top level only left the one button this
+    funnel has gained since the rule was written — "Scan my hair" — as
+    the only button in the funnel nothing checked.
   */
   const walk = (node: object, path: string): void => {
     for (const [key, value] of Object.entries(node)) {

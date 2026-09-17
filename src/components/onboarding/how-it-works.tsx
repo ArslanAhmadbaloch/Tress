@@ -78,7 +78,7 @@ function Tick({ t, index, colour }: { t: Progress; index: number; colour: string
   );
 }
 
-/* ----------------------------- 1. five angles ---------------------------- */
+/* ----------------------------- 1. four views ----------------------------- */
 
 function AngleBeat({ play }: { play: boolean }) {
   const { colors } = useTheme();
@@ -88,10 +88,10 @@ function AngleBeat({ play }: { play: boolean }) {
     t.set(play ? withTiming(1, { duration: 1500, easing: Easing.out(Easing.cubic) }) : 1);
   }, [play, t]);
 
-  // Five markers around a head, landing in turn.
+  // The four views one turn gives the scan — the top, the left side,
+  // the right side and the front — landing on the head in turn.
   const spots = [
-    { x: 84, y: 26 }, { x: 34, y: 62 }, { x: 134, y: 62 },
-    { x: 54, y: 112 }, { x: 114, y: 112 },
+    { x: 84, y: 26 }, { x: 34, y: 62 }, { x: 134, y: 62 }, { x: 84, y: 120 },
   ];
 
   return (
@@ -117,8 +117,8 @@ function AnimatedMarker({
   t: { get(): number }; colour: string;
 }) {
   const props = useAnimatedProps(() => {
-    // Each marker owns a fifth of the run and eases in over it.
-    const local = Math.min(1, Math.max(0, t.get() * 5 - index));
+    // Each marker owns a quarter of the run and eases in over it.
+    const local = Math.min(1, Math.max(0, t.get() * 4 - index));
     return { opacity: local, r: 5 + (1 - local) * 6 };
   });
   return <AnimatedCircle cx={x} cy={y} fill={colour} animatedProps={props} />;

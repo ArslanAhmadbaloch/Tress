@@ -27,6 +27,9 @@ import {
 import {
   ANGLES,
   ANGLE_LABELS,
+  isScanSession,
+  joinPhrases,
+  type Angle,
   type AppData,
   type Photo,
   type PhotoSession,
@@ -49,6 +52,54 @@ function monthsBetween(from: string, to: string): number {
 /** Angles present in a set. */
 function anglesIn(session: PhotoSession): Set<string> {
   return new Set(session.photos.map((p) => p.angle));
+}
+
+/**
+ * The angles a continuous hair scan can reach.
+ *
+ * A turn made facing the phone shows the detector the front, both sides
+ * and the top; the back of the head is never in front of the camera, so
+ * `crown` only ever arrives through the old one-angle-at-a-time capture
+ * (see closestAngle in features/hair-scan/result.ts). A scan session is
+ * therefore scored against these four and never against the five, and no
+ * line in the report may count a scan short of a back shot it could not
+ * have taken.
+ */
+export const SCAN_ANGLES: readonly Angle[] = ['front', 'leftTemple', 'rightTemple', 'top'];
+
+/** The scan angles a session holds no photograph for, in scan order. */
+export function missingScanAngles(session: Pick<PhotoSession, 'photos'>): Angle[] {
+  const held = new Set(session.photos.map((p) => p.angle));
+  return SCAN_ANGLES.filter((angle) => !held.has(angle));
+}
+
+/**
+ * A set of scan angles as a phrase: "the front, both sides and the top",
+ * "the front and the left side". Empty when the set is.
+ */
+function scanAnglesPhrase(angles: Iterable<Angle>): string {
+  const held = new Set(angles);
+  const parts: string[] = [];
+  if (held.has('front')) parts.push('the front');
+  if (held.has('leftTemple') && held.has('rightTemple')) parts.push('both sides');
+  else if (held.has('leftTemple')) parts.push('the left side');
+  else if (held.has('rightTemple')) parts.push('the right side');
+  if (held.has('top')) parts.push('the top');
+  return joinPhrases(parts);
+}
+
+/**
+ * What a scan captured, as a phrase. Only what is there is named — a scan
+ * that was stopped part-way is described by the frames it kept, not by
+ * the ones a full turn would have added. Empty when nothing was kept.
+ */
+export function scanCapturedPhrase(session: Pick<PhotoSession, 'photos'>): string {
+  return scanAnglesPhrase(session.photos.map((p) => p.angle));
+}
+
+/** The scan angles a session lacks, as a phrase: "the right side and the top". */
+export function missingScanPhrase(session: Pick<PhotoSession, 'photos'>): string {
+  return scanAnglesPhrase(missingScanAngles(session));
 }
 
 /* ------------------------------- the record ------------------------------ */
@@ -74,6 +125,11 @@ function recordSection(data: AppData, sessions: PhotoSession[]): ReportSection {
     };
   }
 
+  // A scan is described as a scan. The old capture asked for five angles
+  // one at a time; a scan is one turn, and every line about it says so.
+  const scan = isScanSession(latest);
+  const noun = scan ? 'scan' : 'set';
+
   const months = monthsBetween(sessions[0].capturedAt, latest.capturedAt);
   findings.push({
     id: 'record-span',
@@ -81,34 +137,56 @@ function recordSection(data: AppData, sessions: PhotoSession[]): ReportSection {
     tone: sessions.length >= 3 ? 'good' : 'neutral',
     headline:
       sessions.length === 1
-        ? 'One set recorded — your baseline.'
-        : `${sessions.length} sets recorded across ${months === 0 ? 'under a month' : `${months} month${months === 1 ? '' : 's'}`}.`,
+        ? `One ${noun} recorded — your baseline.`
+        : `${sessions.length} ${noun}s recorded across ${months === 0 ? 'under a month' : `${months} month${months === 1 ? '' : 's'}`}.`,
     detail:
       sessions.length === 1
-        ? 'A baseline on its own cannot show change. The second set is where this becomes a comparison rather than a photograph.'
+        ? `A baseline on its own cannot show change. The second ${noun} is where this becomes a comparison rather than a photograph.`
         : 'Hair moves slowly enough that the useful comparisons are months apart. A record this long is worth more than any single photograph in it.',
   });
 
-  // Angles missing from the most recent set break future comparisons for
-  // that angle specifically, which is worth naming rather than scoring.
   const have = anglesIn(latest);
-  const missing = ANGLES.filter((a) => !have.has(a));
-  if (missing.length > 0) {
+  if (scan) {
+    // A scan keeps the angles the turn reached, and there is no camera
+    // left that takes one angle to order. So the record says what the
+    // scan captured — never that it is short of a back shot a turn made
+    // facing the phone could not have taken.
+    const captured = scanCapturedPhrase(latest);
+    const gaps = missingScanAngles(latest);
     findings.push({
-      id: 'record-missing',
+      id: 'record-scan',
       kind: 'record',
-      tone: 'attention',
-      headline: `Your last set is missing ${missing.length} of the five angles.`,
-      detail: `No ${missing.map((a) => ANGLE_LABELS[a]).join(', ')} shot means there is nothing to line up against next time for ${missing.length === 1 ? 'that angle' : 'those angles'}.`,
+      tone: gaps.length === 0 ? 'good' : 'neutral',
+      headline:
+        captured === ''
+          ? 'Your last scan kept no frames.'
+          : `Your last scan captured ${captured}.`,
+      detail:
+        gaps.length === 0
+          ? 'Each of those has a frame to line up against next time. A full turn reaches the front, both sides and the top; the back is not in a turn made facing the phone.'
+          : `A full turn also reaches ${missingScanPhrase(latest)}. The next scan can pick ${gaps.length === 1 ? 'it' : 'them'} up, and the frames already kept have something to line up against next time.`,
     });
-  } else if (sessions.length > 0) {
-    findings.push({
-      id: 'record-complete',
-      kind: 'record',
-      tone: 'good',
-      headline: 'Your last set covers all five angles.',
-      detail: 'Every angle has something to compare against next month.',
-    });
+  } else {
+    // Angles missing from the most recent set break future comparisons for
+    // that angle specifically, which is worth naming rather than scoring.
+    const missing = ANGLES.filter((a) => !have.has(a));
+    if (missing.length > 0) {
+      findings.push({
+        id: 'record-missing',
+        kind: 'record',
+        tone: 'attention',
+        headline: `Your last set is missing ${missing.length} of the five angles.`,
+        detail: `No ${missing.map((a) => ANGLE_LABELS[a]).join(', ')} shot means there is nothing to line up against next time for ${missing.length === 1 ? 'that angle' : 'those angles'}.`,
+      });
+    } else {
+      findings.push({
+        id: 'record-complete',
+        kind: 'record',
+        tone: 'good',
+        headline: 'Your last set covers all five angles.',
+        detail: 'Every angle has something to compare against next month.',
+      });
+    }
   }
 
   // A baseline that carries a hair-area reading is worth saying so about,
@@ -126,12 +204,16 @@ function recordSection(data: AppData, sessions: PhotoSession[]): ReportSection {
     });
   }
 
-  const coverage = latest.photos.length / ANGLES.length;
+  // Scored against the angles the capture could reach: four for a scan,
+  // five for the old set. Only angles are counted, so a scan that kept a
+  // stray photograph under another tag cannot score above one.
+  const reach = scan ? SCAN_ANGLES : ANGLES;
+  const held = reach.filter((a) => have.has(a)).length;
   return {
     kind: 'record',
     title: 'Your record',
-    score: Math.min(1, coverage),
-    scoreLabel: `${latest.photos.length} of ${ANGLES.length} angles in your last set`,
+    score: held / reach.length,
+    scoreLabel: `${held} of ${reach.length} angles in your last ${noun}`,
     findings,
   };
 }
@@ -402,15 +484,21 @@ function qualityFindings(session: PhotoSession): Finding[] {
 function nextStepFor(sessions: PhotoSession[], data: AppData): string {
   if (sessions.length === 0) return 'Take your baseline. Nothing else in here works without it.';
   const latest = sessions[sessions.length - 1];
-  const missing = ANGLES.filter((a) => !anglesIn(latest).has(a));
-  if (missing.length > 0) {
-    return `Add the ${ANGLE_LABELS[missing[0]]} shot next time so it has a pair.`;
+  if (isScanSession(latest)) {
+    // A scan cannot be topped up one angle at a time; the next scan is
+    // the whole answer, whatever the last turn reached.
+    if (sessions.length === 1) return 'Your baseline scan is saved. The next scan is what makes it a comparison.';
+  } else {
+    const missing = ANGLES.filter((a) => !anglesIn(latest).has(a));
+    if (missing.length > 0) {
+      return `Add the ${ANGLE_LABELS[missing[0]]} shot next time so it has a pair.`;
+    }
+    if (sessions.length === 1) return 'Your baseline is complete. The next set is what makes it a comparison.';
   }
-  if (sessions.length === 1) return 'Your baseline is complete. The next set is what makes it a comparison.';
   if (activeRoutineItems(data).length === 0) {
     return 'Add what you already use to your stack, so next month’s photographs come with context.';
   }
-  return 'Keep to the schedule you set. This report gets more useful with every set you add.';
+  return 'Keep to the schedule you set. This report gets more useful with every scan you add.';
 }
 
 export function buildReport(data: AppData, now = new Date()): Report {

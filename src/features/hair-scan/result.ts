@@ -53,7 +53,9 @@ import {
   type PhotoSessionScan,
 } from '@/types/domain';
 
+import { regionRectsFor } from './region-crops';
 import { HAIR_SCAN_REPORT_COPY as COPY, deg, pct } from './report-copy';
+import type { FrameMesh } from './types';
 
 /* ------------------------------- the frames ------------------------------ */
 
@@ -80,6 +82,13 @@ export type HairScanFrame = {
   quality?: PhotoQuality;
   coverage?: PhotoCoverage;
   maskTrace?: PhotoMaskTrace;
+  /**
+   * The mesh the live camera had at this frame's shutter, when the
+   * tracker had a face. Transient — it is never stored — but it is where
+   * `Photo.regions` comes from: the report's crop rectangles are placed
+   * from it here, once, and persist as fractions of the still.
+   */
+  mesh?: FrameMesh;
 };
 
 /** A photograph as the store takes it. */
@@ -180,6 +189,7 @@ export function scanPhotos(frames: HairScanFrame[], leftSign: 1 | -1 = -1): Scan
     const pick = best.get(angle);
     if (!pick) continue;
     const { frame } = pick;
+    const regions = frame.mesh ? regionRectsFor(frame.mesh, { width: frame.width, height: frame.height }) : {};
     out.push({
       angle,
       uri: frame.uri,
@@ -192,6 +202,8 @@ export function scanPhotos(frames: HairScanFrame[], leftSign: 1 | -1 = -1): Scan
       maskTrace: frame.maskTrace,
       pose: frame.pose,
       capture: 'scan',
+      // Additive and absent when nothing placed them: see `Photo.regions`.
+      ...(Object.keys(regions).length > 0 ? { regions } : {}),
     });
   }
   return out;
@@ -325,23 +337,43 @@ const NOISE_POINTS = 2.5;
 /** A ring that closed this far counts as a complete turn. */
 const COMPLETE_AT = 0.97;
 
+/**
+ * The bands above, for the report model, which describes the same
+ * stills with the same words and must not keep a second copy of the
+ * numbers that could drift from these.
+ */
+export const SCAN_THRESHOLDS = Object.freeze({
+  DARK,
+  DIM,
+  BRIGHT,
+  SOFT,
+  CRISP,
+  EMPTY_MASK,
+  EXPOSURE_SHIFT,
+  YAW_SHIFT,
+  NOISE_POINTS,
+  COMPLETE_AT,
+});
+
 /* -------------------------------- readers -------------------------------- */
 
-function lightWord(q: PhotoQuality): string {
+/** The one-word light reading of a still: "dark", "a little dark", "very bright" or "evenly lit". */
+export function lightWord(q: PhotoQuality): string {
   if (q.brightness < DARK) return COPY.light.dark;
   if (q.brightness < DIM) return COPY.light.low;
   if (q.brightness > BRIGHT) return COPY.light.bright;
   return COPY.light.even;
 }
 
-function focusWord(q: PhotoQuality): string {
+/** The one-word focus reading of a still: "soft", "in focus" or "sharp". */
+export function focusWord(q: PhotoQuality): string {
   if (q.sharpness < SOFT) return COPY.focus.soft;
   if (q.sharpness < CRISP) return COPY.focus.clear;
   return COPY.focus.sharp;
 }
 
 /** Whether a photograph's quality reading is comfortably in range. */
-function qualityTone(q: PhotoQuality): ObservationTone {
+export function qualityTone(q: PhotoQuality): ObservationTone {
   if (q.brightness < DARK || q.brightness > BRIGHT || q.sharpness < SOFT) return 'attention';
   if (q.brightness < DIM) return 'neutral';
   return 'good';

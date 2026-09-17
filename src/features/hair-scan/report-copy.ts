@@ -264,6 +264,250 @@ export const HAIR_SCAN_REPORT_COPY = Object.freeze({
   },
 });
 
+/* ------------------------------ the model ------------------------------- */
+
+/** The label of a choice, quoted: how the report reads somebody's answer back inside its own sentence. */
+export function quote(label: string): string {
+  return `“${label}”`;
+}
+
+/** The quoted spans in a sentence — the person's own answers, read back — without their marks. */
+export function quotedSpans(text: string): string[] {
+  return [...text.matchAll(/“([^”]*)”/g)].map((m) => m[1] ?? '');
+}
+
+/** A sentence with its quotations lifted out, which is the part the app authored. */
+export function stripQuotes(text: string): string {
+  return text.replace(/“[^”]*”/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+const count = (n: unknown, one: string, many: string): string => `${String(n)} ${Number(n) === 1 ? one : many}`;
+/** The verb after a list of places: one place "was", several "were". */
+const were = (n: unknown): string => (Number(n) === 1 ? 'was' : 'were');
+
+/**
+ * Every fixed string of the report as the view-model builds it — one
+ * long sheet of sections over the hero — kept apart from the card copy
+ * above so the two can be read, and retired, separately.
+ *
+ * The same rules hold. A row headline is a fact about a frame, counted
+ * on this device; a row with nothing counted says what was kept and
+ * what the next scan lets it compare, in words. A strength is a fact
+ * about the images or the record. A profile tile is the label of a
+ * choice. The focus block says whether the turn reached a region, and
+ * never what the region shows. Nothing here describes a head.
+ */
+export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
+  hero: {
+    dateChip: (date: string, time: string) => `${date} at ${time}`,
+  },
+
+  tabs: {
+    all: 'All',
+    hairline: 'Hairline',
+    temples: 'Temples',
+    crown: 'Crown',
+    light: 'Light',
+  },
+
+  sections: {
+    analysis: 'Analysis',
+    strengths: 'What’s working',
+    profile: 'Your profile',
+    focus: 'Your focus',
+    tips: 'Care notes',
+    routine: 'Routine',
+    says: 'Tress says',
+  },
+
+  regions: {
+    hairline: 'Hairline',
+    temples: 'Temples',
+    leftTemple: 'Left temple',
+    rightTemple: 'Right temple',
+    crown: 'Crown',
+    top: 'Top',
+    light: 'Light and framing',
+  },
+
+  analysis: {
+    heading: 'Hair analysis',
+    subheading: 'What this device read in the frames it kept. A reading of the pictures, never of you.',
+  },
+
+  hairline: {
+    measured: (upper: number) => `Hair covers ${upper}% of the upper third of the front frame.`,
+    measuredBody: (upper: number) =>
+      `The on-device mask marked ${upper}% of the top third of the front frame as hair and ${100 - Number(upper)}% as not hair — forehead, background and anything it was less than half sure of. Area in a picture moves with framing and styling; the next scan at the same distance is what makes two figures comparable.`,
+    balanceEven: 'In the front frame the hair area sits about evenly either side of centre.',
+    balanceSide: (side: string, points: number) =>
+      `In the front frame the hair area sits ${points} points more to the ${side} of centre than the other side.`,
+    kept: (light: string, focus: string) => `A front frame was kept: ${light}, ${focus}.`,
+    keptBody:
+      'Light and focus were read on this device. The hair-area reading needs the on-device segmenter, which did not run on this frame, so no area figure is printed here. The next scan reads its own front frame and lays the two side by side.',
+    keptEmptyBody:
+      'Light and focus were read on this device. The segmenter ran on this frame and marked too little as hair to print a figure from — a frame that was mostly background, or a mask that did not settle — so no area figure is printed here. The next scan reads its own front frame and lays the two side by side.',
+    bare: 'A front frame was kept.',
+    bareBody:
+      'Nothing was read from it beyond keeping it. The next scan reads light, focus and, where the segmenter runs, hair area on its own front frame, and lays the two side by side.',
+    none: 'No front frame was kept from this turn.',
+    noneBody:
+      'The turn did not hold a face-on frame long enough to keep one. Facing the camera for a moment at the start of the next scan gives it one.',
+  },
+
+  temples: {
+    both: (left: number, right: number) =>
+      `Hair covers ${left}% of the left-side frame and ${right}% of the right-side frame.`,
+    close: (diff: number) =>
+      `The two are within ${count(diff, 'point', 'points')} of each other, inside what framing alone moves between two shots.`,
+    apart: (side: string, diff: number) =>
+      `The ${side}-side frame shows more hair area, by ${diff} points. Two pictures at two turns; matching the turn next time is what makes them comparable.`,
+    turns: (left: number, right: number) => `Turned ${left}° for the left side and ${right}° for the right.`,
+    one: (side: string, fraction: number) => `Only the ${side}-side frame was kept; hair covers ${fraction}% of it.`,
+    oneUnmeasured: (side: string) => `Only the ${side}-side frame was kept.`,
+    oneBody:
+      'One side is one picture, and cannot be balanced against anything on its own. The other side comes from the next scan, turned the same amount.',
+    kept: 'Both side frames were kept.',
+    keptBody: (left: string, right: string) => `Left side ${left}; right side ${right}.`,
+    keptRest:
+      'The hair-area reading needs the on-device segmenter, which did not run on these frames, so there is no left–right figure here. The next scan puts each side beside the same side from this one.',
+    keptRestEmpty:
+      'The segmenter ran but marked too little as hair on at least one side to print a figure from, so there is no left–right figure here. The next scan puts each side beside the same side from this one.',
+    bareBody:
+      'Nothing was read from them beyond keeping them. The next scan puts each side beside the same side from this one.',
+    none: 'No side frames were kept from this turn.',
+    noneBody:
+      'The turn did not hold either side long enough to keep a frame. Turning a little further, and pausing at each side, gives the next scan both.',
+  },
+
+  crown: {
+    measured: (frame: string, rest: number) => `In the ${frame} frame, ${rest}% of the frame was not counted as hair.`,
+    measuredBody:
+      'That is everything outside the marked area — scalp where a parting shows, and also background, skin and anything the mask was less than half sure about. It is the mask’s remainder, not a scalp measurement, and it moves with how the phone was held.',
+    kept: (frame: string, light: string, focus: string) => `A ${frame} frame was kept: ${light}, ${focus}.`,
+    keptBody:
+      'Light and focus were read on this device. The hair-area reading needs the on-device segmenter, which did not run on this frame, so nothing here says how much of the frame was hair. The next scan’s top frame sits beside this one at the same tilt.',
+    keptEmptyBody:
+      'Light and focus were read on this device. The segmenter ran on this frame and marked too little as hair to print a figure from — a frame that was mostly background, or a mask that did not settle — so nothing here says how much of the frame was hair. The next scan’s top frame sits beside this one at the same tilt.',
+    bare: (frame: string) => `A ${frame} frame was kept.`,
+    bareBody: 'Nothing was read from it beyond keeping it. The next scan reads its own and lays the two side by side.',
+    none: 'No top frame was kept from this turn.',
+    noneBody:
+      'No frame was kept with the head tipped far enough down to show the top, and the back of the head is out of reach of a scan that faces the camera. Tipping the chin further down during the next turn gives it a top frame to keep.',
+  },
+
+  light: {
+    even: (spread: number) =>
+      Number(spread) === 0
+        ? 'The frames were lit to the same brightness reading, on a scale of 255.'
+        : `The frames were lit within ${spread} points of each other on a scale of 255.`,
+    mixed: (spread: number) => `The frames were lit ${spread} points apart on a scale of 255.`,
+    one: (light: string, focus: string) => `The frame with a reading was ${light}, ${focus}.`,
+    evenBody: (n: number) =>
+      `Light and focus were read on ${count(n, 'frame', 'frames')}, so the light accounts for little of any difference you see between two of them. The next scan in the same room at the same time of day keeps it that way.`,
+    mixedBody: (n: number) =>
+      `Light and focus were read on ${count(n, 'frame', 'frames')}. A difference you see between two of them could be the light rather than what was in front of it; the next scan in one steady light, away from a window, is the fix.`,
+    oneBody:
+      'One frame is lit however it is lit. The next scan in the same room at the same time of day gives the two the same light to be read in.',
+    turn: (percent: number) => `The ring closed to ${percent}%.`,
+  },
+
+  strengths: {
+    heading: 'What’s working',
+    light: {
+      title: 'Even light',
+      body: (spread: number) =>
+        Number(spread) === 0
+          ? 'Every frame with a reading was lit to the same brightness reading, in the band the reading works best in.'
+          : `Every frame with a reading was lit within ${spread} points of the others, in the band the reading works best in.`,
+      bodyOne: 'The frame with a reading was evenly lit, in the band the reading works best in.',
+    },
+    framing: {
+      title: 'Square-on framing',
+      body: (yaw: number, pitch: number) =>
+        `The front frame was kept with the head turned ${yaw}° and tipped ${pitch}°: close enough to square that the next scan can match it.`,
+    },
+    coverage: {
+      title: 'A full turn',
+      body: (percent: number) => `The ring closed to ${percent}%, so the turn reached the parts of the head the scan asks for.`,
+      sidesTitle: 'Both sides reached',
+      sidesBody: 'Frames were kept from the front and from both sides, which is what a left–right comparison needs next time.',
+    },
+    routine: {
+      title: (percent: number) => `Routine ticked ${percent}% of days`,
+      body: 'Over the last thirty days, as the ticks record it. A routine that is written down is one the scans can be read against.',
+    },
+    streak: {
+      title: (days: number) => `${count(days, 'day', 'days')} in a row`,
+      body: 'Every daily item ticked on each of those days, as the record shows it.',
+    },
+    record: {
+      title: (n: number) => `${count(n, 'scan', 'scans')} on record`,
+      body: 'Each one taken by the same scanner at the same angles, which is what makes two of them comparable.',
+      firstTitle: 'A first scan on record',
+      firstBody: 'Every later scan is laid beside this one. That is what a first scan is for.',
+      deviceTitle: 'Read on this device',
+      deviceBody: 'The frames were read on this phone and stayed on it. Nothing in this report was uploaded.',
+    },
+  },
+
+  profile: {
+    heading: 'Based on your profile',
+    goal: 'Your focus',
+    noticed: 'When you noticed',
+    watching: 'What you watch',
+    motivation: 'Why it matters',
+    approach: 'Your approach',
+    unanswered: 'Not answered',
+  },
+
+  focus: {
+    heading: 'Your focus',
+    captured: 'Focus area captured',
+    partly: 'Focus area partly captured',
+    missed: 'Focus area not captured',
+    notVisible: 'Not something a scan can see',
+    recordLabel: 'Tracked in the record',
+    capturedBody: (regions: string, n: number) =>
+      `The turn kept ${count(n, 'frame', 'frames')} covering the ${regions} — the part of the head you said you are watching. That is coverage of the region, not a reading of it: what the region shows is compared between scans, never judged from one.`,
+    partlyBody: (reached: string, missing: string, missingCount: number) =>
+      `The turn kept frames for the ${reached}; the ${missing} ${were(missingCount)} not reached this time. Pausing a little longer at each part of the turn gives the next scan the rest. Coverage of a region is not a reading of it.`,
+    missedBody:
+      'No frame from this turn reached the part of the head you said you are watching. The next scan, held a little longer at each part of the turn, gives it one.',
+    crownNote: 'The back of the head is out of reach of a scan that faces the camera, so the crown counts the top frame.',
+    crownMissingNote: 'The back of the head is out of reach of a scan that faces the camera, so the crown counts the top frame; tipping the chin further down during the next turn gives it one.',
+    shedding:
+      'Shedding is counted in the shower and on the brush, not in a photograph. The record tracks it through your notes and routine ticks; the scan keeps the pictures.',
+    breakage:
+      'Breakage shows at the ends and in the brush, not in a scan from arm’s length. The record tracks it through your notes; the scan keeps the pictures.',
+    routine:
+      'Whether a routine is working is read from the record over months — ticks, notes and scans side by side — not from one scan.',
+  },
+
+  tips: {
+    heading: 'Care notes',
+    subheading: 'General care practice, the kind a good hairdresser mentions. None of it is a treatment, and none of it is about your scan.',
+  },
+
+  routine: {
+    heading: 'Your routine',
+    empty: 'Nothing on your list yet. Products you scan and steps you tick live here, so the scans can be read against what you did.',
+    filled: (n: number) =>
+      `${count(n, 'product', 'products')} on your shelf. The scans are read against what you did, so the list is worth keeping current.`,
+    cta: 'Build your routine',
+  },
+
+  says: {
+    heading: 'Tress says',
+  },
+
+  /** How a row marks where its figure came from. Only a hair-area reading earns the first. */
+  marks: {
+    measured: 'Measured',
+    kept: 'Kept',
+  },
+});
+
 /** The arguments the sweep feeds a copy function, one call per entry. */
 const SAMPLES: unknown[] = ['leftTemple', 41, '14 Sep'];
 
@@ -271,7 +515,8 @@ const SAMPLES: unknown[] = ['leftTemple', 41, '14 Sep'];
  * Every fixed string, plus each function called with samples, so the
  * honesty sweep reads the whole vocabulary rather than the half that
  * happens to be a literal. Three-argument lines get the same arguments
- * the two-argument ones do, with a third word.
+ * the two-argument ones do, with a third word. Both objects are read:
+ * the card copy and the model copy are one vocabulary to the sweep.
  */
 export function reportCopySentences(): string[] {
   const out: string[] = [];
@@ -299,5 +544,6 @@ export function reportCopySentences(): string[] {
   };
 
   visit(HAIR_SCAN_REPORT_COPY);
+  visit(HAIR_SCAN_REPORT_MODEL_COPY);
   return out.filter((s) => typeof s === 'string');
 }
