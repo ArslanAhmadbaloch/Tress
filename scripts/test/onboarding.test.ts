@@ -70,6 +70,7 @@ import {
 import {
   EMPTY_DATA,
   HAIR_GOAL_LABELS,
+  INGREDIENT_REACTION_LABELS,
   withAnswer,
   type AppData,
   type Gender,
@@ -806,6 +807,73 @@ test('funnel: the questions ask what the person knows, the options are their wor
       `options of ${q.id}`,
     );
   }
+});
+
+test('funnel: the budget tiers carry the bracket they mean, and the money is a guide rather than a price', () => {
+  /*
+    The owner's note after the Phase 4 walk (H.2): four tier names with no
+    figures behind them made the page read as though the app were shy
+    about money, and a tier nobody can price is not a comparison. So every
+    tier now opens with its bracket.
+
+    What the brackets are not: a price the app looked up, a price of
+    anything it sells, or a number attached to anybody's hair. They are
+    the owner's own guide brackets in US dollars, per product, and this
+    test pins each one so a later edit cannot quietly move a boundary or
+    open a gap between two tiers.
+  */
+  const budget = QUESTIONS.find((q) => q.id === 'budget')!;
+  const described = new Map(
+    optionsOf(budget, 'female').map((o) => [o.value, o.description ?? '']),
+  );
+  assert.match(described.get('everyday')!, /^Under \$15 a product/);
+  assert.match(described.get('midRange')!, /^\$15–40 a product/);
+  assert.match(described.get('premium')!, /^\$40–90 a product/);
+  assert.match(described.get('luxury')!, /^\$90 and up/);
+  for (const [value, description] of described) {
+    assert.ok(/\$/.test(description), `${value} names no bracket`);
+    /*
+      A tier is what somebody spends, never a claim about what the money
+      buys. Naming a dearer shelf is allowed — that is what a tier is —
+      but saying the bottles on it work is not, because the app has no
+      idea whether they do.
+    */
+    assert.ok(
+      !/\b(works?|effective|stronger|results?|proven|clinically)\b/i.test(description),
+      `${value} claims an effect: "${description}"`,
+    );
+  }
+  // The tiers themselves stay the record's own words.
+  assert.deepEqual(
+    optionsOf(budget, 'male').map((o) => o.label),
+    ['Everyday', 'Mid-range', 'Premium', 'Luxury'],
+  );
+});
+
+test('funnel: the fragrance row leads with the word people use and keeps the one printed on the bottle', () => {
+  /*
+    H.3: "parfum" is the term an ingredient list actually prints — the
+    shelf matches on it (src/features/products/shelf.ts) — so it cannot be
+    dropped. What it can stop doing is standing beside "fragrance" with a
+    slash, leaving the reader to work out they are the same thing.
+
+    And the wording is the LABEL TABLE's, not a funnel override laid over
+    it. It was an override for one build, and in that build the report
+    quoted "fragrance/parfum" back at somebody who had only ever been
+    shown "Fragrance (listed as parfum)" — a quotation of words that were
+    never on screen. A funnel answer is echoed as its label, which only
+    works while there is one label, so this reads the row against
+    INGREDIENT_REACTION_LABELS rather than against a copy of the words.
+  */
+  const reactions = QUESTIONS.find((q) => q.id === 'ingredientReactions')!;
+  const row = optionsOf(reactions, 'female').find((o) => o.value === 'fragrance')!;
+  assert.equal(row.label, 'Fragrance (listed as parfum)');
+  assert.equal(row.label, INGREDIENT_REACTION_LABELS.fragrance);
+  assert.ok(!row.label.includes('/'), 'one word, with the label term behind it');
+  assert.ok(
+    !/parfum/i.test(row.description ?? ''),
+    'the line under it does not say parfum a second time',
+  );
 });
 
 test('funnel: the pages around the questions keep the same register', () => {

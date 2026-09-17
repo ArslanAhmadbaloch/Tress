@@ -20,13 +20,22 @@ import type { PhotoMeasurement } from '@/features/assessment/hair-segmenter';
 import {
   ANALYSIS_COPY,
   ANALYSIS_PACING,
+  BUILD_BAR_CREEP_RATIO,
+  BUILD_BAR_WORK_SHARE,
   HANDOFF_HOLD_MS,
+  ORBIT_ABSORB_PULSE_MS,
+  ORBIT_ABSORB_SETTLE_MS,
   ORBIT_FRAME_MAX,
   ORBIT_FRAME_MIN,
   ORBIT_SETTLE_HOLD_MS,
+  absorbBeats,
+  absorbFloorMs,
+  absorbHandoffMs,
   analysisCopySentences,
+  buildBarTarget,
   handoffSchedule,
   measuredFrameCount,
+  orbitAbsorbMs,
   orbitConvergeMs,
   orbitFrameSize,
   orbitPositions,
@@ -585,6 +594,136 @@ test('orbit: nothing is scheduled until both the ring has begun and the pass has
   assert.ok(reduced);
   assert.equal(reduced.convergeAt, Math.max(1750 + 240 + ORBIT_SETTLE_HOLD_MS, 2400));
   assert.equal(reduced.handoffAt, reduced.convergeAt + 240 + HANDOFF_HOLD_MS);
+});
+
+/* ------------------------------ the build bar ------------------------- */
+
+test('build bar: the runner\'s work fills only its share, and the bar holds there until the first arrival', () => {
+  // Half the work is half the share, never half the bar.
+  assert.ok(Math.abs(buildBarTarget({ workDone: 0.5, absorbed: 0, total: 4 }) - 0.5 * BUILD_BAR_WORK_SHARE) < 1e-9);
+  // All the work done, nothing absorbed yet: the cap, exactly.
+  assert.equal(buildBarTarget({ workDone: 1, absorbed: 0, total: 4 }), BUILD_BAR_WORK_SHARE);
+  // The runner can report fractions on either side of the range; the bar cannot.
+  assert.equal(buildBarTarget({ workDone: 1.4, absorbed: 0, total: 4 }), BUILD_BAR_WORK_SHARE);
+  assert.equal(buildBarTarget({ workDone: -1, absorbed: 0, total: 4 }), 0);
+  assert.ok(BUILD_BAR_WORK_SHARE > 0 && BUILD_BAR_WORK_SHARE < 1);
+  assert.ok(BUILD_BAR_CREEP_RATIO > 0 && BUILD_BAR_CREEP_RATIO < 1, 'a ratio of 1 or more would not slow the bar down');
+});
+
+test('build bar: every arrival adds less than the one before, the last included, and the last completes it', () => {
+  // The ring can hold anything from one frame to every region but the
+  // main one (ScanRegion has nine members), so every count in that
+  // range is held to the same shape: monotone, each step a fixed share
+  // of the step before it — the last step too, which is the one an
+  // ease that runs short and then snaps would break — and exactly 1 on
+  // the last arrival and not before.
+  for (let total = 1; total <= 8; total += 1) {
+    const steps = Array.from({ length: total + 1 }, (_, absorbed) => buildBarTarget({ workDone: 1, absorbed, total }));
+    assert.equal(steps[0], BUILD_BAR_WORK_SHARE, `total ${total}: the bar must hold at the cap before the first arrival`);
+    assert.equal(steps[total], 1, `total ${total}: the last arrival must complete the bar`);
+    for (let i = 1; i <= total; i += 1) {
+      assert.ok(steps[i] > steps[i - 1], `total ${total}: arrival ${i} moved the bar backwards`);
+      if (i < total) assert.ok(steps[i] < 1, `total ${total}: arrival ${i} completed the bar before the last`);
+    }
+    for (let i = 2; i <= total; i += 1) {
+      const before = steps[i - 1] - steps[i - 2];
+      const now = steps[i] - steps[i - 1];
+      assert.ok(now < before, `total ${total}: arrival ${i} added ${now}, not less than arrival ${i - 1}'s ${before}`);
+      assert.ok(
+        Math.abs(now / before - BUILD_BAR_CREEP_RATIO) < 1e-9,
+        `total ${total}: arrival ${i} added ${now / before} of the step before, not ${BUILD_BAR_CREEP_RATIO}`,
+      );
+    }
+    // Past the last is still complete, never beyond.
+    assert.equal(buildBarTarget({ workDone: 1, absorbed: total + 2, total }), 1);
+  }
+  // The shipped shape at four frames: the arrival before the last leaves
+  // the bar at about 98%, so the last step is small but still a step.
+  const penultimate = buildBarTarget({ workDone: 1, absorbed: 3, total: 4 });
+  assert.ok(penultimate > 0.97 && penultimate < 0.99, `four frames: the bar sat at ${penultimate} before the last arrival`);
+});
+
+test('build bar: the bar never runs ahead of the work, whatever the gather says', () => {
+  // Arrivals reported while the runner still has work left do not move the bar past the work's share.
+  assert.ok(Math.abs(buildBarTarget({ workDone: 0.6, absorbed: 3, total: 4 }) - 0.6 * BUILD_BAR_WORK_SHARE) < 1e-9);
+  assert.ok(Math.abs(buildBarTarget({ workDone: 0.6, absorbed: 4, total: 4 }) - 0.6 * BUILD_BAR_WORK_SHARE) < 1e-9);
+});
+
+test('build bar: with nothing to wait on the bar is the work alone; one beat stands in for the lone breath', () => {
+  // A caller with no gather at all: uncapped.
+  assert.equal(buildBarTarget({ workDone: 1, absorbed: 0, total: 0 }), 1);
+  assert.equal(buildBarTarget({ workDone: 0.5, absorbed: 0, total: 0 }), 0.5);
+  // The screen never passes 0: a scan that kept only the main frame, and
+  // Reduce Motion, both wait on the disc's one breath.
+  assert.equal(absorbBeats(0, false), 1);
+  assert.equal(absorbBeats(4, false), 4);
+  assert.equal(absorbBeats(4, true), 1);
+  assert.equal(absorbBeats(0, true), 1);
+  // One beat: the cap until the breath, complete on it.
+  assert.equal(buildBarTarget({ workDone: 1, absorbed: 0, total: 1 }), BUILD_BAR_WORK_SHARE);
+  assert.equal(buildBarTarget({ workDone: 1, absorbed: 1, total: 1 }), 1);
+});
+
+test('build bar: the floor on the count falls after the last arrival and before the hand-off', () => {
+  // The screen completes the count on this clock only if the ring came
+  // up short; for that to be a floor and not a pace, it must fall after
+  // every real arrival would have been reported, and far enough before
+  // the hand-off for the completed bar to be seen.
+  for (let count = 1; count <= 8; count += 1) {
+    const floor = absorbFloorMs(count, false, 240);
+    assert.equal(floor, orbitAbsorbMs(count) + ORBIT_ABSORB_PULSE_MS, `count ${count}: the floor is the last glide and its breath`);
+    assert.ok(floor > orbitAbsorbMs(count), `count ${count}: the floor fell before the last arrival`);
+    assert.equal(absorbHandoffMs(count, false, 240) - floor, ORBIT_ABSORB_SETTLE_MS, `count ${count}: the settle must follow the floor`);
+  }
+  // Nothing gliding: the floor is the lone breath, and the same settle follows.
+  assert.equal(absorbFloorMs(0, false, 240), ORBIT_ABSORB_PULSE_MS);
+  assert.equal(absorbFloorMs(4, true, 240), 240 + ORBIT_ABSORB_PULSE_MS);
+  assert.equal(absorbHandoffMs(4, true, 240) - absorbFloorMs(4, true, 240), ORBIT_ABSORB_SETTLE_MS);
+});
+
+test('build bar: over a real pass the bar climbs to its cap, reaches it only when the work is done, and the gather carries it on without a step back', async (t) => {
+  // The no-segmenter path: five frames, the compose unit alone in the
+  // second stage. The runner's build fractions are real here — the
+  // events are what `runAnalysis` reported on the mocked clock — so
+  // what this holds is the seam between the two clocks: the runner
+  // reports the bar's cap only once every unit has finished (a runner
+  // that reported the build full early would let the bar sit at its
+  // cap over unfinished work), the pass ends at exactly the cap so the
+  // gather has somewhere to start from, and the whole trajectory — the
+  // pass's events and then the four arrivals — never moves backwards
+  // and reaches 1 once, on the last arrival.
+  const five: AnalysisFrame[] = [...FRAMES, { id: 'd', angle: 'crown', uri: 'file:///scan/d.jpg' }, { id: 'e', angle: 'top', uri: 'file:///scan/e.jpg' }];
+  const rec = recorder();
+  await drive(t, () => runAnalysis(five, { deps: deps({ measureCoverage: null }), onProgress: rec.onProgress }));
+  assert.ok(rec.events.length > 2, 'the pass reported too few events to say anything');
+  const total = absorbBeats(five.length - 1, false);
+  assert.equal(total, 4);
+
+  // Nothing is absorbed while the pass runs: the screen only starts the
+  // gather once the runner has finished.
+  const duringPass = rec.events.map((e) => ({
+    target: buildBarTarget({ workDone: e.fraction.build, absorbed: 0, total }),
+    workLeft: e.done < e.total,
+    finished: e.finished,
+  }));
+  for (const [i, step] of duringPass.entries()) {
+    if (step.workLeft) {
+      assert.ok(step.target < BUILD_BAR_WORK_SHARE, `event ${i}: the bar reached its cap with ${rec.events[i].total - rec.events[i].done} unit(s) still to run`);
+    }
+  }
+  const last = duringPass[duringPass.length - 1];
+  assert.ok(last.finished, 'the last event must be the finished report');
+  assert.equal(last.target, BUILD_BAR_WORK_SHARE, 'the finished pass must leave the bar exactly at the cap');
+
+  // Then the gather, from the last work fraction the runner reported.
+  const workDone = rec.events[rec.events.length - 1].fraction.build;
+  const arrivals = Array.from({ length: total }, (_, k) => buildBarTarget({ workDone, absorbed: k + 1, total }));
+  const trajectory = [...duringPass.map((s) => s.target), ...arrivals];
+  for (let i = 1; i < trajectory.length; i += 1) {
+    assert.ok(trajectory[i] >= trajectory[i - 1], `the bar moved backwards between steps ${i - 1} and ${i}: ${trajectory}`);
+  }
+  assert.equal(trajectory.filter((v) => v >= 1).length, 1, 'the bar must be complete exactly once, on the last arrival');
+  assert.equal(trajectory[trajectory.length - 1], 1);
 });
 
 /* -------------------------------- copy -------------------------------- */

@@ -82,6 +82,8 @@ import {
   type PhotoSession,
 } from '@/types/domain';
 
+import { HAIRSTYLE_COPY, hairstylesFor } from '@/features/hairstyles';
+
 import { FRONT_LOCK_DEG } from './engine';
 import { cropFor, type ReportCrop } from './region-crops';
 import {
@@ -172,6 +174,32 @@ export type RoutineBlock = {
 
 export type SaysBlock = { heading: string; speaker: 'Tress'; body: string };
 
+/** A tile is a drawing and a name; the cut's note is on /hairstyles, not here. */
+export type HairstyleTile = {
+  id: string;
+  name: string;
+  /** A bundled catalogue illustration (`require()`), never a frame from the scan. */
+  image: number;
+};
+
+/**
+ * "Hairstyles for your hair": the first three of the catalogue's picks
+ * for the hair type on the record, and the way to the rest. The tiles
+ * are the catalogue's own drawings — nothing from the scan is in them.
+ * The hair type is read back as the label of the choice, a quotation
+ * like the profile tiles'. The block carries only what the section
+ * draws: the catalogue's count and the cuts' notes belong to /hairstyles.
+ */
+export type HairstylesBlock = {
+  heading: string;
+  subheading: string;
+  /** The label of the hair type they chose, or null when the funnel has no answer. */
+  hairTypeLabel: string | null;
+  tiles: HairstyleTile[];
+  cta: string;
+  locked: boolean;
+};
+
 export type HairScanReportModel = {
   hero: { uri: string; width: number; height: number; dateLabel: string; contours?: unknown };
   tabs: { id: ReportTab; label: string }[];
@@ -186,6 +214,7 @@ export type HairScanReportModel = {
   profile: { heading: string; tiles: ProfileTile[] };
   focus: FocusBlock;
   tips: { heading: string; subheading: string; items: Tip[]; locked: boolean };
+  hairstyles: HairstylesBlock;
   routine: RoutineBlock;
   says: SaysBlock;
   /** In scroll order, for the Next pill. */
@@ -236,6 +265,8 @@ export const STRENGTHS_MAX = 4;
 export const STRENGTHS_MIN = 2;
 /** Products drawn on the routine block before the "+N" tile. */
 export const ROUTINE_TILES = 3;
+/** Catalogue drawings on the hairstyles block; the rest are on /hairstyles. */
+export const HAIRSTYLE_TILES = 3;
 
 /* -------------------------------- helpers -------------------------------- */
 
@@ -697,6 +728,31 @@ function routineBlock(data: AppData, premium: boolean): RoutineBlock {
   };
 }
 
+/* ----------------------------- the hairstyles ---------------------------- */
+
+/**
+ * The catalogue's first three picks for the record. Without Premium the
+ * block is locked: the screen shows the first drawing clear and holds
+ * the others, and the one button goes to /hairstyles, which holds the
+ * full list behind the entitlement. The picks themselves are the same
+ * either way — a free reading is never a different reading.
+ */
+function hairstylesBlock(data: AppData, premium: boolean): HairstylesBlock {
+  const journey = data.journey;
+  const hairType = journey ? journeyHairType(journey) : undefined;
+  const tiles = hairstylesFor(data)
+    .slice(0, HAIRSTYLE_TILES)
+    .map((s) => ({ id: s.id, name: s.name, image: s.image }));
+  return {
+    heading: HAIRSTYLE_COPY.report.heading,
+    subheading: HAIRSTYLE_COPY.report.subheading,
+    hairTypeLabel: hairType ? HAIR_TYPE_LABELS[hairType] : null,
+    tiles,
+    cta: HAIRSTYLE_COPY.report.cta,
+    locked: !premium,
+  };
+}
+
 /* ------------------------------- the model ------------------------------- */
 
 export function buildHairScanReport(
@@ -724,6 +780,7 @@ export function buildHairScanReport(
     { id: 'profile', label: COPY.sections.profile },
     ...(focus ? [{ id: 'focus', label: COPY.sections.focus }] : []),
     { id: 'tips', label: COPY.sections.tips },
+    { id: 'hairstyles', label: HAIRSTYLE_COPY.report.sectionLabel },
     { id: 'routine', label: COPY.sections.routine },
     { id: 'says', label: COPY.sections.says },
   ];
@@ -746,6 +803,7 @@ export function buildHairScanReport(
     profile: { heading: COPY.profile.heading, tiles: profileTiles(data.journey) },
     focus,
     tips: { heading: COPY.tips.heading, subheading: COPY.tips.subheading, items: tips.items, locked: !premium },
+    hairstyles: hairstylesBlock(data, premium),
     routine: routineBlock(data, premium),
     says: { heading: COPY.says.heading, speaker: 'Tress', body: reportSummary(data, session, data.profile?.displayName, now) },
     sections,
@@ -777,6 +835,10 @@ export function reportModelSentences(model: HairScanReportModel): string[] {
     model.tips.heading,
     model.tips.subheading,
     ...model.tips.items.flatMap((t) => [t.kicker, t.body]),
+    model.hairstyles.heading,
+    model.hairstyles.subheading,
+    model.hairstyles.cta,
+    ...model.hairstyles.tiles.map((t) => t.name),
     model.routine.heading,
     model.routine.body,
     model.routine.cta,
@@ -796,6 +858,7 @@ export function reportModelQuotes(model: HairScanReportModel): string[] {
   return [
     ...model.profile.tiles.map((t) => t.value),
     ...(model.focus ? [model.focus.goalLabel] : []),
+    ...(model.hairstyles.hairTypeLabel !== null ? [model.hairstyles.hairTypeLabel] : []),
     ...model.routine.products.map((p) => p.name),
     ...quotedSpans(model.says.body),
   ];

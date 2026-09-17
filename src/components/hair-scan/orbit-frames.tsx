@@ -71,6 +71,8 @@ import { darkColors, motion, radius, splitAlpha } from '@/theme';
 import { StaticHairMesh } from './hair-mesh';
 
 export {
+  BUILD_BAR_CREEP_RATIO,
+  BUILD_BAR_WORK_SHARE,
   HANDOFF_HOLD_MS,
   ORBIT_ABSORB_MS,
   ORBIT_ABSORB_PULSE_MS,
@@ -83,7 +85,10 @@ export {
   ORBIT_FRAME_MIN,
   ORBIT_SETTLE_HOLD_MS,
   ORBIT_STAGGER_MS,
+  absorbBeats,
+  absorbFloorMs,
   absorbHandoffMs,
+  buildBarTarget,
   handoffSchedule,
   orbitAbsorbAtMs,
   orbitAbsorbMs,
@@ -432,8 +437,11 @@ export function OrbitFrames({
   leadMs?: number;
   /**
    * Called on the JS thread as each frame arrives at the disc during
-   * the absorb, with the frame's index in `frames`. Keep it stable
-   * across renders: a frame's glide is keyed to it. Not called under
+   * the absorb, with the frame's index in `frames`: once per entry of
+   * `frames`, every one of which is rendered and glides, so a caller
+   * counting arrivals may count on `frames.length` of them. Keep it
+   * stable across renders: a frame's glide is keyed to it, and a fresh
+   * one restarts the glide and can drop the report. Not called under
    * Reduce Motion, where the frames fade rather than arrive.
    */
   onAbsorbed?: (index: number) => void;

@@ -45,6 +45,10 @@
  * the screen may hand off — because a renderer is not needed to reason
  * about any of that and the tests should not need one either. The
  * components in `components/hair-scan/orbit-frames.tsx` re-export them.
+ * The second bar's pacing is here for the same reason: the runner's
+ * work fills it to a share, and the gather — each frame's arrival at
+ * the disc, reported when its glide has actually finished — fills the
+ * rest, the last arrival completing it. `buildBarTarget` is that rule.
  *
  * Nothing in this file touches a native module at import time. The real
  * measurement functions are loaded lazily inside `defaultAnalysisDeps`,
@@ -636,6 +640,61 @@ export const ORBIT_ABSORB_PULSE_MS = 360;
 /** Once the last frame is in and the disc has settled, how long it holds before the hand-off. */
 export const ORBIT_ABSORB_SETTLE_MS = 450;
 
+/*
+  The second bar and the gather. The runner's work fills the bar only to
+  `BUILD_BAR_WORK_SHARE`; the rest is the gather, which is a real thing
+  on the screen — each frame's arrival at the disc is reported from the
+  UI thread when its glide has actually finished — so the bar's last
+  stretch is bound to arrivals, not to a clock. Each arrival adds
+  `BUILD_BAR_CREEP_RATIO` of what the one before added, every arrival
+  including the last, and the steps are sized so the last — the
+  smallest — lands the bar at exactly 1. That is the shape the owner
+  asked for: the bar slows down while the frames go in, and finishes
+  when the last one has. With four frames the arrival before the last
+  leaves the bar at about 98%.
+*/
+/** The share of the second bar the runner's work fills; the gather fills the rest. */
+export const BUILD_BAR_WORK_SHARE = 0.85;
+/** How much of the previous arrival's step the next arrival adds: under 1, so the bar slows down. */
+export const BUILD_BAR_CREEP_RATIO = 0.7;
+
+/**
+ * How many arrivals the second bar waits on before it may complete: one
+ * per frame gliding in, or one — the disc's lone breath — when nothing
+ * glides (a scan that kept only the main frame, or Reduce Motion, where
+ * the frames fade together).
+ */
+export function absorbBeats(count: number, reduceMotion: boolean): number {
+  return reduceMotion || count <= 0 ? 1 : count;
+}
+
+/**
+ * Where the second bar should be, given the runner's work and the
+ * gather so far.
+ *
+ * `workDone` is the runner's build fraction (0–1); `absorbed` is how many
+ * arrivals have been reported and `total` how many there will be (see
+ * `absorbBeats`). The bar never runs ahead of the work: below full work
+ * it is the work's share, whatever `absorbed` says. With the work done
+ * it holds at the work share until the first arrival; then each arrival
+ * adds `BUILD_BAR_CREEP_RATIO` of the step before it — the last arrival
+ * included, so the final step is the smallest — and the steps are sized
+ * so that the last lands the bar at exactly 1. A `total` of 0 means
+ * nothing to wait on at all, and the bar is the work alone.
+ */
+export function buildBarTarget(input: { workDone: number; absorbed: number; total: number }): number {
+  const { workDone, absorbed, total } = input;
+  const work = Math.min(1, Math.max(0, workDone));
+  if (total <= 0) return work;
+  if (work < 1 || absorbed <= 0) return work * BUILD_BAR_WORK_SHARE;
+  if (absorbed >= total) return 1;
+  // A geometric series over the arrivals: step k is r^(k-1) times the
+  // first, and the `total` steps sum to the whole of the gather's share.
+  const r = BUILD_BAR_CREEP_RATIO;
+  const climbed = (1 - r ** absorbed) / (1 - r ** total);
+  return BUILD_BAR_WORK_SHARE + (1 - BUILD_BAR_WORK_SHARE) * climbed;
+}
+
 /** The largest a frame in orbit is drawn, and the smallest a crowded ring shrinks one to. */
 export const ORBIT_FRAME_MAX = 80;
 export const ORBIT_FRAME_MIN = 56;
@@ -703,6 +762,20 @@ export function orbitAbsorbMs(count: number): number {
 export function absorbHandoffMs(count: number, reduceMotion: boolean, reducedFadeMs = 240): number {
   const gather = reduceMotion ? (count > 0 ? reducedFadeMs : 0) : orbitAbsorbMs(count);
   return gather + ORBIT_ABSORB_PULSE_MS + ORBIT_ABSORB_SETTLE_MS;
+}
+
+/**
+ * How long, from the absorb beginning, until every arrival the second
+ * bar waits on should have been reported: the last frame's glide and
+ * the breath on it. The screen treats this as a floor on the count, not
+ * as its pace — on a nominal pass every arrival has landed before it,
+ * and the floor changes nothing; if the ring ever reported one arrival
+ * fewer than the bar was told to wait on, the bar would otherwise never
+ * complete, and the report would open over a stalled bar. The settle
+ * that follows keeps the completed bar on screen before the hand-off.
+ */
+export function absorbFloorMs(count: number, reduceMotion: boolean, reducedFadeMs = 240): number {
+  return absorbHandoffMs(count, reduceMotion, reducedFadeMs) - ORBIT_ABSORB_SETTLE_MS;
 }
 
 /**

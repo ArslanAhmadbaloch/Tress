@@ -12,15 +12,35 @@
  * soft tap — then holds, and the screen hands off.
  *
  * ── Two clocks, one hand-off ──────────────────────────────────────────
- * The bars run on the runner's clock: they move when a unit finishes and
- * never otherwise. The ring runs on its own: it takes a fixed time to
- * form, however fast the pass was. The absorb and the hand-off wait for
- * the later of the two — the pass finished, and the ring formed — so a
- * build whose pass ends at its total floor (any build without the
- * segmenter, the simulator included) still shows the whole ring rather
- * than yanking the frames back mid-glide. The absorb's own length is
- * `absorbHandoffMs` in the analysis module: the last arrival, the
- * disc's breath on it, and a settle; the hand-off runs on that clock.
+ * The first bar runs on the runner's clock: it moves when a unit
+ * finishes and never otherwise. The ring runs on its own: it takes a
+ * fixed time to form, however fast the pass was. The absorb and the
+ * hand-off wait for the later of the two — the pass finished, and the
+ * ring formed — so a build whose pass ends at its total floor (any
+ * build without the segmenter, the simulator included) still shows the
+ * whole ring rather than yanking the frames back mid-glide. The
+ * absorb's own length is `absorbHandoffMs` in the analysis module: the
+ * last arrival, the disc's breath on it, and a settle; the hand-off
+ * runs on that clock.
+ *
+ * ── The second bar slows down ─────────────────────────────────────────
+ * The second bar runs on both clocks. The runner's work fills it to
+ * `BUILD_BAR_WORK_SHARE` (about 85%) and it holds there — through the
+ * total floor and, if the pass was quick, through the ring's settle —
+ * until the absorb begins. Then each arrival, reported from the UI
+ * thread as a frame's glide actually ends, moves it by a fixed share
+ * (`BUILD_BAR_CREEP_RATIO`) of what the one before moved it — the last
+ * arrival included, so the last step is the smallest — and the steps
+ * are sized so the last lands the bar at exactly 1; the green and the
+ * check land on that beat. `buildBarTarget` in the analysis module is
+ * the rule, as a function of the work done and the arrivals so far,
+ * and `absorbBeats` says how many arrivals there are: one per frame,
+ * or one — the disc's lone breath — when nothing glides. The ring
+ * reports one arrival per frame it is given, and it is given the same
+ * `others` the count is taken from; should it ever report one fewer,
+ * a clock at `absorbFloorMs` — after the last glide and its breath
+ * should have landed — completes the count, so the bar cannot stall
+ * under the report. On a nominal pass that clock changes nothing.
  *
  * ── The absorb ────────────────────────────────────────────────────────
  * Each frame's arrival is reported from the UI thread when its glide has
@@ -40,9 +60,12 @@
  *
  * ── The line it does not cross ────────────────────────────────────────
  * Both bars are bound to `runAnalysis`, which reports a unit only when
- * that unit's work has finished. Nothing here paces a bar with a timer;
- * the floors in the runner hold a finished reading on screen for a beat,
- * and that is all. The lines under the bars name the device's work on
+ * that unit's work has finished; the second bar's last stretch is bound
+ * to the gather, which is a real thing happening on the screen, each
+ * step of it an arrival the ring reported. Nothing here paces a bar
+ * with a timer; the floors in the runner hold a finished reading on
+ * screen for a beat, and the clock on the gather is a floor under a
+ * count the ring keeps, never the count itself. The lines under the bars name the device's work on
  * the images. A tick means the device has a reading; a frame it could
  * not read gets no tick. The last line counts frames with a reading, not
  * frames handed in. Nothing on this screen says anything about the hair,
@@ -109,7 +132,10 @@ import {
   Halo,
   ORBIT_ABSORB_PULSE_MS,
   ORBIT_FRAME_W,
+  absorbBeats,
+  absorbFloorMs,
   absorbHandoffMs,
+  buildBarTarget,
   orbitFrameSize,
   OrbitFrames,
   orbitReadyMs,
@@ -231,7 +257,7 @@ function StageRow({
 }: {
   label: string;
   fraction: number;
-  /** This bar's units are the ones running. */
+  /** This bar is the one moving: its units are running, or its gather is under way. */
   active: boolean;
   done: boolean;
   /** The line under the bar, or null for none. */
@@ -424,6 +450,22 @@ export function Processing({ frames, onComplete, onAbsorb, onError, deps }: Proc
     reduceMotionRef.current = reduceMotion;
   }, [reduceMotion]);
 
+  /*
+    How many breaths the disc has taken: one per frame that has arrived,
+    or the lone one. The second bar's last stretch is paced on this — it
+    is the gather, counted, not a clock. `frames` is a stable reference
+    by contract, so the count is never reset; a new set of frames is a
+    new screen.
+  */
+  const [absorbed, setAbsorbed] = useState(0);
+  /*
+    How many the bar waits on. The ring reports one arrival per entry
+    of `others` — it renders every one, and each glide that runs to its
+    end reports — so this is the ring's own count, taken from the same
+    list it is handed.
+  */
+  const absorbTotal = absorbBeats(others.length, reduceMotion);
+
   const breathe = useCallback(() => {
     const rise = ORBIT_ABSORB_PULSE_MS * PULSE_RISE;
     const settle = ORBIT_ABSORB_PULSE_MS - rise;
@@ -442,6 +484,7 @@ export function Processing({ frames, onComplete, onAbsorb, onError, deps }: Proc
       );
     }
     onAbsorbRef.current?.();
+    setAbsorbed((n) => n + 1);
   }, [pulse, flare]);
 
   // With nothing gliding in — no other frames, or Reduce Motion, where
@@ -454,6 +497,20 @@ export function Processing({ frames, onComplete, onAbsorb, onError, deps }: Proc
     const timer = setTimeout(breathe, wait);
     return () => clearTimeout(timer);
   }, [absorbing, others.length, reduceMotion, breathe]);
+
+  // The floor under the count. By this time every arrival should have
+  // been reported (the last glide, and the breath on it); if the ring
+  // came up one short — a glide cut off, a callback that changed under
+  // it — the count is completed here, so the bar goes green and the
+  // check lands during the settle rather than never. No breath and no
+  // tap: those belong to arrivals, and this is not one. On a nominal
+  // pass the count is already full and this does nothing.
+  useEffect(() => {
+    if (!absorbing) return;
+    const wait = absorbFloorMs(others.length, reduceMotion, motion.duration.base);
+    const timer = setTimeout(() => setAbsorbed((n) => Math.max(n, absorbTotal)), wait);
+    return () => clearTimeout(timer);
+  }, [absorbing, others.length, reduceMotion, absorbTotal]);
 
   // The hand-off waits for the last frame to be taken in, the breath on
   // it, and the settle, so the report opens on a disc at rest rather
@@ -527,7 +584,17 @@ export function Processing({ frames, onComplete, onAbsorb, onError, deps }: Proc
   const phase: AnalysisPhase = progress?.phase ?? 'analyse';
   const analyseLabel = plan?.phases.analyse.label ?? ANALYSIS_COPY.phase.analyse;
   const buildLabel = plan?.phases.build.label ?? ANALYSIS_COPY.phase.build;
-  const buildDone = (progress?.fraction.build ?? 0) >= 1 && finished;
+  /*
+    The second bar: the runner's work to its share, then the gather.
+    `absorbed` only ever moves once `absorbing` is true, and `absorbing`
+    needs `finished`, so the bar can never be pulled past the work.
+  */
+  const buildTarget = buildBarTarget({
+    workDone: progress?.fraction.build ?? 0,
+    absorbed,
+    total: absorbTotal,
+  });
+  const buildDone = buildTarget >= 1;
 
   const unitLine = progress && !finished ? progress.unit.label : null;
   const doneLine = run.result && finished ? ANALYSIS_COPY.done(run.result.measured, run.result.frames.length) : null;
@@ -646,8 +713,8 @@ export function Processing({ frames, onComplete, onAbsorb, onError, deps }: Proc
         />
         <StageRow
           label={buildLabel}
-          fraction={progress?.fraction.build ?? 0}
-          active={phase === 'build' && !finished}
+          fraction={buildTarget}
+          active={phase === 'build' && !buildDone}
           done={buildDone}
           detail={buildDetail}
         />

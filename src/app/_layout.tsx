@@ -252,6 +252,12 @@ function Navigation() {
             back gesture is off because the counts are a scene, not a
             page somebody scrolled to. */}
         <Stack.Screen name="plan" options={{ animation: 'fade', gestureEnabled: false }} />
+        {/*
+            The hairstyle catalogue: a list read and returned from, opened
+            from Home and from the report's hairstyles section (the paywall
+            names it as a benefit but does not link to it). A push, like
+            the shelf; it draws its own way back. */}
+        <Stack.Screen name="hairstyles" />
         <Stack.Screen name="learn/[slug]" />
         <Stack.Screen
           name="journal"

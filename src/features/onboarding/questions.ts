@@ -211,11 +211,26 @@ function fromLabels<T extends string>(labels: Record<T, string>): QuestionOption
  * tables: the shelves each budget tier means, and the names an ingredient
  * hides behind on a label. Neither says anything about anybody's hair.
  */
+/*
+  The four tiers with the money in them.
+
+  The owner's note after the Phase 4 walk: four tiers named and nothing
+  else made the page read as though the app were embarrassed to mention
+  price. A tier is only a comparison if the reader can see what separates
+  one from the next, so each line now opens with the bracket it means and
+  then says which shelf that is.
+
+  The numbers are the brackets the owner set (H.2, 2026-09-17), in US
+  dollars, per product — a guide to what the tier means, not a price the
+  app has looked up, and nothing is sold here. They are written as plain
+  text rather than through a currency formatter for exactly that reason:
+  a formatted price implies a figure that came from somewhere.
+*/
 const BUDGET_DESCRIPTIONS: Record<Budget, string> = {
-  everyday: 'Supermarket and pharmacy shelves',
-  midRange: 'Salon brands and the better pharmacy lines',
-  premium: 'Specialist lines and clinic-sold products',
-  luxury: 'Whatever it costs',
+  everyday: 'Under $15 a product · supermarket and pharmacy shelves',
+  midRange: '$15–40 a product · salon brands and the better pharmacy lines',
+  premium: '$40–90 a product · specialist lines and clinic-sold products',
+  luxury: '$90 and up · whatever it costs',
 };
 
 const BUDGET_TINTS: Record<Budget, OptionTint> = {
@@ -232,9 +247,24 @@ const BUDGET_ICONS: Record<Budget, FunnelGlyph> = {
   luxury: 'sparkle',
 };
 
+/*
+  The fragrance row's wording (H.3) is INGREDIENT_REACTION_LABELS' own
+  now, not an override laid over it here.
+
+  It was an override for one build, and that was the bug: the funnel drew
+  "Fragrance (listed as parfum)" while every screen that reads an answer
+  back — the shelf, the report's paragraph — quoted the table's
+  "Fragrance/parfum", so the report attributed to somebody words they had
+  never been offered. A funnel answer is echoed as its label, which only
+  works while there is one label. So the wording moved to the table and
+  this file reads it like every other row.
+*/
+
 const REACTION_EXAMPLES: Partial<Record<IngredientReaction, string>> = {
   sulfates: 'e.g. SLS, SLES',
-  fragrance: 'Listed as parfum or fragrance',
+  // The label carries the term now, so the line under it says where it
+  // is found rather than saying "parfum" a second time.
+  fragrance: 'The scent added to a product',
   essentialOils: 'e.g. rosemary, tea tree, peppermint',
   alcohols: 'e.g. denatured alcohol, alcohol denat.',
   hairDye: 'Permanent or semi-permanent colour',

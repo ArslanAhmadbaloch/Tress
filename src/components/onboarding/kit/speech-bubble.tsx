@@ -23,7 +23,7 @@ import { Text } from '@/components/ui/text';
 import { fontFamily, useTheme } from '@/theme';
 
 import { splitAccent } from './copy';
-import { Mascot, type MascotExpression } from './mascot';
+import { Mascot, type MascotExpression, type MascotGaze } from './mascot';
 
 /** The orb beside a question. */
 const ORB = 60;
@@ -39,6 +39,7 @@ export function SpeechBubble({
   accentWord,
   subtitle,
   expression = 'smile',
+  gaze = 'user',
   children,
 }: {
   title: string;
@@ -46,6 +47,13 @@ export function SpeechBubble({
   accentWord?: string;
   subtitle?: string;
   expression?: MascotExpression;
+  /**
+   * Where Tress is looking while the question stands: at the person, or
+   * up at the bubble beside him. The funnel reads both this and the
+   * expression off `expressionFor(question.id)`, so the pair always
+   * belongs to the same question.
+   */
+  gaze?: MascotGaze;
   children?: ReactNode;
 }) {
   const { colors, spacing, radius } = useTheme();
@@ -109,6 +117,7 @@ export function SpeechBubble({
       <Mascot
         size={ORB}
         expression={expression}
+        gaze={gaze}
         style={{ position: 'absolute', left: -ORB - spacing.sm, bottom: 0 }}
       />
     </Animated.View>

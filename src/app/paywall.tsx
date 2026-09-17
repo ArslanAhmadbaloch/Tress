@@ -15,18 +15,19 @@
  *
  * ── The page, top to bottom ────────────────────────────────────────────
  * The reference's paywall, in this palette. Two tilted cards: their
- * latest scan on the left, and on the right an EMPTY dashed frame carrying
- * the date the record says the next scan is due — never a second copy of
- * the photograph, never a generated after. The headline, alone. Three
- * icon benefits in a row directly under it, each a thing the entitlement
- * really decides. Two plan cards, the month first and the year second
+ * latest scan on the left, and on the right a DASHED frame carrying
+ * the date the record says the next scan is due, over the app's own
+ * bundled example blurred to a shape — never a second copy of
+ * the photograph, never a generated after. The headline, alone. Four
+ * icon benefits directly under it, in two rows of two (H.9), each a
+ * thing the entitlement really decides. Two plan cards, the month first and the year second
  * with the tick already in it. A promo-code link (iOS, where the store
  * has a sheet for it) and Restore. Then, pinned, the button, the renewal
  * terms, and one row of small print: where the photographs are kept,
  * and the two legal links.
  *
  * Nothing between the cards and the plans but the headline and the
- * three benefits — no caption under the cards, no framing paragraph
+ * four benefits — no caption under the cards, no framing paragraph
  * under the title. The reference has neither, and each one pushed the
  * plans a text block further from the top. The one paragraph this
  * screen ever draws is the second ask's, on the single visit that is.
@@ -195,7 +196,7 @@ export default function PaywallScreen() {
         </Rise>
 
         {/*
-          The title, and under it the three benefits — nothing in between,
+          The title, and under it the four benefits — nothing in between,
           as the reference draws it. The one visit that carries a body is
           the second ask, which swaps the headline and adds its paragraph
           and nothing else; see paywall-variants.ts.
@@ -219,11 +220,14 @@ export default function PaywallScreen() {
           ) : null}
         </Rise>
 
+        {/* Four cells, so they take Rise indices 2 through 5 and the
+            plans follow at 6 — the stagger is one sequence down the page,
+            and two things sharing an index would land together. */}
         <View style={{ marginTop: spacing.xl }}>
           <PaywallHighlights firstIndex={2} />
         </View>
 
-        <Rise index={5} style={{ marginTop: spacing.xxxl }}>
+        <Rise index={6} style={{ marginTop: spacing.xxxl }}>
           <View accessibilityRole="radiogroup" style={{ gap: spacing.md }}>
             {PLAN_DISPLAY_ORDER.map((id) => (
               <PaywallPlanCard
@@ -245,7 +249,7 @@ export default function PaywallScreen() {
           written here.
         */}
         <Rise
-          index={6}
+          index={7}
           style={{
             flexDirection: 'row',
             alignItems: 'center',

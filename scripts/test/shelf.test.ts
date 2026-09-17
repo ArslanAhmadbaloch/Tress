@@ -631,7 +631,7 @@ test('a preference is held against the printed words of the database list, hit o
   const fragrance = byId(':reaction:fragrance');
   assert.equal(
     fragrance.text,
-    'You said you have reacted to “Fragrance/parfum”. The word “Parfum” is printed in the ingredient list Open Beauty Facts holds for this record.',
+    'You said you have reacted to “Fragrance (listed as parfum)”. The word “Parfum” is printed in the ingredient list Open Beauty Facts holds for this record.',
   );
   assert.equal(
     byId(':reaction:alcohols').text,

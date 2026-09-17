@@ -4,11 +4,22 @@
  * The reference opens with the person's own photograph twice, tilted
  * towards each other and labelled "before" and "after". This keeps the
  * shape — two cards, a slight tilt each way, the right one a little
- * higher and in front — and changes what the right one is. It is an
- * empty frame, dashed, labelled with the date the record says the next
- * scan is due. Not a second copy of the photograph and not a generated
- * after: the app has no idea what anybody's hair will do, and a picture
- * that suggested otherwise would be a promise made with their own face.
+ * higher and in front — and changes what the right one is. It is a
+ * dashed frame carrying the date the record says the next scan is due.
+ * Not a second copy of the photograph and not a generated after: the app
+ * has no idea what anybody's hair will do, and a picture that suggested
+ * otherwise would be a promise made with their own face.
+ *
+ * Behind the dashes sits the app's own gender-matched example — the
+ * bundled CROWN view, the back of a head, which is the one of the five
+ * that is a full head of hair and nothing else — blurred hard and laid
+ * under a cream scrim, so what shows through is a head of hair as a
+ * shape and no more. It is there because a hole in the layout reads as
+ * something missing, while a photograph waiting to be taken reads as the
+ * thing the subscription is for. Three rules hold it honest: it is never
+ * the person's own photograph (their picture is the card on the left,
+ * once), it is never labelled "after" or given a date, and what a screen
+ * reader hears calls it an example (HERO_COPY.waiting).
  *
  * The left card is their latest scan, exactly as they took it, with the
  * day it was taken on its pill — "Today" only when that is true. With no
@@ -46,6 +57,7 @@ import Animated, {
 
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { hairContent } from '@/features/content/hair-content';
 import {
   HERO_COPY,
   heroAccessibilityLabel,
@@ -59,19 +71,38 @@ import type { Gender } from '@/types/domain';
 
 /**
  * The app's own reference photographs — the same front views the
- * scanner's guides use — chosen by who is holding the phone. Shown only
- * when there is no photograph of their own, and labelled as an example.
+ * scanner's guides use — chosen by who is holding the phone. Shown on
+ * the left card only when there is no photograph of their own, and
+ * labelled as an example when it is.
+ *
+ * With no gender recorded the left card falls back to the portrait,
+ * which is a face rather than a hairline and says less about somebody
+ * the app has not met.
  */
-const EXAMPLE = {
-  male: require('@/assets/images/angle-front.jpg'),
-  female: require('@/assets/images/female-angle-front.jpg'),
-  portrait: require('@/assets/images/angle-portrait.jpg'),
-};
+const PORTRAIT = require('@/assets/images/angle-portrait.jpg');
 
 function exampleSource(gender: Gender | undefined): number {
-  if (gender === 'female') return EXAMPLE.female;
-  if (gender === 'male') return EXAMPLE.male;
-  return EXAMPLE.portrait;
+  if (gender === undefined) return PORTRAIT;
+  return hairContent(gender).angles.front.example;
+}
+
+/**
+ * The blurred backdrop of the dashed frame.
+ *
+ * The CROWN example, not the front one. H.9 asks for "a blurred full head
+ * of hair", and the crown shot is the only one of the five that is that
+ * and nothing else: the back of a head, all hair, no face, no hairline,
+ * no parting. The front example is a hairline and eyes for a man and a
+ * scalp-part close-up for a woman — the most loaded crop in this
+ * category — and a blurred one of those sitting beside somebody's own
+ * photograph on a paywall reads as a comment on them however hard the
+ * scrim works. The crown reads as hair.
+ *
+ * Always the bundled example, never theirs; hairContent reads an absent
+ * gender as the male set, which is the set the app shipped with.
+ */
+function backdropSource(gender: Gender | undefined): number {
+  return hairContent(gender).angles.crown.example;
 }
 
 /* ------------------------------- geometry ------------------------------- */
@@ -86,11 +117,20 @@ const CARD_SHARE = 0.53;
 const DROP = 18;
 /** Where the cards start, below where they land. */
 const RISE = 26;
-/** The dashed edge of the empty frame: a touch over a hairline, so the
+/** The dashed edge of the frame: a touch over a hairline, so the
     dashes read as a drawn frame rather than a rendering artefact. */
 const DASH = 1.5;
-/** The disc holding the camera glyph in the empty frame. */
+/** The disc holding the camera glyph in the dashed frame. */
 const DISC = 48;
+/** How hard the example behind the dashes is blurred. Far past the point
+    where a face could be read: what is left is hair as a shape. */
+const BACKDROP_BLUR = 18;
+/** The cream scrim over it, so the dashes, the glyph and the date stay
+    the things being read. Enough to hold the chrome legible in both
+    themes, and not so much that the hair behind it disappears — the
+    point of the picture is that the card reads as a photograph waiting
+    to be taken. */
+const SCRIM_OPACITY = 0.6;
 
 /* ------------------------------ component ------------------------------- */
 
@@ -102,7 +142,7 @@ export function PaywallHeroPair({
   hero: PaywallHero | null;
   /** Chooses the example photograph when there is no photograph of theirs. */
   gender: Gender | undefined;
-  /** "Next scan · 17 Oct" — the empty frame's pill. */
+  /** "Next scan · 17 Oct" — the dashed frame's pill. */
   nextLabel: string;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
@@ -220,7 +260,7 @@ export function PaywallHeroPair({
         </View>
       </Animated.View>
 
-      {/* The empty frame, tilted to the right and in front. */}
+      {/* The dashed frame, tilted to the right and in front. */}
       <Animated.View
         style={[
           {
@@ -243,9 +283,27 @@ export function PaywallHeroPair({
             borderStyle: 'dashed',
             borderColor: colors.fillSelected,
             backgroundColor: colors.surface,
+            overflow: 'hidden',
             alignItems: 'center',
             justifyContent: 'center',
           }}>
+          {/* The bundled example, blurred to a shape, under a cream
+              scrim. Never their photograph, never dated, never after. */}
+          <Image
+            source={backdropSource(gender)}
+            contentFit="cover"
+            blurRadius={BACKDROP_BLUR}
+            transition={220}
+            style={StyleSheet.absoluteFill}
+            accessible={false}
+          />
+          <View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: colors.surface, opacity: SCRIM_OPACITY },
+            ]}
+          />
           <View
             style={{
               width: DISC,

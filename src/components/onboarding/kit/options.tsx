@@ -250,6 +250,27 @@ function CircleCheck({ selected }: { selected: boolean }) {
   );
 }
 
+/**
+ * A card's label, across the whole width of the card.
+ *
+ * Width is the whole fix. Neither platform hyphenates by default — the
+ * two props that were here saying so (`android_hyphenationFrequency`,
+ * `lineBreakStrategyIOS`) were setting React Native's own defaults and
+ * changing nothing, so they are gone rather than left taking credit. A
+ * word longer than the line it is on is what breaks mid-word, and the
+ * answer is to give it a longer line: at two columns on a 390pt screen
+ * the card's inside is about 124pt, against roughly 94pt when the label
+ * shared its line with the check. "perimenopause" measures near 116pt
+ * at headline size, so it is the difference between fitting and not.
+ */
+function Label({ label, marginTop }: { label: string; marginTop: number }) {
+  return (
+    <Text variant="headline" style={{ marginTop, width: '100%' }}>
+      {label}
+    </Text>
+  );
+}
+
 export function OptionCard({
   icon,
   label,
@@ -282,27 +303,35 @@ export function OptionCard({
           padding: spacing.xl,
           borderRadius: radius.lg,
           backgroundColor: colors.surface,
-          gap: spacing.sm,
         },
         shadow.soft,
       ]}>
+      {/*
+        The top row carries the icon, when there is one, and the check.
+        On a text card it carries the check alone, so the label below it
+        has the whole card to wrap in: at two columns a word like
+        "perimenopause" is close to the full width, and sharing the line
+        with the check was what broke it in the middle.
+
+        The cost is honest and worth naming: a text card is about 13pt
+        taller than it was, because the check now holds a line of its own
+        above the label instead of sitting beside it. The spacing is set
+        per child rather than by a container `gap` so that cost lands on
+        the text card alone — an icon card keeps exactly the measures it
+        had (8 between the icon row and the label, 4 more on the label, 8
+        down to the sub-line).
+      */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
         {drawn ? (
           <View style={{ flex: 1, minHeight: 30, justifyContent: 'center' }}>{drawn}</View>
         ) : (
-          <Text variant="headline" style={{ flex: 1 }}>
-            {label}
-          </Text>
+          <View style={{ flex: 1 }} />
         )}
         <CircleCheck selected={selected} />
       </View>
-      {drawn ? (
-        <Text variant="headline" style={{ marginTop: spacing.xs }}>
-          {label}
-        </Text>
-      ) : null}
+      <Label label={label} marginTop={drawn ? spacing.sm + spacing.xs : 0} />
       {sub ? (
-        <Text variant="callout" color="textSecondary">
+        <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
           {sub}
         </Text>
       ) : null}

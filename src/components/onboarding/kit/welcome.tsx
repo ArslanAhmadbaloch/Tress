@@ -155,6 +155,18 @@ export function Welcome({
 
   const tileRadius = radius.xl;
 
+  /*
+    The consent line arrives in pieces so the two links can carry their
+    own tap, and the pieces are words, not fragments of typography: a
+    copy file should not have to end a string with a space to keep a
+    sentence together. The joins are made here — one space either side of
+    each link, none before the full stop — and any space a caller did
+    leave on an end is trimmed first, so the line never doubles up.
+  */
+  const legalBefore = legal.before.trimEnd();
+  const legalBetween = legal.between.trim();
+  const legalAfter = (legal.after ?? '').trimStart();
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Ground />
@@ -236,7 +248,7 @@ export function Welcome({
         </PressableScale>
 
         <Text variant="footnote" color="textTertiary" center>
-          {legal.before}
+          {legalBefore}{' '}
           <Text
             variant="footnote"
             color="textSecondary"
@@ -244,8 +256,8 @@ export function Welcome({
             onPress={onTerms}
             style={{ textDecorationLine: 'underline' }}>
             {legal.terms}
-          </Text>
-          {legal.between}
+          </Text>{' '}
+          {legalBetween}{' '}
           <Text
             variant="footnote"
             color="textSecondary"
@@ -254,7 +266,7 @@ export function Welcome({
             style={{ textDecorationLine: 'underline' }}>
             {legal.privacy}
           </Text>
-          {legal.after ?? ''}
+          {legalAfter}
         </Text>
       </View>
     </View>

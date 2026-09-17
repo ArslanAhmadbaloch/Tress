@@ -66,6 +66,7 @@ import {
   orderedFrames,
   reduce,
   snapshotMesh,
+  squareOn,
 } from '@/features/hair-scan/engine';
 import { createScanHaptics } from '@/features/hair-scan/haptics';
 import { scanBlock, scanPhotos, type HairScanFrame } from '@/features/hair-scan/result';
@@ -98,6 +99,13 @@ import { sessionToExtend, type Angle, type PhotoSession } from '@/types/domain';
 
 /** How often the tracker is asked whether its last face has gone stale. */
 const EXPIRE_TICK_MS = 250;
+/**
+ * How long the ready screen waits before taking the light meter's one
+ * still. Long enough for the camera to have settled its exposure, short
+ * enough that the pill has a word on it before anybody has read the hint
+ * under the oval.
+ */
+const PROBE_STILL_DELAY_MS = 900;
 /** The "Scan complete" beat, before the processing screen. */
 const COMPLETE_BEAT_MS = 1600;
 const COMPLETE_BEAT_REDUCED_MS = 600;
@@ -313,6 +321,7 @@ function Scanner({
     gateLevel,
     sampleStill,
     frameOutput,
+    needsStill,
     level: lightLevel,
     status: lightStatus,
   } = useLightingProbe();
@@ -330,6 +339,13 @@ function Scanner({
   const [view, setView] = useState<ViewModel>(() => viewOf(initial));
   const [processingFrames, setProcessingFrames] = useState<ProcessingFrame[]>([]);
   const [session, setSession] = useState<PhotoSession | null>(null);
+  /**
+   * A head is being followed and it is turned away from the camera. Not
+   * a state of the engine — it is still `detecting` — so it is kept
+   * beside the view model rather than in it, and it changes the pill's
+   * word and nothing else.
+   */
+  const [facingAway, setFacingAway] = useState(false);
   const coverage = useSharedValue<number[]>(emptyCoverage());
   const [haptics] = useState(() => createScanHaptics());
   const tracker = useRef<TrackerState>(createTracker());
@@ -345,6 +361,13 @@ function Scanner({
   const tally = useRef({ ticks: 0, faced: 0, lightSum: 0, lightN: 0 });
   /** `step`, reachable from the promises it starts. Bound in an effect below. */
   const stepRef = useRef<(action: ScanAction) => void>(() => undefined);
+  /**
+   * The ready screen's light-meter shot while it is in flight, so the
+   * scan's first capture queues behind it instead of racing it. Null
+   * every other moment, which is every moment on a build whose frame
+   * processor is alive. See the probe effect below.
+   */
+  const probeShot = useRef<Promise<void> | null>(null);
 
   /* The one place the engine is advanced; every event is acted on here. */
   const step = useCallback(
@@ -392,8 +415,18 @@ function Scanner({
             // moved on. It rides on the frame to the processing screen
             // and no further.
             const frameMesh = face === null ? null : snapshotMesh(face, previewSize.current);
-            camera.current?.takePhoto().then(
+            // Almost always the shutter itself. The one exception is the
+            // ready screen's light-meter shot: if Start was pressed while
+            // it was still in flight, this waits for the camera to be
+            // free rather than asking it for two photographs at once.
+            const take = () => Promise.resolve(camera.current?.takePhoto());
+            const pending = probeShot.current;
+            const shot = pending ? pending.then(take) : take();
+            shot.then(
               (image) => {
+                // No camera to ask: the same nothing that happened before
+                // this call was ever made through a promise.
+                if (!image) return;
                 // The still is the light meter's only input on a build
                 // without a frame processor; the probe ignores it otherwise.
                 sampleStill(image.uri).catch(() => undefined);
@@ -495,6 +528,15 @@ function Scanner({
       tracker.current = trackFrame(tracker.current, raw, now);
       const face = tracker.current.face;
       mesh.current?.setFace(face);
+      const reading = face ? toEngineReading(face, mask) : null;
+      /*
+        A head in hand, turned away. The engine is still `detecting` —
+        the scan may not start until the face is square on — but the pill
+        should not claim the phone cannot find a face it is following.
+        React is told only when the answer changes; identical values
+        bail out of `setState` without a render.
+      */
+      setFacingAway(reading !== null && !squareOn(reading));
       const lighting = gateLevel();
       if (engine.current.scanner === 'scanning') {
         const t = tally.current;
@@ -505,12 +547,7 @@ function Scanner({
           t.lightN += 1;
         }
       }
-      step({
-        type: 'tick',
-        at: now,
-        face: face ? toEngineReading(face, mask) : null,
-        lighting,
-      });
+      step({ type: 'tick', at: now, face: reading, lighting });
     },
     [gateLevel, mask, step],
   );
@@ -525,10 +562,77 @@ function Scanner({
       if (expired === tracker.current) return;
       tracker.current = expired;
       mesh.current?.setFace(null);
+      // The face is gone, so the pill goes back to looking for one.
+      setFacingAway(false);
       step({ type: 'tick', at: now, face: null, lighting: gateLevel() });
     }, EXPIRE_TICK_MS);
     return () => clearInterval(timer);
   }, [cameraLive, gateLevel, step]);
+
+  /*
+    The light meter's one still on the ready screen.
+
+    On a build without the frame processor the meter has nothing to read
+    until a photograph is taken, and the scanner takes none until the
+    scan starts — so the pill would sit on "Reading the light" through
+    the whole ready screen and only find a word once the turn was under
+    way. One photograph is taken here instead, measured, and its file
+    deleted: no haptic, no frame added to the scan, and nothing at all on
+    a build whose frame processor is alive (`needsStill` is false there
+    from the start).
+
+    Not silent yet, and the comment says so rather than the opposite.
+    `needsStill` is true whenever the lighting engine is on its stills
+    fallback, which on an Expo Go build — the build the owner walked — is
+    the expo-camera implementation, and `takePictureAsync` there is
+    called without `shutterSound: false` while `CameraView` keeps
+    `animateShutter` at its default. expo-camera defaults both to true
+    (`Camera.types.d.ts`, `@default true` on each), so that build plays
+    the system shutter and flashes the preview about a second into the
+    ready screen. Both switches live in `scanner-camera.tsx`, which this
+    lane does not own; it is in openIssues.
+
+    Once, per mount. A camera that refuses the shot leaves the pill as it
+    was, which is the honest outcome — a reading was not taken, so none
+    is shown.
+
+    `probeShot` holds the shot while it is in flight so the scan's first
+    capture can queue behind it (see the `capture` event): two captures
+    at once on one camera can have the second rejected, and on this path
+    the shot is not quick — it includes a resize.
+  */
+  const probedLight = useRef(false);
+  useEffect(() => {
+    if (!needsStill || scanner !== 'ready' || probedLight.current) return undefined;
+    probedLight.current = true;
+    const timer = setTimeout(() => {
+      // The turn may have started in the meantime, and the scan's own
+      // frames are the meter's input from then on.
+      if (engine.current.scanner !== 'ready') return;
+      const shot = camera.current?.takePhoto();
+      if (!shot) return;
+      // The scan waits for the camera, not for the measurement, so the
+      // promise it queues behind settles with the shutter.
+      const done = shot.then(
+        (image) => {
+          // The file this call wrote is the meter's input and nothing
+          // else: measured, then deleted, whether or not the measurement
+          // worked. Deleting it is all this screen can delete — the
+          // camera's own temporary original is upstream of `takePhoto`,
+          // and is left where every other capture in this file leaves it.
+          void sampleStill(image.uri)
+            .catch(() => undefined)
+            .finally(() => deletePhotoFiles(filesOf([image])));
+        },
+        () => undefined,
+      );
+      probeShot.current = done;
+      void done.finally(() => {
+        if (probeShot.current === done) probeShot.current = null;
+      });
+    }, PROBE_STILL_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [needsStill, scanner, sampleStill]);
 
   const onCameraError = useCallback(() => {
     step({ type: 'fail', reason: 'cameraFailed', at: Date.now() });
@@ -840,7 +944,16 @@ function Scanner({
   // The completion plate below says it once; the pill goes quiet for the beat.
   const status =
     cameraLive && !complete
-      ? { tone: toneOf(view), label: HAIR_SCAN_COPY.status[view.status] }
+      ? {
+          tone: toneOf(view),
+          // "Looking for your face" is only true while there is no face
+          // to look at. With one in hand and turned away, the pill asks
+          // for the one thing that would move the scan on.
+          label:
+            view.status === 'detecting' && facingAway
+              ? HAIR_SCAN_COPY.facingAway
+              : HAIR_SCAN_COPY.status[view.status],
+        }
       : null;
 
   return (

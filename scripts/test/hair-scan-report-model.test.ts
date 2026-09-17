@@ -16,6 +16,7 @@ import { test } from 'node:test';
 import { profileSentence, reportSummary } from '@/features/coach/report-summary';
 import {
   FOCUS_REGIONS,
+  HAIRSTYLE_TILES,
   STRENGTHS_MAX,
   STRENGTHS_MIN,
   buildHairScanReport,
@@ -23,6 +24,7 @@ import {
   reportModelSentences,
   type HairScanReportModel,
 } from '@/features/hair-scan/report-model';
+import { HAIRSTYLE_CATALOGUE, HAIRSTYLE_COPY, hairstylesFor } from '@/features/hairstyles';
 import { HAIR_SCAN_REPORT_MODEL_COPY as COPY, quotedSpans, reportCopySentences, stripQuotes } from '@/features/hair-scan/report-copy';
 import { reminderOfferInterval } from '@/features/hair-scan/result';
 import {
@@ -288,10 +290,37 @@ test('model: every section has real content on a first scan without the segmente
   assert.equal(m.routine.moreCount, 0);
   assert.equal(m.says.speaker, 'Tress');
   assert.ok(m.says.body.length > 100);
+  // The hairstyles block: three catalogue drawings for the record and the way to the rest — and nothing the section does not draw.
+  assert.equal(m.hairstyles.tiles.length, HAIRSTYLE_TILES);
+  assert.equal(m.hairstyles.heading, HAIRSTYLE_COPY.report.heading);
+  assert.equal(m.hairstyles.subheading, HAIRSTYLE_COPY.report.subheading);
+  assert.equal(m.hairstyles.cta, HAIRSTYLE_COPY.report.cta);
+  assert.deepEqual(m.hairstyles.tiles.map((t) => t.id), hairstylesFor(firstScanNoSegmenter().data).slice(0, HAIRSTYLE_TILES).map((s) => s.id));
+  assert.deepEqual(Object.keys(m.hairstyles).sort(), ['cta', 'hairTypeLabel', 'heading', 'locked', 'subheading', 'tiles'], 'no dead payload on the block');
+  for (const tile of m.hairstyles.tiles) assert.deepEqual(Object.keys(tile).sort(), ['id', 'image', 'name'], 'a tile is a drawing and a name');
   assert.deepEqual(
     m.sections.map((s) => s.id),
-    ['analysis', 'strengths', 'profile', 'focus', 'tips', 'routine', 'says'],
+    ['analysis', 'strengths', 'profile', 'focus', 'tips', 'hairstyles', 'routine', 'says'],
   );
+});
+
+test('hairstyles: the block reads the hair type back as a label, never into a sentence, and its drawings are the catalogue’s', () => {
+  const typed = build(newFunnelRecord);
+  assert.equal(typed.hairstyles.hairTypeLabel, HAIR_TYPE_LABELS.wavy, 'the label of the choice, verbatim');
+  assert.ok(reportModelQuotes(typed).includes(HAIR_TYPE_LABELS.wavy), 'and it is a quotation');
+  for (const tile of typed.hairstyles.tiles) {
+    const entry = HAIRSTYLE_CATALOGUE.find((s) => s.id === tile.id);
+    assert.ok(entry, `${tile.id} is in the catalogue`);
+    assert.equal(tile.image, entry.image, 'the drawing is the catalogue’s, not a frame');
+    assert.ok(entry.hairTypes.includes('wavy'), `${tile.id} is cut on wavy hair`);
+    assert.equal(tile.name, entry.name);
+  }
+  // No hair type on the record: no label, and the cuts drawn for everybody.
+  const untyped = build(firstScanNoSegmenter);
+  assert.equal(untyped.hairstyles.hairTypeLabel, null);
+  for (const tile of untyped.hairstyles.tiles) {
+    assert.equal(HAIRSTYLE_CATALOGUE.find((s) => s.id === tile.id)?.gender, 'any');
+  }
 });
 
 test('model: rows belong to tabs, carry a crop from the frame they describe, and the region labels are places', () => {
@@ -896,14 +925,32 @@ test('says: when their own answer shaped the care notes, the paragraph names tha
   const shapedBy = tipsForProfile(tipProfileOf(newFunnelJourney())).shapedBy;
   assert.deepEqual(shapedBy, { kind: 'heat', label: 'Daily' });
   const sentence = profileSentence(shapedBy)!;
-  assert.equal(sentence, 'You told Tress heat goes on your hair “daily”, and the care notes are picked with that in mind.');
+  assert.equal(sentence, 'You said heat goes on your hair “daily”, and the care notes are picked with that in mind.');
   assert.ok(m.says.body.includes(sentence), m.says.body);
   const sentences = m.says.body.split(/(?<=[.])\s+/);
   assert.ok(sentences.length >= 3 && sentences.length <= 5, `${sentences.length} sentences: ${m.says.body}`);
   assert.ok(!stripQuotes(sentence).includes('daily'), 'the answer stays inside the quotation');
 
   // Each kind of answer has its own sentence, all attributed, none adopted.
-  assert.match(profileSentence({ kind: 'reaction', label: INGREDIENT_REACTION_LABELS.fragrance })!, /^You told Tress you have reacted to “fragrance\/parfum”, and/);
+  // Built from the label table rather than from a copy of it: the echo has
+  // to quote the words the funnel drew, and a literal here is how the two
+  // drifted apart once already (the row read "Fragrance (listed as parfum)"
+  // while the report quoted "fragrance/parfum").
+  const reactionSentence = profileSentence({
+    kind: 'reaction',
+    label: INGREDIENT_REACTION_LABELS.fragrance,
+  })!;
+  assert.match(reactionSentence, /^You /);
+  assert.match(
+    reactionSentence,
+    /you have reacted to “fragrance \(listed as parfum\)”, and the care notes are picked with that in mind\.$/,
+  );
+  // The quotation is the label table's own words, character for character,
+  // so the two cannot drift apart again without this failing.
+  assert.ok(
+    reactionSentence.includes(`“${INGREDIENT_REACTION_LABELS.fragrance.toLowerCase()}”`),
+    reactionSentence,
+  );
   // The funnel asked "Have you ever reacted to any of these?" with no body part, so the echo names none.
   for (const reaction of Object.values(INGREDIENT_REACTION_LABELS)) {
     assert.doesNotMatch(profileSentence({ kind: 'reaction', label: reaction })!, /scalp|skin|hair has/i, reaction);
@@ -945,6 +992,7 @@ test('locking: without Premium the rows, focus, tips and routine are locked and 
     assert.ok(free.analysis.rows.every((r) => r.locked), `${name}: a free row`);
     assert.equal(free.focus?.locked, true, name);
     assert.equal(free.tips.locked, true, name);
+    assert.equal(free.hairstyles.locked, true, name);
     assert.equal(free.routine.locked, true, name);
     // The locked rows keep their real headline: the screen shows the first and blurs the bodies.
     const paid = build(fixture, true);
@@ -953,10 +1001,13 @@ test('locking: without Premium the rows, focus, tips and routine are locked and 
     assert.deepEqual(free.profile, paid.profile, `${name}: the profile is free`);
     assert.deepEqual(free.says, paid.says, `${name}: the paragraph is free`);
     assert.deepEqual(free.hero, paid.hero);
+    // The picks are the same either way: a free reading is never a different reading.
+    assert.deepEqual(free.hairstyles.tiles, paid.hairstyles.tiles, `${name}: the same cuts with or without Premium`);
 
     assert.ok(paid.analysis.rows.every((r) => !r.locked), `${name}: a locked row for Premium`);
     assert.equal(paid.focus?.locked, false);
     assert.equal(paid.tips.locked, false);
+    assert.equal(paid.hairstyles.locked, false);
     assert.equal(paid.routine.locked, false);
   }
 });

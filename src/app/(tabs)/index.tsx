@@ -28,6 +28,7 @@ import {
 import { StrandGlyph } from '@/components/ui/metric-glyphs';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
+import { HAIRSTYLE_COPY, hairstyleCountFor } from '@/features/hairstyles';
 import {
   daysBetween,
   formatDate,
@@ -53,6 +54,7 @@ import { spacing, useTheme } from '@/theme';
 import {
   ANGLES,
   isScanSession,
+  journeyHairType,
   sessionToExtend,
   type Angle,
   type PhotoSession,
@@ -117,6 +119,9 @@ export default function HomeScreen() {
     return ANGLES.find((a) => hasAngle(baseline, a) && hasAngle(latest, a)) ?? HERO_ANGLE;
   }, [baseline, latest]);
 
+  /* The catalogue's count for the hair type they told the funnel: a number about a catalogue, not a head. */
+  const styleCount = useMemo(() => hairstyleCountFor(data), [data]);
+
   const journey = data.journey;
   if (!journey) return null;
 
@@ -159,6 +164,8 @@ export default function HomeScreen() {
   const needsBaseline = toExtend !== null;
   const only = data.sessions.length === 1 ? data.sessions[0] : null;
   const scanBaselineOnly = only !== null && isScanSession(only);
+
+  const hairType = journeyHairType(journey);
 
   return (
     <Screen>
@@ -401,6 +408,29 @@ export default function HomeScreen() {
           style={{ marginTop: CARD_GAP }}
           onPress={() => router.push('/learn')}
         />
+
+        {/*
+          The hairstyle catalogue: styling suggestions for the hair type
+          on the record, drawn on a blank head. A small card, because it
+          is a list to browse rather than a thing to do today.
+        */}
+        <Card
+          style={{ marginTop: CARD_GAP }}
+          onPress={() => router.push('/hairstyles')}
+          accessibilityLabel={HAIRSTYLE_COPY.home.title}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <GlassOrb size={44} ring={false} tone="neutral">
+              <Icon name="sparkle" size={18} color={colors.text} />
+            </GlassOrb>
+            <View style={{ flex: 1 }}>
+              <Text variant="headline">{HAIRSTYLE_COPY.home.title}</Text>
+              <Text variant="footnote" color="textSecondary" style={{ marginTop: spacing.xxs }}>
+                {HAIRSTYLE_COPY.home.body(styleCount, hairType)}
+              </Text>
+            </View>
+            <Icon name="chevronRight" size={15} color={colors.textTertiary} />
+          </View>
+        </Card>
 
         {/*
           A reminder, not a metric, so it sits below the fold. Not shown

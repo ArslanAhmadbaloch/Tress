@@ -8,12 +8,13 @@
  * that the sweep covers is a smaller surface than four.
  *
  * ── The page, in the reference's rhythm ───────────────────────────────
- * Two tilted photograph cards at the top, a headline, three icon
- * benefits in a row, the plan cards, a promo-code and restore line, one
- * button. That is the reference's paywall, and the owner asked for it
- * in Tress's palette. Nothing sits between the headline and the three
- * benefits — the reference has no paragraph there, and neither does
- * this. What did not come across is the half of it that works by making
+ * Two tilted photograph cards at the top, a headline, the icon benefits
+ * under it, the plan cards, a promo-code and restore line, one button.
+ * That is the reference's paywall, and the owner asked for it in Tress's
+ * palette. The reference draws three benefits in a row; the owner asked
+ * for four (H.9), so they sit as two rows of two. Nothing sits between
+ * the headline and them — the reference has no paragraph there, and
+ * neither does this. What did not come across is the half of it that works by making
  * somebody believe a thing that is not so: the second photograph
  * labelled "after", the free-trial toggle, the countdown.
  *
@@ -56,7 +57,7 @@ import { ANGLE_LABELS, type Angle, type AppData, type Photo } from '@/types/doma
 import type { PlanConfig, PlanId } from './config';
 
 /** The headline of the first ask. Fixed across variants, and alone: the
-    three benefits follow it directly, as in the reference. */
+    four benefits follow it directly, in two rows of two. */
 export const PAYWALL_TITLE = 'Unlock Tress Premium';
 
 export type PaywallVariantId = 'record' | 'compare' | 'consistency';
@@ -107,7 +108,7 @@ export function variantFor(installId: string): PaywallVariant {
 }
 
 /* ------------------------------------------------------------------ *
- * The two cards: their latest photograph, and an empty frame
+ * The two cards: their latest photograph, and the frame waiting for the next
  *
  * The reference opens its paywall with the person's own picture twice,
  * tilted, labelled "before" and "after" — the same photograph both
@@ -115,12 +116,21 @@ export function variantFor(installId: string): PaywallVariant {
  * being paid for is a record, and the record is of them. So the left
  * card is their latest scan, exactly as they took it.
  *
- * The right card is an EMPTY frame, dashed, labelled with the date the
- * record says the next scan is due. Not a second copy of the photograph
- * and not a generated after, because the app has no idea what anybody's
- * hair will do and a picture that suggests otherwise is a promise made
- * with somebody's own face. An empty frame says the true thing: the
- * next one is not taken yet.
+ * The right card is a dashed frame carrying the date the record says the
+ * next scan is due. Not a second copy of the photograph and not a
+ * generated after, because the app has no idea what anybody's hair will
+ * do and a picture that suggests otherwise is a promise made with
+ * somebody's own face. The frame says the true thing: the next one is
+ * not taken yet.
+ *
+ * Behind the dashes, blurred to the point where it is a shape rather
+ * than a person, is the app's own gender-matched example photograph —
+ * the bundled CROWN view, read through hairContent(): the back of a
+ * head, which is the one angle of the five that is a full head of hair
+ * and not a hairline, a parting or a face. It is there so the card reads as a photograph waiting
+ * to be taken rather than as a hole in the layout. It is never their
+ * photograph, it is never labelled "after", and what a screen reader
+ * hears says it is an example (HERO_COPY.waiting).
  *
  * With no photograph at all the left card shows the app's example
  * photograph and says so in its label — a face the app did not name
@@ -152,6 +162,14 @@ export const HERO_COPY = {
   example: 'Example',
   /** The right card's pill, ahead of the date. */
   nextScan: 'Next scan',
+  /**
+   * What the right card is, for somebody who cannot see it: a frame
+   * waiting for a photograph, over the app's own example blurred to a
+   * shape. Said rather than drawn — the card carries the date and
+   * nothing else — so that nobody hears a blurred head of hair and takes
+   * it for theirs.
+   */
+  waiting: 'the frame waiting for your next scan, over a blurred example photograph',
   /** What a screen reader hears for the example photograph. Not drawn:
       the reference has no caption under its cards, so neither does
       this — the pill on the card says "Example", and this says it in
@@ -230,7 +248,7 @@ export function heroPill(hero: PaywallHero, now: Date = new Date()): string {
 }
 
 /**
- * The pill on the empty frame: "Next scan · 17 Oct", from the record's
+ * The pill on the dashed frame: "Next scan · 17 Oct", from the record's
  * own cadence. With no journey there is no date to name, and the frame
  * says only what it is.
  */
@@ -252,9 +270,9 @@ export function heroCaption(hero: PaywallHero): string {
 /** What a screen reader hears for the pair of cards. */
 export function heroAccessibilityLabel(hero: PaywallHero | null, nextLabel: string): string {
   if (!hero) {
-    return `${HERO_COPY.emptyBody} Beside it, an empty frame: ${nextLabel}. ${HERO_COPY.onDevice}.`;
+    return `${HERO_COPY.emptyBody} Beside it, ${HERO_COPY.waiting}: ${nextLabel}. ${HERO_COPY.onDevice}.`;
   }
-  return `Your ${hero.label.toLowerCase()} photograph, taken ${formatDate(hero.takenAt)}. Beside it, an empty frame: ${nextLabel}. ${HERO_COPY.onDevice}.`;
+  return `Your ${hero.label.toLowerCase()} photograph, taken ${formatDate(hero.takenAt)}. Beside it, ${HERO_COPY.waiting}: ${nextLabel}. ${HERO_COPY.onDevice}.`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -268,19 +286,21 @@ export function heroAccessibilityLabel(hero: PaywallHero | null, nextLabel: stri
  *      a free user already has in full does not become a Premium benefit
  *      by being printed under the word Premium.
  *
- * Rule 2 is enforced through exactly two checks, because those are the
- * only two in the app: src/app/hair-scan.tsx sends anyone without the
+ * Rule 2 is enforced through three checks, because those are the only
+ * three in the app: src/app/hair-scan.tsx sends anyone without the
  * entitlement to this screen the moment they reach for a second scan
- * after the free baseline, and src/app/routine.tsx puts adding to the
- * stack behind gate('buildStack'). Everything below hangs off one of
- * those — directly, or because it needs a second scan, and the scan
- * gate is what a second scan costs.
+ * after the free baseline; src/app/routine.tsx puts adding to the stack
+ * behind gate('buildStack'); and src/app/hairstyles.tsx shows a free
+ * reader the first suggestions and holds the rest of the list behind the
+ * entitlement. Everything below hangs off one of those — directly, or
+ * because it needs a second scan, and the scan gate is what a second
+ * scan costs.
  *
- * The screen draws THREE of these, as the reference does — the icon row
- * under the headline, see PAYWALL_HIGHLIGHTS. The whole list stays here
- * as the ledger of what the entitlement decides: each highlight has to
- * be one of these lines, so a highlight cannot say anything this list
- * and its tests have not already vouched for.
+ * The screen draws FOUR of these — the owner's four (H.9), in two rows
+ * of two under the headline; see PAYWALL_HIGHLIGHTS. The whole list
+ * stays here as the ledger of what the entitlement decides: each
+ * highlight has to be one of these lines, so a highlight cannot say
+ * anything this list and its tests have not already vouched for.
  *
  * Where each line can be found, and what makes it Premium:
  *
@@ -288,6 +308,24 @@ export function heroAccessibilityLabel(hero: PaywallHero | null, nextLabel: stri
  *                          in `Scanner`. The gate itself. The free
  *                          baseline is the exception, and deliberately
  *                          so.
+ *   Hair tracking          src/app/compare.tsx — two dates from the
+ *                          record set beside each other. It needs two
+ *                          scans, so it is behind the scan gate. The
+ *                          word is the owner's and it is the right one:
+ *                          what is tracked is the RECORD — the scans,
+ *                          in the order they were taken. Nothing here
+ *                          tracks hair itself, and no line on this list
+ *                          may say it does.
+ *   Hairstyle              src/app/hairstyles.tsx, backed by
+ *   recommendations        src/features/hairstyles. A curated catalogue
+ *                          with a rule per entry: hair type, length and
+ *                          gender decide which of them are shown. A free
+ *                          reader sees the block; the full list is
+ *                          behind the entitlement, which is the gate
+ *                          this line rests on. They are STYLING
+ *                          suggestions for a hair type and a length — a
+ *                          stylist decides what suits somebody — never a
+ *                          verdict on the person, and never an outcome.
  *   On-device scan         src/features/assessment/hair-segmenter.ts —
  *                          MediaPipe's hair segmenter, bundled as a
  *                          763 KB tflite file and run through
@@ -300,15 +338,17 @@ export function heroAccessibilityLabel(hero: PaywallHero | null, nextLabel: stri
  *                          the scan keeps (features/hair-scan/analysis.ts),
  *                          so it is measured on every scan the gate
  *                          lets through.
- *   Your report            src/app/(tabs)/report.tsx, built by
+ *   Assessment report      src/app/(tabs)/report.tsx, built by
  *                          features/assessment/engine.ts. The framing
  *                          section is the Premium half: buildReport
  *                          holds it at null on one set and only compares
  *                          once a second exists — matched angles, the
  *                          gap between the dates, and the newest
  *                          hair-area reading beside the one before it.
- *   Side-by-side           src/app/compare.tsx. Two dates, so it needs
- *                          two scans, so it needs the scan gate.
+ *                          "Assessment" is the owner's word for the
+ *                          depth of it and it is the report's own name
+ *                          in the code; it is not a diagnosis and the
+ *                          body says what it actually does.
  *   Routine and stack      src/app/routine.tsx — adding to the stack is
  *                          gated on 'buildStack'.
  *   Barcode lookup         src/app/scan-product.tsx, reached from the
@@ -330,10 +370,18 @@ export function heroAccessibilityLabel(hero: PaywallHero | null, nextLabel: stri
  *
  * What is deliberately NOT here:
  *
- *   Product suggestions for somebody's hair type. There is no
+ *   Product suggestions for somebody's hair type. There is no product
  *   recommendation engine in this repository — not a model, not a rules
- *   table, not a lookup. Until one exists and ships, it does not go on
- *   the paywall, however well it would sell.
+ *   table, not a lookup — and the barcode line is the near miss it has
+ *   to survive: showing what a database lists is not telling somebody
+ *   what to buy. Until an engine exists and ships, it does not go on the
+ *   paywall, however well it would sell.
+ *
+ *   The hairstyle line is the one recommendation this screen makes, and
+ *   it is the exception that proves the rule: the catalogue is in the
+ *   repository (src/features/hairstyles), the rules are readable, and
+ *   what it returns is a set of styles for a hair type and length — not
+ *   a product, not a verdict, and not a promise about anybody's hair.
  *
  *   The scan report at the end of the funnel (the HairScanReport that
  *   src/app/hair-scan.tsx shows once a scan is saved). It is a real
@@ -353,7 +401,10 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
   {
     icon: 'camera',
     title: 'Unlimited scans',
-    body: 'Every scan after the first, kept in the order you took it.',
+    /* The gate itself: the baseline costs nothing and everything after
+       it is what the subscription buys. What happens to the scans once
+       taken is the Hair tracking line's job, not this one's. */
+    body: 'Every scan after the first one, whenever you want to take it.',
   },
   {
     icon: 'sparkle',
@@ -379,13 +430,31 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
      * it a free user never reaches. Not "every reading, for every set":
      * the funnel's scan report is the free one. See the note above.
      */
-    title: 'Your report, scan after scan',
+    title: 'Assessment report',
     body: 'Every new scan is read into your report and set beside the one before.',
   },
   {
     icon: 'compare',
-    title: 'Side-by-side comparison',
-    body: 'Any two dates in your record, next to each other.',
+    /*
+     * The record, tracked: the scans in the order they were taken, and
+     * any two of them side by side (src/app/compare.tsx). What is
+     * tracked is the photographs and their dates — never hair itself,
+     * which would be a measurement the app does not make.
+     */
+    title: 'Hair tracking',
+    body: 'Every scan kept in the order you took it, and any two dates side by side.',
+  },
+  {
+    icon: 'idea',
+    /*
+     * The catalogue in src/features/hairstyles, shown on /hairstyles: a
+     * hair type, a length and a gender pick which entries appear. The
+     * word is "styling", because that is what a haircut is a suggestion
+     * about — a stylist decides what suits somebody, and this list does
+     * not pretend to.
+     */
+    title: 'Hairstyle recommendations',
+    body: 'The full list of styling suggestions for your hair type and length.',
   },
   {
     icon: 'bottle',
@@ -412,32 +481,42 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
 ];
 
 /* ------------------------------------------------------------------ *
- * The three highlights
+ * The four highlights
  *
- * The reference puts three icons under its headline and nothing more.
- * These are the three, and each one has to be a line from the ledger
- * above — the test holds them to it — so the row can only ever say what
- * the entitlement decides. The label is the benefit's title, shortened
- * where a column two lines wide needs it; the icon is the benefit's own.
+ * The reference puts three icons under its headline. The owner asked for
+ * four (H.9, 2026-09-18) — Unlimited scans · Hair tracking · Hairstyle
+ * recommendations · Assessment report — drawn as two rows of two rather
+ * than a four-up row, because a quarter of a phone's width is not enough
+ * for "Hairstyle recommendations" to read at any size worth reading.
  *
- * Why these three and not the other four: the scan gate, the report the
- * scan gate feeds, and the stack gate — the three places somebody who
- * has not paid actually meets the paywall. The comparison and the
- * barcode lookup are true and remain on the ledger, but they are reached
- * through those three and would be saying the same thing twice.
+ * Each one has to be a line from the ledger above — the test holds them
+ * to it — so the row can only ever say what the entitlement decides. The
+ * label is the benefit's title; the icon is the benefit's own.
+ *
+ * Why these four and not the other four on the ledger: each is a gate
+ * somebody who has not paid actually meets, in the order they meet it.
+ * The scan they cannot take (hair-scan.tsx sends them here the moment
+ * they reach past the free baseline). The record that scan would have
+ * gone into (compare.tsx, two dates side by side). The list they can
+ * only see the top of (hairstyles.tsx holds the full list behind the
+ * entitlement — that gate is what this line rests on, and the test reads
+ * it). And the report the scan gate feeds. The AI reading, the routine
+ * and the barcode lookup are true and stay on the ledger, but they are
+ * reached through those four and would be saying the same thing twice.
  * ------------------------------------------------------------------ */
 
 export type PaywallHighlight = {
   /** The title of the PREMIUM_BENEFITS line this stands for. */
   benefit: string;
-  /** What the column says. Two short lines at most. */
+  /** What the cell says. Two short lines at most. */
   label: string;
 };
 
 export const PAYWALL_HIGHLIGHTS: PaywallHighlight[] = [
   { benefit: 'Unlimited scans', label: 'Unlimited scans' },
-  { benefit: 'Your report, scan after scan', label: 'Your report, scan after scan' },
-  { benefit: 'Your routine and stack', label: 'Routine and stack' },
+  { benefit: 'Hair tracking', label: 'Hair tracking' },
+  { benefit: 'Hairstyle recommendations', label: 'Hairstyle recommendations' },
+  { benefit: 'Assessment report', label: 'Assessment report' },
 ];
 
 export type ResolvedHighlight = { icon: IconName; label: string; body: string };

@@ -100,6 +100,19 @@ test('hair scan copy: the owner’s wording is used verbatim', () => {
   assert.equal(c.status.complete, 'Scan complete');
 });
 
+test('hair scan copy: a head that is followed but turned is asked to turn, not searched for', () => {
+  // The owner walked build 17 holding the phone at his temple: the pill
+  // read "Looking for your face" while the scanner was plainly following
+  // his head. The searching line stays for the state it describes — no
+  // reading at all — and a followed head that is turned away gets the
+  // one instruction that moves the scan on.
+  assert.equal(HAIR_SCAN_COPY.status.detecting, 'Looking for your face');
+  assert.equal(HAIR_SCAN_COPY.facingAway, 'Face the camera');
+  // It is an instruction to a person, not a verdict on what was seen.
+  assert.ok(!/face (is|was|not)|can.t|cannot|lost/i.test(HAIR_SCAN_COPY.facingAway));
+  assert.ok(sentences.includes(HAIR_SCAN_COPY.facingAway), 'it reaches the sweep');
+});
+
 test('hair scan copy: images are said to stay on the device only where that is true of the scan', () => {
   // Frames go through photo-storage, which writes private app storage and
   // never uploads; these lines describe that, and nothing else claims it.

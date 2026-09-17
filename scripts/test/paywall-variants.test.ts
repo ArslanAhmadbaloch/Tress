@@ -67,6 +67,7 @@ import {
   type PaywallVariantId,
 } from '@/features/subscription/paywall-variants';
 import { EMPTY_DATA, emptyJourney, type AppData, type Photo, type PhotoSession } from '@/types/domain';
+import { assertNoHairClaims } from './claims';
 
 /* ------------------------------ fixtures ----------------------------- */
 
@@ -132,8 +133,16 @@ const profile: AppData['profile'] = {
   createdAt: '2026-01-05T09:00:00.000Z',
 };
 
-/** Every sentence a person can read on the paywall, lower-cased. */
-function everyLine(): string {
+/**
+ * Every sentence a person can read on the paywall, one per entry and
+ * lower-cased.
+ *
+ * The sweeps below need both shapes. A banned substring only needs the
+ * haystack, so those read everyLine(); a rule of the form "any line that
+ * says X must also say Y" needs the lines apart, because in the joined
+ * string every line's words sit next to every other line's.
+ */
+function everyLineList(): string[] {
   return [
     PAYWALL_TITLE,
     ...Object.values(PAYWALL_VARIANTS).map((v) => v.body),
@@ -152,9 +161,12 @@ function everyLine(): string {
     renewalTerms(PLANS.monthly),
     ctaLabel(false),
     ctaLabel(true),
-  ]
-    .join(' ')
-    .toLowerCase();
+  ].map((line) => line.toLowerCase());
+}
+
+/** The same sentences, joined, for the substring sweeps. */
+function everyLine(): string {
+  return everyLineList().join(' ');
 }
 
 /* ------------------------------ variants ----------------------------- */
@@ -212,24 +224,60 @@ test('copy: nothing on the paywall promises an outcome', () => {
 test('copy: the paywall sells nothing the app has not built', () => {
   /*
     The owner asked for "product suggestions for their hair type" on this
-    list. There is no recommendation engine in this repository — no model,
-    no rules table, no lookup — so it is not on the list, and this test is
-    what keeps it off until one ships.
+    list. There is no PRODUCT recommendation engine in this repository —
+    no model, no rules table, no lookup — so it is not on the list, and
+    this test is what keeps it off until one ships.
 
     The barcode line is the near miss it has to survive: the app really
     does scan a barcode and really does show what Open Beauty Facts holds,
     and the difference between "here is what the database lists" and "here
     is what you should use" is the whole of the claim.
+
+    One recommendation IS built, and it shipped this phase: the hairstyle
+    catalogue in src/features/hairstyles, a readable rules table over hair
+    type, length and gender. That is an EXEMPTION, not a hole: "recommend",
+    "suggest" and "for your hair type" stay forbidden on every line the
+    screen can draw, and the one way a line may carry them is by naming
+    hairstyles or styling — which is the only thing in this repository
+    that recommends anything. Written the other way round (ban the words
+    only where a hairstyle word is absent, over a hand-picked subset of
+    the copy) it would let "Products for your hair type" through on a
+    line that says neither "recommend" nor "suggest", which is the exact
+    sentence this test exists to stop.
   */
   const copy = everyLine();
   for (const unbuilt of [
-    'recommend', 'suggests', 'suggestion', 'personalised', 'personalized',
-    'tailored to', 'matched to your', 'for your hair type', 'built for your',
-    'picks for you', 'chosen for you', 'what to use', 'best products',
+    'personalised', 'personalized', 'tailored to', 'matched to your',
+    'built for your', 'picks for you', 'chosen for you', 'what to use',
+    'best products', 'product recommendations', 'recommended products',
     'expert review', 'dermatologist',
   ]) {
     assert.ok(!copy.includes(unbuilt), `paywall copy must not sell "${unbuilt}"`);
   }
+
+  // The fenced words, swept over every line on the screen — the same
+  // everyLineList() the other sweeps read, so HERO_COPY, the CTA copy,
+  // the plan names, the price and the renewal terms are all inside it.
+  const fenced = /recommend|suggest|for your hair type/i;
+  for (const line of everyLineList()) {
+    if (!fenced.test(line)) continue;
+    assert.match(
+      line,
+      /hairstyle|styling/i,
+      `only hairstyles may be recommended or offered "for your hair type": "${line}"`,
+    );
+    // A cut is suggested for a head of hair, never pronounced upon a
+    // person: "suits you" is a stylist's judgement and not the app's.
+    assert.ok(!/suits you|right for you|made for you/i.test(line), line);
+  }
+
+  // The fence is only worth having while it has something to catch: this
+  // is what fails the day the loop above is silently passing because the
+  // screen no longer says any of the three words at all.
+  assert.ok(
+    everyLineList().some((l) => fenced.test(l)),
+    'the fence has nothing to fence — the hairstyle line has left the screen',
+  );
 });
 
 test('copy: no free trial reaches the screen, and no branch could put one there', () => {
@@ -278,10 +326,11 @@ test('copy: nothing on the paywall is a testimonial or a borrowed face', () => {
 
 /* -------------------------------- hero ------------------------------- */
 
-test('hero: it is one photograph and an empty frame, never a before and an after', () => {
+test('hero: it is one photograph and a waiting frame, never a before and an after', () => {
   /*
     The reference's second card is the same photograph labelled "after".
-    Ours is an empty frame with the next scan's date on it, so every word
+    Ours is a dashed frame with the next scan's date on it — the picture
+    behind the dashes is the app's own example, blurred — so every word
     on or under the pair has to be free of the pairing vocabulary — the
     pills, the caption, the frame's label and what a screen reader hears.
   */
@@ -311,7 +360,7 @@ test('hero: it is one photograph and an empty frame, never a before and an after
   assert.equal(HERO_COPY.onDevice, 'On this device');
 });
 
-test('hero: the empty frame carries the record\'s next-scan date, and nothing without a journey', () => {
+test('hero: the waiting frame carries the record\'s next-scan date, and nothing without a journey', () => {
   const journey = emptyJourney('j1', profile.id, '2026-01-05T09:00:00.000Z');
   const label = nextScanLabel({ ...EMPTY_DATA, profile, journey });
   assert.ok(label.startsWith(`${HERO_COPY.nextScan} · `), label);
@@ -404,6 +453,50 @@ test('hero: with nothing at all it is null, and the example is called an example
   assert.equal(HERO_COPY.example, 'Example');
 });
 
+test('hero: the frame’s backdrop is the app’s own example, blurred, and never their photograph', () => {
+  /*
+    The owner asked for a head of hair behind the dashed frame rather than
+    a blank card. The danger in that is obvious and worth pinning down: a
+    second picture on a paywall is one relabelling away from being an
+    "after". So the backdrop is a bundled example the scanner's guides
+    already use, read through hairContent by gender, blurred past the
+    point where a face survives — and their own photograph, which has a
+    date and a card of its own, is never the thing being blurred.
+
+    WHICH example is pinned too, because not all five would do. It is the
+    CROWN shot: the back of a head, all hair, no face and no parting. The
+    front example is a hairline and eyes for a man and a scalp-part
+    close-up for a woman, and a blurred one of those beside somebody's own
+    photograph on a paywall reads as a remark about them however hard the
+    scrim works. H.9 asked for a full head of hair, and the crown is the
+    only angle that is that and nothing else.
+  */
+  const src = source('src/components/paywall/hero-pair.tsx');
+  assert.equal(src.match(/blurRadius=/g)?.length, 1, 'exactly one image on the pair is blurred');
+  assert.match(
+    src,
+    /source=\{backdropSource\(gender\)\}[\s\S]{0,200}blurRadius=\{BACKDROP_BLUR\}/,
+    'and it is the backdrop of the dashed frame',
+  );
+  assert.match(
+    src,
+    /function backdropSource[\s\S]{0,900}hairContent\(gender\)\.angles\.crown\.example/,
+    'the backdrop is the bundled gender-matched crown example, not a generated picture',
+  );
+  assert.ok(
+    !/backdropSource[\s\S]{0,900}angles\.front\.example/.test(src),
+    'the hairline and scalp-part crops are not what sits behind the dashes',
+  );
+  assert.ok(
+    !/hero\.uri[\s\S]{0,240}blurRadius/.test(src),
+    'their own photograph is never blurred into a backdrop',
+  );
+  // And a screen reader is told what it is, since a blur cannot say so.
+  assert.match(HERO_COPY.waiting, /example/i);
+  assert.match(HERO_COPY.waiting, /blurred/i);
+  assert.ok(!/after|result/i.test(HERO_COPY.waiting), HERO_COPY.waiting);
+});
+
 test('hero: the caption is the angle and the date, nothing else', () => {
   const hero = heroFor({
     ...EMPTY_DATA,
@@ -417,20 +510,27 @@ test('hero: the caption is the angle and the date, nothing else', () => {
   const spoken = heroAccessibilityLabel(hero, HERO_COPY.nextScan);
   assert.match(spoken, /hairline photograph/i);
   assert.match(spoken, /2026/);
-  assert.match(spoken, /empty frame/i);
+  assert.match(spoken, /frame waiting for your next scan/i);
   assert.match(spoken, /on this device/i);
 });
 
 /* ----------------------------- highlights ---------------------------- */
 
-test('highlights: three columns, each a line from the ledger, with its own glyph', () => {
+test('highlights: four cells, each a line from the ledger, with its own glyph', () => {
   /*
-    The reference shows three icon benefits and nothing more. Ours are
-    drawn from PREMIUM_BENEFITS, so the row can only say what rule 2 has
-    already vouched for: a highlight that names no ledger line is dropped
-    rather than drawn, and this is what keeps that from ever happening.
+    The reference shows three icon benefits. The owner asked for four
+    (H.9): Unlimited scans · Hair tracking · Hairstyle recommendations ·
+    Assessment report. Ours are drawn from PREMIUM_BENEFITS, so the grid
+    can only say what rule 2 has already vouched for: a highlight that
+    names no ledger line is dropped rather than drawn, and this is what
+    keeps that from ever happening.
   */
-  assert.equal(PAYWALL_HIGHLIGHTS.length, 3, 'three, as the reference draws them');
+  assert.equal(PAYWALL_HIGHLIGHTS.length, 4, "four, as the owner asked (H.9)");
+  assert.deepEqual(
+    PAYWALL_HIGHLIGHTS.map((h) => h.label),
+    ['Unlimited scans', 'Hair tracking', 'Hairstyle recommendations', 'Assessment report'],
+    'the owner named these four, in this order',
+  );
   const resolved = highlightBenefits();
   assert.equal(resolved.length, PAYWALL_HIGHLIGHTS.length, 'every highlight names a ledger line');
   for (const h of PAYWALL_HIGHLIGHTS) {
@@ -446,6 +546,24 @@ test('highlights: three columns, each a line from the ledger, with its own glyph
   }
   assert.equal(new Set(resolved.map((r) => r.icon)).size, resolved.length, 'no repeated glyph');
   assert.equal(new Set(PAYWALL_HIGHLIGHTS.map((h) => h.label)).size, PAYWALL_HIGHLIGHTS.length);
+
+  /*
+    Half a phone's width holds about twenty-two characters at the grid's
+    normal size, which is what two rows of two buys over a row of four: a
+    word that does not fit does not wrap, it runs into the next cell, and
+    "recommendations" is fifteen. The grid drops a size when any label
+    carries a word longer than the cell, so the guard is read here — a
+    label can grow past the cell, but not silently.
+  */
+  const row = source('src/components/paywall/highlights.tsx');
+  assert.match(row, /const COLUMNS = 2;/, 'two rows of two, not a four-up row');
+  assert.match(row, /const LONG_WORD = 22;/);
+  assert.match(row, /variant=\{tight \? 'caption' : 'subhead'\}/, 'the long-word fallback is drawn');
+  for (const h of PAYWALL_HIGHLIGHTS) {
+    for (const word of h.label.split(' ')) {
+      assert.ok(word.length <= 22, `"${word}" is too long for half a phone at any size`);
+    }
+  }
 });
 
 /* ------------------------------- plans ------------------------------- */
@@ -539,14 +657,33 @@ test('benefits: each names a thing the app does, and one of them is privacy', ()
  *              scan — the comparison, the report's framing half — is
  *              behind this gate whether or not it names it.
  *   'stack'    routine.tsx puts it behind gate('buildStack').
+ *   'styles'   hairstyles.tsx shows the catalogue and holds the full
+ *              list behind the entitlement.
  *   'fact'     Not gated, and not claiming to be: a true statement about
  *              what is being paid for. Exactly one line may be this, and
  *              the test below pins which.
  */
-type Gated = 'capture' | 'stack' | 'fact';
+type Gated = 'capture' | 'stack' | 'styles' | 'fact';
+
+/** The screen that holds the hairstyle catalogue, and the gate on it. */
+const HAIRSTYLES_SCREEN = 'src/app/hairstyles.tsx';
 
 const CLAIMS: { match: RegExp; screen: string; gated: Gated }[] = [
   { match: /unlimited scans/i, screen: 'src/app/hair-scan.tsx', gated: 'capture' },
+  {
+    // The record, tracked: two dates from it beside each other. Needs a
+    // second scan, so the scan gate is what it costs.
+    match: /hair tracking/i,
+    screen: 'src/app/compare.tsx',
+    gated: 'capture',
+  },
+  {
+    // The catalogue's own screen holds the full list behind the
+    // entitlement — see the gate test below.
+    match: /hairstyle/i,
+    screen: HAIRSTYLES_SCREEN,
+    gated: 'styles',
+  },
   {
     // The reading has to be named on a screen, not merely computed in a
     // module. One reading per set is displayed: the report tab's coverage
@@ -557,8 +694,7 @@ const CLAIMS: { match: RegExp; screen: string; gated: Gated }[] = [
     screen: 'src/app/(tabs)/report.tsx',
     gated: 'capture',
   },
-  { match: /your report/i, screen: 'src/app/(tabs)/report.tsx', gated: 'capture' },
-  { match: /side-by-side/i, screen: 'src/app/compare.tsx', gated: 'capture' },
+  { match: /assessment report/i, screen: 'src/app/(tabs)/report.tsx', gated: 'capture' },
   { match: /routine and stack/i, screen: 'src/app/routine.tsx', gated: 'stack' },
   { match: /barcode/i, screen: 'src/app/scan-product.tsx', gated: 'stack' },
   { match: /kept on this device/i, screen: 'src/app/privacy.tsx', gated: 'fact' },
@@ -584,9 +720,11 @@ test('benefits: the gates the list leans on are really in the code', () => {
   /*
     This is the half the old existsSync check could not do. A screen can
     exist and be free; a bullet that sells it is then selling something
-    the customer already has. Premium is enforced in exactly two places
-    in this app, and both of them are read here — if either is deleted,
-    the bullets resting on it fail rather than quietly becoming untrue.
+    the customer already has. Premium is enforced in exactly three places
+    in this app — the scan gate, the stack gate, and the hairstyle list —
+    and all three are read here, as the module doc in paywall-variants.ts
+    lists them. If any of them is deleted, the bullets resting on it fail
+    rather than quietly becoming untrue.
   */
   const hairScan = source('src/app/hair-scan.tsx');
   assert.match(
@@ -597,6 +735,26 @@ test('benefits: the gates the list leans on are really in the code', () => {
 
   const routine = source('src/app/routine.tsx');
   assert.match(routine, /gate\('buildStack'/, "routine.tsx must gate adding to the stack");
+
+  /*
+    The third gate, and the newest. The paywall may name the hairstyle
+    catalogue only while two things are true: the screen ships, and the
+    full list on it is behind the entitlement. So this reads the gate
+    itself — `held={!isPremium && i > 0}` on the card, which is the line
+    that shows a free reader the first suggestion and holds the rest —
+    and not merely the word isPremium somewhere in the file. A screen
+    that imported isPremium and held nothing back would pass that, and
+    the paywall's third benefit rests on this and nothing else.
+  */
+  assert.ok(
+    existsSync(repoFile(HAIRSTYLES_SCREEN)),
+    `${HAIRSTYLES_SCREEN} must ship before the paywall sells it (hairstyles lane)`,
+  );
+  assert.match(
+    source(HAIRSTYLES_SCREEN),
+    /held=\{!isPremium\s*&&\s*i\s*>\s*0\}/,
+    `${HAIRSTYLES_SCREEN} must hold the full list behind the entitlement`,
+  );
   assert.match(
     routine,
     /router\.push\('\/scan-product'\)/,
@@ -649,7 +807,7 @@ test('benefits: "set after set" is a thing the report does, not a thing it is ca
   assert.match(said, /area/i, 'area is what a mask can measure');
   assert.ok(!/density/i.test(said), 'and density is what it cannot');
 
-  const line = PREMIUM_BENEFITS.find((b) => /your report/i.test(b.title));
+  const line = PREMIUM_BENEFITS.find((b) => /assessment report/i.test(b.title));
   assert.ok(line, 'the report is one of the things being paid for and should be named');
   assert.match(`${line.title} ${line.body}`, /set/i, 'the line says what makes it Premium');
 });
@@ -793,5 +951,77 @@ test('second ask: the price and the terms are not part of the copy it swaps', ()
       assert.ok(!copy.body?.includes(line) && !copy.headline.includes(line));
     }
     assert.ok(!/\$|£|€|\d/.test(`${copy.headline} ${copy.body}`), 'the second ask names no number');
+  }
+});
+
+/* --------------------- the routine block's examples -------------------- */
+
+/*
+  The one other place on the report where the subscription is drawn as a
+  blur rather than a lock, so it is read here beside the paywall's own
+  claims. The owner asked (H.7) for real product pictures in "Build your
+  routine": the first clear, the rest held behind the subscription.
+
+  The trap is that a blurred picture reads as a finding being withheld.
+  These are bundled stock photographs of a bottle, a tube and a dropper —
+  unbranded, generated for this app — so there is nothing behind the blur
+  but the same photograph, and the captions must never suggest otherwise
+  or claim a product does anything.
+*/
+
+const ROUTINE_BLOCK = 'src/components/hair-scan/report-sections/routine.tsx';
+
+test('routine examples: three bundled photographs ship, and the block draws them', () => {
+  const block = source(ROUTINE_BLOCK);
+  for (const name of ['shampoo', 'conditioner', 'serum']) {
+    assert.ok(
+      existsSync(repoFile(`assets/images/products/${name}.png`)),
+      `assets/images/products/${name}.png must ship for the block to draw it`,
+    );
+    assert.match(
+      block,
+      new RegExp(`products/${name}\\.png`),
+      `the block must draw the bundled ${name} photograph`,
+    );
+  }
+  // The first tile is clear and the rest are held — only while Premium
+  // is off. With Premium all three are clear.
+  assert.match(block, /const held = routine\.locked && i > 0;/, 'the first example is always clear');
+  assert.match(block, /blurRadius=\{held \? BLUR : 0\}/, 'the held examples are the blurred ones');
+});
+
+test('routine examples: the captions describe a photograph, never an effect', () => {
+  const block = source(ROUTINE_BLOCK);
+  const copy = /const EXAMPLE_COPY = \{([\s\S]*?)\} as const;/.exec(block);
+  assert.ok(copy, 'the example captions live in one object the sweep can read');
+  const lines = [...copy[1].matchAll(/'([^']*)'/g)].map((m) => m[1]);
+  assert.ok(lines.includes('Example: a gentle shampoo'), 'the clear tile says it is an example');
+  assert.ok(
+    lines.includes('Examples. Add your own by scanning a barcode'),
+    'with Premium the caption names the photographs as examples and says how a real bottle gets there',
+  );
+  /*
+    The word "example" survives the unlock.
+
+    Premium clears the blur from all three tiles, and the caption used to
+    become "Add products by scanning a barcode" — three unbranded bottles
+    on a shelf card, nothing on screen calling them examples, for somebody
+    who has scanned nothing. Every caption drawn over these photographs
+    now says what they are, and so does every label a screen reader hears
+    for them, blurred or clear.
+  */
+  assert.equal(lines.length, 4, 'four strings in EXAMPLE_COPY: two captions, two spoken suffixes');
+  for (const line of lines) {
+    assert.match(line, /example/i, `an example tile's words must say so: "${line}"`);
+  }
+  assertNoHairClaims(assert, lines, 'the routine examples');
+  for (const line of lines) {
+    // A photograph of a bottle is not a recommendation, and a caption
+    // that said a product worked would be the app having an opinion
+    // about what is inside one. It has none.
+    assert.ok(
+      !/works|helps|repairs|strengthens|treats|recommend|best for|good for/i.test(line),
+      `the routine examples must not claim a product does anything: "${line}"`,
+    );
   }
 });

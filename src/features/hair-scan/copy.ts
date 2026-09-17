@@ -61,6 +61,16 @@ export const HAIR_SCAN_COPY = {
     hint: 'Turn slowly to complete the ring',
     chin: 'Now tip your chin down a little',
   },
+  /**
+   * What the machine is doing, in the top bar's pill. One state, one
+   * line; `detecting` covers everything before the scan may start.
+   *
+   * `facingAway` is the one exception, and it sits outside the table
+   * because it is not a state of the machine: the scanner is still
+   * `detecting`, but a head is being followed and it is turned away, so
+   * "Looking for your face" would be saying the phone cannot see what it
+   * plainly can. It is asked back to the camera instead.
+   */
   status: {
     initializing: 'Starting camera',
     detecting: 'Looking for your face',
@@ -70,6 +80,8 @@ export const HAIR_SCAN_COPY = {
     completing: 'Almost there',
     complete: 'Scan complete',
   } satisfies Record<ScanStatus, string>,
+  /** Shown in place of `status.detecting` while a followed head is turned away. */
+  facingAway: 'Face the camera',
   lighting: {
     good: 'Good light',
     low: 'Low light',

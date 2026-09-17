@@ -43,6 +43,7 @@ import {
   Welcome,
 } from '@/components/onboarding/kit';
 import { Icon, type IconName } from '@/components/ui/icon';
+import { expressionFor } from '@/features/onboarding/expressions';
 import {
   answerOf,
   answerPatch,
@@ -382,12 +383,22 @@ function QuestionPage({
   const glyph = (icon: FunnelGlyph | undefined) =>
     icon ? (color: string) => <Glyph name={icon} color={color} /> : undefined;
 
+  /*
+    The face and the gaze come from one table keyed on the question's id
+    (`expressionFor`), so the pair always belongs to the same question and
+    a question added without a face still gets the plain smile. The
+    expression a question carries in `questions.ts` is the older, flatter
+    half of that pair and is no longer read here.
+  */
+  const face = expressionFor(question.id);
+
   const bubble = (
     <SpeechBubble
       title={question.title}
       accentWord={question.accent}
       subtitle={question.subtitle}
-      expression={question.expression}
+      expression={face.expression}
+      gaze={face.gaze}
     />
   );
 

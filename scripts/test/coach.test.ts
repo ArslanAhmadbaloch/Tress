@@ -34,6 +34,8 @@ import {
   type IntentMatch,
   type MatchContext,
 } from '@/features/coach';
+import { profileSentence } from '@/features/coach/report-summary';
+import { stripQuotes } from '@/features/hair-scan/report-copy';
 import { formatRelative, toDateKey } from '@/lib/date';
 import {
   activeRoutineItems,
@@ -660,7 +662,7 @@ test('coach: what they told Tress about themselves is read back as the labels th
     'Your goal, the areas you watch and what you told Tress about yourself',
   );
   // Every new label is in the echo, once — "Dandruff" is both a concern and a condition, and "none" closes a list.
-  for (const label of ['Wavy', 'Oily', 'Sensitive', 'Frizz', 'Dandruff', 'Mid-range', 'Sulfate-free', 'No preferences', 'Fragrance/parfum', 'None', 'Daily']) {
+  for (const label of ['Wavy', 'Oily', 'Sensitive', 'Frizz', 'Dandruff', 'Mid-range', 'Sulfate-free', 'No preferences', 'Fragrance (listed as parfum)', 'None', 'Daily']) {
     assert.equal(a.echo!.filter((line) => line === label).length, 1, label);
   }
   assert.ok(!answerSentences(a).join(' ').includes('Wavy'), 'the capitalised label lives in the echo, not the template');
@@ -870,4 +872,55 @@ test('coach: record describes a scan by what it captured, never as four of five'
   // The old capture is still counted the old way.
   const old = ask('record', FIXTURES.twoDropped);
   assert.match(old.detail!, /holds 4 of 5 angles — no Right Side\.$/);
+});
+
+/* ---------------------------- the report paragraph --------------------------- */
+
+test('coach: the report paragraph reads an answer back in the plainest words it can', () => {
+  // The owner walked build 17 and read "You told Tress heat goes on your
+  // hair …" aloud: it reports a conversation instead of saying the
+  // thing. That sentence now opens with a plain verb. The answer itself
+  // stays inside the quotation marks either way — the coach echoes a
+  // label, it never adopts it as a claim — and that is what the sweep at
+  // the end of this test holds for the whole repertoire.
+  const heat = profileSentence({ kind: 'heat', label: HEAT_STYLING_LABELS.fewTimesWeek })!;
+  assert.equal(
+    heat,
+    'You said heat goes on your hair “a few times a week”, and the care notes are picked with that in mind.',
+  );
+  assert.ok(!stripQuotes(heat).toLowerCase().includes('few times'), 'the answer stays in the quotation');
+
+  for (const label of Object.values(HEAT_STYLING_LABELS)) {
+    const sentence = profileSentence({ kind: 'heat', label })!;
+    assert.ok(sentence.startsWith('You said heat goes on your hair “'), sentence);
+    assert.ok(!sentence.includes('!'), sentence);
+  }
+
+  // Nothing else in the paragraph's repertoire forecasts or diagnoses.
+  const every = [
+    heat,
+    profileSentence({ kind: 'reaction', label: INGREDIENT_REACTION_LABELS.fragrance })!,
+    profileSentence({ kind: 'sensitivity', label: SCALP_SENSITIVITY_LABELS.sensitive })!,
+    profileSentence({ kind: 'scalpType', label: SCALP_TYPE_LABELS.oily })!,
+    profileSentence({ kind: 'concern', label: HAIR_CONCERN_LABELS.frizz })!,
+  ];
+  assertHonest(assert, every, 'report paragraph, profile sentences');
+
+  // Every sentence puts the person first and the answer in quotation
+  // marks, so none of them can be read as the app's own claim. Pinned
+  // rather than left to the prose above, which said more than the code
+  // did: 'reaction' still narrates the conversation ("You told Tress
+  // …"), and until the lane that pins its wording changes it, this test
+  // records that as the state of things instead of implying otherwise.
+  for (const sentence of every) {
+    assert.match(sentence, /^You (said|told|described|mentioned) /, sentence);
+    assert.match(sentence, /“[^”]+”/, sentence);
+  }
+  assert.ok(
+    profileSentence({ kind: 'reaction', label: INGREDIENT_REACTION_LABELS.fragrance })!.startsWith(
+      'You told Tress you have reacted to “',
+    ),
+  );
+
+  assert.equal(profileSentence(null), null);
 });

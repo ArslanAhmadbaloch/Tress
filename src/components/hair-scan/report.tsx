@@ -100,6 +100,7 @@ import type { PhotoSession } from '@/types/domain';
 
 import { AnalysisRows } from './report-sections/analysis-rows';
 import { FocusBlockView } from './report-sections/focus';
+import { HairstylesBlockView } from './report-sections/hairstyles';
 import { HeroChrome, ReportHero } from './report-sections/hero';
 import {
   SHEET_OVERLAP,
@@ -113,7 +114,7 @@ import {
   statusFlipAt,
   stripOpacity,
 } from './report-sections/layout';
-import { NEXT_PILL_HEIGHT, NextPill } from './report-sections/next-pill';
+import { NEXT_PILL_CLEARANCE, NextPill } from './report-sections/next-pill';
 import { ProfileTiles } from './report-sections/profile';
 import { RoutineBlockView } from './report-sections/routine';
 import { SaysBlockView } from './report-sections/says';
@@ -385,6 +386,8 @@ export function HairScanReport({
 
   const seeFullReport = useCallback(() => router.push('/paywall'), [router]);
   const buildRoutine = useCallback(() => router.push('/routine'), [router]);
+  /* The catalogue's screen holds the full list behind the entitlement itself. */
+  const seeAllHairstyles = useCallback(() => router.push('/hairstyles'), [router]);
 
   /* ----------------------------- the sections ------------------------- */
 
@@ -436,6 +439,13 @@ export function HairScanReport({
             <TipList items={model.tips.items} locked={model.tips.locked} />
           </SheetBlock>,
         );
+      case 'hairstyles':
+        return section(
+          s.id,
+          <SheetBlock heading={model.hairstyles.heading} subheading={model.hairstyles.subheading}>
+            <HairstylesBlockView block={model.hairstyles} onSeeAll={seeAllHairstyles} />
+          </SheetBlock>,
+        );
       case 'routine':
         return section(
           s.id,
@@ -484,7 +494,14 @@ export function HairScanReport({
         scrollEventThrottle={16}
         onScroll={onScroll}
         onLayout={onViewport}
-        contentContainerStyle={{ paddingBottom: insets.bottom + NEXT_PILL_HEIGHT + spacing.xxxl }}>
+        /*
+          Room under the last control for the floating pill: the space it
+          takes above the safe area (`NEXT_PILL_CLEARANCE`) and then the
+          page's own bottom margin. Without the first of those, "Scan
+          again" scrolls to rest exactly where the pill sits and the pill
+          covers its right-hand end.
+        */
+        contentContainerStyle={{ paddingBottom: insets.bottom + NEXT_PILL_CLEARANCE + spacing.xxxl }}>
         {/* The still shows through here; the sheet begins under it. */}
         <View pointerEvents="none" style={{ height: spacerH }} />
 

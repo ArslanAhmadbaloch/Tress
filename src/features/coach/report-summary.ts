@@ -123,7 +123,19 @@ export function profileSentence(signal: TipSignal | null): string | null {
   const tail = 'and the care notes are picked with that in mind.';
   switch (signal.kind) {
     case 'heat':
-      return `You told Tress heat goes on your hair ${said}, ${tail}`;
+      // The owner read "You told Tress heat goes on your hair …" aloud
+      // off build 17: it reports a conversation instead of saying the
+      // thing. This branch is the one he read, and the one the brief
+      // names, so this is the branch that changed.
+      //
+      // The 'reaction' branch below still opens that way. It is the same
+      // construction and probably wants the same treatment — the shelf
+      // already says "You said you have reacted to …" of the same
+      // answer — but its exact wording is pinned in
+      // `scripts/test/hair-scan-report-model.test.ts`, which this lane
+      // does not own, so the change is in openIssues rather than made
+      // here behind another lane's back.
+      return `You said heat goes on your hair ${said}, ${tail}`;
     case 'reaction':
       return `You told Tress you have reacted to ${said}, ${tail}`;
     case 'sensitivity':

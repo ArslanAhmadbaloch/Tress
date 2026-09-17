@@ -17,6 +17,24 @@
  * scanner on a device build), pass them as `image` and the drawing steps
  * aside: the frame, radius and size stay the same, so the sheet does not
  * need to change.
+ *
+ * ── The video slot ──────────────────────────────────────────────────
+ * The owner wants each row to hold a short silent loop of the real
+ * scanner rather than a frozen frame, so `video` is part of the tile's
+ * shape now and the footage can be dropped in the moment it is filmed.
+ * It does not play yet, and the tile says so rather than pretending:
+ * this build has no video player in it — neither `expo-video` nor the
+ * older `expo-av` is a dependency (checked against package.json), and a
+ * lane that may not install packages cannot add one. Until one is
+ * added, a tile handed a `video` and nothing else keeps showing the
+ * drawing, and a tile handed both shows the `image` as the loop's still
+ * first frame.
+ *
+ * To finish it: add `expo-video`, then render a `VideoView` here with
+ * `useVideoPlayer(video, (p) => { p.loop = true; p.muted = true;
+ * p.play(); })`, `contentFit="cover"` and no controls, at the tile's own
+ * width and height, paused under Reduce Motion with the `image` (or the
+ * drawing) shown in its place. Nothing else in the sheet changes.
  */
 
 import { Image, type ImageSource } from 'expo-image';
@@ -50,8 +68,21 @@ export type InstructionThumbProps = {
    * `expo-image` accepts: a `require()`d asset or a `{ uri }`.
    */
   image?: ImageSource | number;
+  /**
+   * A `require()`d short loop of the scanner in this state — silent,
+   * a second or two, filmed on a device. Accepted now so the footage has
+   * somewhere to go; not played until this build has a video player in
+   * it. See the video-slot note at the top of the file.
+   */
+  video?: number;
 };
 
+/*
+  `video` is deliberately not read here: there is no player in this
+  build, so a tile handed one shows its `image`, or the drawing, exactly
+  as it did before. The prop is part of the shape so the footage has
+  somewhere to arrive; the note at the top says what turns it on.
+*/
 export function InstructionThumb({ step, image }: InstructionThumbProps) {
   return (
     <View

@@ -43,6 +43,12 @@
  * `status === 'fallback'` and the word moves only when a still lands.
  * `sampleCount()` gives the exact number either way, for a debug overlay.
  *
+ * On that fallback path the first still is the first reading, and the
+ * scanner takes no still until the scan starts — so the pill would sit
+ * on "Reading the light" for the whole ready screen. `needsStill` says
+ * exactly that, and the screen answers it with one silent photograph
+ * that is measured and then deleted.
+ *
  * A still is ignored only while live frames are actually landing — the
  * last frame sample younger than `LIGHTING_STALE_MS` — never merely
  * because the bridge loaded. A bridge whose output was not attached to a
@@ -149,6 +155,19 @@ export type LightingProbe = {
   level: LightingLevel | null;
   /** Where the sample behind `level` came from. State, like `level`. */
   source: LightingSource;
+  /**
+   * True while the meter has nothing to say and nothing on its own will
+   * change that: the frame processor is not in this build and no still
+   * has been captured yet. On the stills path the first photograph is
+   * the first reading, and the first photograph is not taken until the
+   * scan starts — so without a nudge the pill sits on "Reading the
+   * light" through the whole ready screen.
+   *
+   * The screen answers it by taking one photograph of its own, quietly,
+   * feeding it to `sampleStill` and deleting the file (`hair-scan.tsx`).
+   * React state, like `level`: it goes false the moment a reading lands.
+   */
+  needsStill: boolean;
   /**
    * The tracker's latest reading — smoothed level, raw sample, times —
    * read synchronously and without a render. For an effect, a tick
@@ -412,6 +431,7 @@ export function useLightingProbe(): LightingProbe {
     frameOutput: engine.frameOutput,
     level: shown.level,
     source: shown.source,
+    needsStill: engine.status === 'fallback' && shown.level === null,
     latest,
     gateLevel,
     sampleCount,

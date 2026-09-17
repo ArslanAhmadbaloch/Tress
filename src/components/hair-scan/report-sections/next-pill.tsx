@@ -25,11 +25,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
-import { iconSize, motion, useTheme } from '@/theme';
+import { iconSize, motion, spacing, useTheme } from '@/theme';
 
 /** The pill's height, and how far it drops when hidden. */
 export const NEXT_PILL_HEIGHT = 56;
 const HIDE_DROP = 24;
+/** The gap the pill floats in, above the bottom safe area and below the page. */
+const PILL_GAP = spacing.xl;
+
+/**
+ * The room the pill asks of whatever scrolls under it, measured from the
+ * top of the bottom safe area: the gap beneath the pill, the pill, and
+ * one more gap above it. A scroll view the pill floats over adds this to
+ * its content's bottom padding — otherwise its last control (the
+ * report's "Scan again") comes to rest right where the pill sits, and
+ * the pill covers it.
+ */
+export const NEXT_PILL_CLEARANCE = PILL_GAP + NEXT_PILL_HEIGHT + PILL_GAP;
 
 export function NextPill({
   label,
@@ -46,7 +58,7 @@ export function NextPill({
   final: boolean;
   onPress: () => void;
 }) {
-  const { colors, radius, spacing, shadow } = useTheme();
+  const { colors, radius, shadow } = useTheme();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
 
@@ -74,7 +86,7 @@ export function NextPill({
         {
           position: 'absolute',
           right: spacing.xl,
-          bottom: insets.bottom + spacing.xl,
+          bottom: insets.bottom + PILL_GAP,
         },
         animated,
       ]}>

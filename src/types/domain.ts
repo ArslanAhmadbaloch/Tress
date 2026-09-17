@@ -455,9 +455,26 @@ export type IngredientReaction =
   | 'smoothingTreatments'
   | 'none';
 
+/*
+  One label per answer, and this table is the only one.
+
+  The fragrance row used to read "Fragrance/parfum" here while the funnel
+  drew "Fragrance (listed as parfum)" over the top of it (H.3). That
+  split broke the rule the rest of the app is built on: every place that
+  quotes an answer back — the shelf's note, the report's paragraph, a
+  care note's attribution — quotes THIS string, so the report was putting
+  words in quotation marks that nobody had ever been shown. The wording
+  the owner asked for now lives here, where the echo reads it, and the
+  funnel draws it unchanged.
+
+  "Parfum" stays inside it because that is the word an ingredient list
+  prints. Nothing depends on the label to find it, though: the shelf
+  matches on its own token array (features/products/shelf.ts), not on
+  this text, so the label is free to be written for a reader.
+*/
 export const INGREDIENT_REACTION_LABELS: Record<IngredientReaction, string> = {
   sulfates: 'Sulfates',
-  fragrance: 'Fragrance/parfum',
+  fragrance: 'Fragrance (listed as parfum)',
   essentialOils: 'Essential oils',
   alcohols: 'Alcohols',
   hairDye: 'Hair dye (PPD)',

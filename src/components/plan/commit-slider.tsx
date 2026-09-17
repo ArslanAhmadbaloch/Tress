@@ -15,8 +15,9 @@
  *
  * The knob is the onboarding kit's Mascot — the same cream orb the funnel
  * shows, smiling, without its glow, since a glow wider than the knob
- * would spill past the pill's edge. The slider needs nothing from it but
- * a drawing of the given size.
+ * would spill past the pill's edge. While the finger holds it, it blows
+ * and its hair streams. The slider needs nothing from it but a drawing
+ * of the given size.
  *
  * Under Reduce Motion the drag still follows the finger, since that is
  * the finger's own motion, but the spring back is a plain settle and
@@ -24,7 +25,7 @@
  */
 
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -129,30 +130,48 @@ export function CommitSlider({
     onCommit();
   }, [onCommit]);
 
-  const pan = Gesture.Pan()
-    .enabled(!committed && trackWidth > 0)
-    .onStart(() => {
-      start.set(x.get());
-    })
-    .onUpdate((e) => {
-      const raw = start.get() + e.translationX;
-      const next = raw < 0 ? 0 : raw > max ? max : raw;
-      x.set(next);
-      const quarter = Math.floor((next / max) * 4);
-      if (quarter > lastTick.get() && quarter < 4) {
-        lastTick.set(quarter);
-        runOnJS(tick)();
-      }
-    })
-    .onEnd(() => {
-      if (x.get() >= max * COMMIT_AT) {
-        x.set(withTiming(max, { duration: 120 }));
-        runOnJS(finish)();
-      } else {
-        lastTick.set(0);
-        x.set(reduceMotion ? withTiming(0, { duration: 180 }) : withSpring(0, motion.spring.gentle));
-      }
-    });
+  // While the finger holds the orb it blows, and its hair streams; let go
+  // and it smiles again. One re-render at each end of the gesture.
+  const [dragging, setDragging] = useState(false);
+
+  // Built once per layout, not per render: the first touch re-renders
+  // the slider (the orb starts to blow), and a gesture rebuilt in that
+  // render would be handed to the detector mid-drag. Nothing in it reads
+  // `dragging`; the shared values are stable for the life of the mount.
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(!committed && trackWidth > 0)
+        .onBegin(() => {
+          runOnJS(setDragging)(true);
+        })
+        .onStart(() => {
+          start.set(x.get());
+        })
+        .onFinalize(() => {
+          runOnJS(setDragging)(false);
+        })
+        .onUpdate((e) => {
+          const raw = start.get() + e.translationX;
+          const next = raw < 0 ? 0 : raw > max ? max : raw;
+          x.set(next);
+          const quarter = Math.floor((next / max) * 4);
+          if (quarter > lastTick.get() && quarter < 4) {
+            lastTick.set(quarter);
+            runOnJS(tick)();
+          }
+        })
+        .onEnd(() => {
+          if (x.get() >= max * COMMIT_AT) {
+            x.set(withTiming(max, { duration: 120 }));
+            runOnJS(finish)();
+          } else {
+            lastTick.set(0);
+            x.set(reduceMotion ? withTiming(0, { duration: 180 }) : withSpring(0, motion.spring.gentle));
+          }
+        }),
+    [committed, trackWidth, max, reduceMotion, finish, x, start, lastTick],
+  );
 
   const knobStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
   const labelStyle = useAnimatedStyle(() => {
@@ -228,7 +247,7 @@ export function CommitSlider({
           </Animated.View>
           <GestureDetector gesture={pan}>
             <Animated.View style={[{ position: 'absolute', left: TRACK_PAD, top: TRACK_PAD }, knobStyle]}>
-              <Mascot size={KNOB} expression="smile" glow={false} />
+              <Mascot size={KNOB} expression={dragging ? 'blow' : 'smile'} glow={false} />
             </Animated.View>
           </GestureDetector>
         </>
