@@ -674,6 +674,9 @@ function Scanner({
           ...(roll !== undefined && Number.isFinite(roll)
             ? { pose: { yaw: f.yaw, pitch: f.pitch, roll } }
             : {}),
+          // The shutter-time mesh gives the report its region crops; without
+          // it every crop is the centred fallback.
+          ...(f.mesh ? { mesh: f.mesh } : {}),
           ...(m ? toPhotoReadings(m) : {}),
         };
       });
@@ -857,7 +860,7 @@ function Scanner({
           <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
             <Path d={scrim} fill={darkColors.photoScrim} fillRule="evenodd" />
           </Svg>
-          <HairMesh ref={mesh} scanning={scanning} tone={meshTone} />
+          <HairMesh ref={mesh} scanning={scanning} tone={meshTone} coverage={coverage} />
           <ScanRing
             width={ring.width}
             height={ring.height}

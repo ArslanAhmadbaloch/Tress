@@ -1,41 +1,55 @@
 /**
- * The mesh: a wireframe that sits on the face and reaches up over the
- * hair.
+ * The mesh: a wireframe cap over the head.
  *
  * It is what makes the scan read as an instrument rather than a camera.
- * Thin translucent lines — a lattice warped to the face's outline, the
- * features as interior curves, and above the brow a dome of rows that
- * stands in for the head — following the person at frame rate, lit by a
- * beam that sweeps the dome while the scan runs. Never a filter: nothing
- * here is opaque, nothing is coloured like a costume, and the lines are
- * a hair wide.
+ * Thin translucent lines — meridians from the crown down to the eyebrow
+ * line, latitude rings between, wrapping past the temples to the ears —
+ * following the person at frame rate, lit by a beam that sweeps the
+ * dome while the scan runs. There is nothing on the face: the eyes, the
+ * nose and the mouth are left alone, because the scan is not looking at
+ * them. Never a filter: nothing here is opaque, nothing is coloured like
+ * a costume, and the lines are a hair wide.
  *
  * ── How it moves ──────────────────────────────────────────────────────
  * Faces arrive on the JS thread at the detector's rate, fifteen to
- * thirty a second. Each one is folded into a lattice — one flat array of
- * numbers, fixed layout, see tracking.ts — and posted to the UI thread
+ * thirty a second. Each one is folded into a cap — one flat array of
+ * numbers, fixed layout, see head-cap.ts — and posted to the UI thread
  * as a *target*. A frame callback on the UI thread then glides the drawn
- * lattice towards that target every screen frame, so a detector running
- * at twenty frames a second still moves the mesh at sixty. The paths are
+ * cap towards that target every screen frame, so a detector running at
+ * twenty frames a second still moves the mesh at sixty. The paths are
  * rebuilt from the glided numbers on the UI thread; no React render
  * happens per frame, and the screen above never re-renders for a face.
  *
+ * The cap turns with the head. Every vertex carries how much it faces
+ * the camera, so as the head turns the near side is drawn full and the
+ * side that has turned away fades: the temple facing the phone is where
+ * the eye goes, which is where the scan is looking.
+ *
+ * ── The fill ──────────────────────────────────────────────────────────
+ * The screen hands over the engine's coverage — the same twenty-four
+ * numbers the ring reads — and each line of the cap belongs to one of
+ * those sectors (see `CAP_SECTOR_OF`). As a sector is captured its lines
+ * take the accent, so the head fills in as the ring does: turn to the
+ * right and the right side of the cap comes up green with the right of
+ * the ring. It is a picture of where the head has been pointed, not of
+ * anything on the head.
+ *
  * Reduce Motion takes the glide, the beam and the lit points away and
- * leaves the mesh where the face is. Following a face is tracking, not
- * animation; it stays.
+ * leaves the cap where the head is. Following a head is tracking, not
+ * animation; it stays. So does the fill: it is state, as the ring's is.
  *
  * ── The still ─────────────────────────────────────────────────────────
- * `StaticHairMesh`, at the bottom, is the same wireframe held on a
- * photograph: the lattice built once from a face already laid out in
- * the picture's box (see `meshInBox` in the engine), drawn as plain
- * paths with no glide, no beam and nothing to follow. It is what the
- * processing screen puts over the captured still, so the instrument the
- * camera showed is the one the pass is seen to work on.
+ * `StaticHairMesh`, at the bottom, is the same cap held on a
+ * photograph: built once from a face already laid out in the picture's
+ * box (see `meshInBox` in the engine), drawn as plain paths with no
+ * glide, no beam and nothing to follow. It is what the processing
+ * screen puts over the captured still, so the instrument the camera
+ * showed is the one the pass is seen to work on.
  *
  * ── What it is not ────────────────────────────────────────────────────
- * The dome above the brow is geometry extrapolated from the face oval.
- * It is where the scan looks, not a measurement of what is there. The
- * mesh knows where the head is; it does not know what is on it.
+ * The cap is geometry extrapolated from the face oval and the brow. It
+ * is where the scan looks, not a measurement of what is there. The mesh
+ * knows where the head is; it does not know what is on it.
  */
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, type Ref } from 'react';
@@ -59,18 +73,18 @@ import Animated, {
 import Svg, { Circle, G, Path } from 'react-native-svg';
 
 import {
-  CAP_OFFSET,
-  HAIRLINE_SITES,
-  LATTICE_LENGTH,
-  MESH,
-  buildLattice,
+  CAP,
+  CAP_BAND,
+  CAP_LENGTH,
+  CAP_MERIDIANS,
+  CAP_RINGS,
+  CAP_SECTOR_OF,
+  CAP_SITES,
+  CAP_STRIDE,
+  buildHeadCap,
   capIndex,
-  faceIndex,
-  featureBit,
-  featureOffset,
-  type FeatureName,
-  type TrackedFace,
-} from '@/features/hair-scan/tracking';
+} from '@/features/hair-scan/head-cap';
+import type { TrackedFace } from '@/features/hair-scan/tracking';
 import type { MeshFace } from '@/features/hair-scan/types';
 import { darkColors, motion, useTheme } from '@/theme';
 
@@ -102,6 +116,12 @@ export type HairMeshProps = {
   /** Runs the scan effects: the beam over the cap and the lit points on the hairline. */
   scanning: boolean;
   tone?: MeshTone;
+  /**
+   * The engine's per-sector coverage, 0–1 each, the array the ring
+   * reads. Read on the UI thread; the cap's lines in captured sectors
+   * take the accent. Leave it out and the cap never fills.
+   */
+  coverage?: SharedValue<number[]>;
 };
 
 /* --------------------------------- tuning -------------------------------- */
@@ -112,7 +132,7 @@ const GLIDE_TAU_MS = 48;
 /** Closer than this, in points, and the glide snaps and goes quiet. */
 const SNAP_EPS = 0.05;
 
-/** One sweep of the beam, brow to apex, before it turns back. */
+/** One sweep of the beam, brow to crown, before it turns back. */
 const BEAM_MS = 2400;
 
 /** How long each lit point takes to bloom and fade. */
@@ -132,61 +152,42 @@ const SPECKLE_MS = 900;
 const SPECKLE = { r: 1.1, floor: 0.3 };
 
 /**
- * Line weights and lights, by region. The lattice is dense — a cell is
- * a few points across — so the lines are a hair wide and translucent:
- * at these weights the grid reads as a mesh over the face, not as a veil
- * on it. The cap is the brightest thing here.
+ * Line weights and lights, by region. The cap is dense — a cell is a few
+ * points across — so the lines are a hair wide and translucent: at these
+ * weights the grid reads as a mesh over the head, not as a veil on it.
+ * The hairline band and the temples are the brightest lines; the side
+ * that has turned away is the faintest.
  */
-const FACE_GRID = { width: 0.6, opacity: 0.3 };
-const CAP_GRID = { width: 0.75, opacity: 0.5 };
-const OVAL = { width: 1.1, opacity: 0.6 };
-const FEATURE_LINES = { width: 0.8, opacity: 0.42 };
+const GRID = { width: 0.7, opacity: 0.4 };
+const BAND = { width: 0.85, opacity: 0.6 };
+const FAR = { width: 0.6, opacity: 0.14 };
+/** The fill: three steps of the accent as a sector's coverage climbs. */
+const TINT = { width: 0.9, opacity: [0.45, 0.7, 0.95] as const, steps: [0.2, 0.55, 0.9] as const };
 const BEAM_CORE = { width: 1.6, opacity: 0.85 };
 const BEAM_GLOW = { width: 11, opacity: 0.2 };
+
+/** A line whose ends face the camera less than this, on average, has turned away. */
+const FAR_FACING = 0.03;
 
 /** How far towards sage the lines go when the tone is good. All the way reads as a costume. */
 const TONE_MIX = 0.65;
 
 /* -------------------------------- topology ------------------------------- */
 
-const FR = MESH.faceRows;
-const CR = MESH.capRows;
-const C = MESH.cols;
+const ZERO: number[] = new Array<number>(CAP_LENGTH).fill(0);
 
-const range = (n: number) => Array.from({ length: n }, (_, i) => i);
+const POINT_SLOTS = Array.from({ length: POINT_COUNT }, (_, i) => i);
 
-/** Face rows below the brow line; the brow row itself is drawn with the cap. */
-const FACE_ROWS: number[][] = range(FR - 1).map((r) => range(C).map((c) => faceIndex(r + 1, c)));
-/** Every column, brow to chin. */
-const FACE_COLS: number[][] = range(C).map((c) => range(FR).map((r) => faceIndex(r, c)));
-/** Cap rows from the brow up, stopping short of the apex where they meet in a point. */
-const CAP_ROWS: number[][] = range(CR - 1).map((r) => range(C).map((c) => capIndex(r, c)));
-/** Every column, apex down to the brow, where it meets its face column. */
-const CAP_COLS: number[][] = range(C).map((c) => range(CR).map((r) => capIndex(CR - 1 - r, c)));
-
-const OVAL_INDICES: number[] = range(36).map((i) => featureOffset('FACE') + i);
-
-type Curve = { indices: number[]; bit: number; closed: boolean };
-
-function curve(name: FeatureName, count: number, closed: boolean): Curve {
-  const base = featureOffset(name);
-  return { indices: range(count).map((i) => base + i), bit: featureBit(name), closed };
-}
-
-const FEATURE_CURVES: Curve[] = [
-  curve('LEFT_EYEBROW_TOP', 5, false),
-  curve('RIGHT_EYEBROW_TOP', 5, false),
-  curve('LEFT_EYE', 16, true),
-  curve('RIGHT_EYE', 16, true),
-  curve('NOSE_BRIDGE', 2, false),
-  curve('NOSE_BOTTOM', 3, false),
-  curve('UPPER_LIP_TOP', 11, false),
-  curve('LOWER_LIP_BOTTOM', 11, false),
-];
-
-const ZERO: number[] = new Array<number>(LATTICE_LENGTH).fill(0);
-
-const POINT_SLOTS = range(POINT_COUNT);
+/**
+ * The paths a cap is drawn as, by index into the array the builder
+ * returns: what faces away, the grid, the band, and the three steps of
+ * the fill.
+ */
+const PATH_FAR = 0;
+const PATH_GRID = 1;
+const PATH_BAND = 2;
+const PATH_TINT = 3;
+const PATH_COUNT = PATH_TINT + TINT.steps.length;
 
 /**
  * Where the flecks sit: a fixed scatter over the cap's interior, each
@@ -195,7 +196,7 @@ const POINT_SLOTS = range(POINT_COUNT);
  * is the same on every phone and there is nothing random on the UI thread.
  */
 type Speckle = {
-  /** The cell's four corners as offsets into the flat lattice, worked out here, not on the UI thread. */
+  /** The cell's four corners as offsets into the flat cap, worked out here, not on the UI thread. */
   a: number;
   b: number;
   c: number;
@@ -207,17 +208,22 @@ type Speckle = {
 
 const SPECKLES: Speckle[] = (() => {
   const out: Speckle[] = [];
-  const count = 14;
+  const count = 12;
+  // The interior: rows above the band, columns that face the camera square on.
+  const firstRow = 2;
+  const lastRow = CAP.rows - 2;
+  const firstCol = CAP.templeCols + 1;
+  const lastCol = CAP.cols - CAP.templeCols - 2;
   for (let i = 0; i < count; i += 1) {
     // Low-discrepancy scatter: the golden ratio walks the rows, a second
     // irrational the columns, so the flecks spread rather than cluster.
-    const row = 1 + Math.floor(((i * 0.618034) % 1) * (CR - 3));
-    const col = 1 + Math.floor(((i * 0.414214) % 1) * (C - 2));
+    const row = firstRow + Math.floor(((i * 0.618034) % 1) * (lastRow - firstRow));
+    const col = firstCol + Math.floor(((i * 0.414214) % 1) * (lastCol - firstCol));
     out.push({
-      a: capIndex(row, col) * 2,
-      b: capIndex(row, col + 1) * 2,
-      c: capIndex(row + 1, col) * 2,
-      d: capIndex(row + 1, col + 1) * 2,
+      a: capIndex(row, col) * CAP_STRIDE,
+      b: capIndex(row, col + 1) * CAP_STRIDE,
+      c: capIndex(row + 1, col) * CAP_STRIDE,
+      d: capIndex(row + 1, col + 1) * CAP_STRIDE,
       u: (i * 0.7548777) % 1,
       v: (i * 0.5698403) % 1,
       phase: (i * 0.3247) % 1,
@@ -233,67 +239,110 @@ function num(v: number): string {
   return (Math.round(v * 10) / 10).toString();
 }
 
-function polyline(pts: number[], indices: number[], closed: boolean): string {
+/** A vertex's fill, 0–1: its sector's coverage, or the scan's mean for the front centre. */
+function tintOf(cover: number[] | null, mean: number, v: number): number {
   'worklet';
-  let d = '';
-  for (let i = 0; i < indices.length; i += 1) {
-    const k = indices[i] * 2;
-    d += (i === 0 ? 'M' : 'L') + num(pts[k]) + ' ' + num(pts[k + 1]);
-  }
-  return closed ? d + 'Z' : d;
+  if (cover === null) return 0;
+  const sector = CAP_SECTOR_OF[v];
+  if (sector < 0) return mean;
+  const c = cover[sector];
+  return c === undefined ? 0 : c;
 }
 
-function polylines(pts: number[], groups: number[][]): string {
+/** Which path the line between two vertices belongs in. */
+function pathOf(pts: number[], cover: number[] | null, mean: number, a: number, b: number): number {
   'worklet';
-  let d = '';
-  for (let g = 0; g < groups.length; g += 1) d += polyline(pts, groups[g], false);
-  return d;
-}
-
-function featurePaths(pts: number[], mask: number): string {
-  'worklet';
-  let d = '';
-  for (let i = 0; i < FEATURE_CURVES.length; i += 1) {
-    const f = FEATURE_CURVES[i];
-    if ((mask & f.bit) === 0) continue;
-    d += polyline(pts, f.indices, f.closed);
+  const facing = (pts[a * CAP_STRIDE + 2] + pts[b * CAP_STRIDE + 2]) / 2;
+  if (facing < FAR_FACING) return PATH_FAR;
+  const tint = (tintOf(cover, mean, a) + tintOf(cover, mean, b)) / 2;
+  for (let step = TINT.steps.length - 1; step >= 0; step -= 1) {
+    if (tint >= TINT.steps[step]) return PATH_TINT + step;
   }
-  return d;
+  return CAP_BAND[a] && CAP_BAND[b] ? PATH_BAND : PATH_GRID;
 }
 
 /**
- * The beam: one cap row, read between the rows the lattice actually has,
- * so it conforms to the dome as it sweeps. It never reaches the apex,
- * where every column meets and a row is a point.
+ * Walks one ring or meridian, handing each line to its path. Runs of
+ * lines in the same path share one subpath; a change starts a new one,
+ * so a ring that is half captured is two strokes, not nineteen.
+ */
+function walk(
+  out: string[],
+  pts: number[],
+  indices: readonly number[],
+  cover: number[] | null,
+  mean: number,
+): void {
+  'worklet';
+  let prev = -1;
+  for (let i = 1; i < indices.length; i += 1) {
+    const a = indices[i - 1];
+    const b = indices[i];
+    const path = pathOf(pts, cover, mean, a, b);
+    const ka = a * CAP_STRIDE;
+    const kb = b * CAP_STRIDE;
+    if (path !== prev) out[path] += 'M' + num(pts[ka]) + ' ' + num(pts[ka + 1]);
+    out[path] += 'L' + num(pts[kb]) + ' ' + num(pts[kb + 1]);
+    prev = path;
+  }
+}
+
+/** Every path of the cap, from the drawn vertices and the coverage. */
+function capPaths(pts: number[], cover: number[] | null): string[] {
+  'worklet';
+  const out: string[] = [];
+  for (let i = 0; i < PATH_COUNT; i += 1) out.push('');
+  let mean = 0;
+  if (cover !== null && cover.length > 0) {
+    let sum = 0;
+    for (let i = 0; i < cover.length; i += 1) sum += cover[i];
+    mean = sum / cover.length;
+  }
+  for (let r = 0; r < CAP_RINGS.length; r += 1) walk(out, pts, CAP_RINGS[r], cover, mean);
+  for (let c = 0; c < CAP_MERIDIANS.length; c += 1) walk(out, pts, CAP_MERIDIANS[c], cover, mean);
+  return out;
+}
+
+/**
+ * The beam: one ring, read between the rings the cap actually has, so it
+ * conforms to the dome as it sweeps. It never reaches the pole, where
+ * every meridian meets and a ring is a point, and it lights only the
+ * side that faces the camera.
  */
 function beamPath(pts: number[], position: number): string {
   'worklet';
-  const j = position * (CR - 1.6);
+  const j = position * (CAP.rows - 1.4);
   const j0 = Math.floor(j);
-  const j1 = Math.min(CR - 1, j0 + 1);
+  const j1 = Math.min(CAP.rows - 1, j0 + 1);
   const f = j - j0;
   let d = '';
-  for (let c = 0; c < C; c += 1) {
-    const a = (CAP_OFFSET + j0 * C + c) * 2;
-    const b = (CAP_OFFSET + j1 * C + c) * 2;
+  let open = false;
+  for (let c = 0; c < CAP.cols; c += 1) {
+    const a = capIndex(j0, c) * CAP_STRIDE;
+    const b = capIndex(j1, c) * CAP_STRIDE;
+    const facing = pts[a + 2] + (pts[b + 2] - pts[a + 2]) * f;
+    if (facing < FAR_FACING) {
+      open = false;
+      continue;
+    }
     const x = pts[a] + (pts[b] - pts[a]) * f;
     const y = pts[a + 1] + (pts[b + 1] - pts[a + 1]) * f;
-    d += (c === 0 ? 'M' : 'L') + num(x) + ' ' + num(y);
+    d += (open ? 'L' : 'M') + num(x) + ' ' + num(y);
+    open = true;
   }
   return d;
 }
 
 /* ------------------------------- component ------------------------------- */
 
-export function HairMesh({ ref, scanning, tone = 'neutral' }: HairMeshProps) {
+export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMeshProps) {
   const { colors } = useTheme();
   const reduced = useReducedMotion();
 
-  /** Where the face is, per the last reading. */
+  /** Where the head is, per the last reading. */
   const target = useSharedValue<number[]>(ZERO);
-  /** Where the mesh is drawn: glides towards `target`. */
+  /** Where the cap is drawn: glides towards `target`. */
   const current = useSharedValue<number[]>(ZERO);
-  const mask = useSharedValue(0);
   /** Set when the target moves; cleared once the glide has caught up. */
   const dirty = useSharedValue(0);
   const visible = useSharedValue(0);
@@ -323,14 +372,13 @@ export function HairMesh({ ref, scanning, tone = 'neutral' }: HairMeshProps) {
           );
           return;
         }
-        const lattice = buildLattice(face);
-        target.set(lattice.pts);
-        mask.set(lattice.mask);
+        const cap = buildHeadCap(face);
+        target.set(cap);
         if (!presentRef.current) {
           presentRef.current = true;
-          // A face arriving from nothing appears where it is: no glide
+          // A head arriving from nothing appears where it is: no glide
           // across the screen from wherever the last one faded.
-          current.set(lattice.pts);
+          current.set(cap);
           visible.set(
             reducedRef.current ? 1 : withTiming(1, { duration: motion.duration.slow }),
           );
@@ -338,12 +386,12 @@ export function HairMesh({ ref, scanning, tone = 'neutral' }: HairMeshProps) {
         dirty.set(1);
       },
     }),
-    [target, mask, current, visible, dirty],
+    [target, current, visible, dirty],
   );
 
   /*
-    The glide. Runs every screen frame; does nothing once the drawn
-    lattice has caught up with the target, so a still head costs no path
+    The glide. Runs every screen frame; does nothing once the drawn cap
+    has caught up with the target, so a still head costs no path
     rebuilds at all. The clock for the effects lives here too, so it
     advances only while frames are actually being drawn.
   */
@@ -357,7 +405,7 @@ export function HairMesh({ ref, scanning, tone = 'neutral' }: HairMeshProps) {
       const tgt = target.get();
       const cur = current.get();
       let worst = 0;
-      for (let i = 0; i < LATTICE_LENGTH; i += 1) {
+      for (let i = 0; i < CAP_LENGTH; i += 1) {
         const gap = Math.abs(tgt[i] - cur[i]);
         if (gap > worst) worst = gap;
       }
@@ -365,7 +413,7 @@ export function HairMesh({ ref, scanning, tone = 'neutral' }: HairMeshProps) {
       const k = 1 - Math.exp(-dt / GLIDE_TAU_MS);
       current.modify((values) => {
         'worklet';
-        for (let i = 0; i < LATTICE_LENGTH; i += 1) {
+        for (let i = 0; i < CAP_LENGTH; i += 1) {
           values[i] = converged ? tgt[i] : values[i] + (tgt[i] - values[i]) * k;
         }
         return values;
@@ -414,22 +462,16 @@ export function HairMesh({ ref, scanning, tone = 'neutral' }: HairMeshProps) {
     interpolateColor(toneValue.get() * TONE_MIX, [0, 1], [white, sage]),
   );
 
-  const faceGrid = useAnimatedProps(() => {
-    const pts = current.get();
-    return { d: polylines(pts, FACE_ROWS) + polylines(pts, FACE_COLS), stroke: stroke.get() };
-  });
-  const capGrid = useAnimatedProps(() => {
-    const pts = current.get();
-    return { d: polylines(pts, CAP_ROWS) + polylines(pts, CAP_COLS), stroke: stroke.get() };
-  });
-  const oval = useAnimatedProps(() => ({
-    d: polyline(current.get(), OVAL_INDICES, true),
-    stroke: stroke.get(),
-  }));
-  const features = useAnimatedProps(() => ({
-    d: featurePaths(current.get(), mask.get()),
-    stroke: stroke.get(),
-  }));
+  const paths = useDerivedValue(() =>
+    capPaths(current.get(), coverage === undefined ? null : coverage.get()),
+  );
+
+  const far = useAnimatedProps(() => ({ d: paths.get()[PATH_FAR], stroke: stroke.get() }));
+  const grid = useAnimatedProps(() => ({ d: paths.get()[PATH_GRID], stroke: stroke.get() }));
+  const band = useAnimatedProps(() => ({ d: paths.get()[PATH_BAND], stroke: stroke.get() }));
+  const tint0 = useAnimatedProps(() => ({ d: paths.get()[PATH_TINT] }));
+  const tint1 = useAnimatedProps(() => ({ d: paths.get()[PATH_TINT + 1] }));
+  const tint2 = useAnimatedProps(() => ({ d: paths.get()[PATH_TINT + 2] }));
 
   const beamD = useDerivedValue(() => beamPath(current.get(), beam.get()));
   const beamStrength = useDerivedValue(() => (reduced ? 0 : scanningValue.get()));
@@ -450,33 +492,53 @@ export function HairMesh({ ref, scanning, tone = 'neutral' }: HairMeshProps) {
       importantForAccessibility="no-hide-descendants">
       <Svg width="100%" height="100%" accessible={false}>
         <AnimatedPath
-          animatedProps={faceGrid}
+          animatedProps={far}
           fill="none"
-          strokeWidth={FACE_GRID.width}
-          strokeOpacity={FACE_GRID.opacity}
+          strokeWidth={FAR.width}
+          strokeOpacity={FAR.opacity}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         <AnimatedPath
-          animatedProps={capGrid}
+          animatedProps={grid}
           fill="none"
-          strokeWidth={CAP_GRID.width}
-          strokeOpacity={CAP_GRID.opacity}
+          strokeWidth={GRID.width}
+          strokeOpacity={GRID.opacity}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         <AnimatedPath
-          animatedProps={oval}
+          animatedProps={band}
           fill="none"
-          strokeWidth={OVAL.width}
-          strokeOpacity={OVAL.opacity}
+          strokeWidth={BAND.width}
+          strokeOpacity={BAND.opacity}
+          strokeLinecap="round"
           strokeLinejoin="round"
         />
         <AnimatedPath
-          animatedProps={features}
+          animatedProps={tint0}
           fill="none"
-          strokeWidth={FEATURE_LINES.width}
-          strokeOpacity={FEATURE_LINES.opacity}
+          stroke={sage}
+          strokeWidth={TINT.width}
+          strokeOpacity={TINT.opacity[0]}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <AnimatedPath
+          animatedProps={tint1}
+          fill="none"
+          stroke={sage}
+          strokeWidth={TINT.width}
+          strokeOpacity={TINT.opacity[1]}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <AnimatedPath
+          animatedProps={tint2}
+          fill="none"
+          stroke={sage}
+          strokeWidth={TINT.width}
+          strokeOpacity={TINT.opacity[2]}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
@@ -532,8 +594,9 @@ type PointProps = {
  * One of the lights that visit the hairline and temples while the scan
  * runs. Each blooms and fades over a pulse — a bright core inside a soft
  * halo — then moves to another site; the sites are the cap's hairline
- * band and its edges, chosen by a fixed sequence so the pattern is the
- * same on every phone.
+ * band and its temples, chosen by a fixed sequence so the pattern is the
+ * same on every phone. A site that has turned away from the camera stays
+ * dark.
  */
 function AnalysisPoint({ slot, current, clock, strength, color }: PointProps & { slot: number }) {
   const place = useDerivedValue(() => {
@@ -541,9 +604,10 @@ function AnalysisPoint({ slot, current, clock, strength, color }: PointProps & {
     const t = clock.get() + (slot * PULSE_MS) / POINT_COUNT;
     const generation = Math.floor(t / PULSE_MS);
     const phase = (t - generation * PULSE_MS) / PULSE_MS;
-    const site = HAIRLINE_SITES[(generation * 7 + slot * 13) % HAIRLINE_SITES.length];
-    const lit = Math.sin(Math.PI * phase);
-    return { x: pts[site * 2], y: pts[site * 2 + 1], lit: lit * strength.get() };
+    const site = CAP_SITES[(generation * 7 + slot * 13) % CAP_SITES.length] * CAP_STRIDE;
+    const facing = Math.max(0, Math.min(1, pts[site + 2] * 2));
+    const lit = Math.sin(Math.PI * phase) * facing;
+    return { x: pts[site], y: pts[site + 1], lit: lit * strength.get() };
   });
   const halo = useAnimatedProps(() => {
     const { x, y, lit } = place.get();
@@ -574,7 +638,8 @@ function AnalysisPoint({ slot, current, clock, strength, color }: PointProps & {
 /**
  * One fleck over the cap: a tiny point between the lines that twinkles
  * while the scan looks, placed by bilinear interpolation inside its cell
- * so it rides the dome with the lattice.
+ * so it rides the dome with the cap, and dimmed with the cell as it
+ * turns away.
  */
 function SpecklePoint({ speckle, current, clock, strength, color }: PointProps & { speckle: Speckle }) {
   const props = useAnimatedProps(() => {
@@ -582,13 +647,14 @@ function SpecklePoint({ speckle, current, clock, strength, color }: PointProps &
     const { a, b, c, d, u, v } = speckle;
     const top = { x: pts[a] + (pts[b] - pts[a]) * u, y: pts[a + 1] + (pts[b + 1] - pts[a + 1]) * u };
     const bottom = { x: pts[c] + (pts[d] - pts[c]) * u, y: pts[c + 1] + (pts[d + 1] - pts[c + 1]) * u };
+    const facing = Math.max(0, Math.min(1, ((pts[a + 2] + pts[d + 2]) / 2) * 2));
     const phase = (clock.get() / SPECKLE_MS + speckle.phase) % 1;
     const twinkle = Math.sin(Math.PI * phase);
     return {
       cx: top.x + (bottom.x - top.x) * v,
       cy: top.y + (bottom.y - top.y) * v,
       r: SPECKLE.r,
-      opacity: (SPECKLE.floor + (1 - SPECKLE.floor) * twinkle * twinkle) * strength.get(),
+      opacity: (SPECKLE.floor + (1 - SPECKLE.floor) * twinkle * twinkle) * strength.get() * facing,
     };
   });
   return <AnimatedCircle animatedProps={props} fill={color} />;
@@ -609,10 +675,10 @@ const STILL_BLOOM = { core: 2.4, halo: 7, haloOpacity: 0.22 };
  * stride, so every still lights the same places and nothing is random.
  */
 const STILL_SITES: readonly number[] = (() => {
-  const stride = Math.max(1, Math.floor(HAIRLINE_SITES.length / STILL_POINT_COUNT));
+  const stride = Math.max(1, Math.floor(CAP_SITES.length / STILL_POINT_COUNT));
   const out: number[] = [];
   for (let i = 0; i < STILL_POINT_COUNT; i += 1) {
-    const site = HAIRLINE_SITES[(i * stride + 3) % HAIRLINE_SITES.length];
+    const site = CAP_SITES[(i * stride + 3) % CAP_SITES.length];
     if (site !== undefined) out.push(site);
   }
   return out;
@@ -626,7 +692,7 @@ export type StaticHairMeshProps = {
   tone?: MeshTone;
   /** 0–1: how strongly the lines are drawn. A thumbnail draws faint. */
   strength?: number;
-  /** Leave out the face grid — the densest lines, a haze at thumbnail size. */
+  /** Leave out the lines that face away — a haze at thumbnail size. */
   sparse?: boolean;
   /**
    * Light a few points on the hairline, breathing slowly. They are the
@@ -638,12 +704,13 @@ export type StaticHairMeshProps = {
 };
 
 /**
- * The wireframe held on a still.
+ * The cap held on a still.
  *
  * Built once per face and drawn as plain paths: no glide, no beam, no
- * tracking. It always draws on a photograph inside the dark instrument,
- * so its colours come from `darkColors` whichever appearance the app is
- * in, as the processing screen's do.
+ * tracking, no fill. A still carries no pose, so the cap is square on.
+ * It always draws on a photograph inside the dark instrument, so its
+ * colours come from `darkColors` whichever appearance the app is in, as
+ * the processing screen's do.
  */
 export function StaticHairMesh({
   face,
@@ -661,31 +728,18 @@ export function StaticHairMesh({
   const stroke = tone === 'neutral' ? white : interpolateColor(TONE_MIX, [0, 1], [white, sage]);
 
   const paths = useMemo(() => {
-    const shim: TrackedFace = {
-      cx: face.cx,
-      cy: face.cy,
-      width: face.width,
-      height: face.height,
-      yaw: 0,
-      pitch: 0,
-      roll: 0,
-      contours: face.contours,
-      hasContours: (face.contours.FACE?.length ?? 0) > 0,
-      stability: 1,
-      yawRate: 0,
-      held: false,
-      lastSeenAt: 0,
-      at: 0,
-    };
-    const { pts, mask } = buildLattice(shim);
+    const pts = buildHeadCap(face);
+    const built = capPaths(pts, null);
     return {
-      faceGrid: sparse ? '' : polylines(pts, FACE_ROWS) + polylines(pts, FACE_COLS),
-      capGrid: polylines(pts, CAP_ROWS) + polylines(pts, CAP_COLS),
-      oval: polyline(pts, OVAL_INDICES, true),
-      features: featurePaths(pts, mask),
-      sites: STILL_SITES.map((site) => ({ x: pts[site * 2] ?? 0, y: pts[site * 2 + 1] ?? 0 })),
+      far: built[PATH_FAR],
+      grid: built[PATH_GRID],
+      band: built[PATH_BAND],
+      sites: STILL_SITES.map((site) => ({
+        x: pts[site * CAP_STRIDE] ?? 0,
+        y: pts[site * CAP_STRIDE + 1] ?? 0,
+      })),
     };
-  }, [face, sparse]);
+  }, [face]);
 
   const lit = points && !reduced;
   const breath = useSharedValue(0);
@@ -710,38 +764,30 @@ export function StaticHairMesh({
       importantForAccessibility="no-hide-descendants">
       {sparse ? null : (
         <Path
-          d={paths.faceGrid}
+          d={paths.far}
           fill="none"
           stroke={stroke}
-          strokeWidth={FACE_GRID.width}
-          strokeOpacity={FACE_GRID.opacity * strength}
+          strokeWidth={FAR.width}
+          strokeOpacity={FAR.opacity * strength}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
       )}
       <Path
-        d={paths.capGrid}
+        d={paths.grid}
         fill="none"
         stroke={stroke}
-        strokeWidth={CAP_GRID.width}
-        strokeOpacity={CAP_GRID.opacity * strength}
+        strokeWidth={GRID.width}
+        strokeOpacity={GRID.opacity * strength}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <Path
-        d={paths.oval}
+        d={paths.band}
         fill="none"
         stroke={stroke}
-        strokeWidth={OVAL.width}
-        strokeOpacity={OVAL.opacity * strength}
-        strokeLinejoin="round"
-      />
-      <Path
-        d={paths.features}
-        fill="none"
-        stroke={stroke}
-        strokeWidth={FEATURE_LINES.width}
-        strokeOpacity={FEATURE_LINES.opacity * strength}
+        strokeWidth={BAND.width}
+        strokeOpacity={BAND.opacity * strength}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
