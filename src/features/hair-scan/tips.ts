@@ -1,5 +1,6 @@
 /**
- * Care notes, by the goal somebody picked.
+ * Care notes, by the goal somebody picked and what they told us about
+ * themselves.
  *
  * Four per goal, written the way a good hairdresser talks: how to wash,
  * dry, brush and tie hair so it is handled kindly, and when a scalp is a
@@ -11,10 +12,42 @@
  * reads every note for outcome words, advice framed as a promise, and
  * anything that describes a head instead of a habit.
  *
+ * ── The profile notes ─────────────────────────────────────────────────
+ * The funnel also asks what the person knows about themselves — how
+ * their scalp feels, whether it has reacted to products, how often heat
+ * goes near their hair, what else is on their mind — and a note that
+ * ignores all of that reads as boilerplate. So `tipsForProfile` swaps in
+ * up to two notes chosen by those answers, and fills the rest from the
+ * goal. A profile note is still a habit: a heat note is offered only to
+ * somebody who said heat goes on their hair often, a fragrance note only to
+ * somebody who said fragrance has bothered them, and every one of them
+ * is chosen by the label of a choice they made, never by anything the
+ * app worked out about them. The set says which answer shaped it, so
+ * the paragraph under the report can name the same one.
+ *
  * Pure: no React, nothing native. Loaded by `node --test`.
  */
 
-import type { HairGoal } from '@/types/domain';
+import {
+  HAIR_CONCERN_LABELS,
+  HEAT_STYLING_LABELS,
+  INGREDIENT_REACTION_LABELS,
+  SCALP_SENSITIVITY_LABELS,
+  SCALP_TYPE_LABELS,
+  journeyConcerns,
+  journeyGoals,
+  journeyHeatStyling,
+  journeyReactions,
+  journeyScalpSensitivity,
+  journeyScalpType,
+  type HairConcern,
+  type HairGoal,
+  type HeatStyling,
+  type IngredientReaction,
+  type Journey,
+  type ScalpSensitivity,
+  type ScalpType,
+} from '@/types/domain';
 
 export type Tip = {
   id: string;
@@ -30,6 +63,13 @@ export const DEFAULT_TIP_GOAL: HairGoal = 'overall';
 
 /** How many notes each goal carries: the report shows them numbered 1–4. */
 export const TIPS_PER_GOAL = 4;
+
+/**
+ * How many of the four a person's own answers may choose. The rest come
+ * from the goal, so the set never stops being about what they said they
+ * are hoping for.
+ */
+export const PROFILE_TIPS_MAX = 2;
 
 const note = (goal: HairGoal, n: number, kicker: string, emoji: string, body: string): Tip => ({
   id: `${goal}_${n}`,
@@ -107,7 +147,162 @@ export function tipsFor(goal: HairGoal | undefined): Tip[] {
   return [...(list ?? TIPS_BY_GOAL[DEFAULT_TIP_GOAL])];
 }
 
-/** Every note, for the sweep. */
+/* ------------------------------ the profile ------------------------------ */
+
+/**
+ * What the funnel's self-knowledge questions contribute to the notes.
+ * Every field is optional and every one is the label of a choice, read
+ * through the validated accessors when it comes off a journey.
+ */
+export type TipProfile = {
+  goal?: HairGoal;
+  heatStyling?: HeatStyling;
+  ingredientReactions?: IngredientReaction[];
+  scalpSensitivity?: ScalpSensitivity;
+  scalpType?: ScalpType;
+  concerns?: HairConcern[];
+};
+
+/**
+ * Which answer chose a profile note, so the paragraph under the report
+ * can say "you told Tress ..., and the notes are picked with that in
+ * mind" about the same answer the notes were actually picked by.
+ * `label` is verbatim from the `*_LABELS` maps: a quotation.
+ */
+export type TipSignal = {
+  kind: 'heat' | 'reaction' | 'sensitivity' | 'scalpType' | 'concern';
+  label: string;
+};
+
+export type ProfileTips = {
+  items: Tip[];
+  /** The first answer that shaped the set, or null when the goal alone did. */
+  shapedBy: TipSignal | null;
+};
+
+const profileNote = (id: string, kicker: string, emoji: string, body: string): Tip => ({ id, kicker, emoji, body });
+
+/**
+ * The notes a self-knowledge answer can bring in, one habit each.
+ *
+ * Kickers are shared with the goal notes on purpose: a heat note from
+ * the profile and a heat note from the goal are the same topic, and
+ * `tipsForProfile` keeps one topic to one note.
+ */
+export const PROFILE_TIPS = Object.freeze({
+  heatOften: profileNote('heat_often', 'Heat', '🔥', 'Whenever heat goes on the hair, a heat-protection spray first, the lowest setting that does the job, and the tool kept moving rather than parked.'),
+  fragrance: profileNote('reaction_fragrance', 'Labels', '🏷️', 'Parfum and fragrance are the words to look for on an ingredient list; they usually sit near the end of it.'),
+  sulfates: profileNote('reaction_sulfates', 'Labels', '🏷️', 'Sodium lauryl sulfate and sodium laureth sulfate are the two names sulfates usually go under on a label, near the top of the list.'),
+  sensitive: profileNote('scalp_sensitive', 'Products', '🧴', 'One new product at a time, with a week or two between them: a scalp that has reacted in the past is easier to read one change at a time.'),
+  oily: profileNote('scalp_oily', 'Wash', '🚿', 'Wash as often as the scalp feels like it needs; shampoo at the roots with fingertips, conditioner on the lengths only.'),
+  dry: profileNote('scalp_dry', 'Wash', '💧', 'Lukewarm rather than hot water, and a day or two between washes where the scalp is comfortable with it.'),
+  combination: profileNote('scalp_combination', 'Wash', '🚿', 'Shampoo where the scalp feels oily and let the rinse do the rest; conditioner on the lengths, away from the roots.'),
+  flakesOrItch: profileNote('concern_scalp', 'Scalp', '🫧', 'Flaking or itching that lasts more than a few weeks is one for a GP or dermatologist rather than another bottle.'),
+  dryness: profileNote('concern_dryness', 'Conditioner', '💧', 'Conditioner on the lengths every wash, left a minute or two, and a towel pressed rather than rubbed.'),
+  frizz: profileNote('concern_frizz', 'Drying', '🌬️', 'Blot with a soft towel or a T-shirt rather than rubbing, and let the hair mostly dry on its own ahead of the dryer.'),
+});
+
+/**
+ * The self-knowledge answers of a journey, validated, in the shape the
+ * notes read. A null journey reads as nobody having answered anything.
+ */
+export function tipProfileOf(journey: Journey | null): TipProfile {
+  if (!journey) return {};
+  return {
+    goal: journeyGoals(journey)[0],
+    heatStyling: journeyHeatStyling(journey),
+    ingredientReactions: journeyReactions(journey),
+    scalpSensitivity: journeyScalpSensitivity(journey),
+    scalpType: journeyScalpType(journey),
+    concerns: journeyConcerns(journey),
+  };
+}
+
+/** The profile notes a set of answers earns, most specific first, each with the answer that earned it. */
+function profileCandidates(profile: TipProfile): { tip: Tip; signal: TipSignal }[] {
+  const out: { tip: Tip; signal: TipSignal }[] = [];
+  const reactions = profile.ingredientReactions ?? [];
+  const concerns = profile.concerns ?? [];
+
+  // Heat first: it is the one answer that names a habit outright.
+  if (profile.heatStyling === 'daily' || profile.heatStyling === 'fewTimesWeek') {
+    out.push({ tip: PROFILE_TIPS.heatOften, signal: { kind: 'heat', label: HEAT_STYLING_LABELS[profile.heatStyling] } });
+  }
+  if (reactions.includes('fragrance')) {
+    out.push({ tip: PROFILE_TIPS.fragrance, signal: { kind: 'reaction', label: INGREDIENT_REACTION_LABELS.fragrance } });
+  }
+  if (reactions.includes('sulfates')) {
+    out.push({ tip: PROFILE_TIPS.sulfates, signal: { kind: 'reaction', label: INGREDIENT_REACTION_LABELS.sulfates } });
+  }
+  if (profile.scalpSensitivity === 'sensitive') {
+    out.push({ tip: PROFILE_TIPS.sensitive, signal: { kind: 'sensitivity', label: SCALP_SENSITIVITY_LABELS.sensitive } });
+  }
+  const byScalp: Partial<Record<ScalpType, Tip>> = { oily: PROFILE_TIPS.oily, dry: PROFILE_TIPS.dry, combination: PROFILE_TIPS.combination };
+  const scalpTip = profile.scalpType ? byScalp[profile.scalpType] : undefined;
+  if (scalpTip && profile.scalpType) {
+    out.push({ tip: scalpTip, signal: { kind: 'scalpType', label: SCALP_TYPE_LABELS[profile.scalpType] } });
+  }
+  const byConcern: Partial<Record<HairConcern, Tip>> = {
+    dandruff: PROFILE_TIPS.flakesOrItch,
+    itchOrIrritation: PROFILE_TIPS.flakesOrItch,
+    dryness: PROFILE_TIPS.dryness,
+    frizz: PROFILE_TIPS.frizz,
+    oilyRoots: PROFILE_TIPS.oily,
+    breakage: TIPS_BY_GOAL.lessBreakage[0],
+    shedding: TIPS_BY_GOAL.shedding[0],
+    moreScalpShowing: TIPS_BY_GOAL.narrowerPart[3],
+  };
+  for (const concern of concerns) {
+    const tip = byConcern[concern];
+    if (tip) out.push({ tip, signal: { kind: 'concern', label: HAIR_CONCERN_LABELS[concern] } });
+  }
+  return out;
+}
+
+/**
+ * Four notes for this person: up to `PROFILE_TIPS_MAX` chosen by what
+ * they told us about themselves, the rest by their goal, one note per
+ * topic and no note twice. With nothing answered beyond the goal the
+ * set is exactly `tipsFor(goal)`, so an older journey reads as it did.
+ */
+export function tipsForProfile(profile: TipProfile): ProfileTips {
+  const items: Tip[] = [];
+  const topics = new Set<string>();
+  const ids = new Set<string>();
+  let shapedBy: TipSignal | null = null;
+
+  const take = (tip: Tip): boolean => {
+    const topic = tip.kicker.toLowerCase();
+    if (ids.has(tip.id) || topics.has(topic)) return false;
+    ids.add(tip.id);
+    topics.add(topic);
+    items.push(tip);
+    return true;
+  };
+
+  let fromProfile = 0;
+  for (const { tip, signal } of profileCandidates(profile)) {
+    if (fromProfile >= PROFILE_TIPS_MAX) break;
+    if (!take(tip)) continue;
+    fromProfile += 1;
+    shapedBy ??= signal;
+  }
+  for (const tip of tipsFor(profile.goal)) {
+    if (items.length >= TIPS_PER_GOAL) break;
+    take(tip);
+  }
+  // A goal whose own notes share topics with the profile's can leave a
+  // gap; the everyday notes fill it, so the report always numbers four.
+  for (const tip of TIPS_BY_GOAL[DEFAULT_TIP_GOAL]) {
+    if (items.length >= TIPS_PER_GOAL) break;
+    take(tip);
+  }
+
+  return { items, shapedBy };
+}
+
+/** Every note, goal and profile alike, for the sweep. */
 export function tipSentences(): string[] {
-  return Object.values(TIPS_BY_GOAL).flatMap((list) => list.flatMap((t) => [t.kicker, t.body]));
+  const all = [...Object.values(TIPS_BY_GOAL).flat(), ...Object.values(PROFILE_TIPS)];
+  return all.flatMap((t) => [t.kicker, t.body]);
 }

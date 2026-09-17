@@ -142,7 +142,21 @@ export type FrameMesh = {
    * what undoes the crop so the mesh lands on the face in the still.
    */
   viewAspect: number;
+  /**
+   * The head's angles when the shutter fired, so the cap drawn on the
+   * still turns as the live one did. Absent when the tracker had no
+   * finite reading; the cap is then square on.
+   */
+  pose?: MeshPose;
 };
+
+/**
+ * The head's angles at a shutter, in degrees with the tracker's signs:
+ * what lets the cap on a still turn with the head instead of sitting
+ * square on a face seen from the side. A framing fact about the
+ * picture, never a fact about the hair.
+ */
+export type MeshPose = { yaw: number; pitch: number; roll: number };
 
 /** A kept frame's mesh with the still it belongs to: what the processing screen draws over a picture. */
 export type StillMesh = { still: Size; face: FrameMesh };
@@ -154,6 +168,8 @@ export type MeshFace = {
   width: number;
   height: number;
   contours: Contours;
+  /** The head's angles at the shutter, carried through from the frame's mesh. Absent: square on. */
+  pose?: MeshPose;
 };
 
 /** A captured frame the engine has chosen to keep. */

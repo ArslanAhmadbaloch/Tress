@@ -4,8 +4,9 @@
  * Every buzz the hair scan makes comes through here, so the whole gesture
  * has one vocabulary: a light tap when the machine starts, the small click
  * of a selection when the head is found, a barely-there tick as each
- * sector of the ring is captured, a firmer knock at a milestone, and the
- * system's own success note at the end. Nothing here is loud, and nothing
+ * sector of the ring is captured, a firmer knock at a milestone, the
+ * system's own success note at the end, and, on the processing screen,
+ * a soft tap as each frame is taken into the disc. Nothing here is loud, and nothing
  * here is constant — a ring that buzzed at camera rate would stop being
  * feedback and start being noise.
  *
@@ -35,7 +36,9 @@ export type ScanHapticEvent =
   | 'trackingLock'
   | 'sectorCaptured'
   | 'milestone'
-  | 'complete';
+  | 'complete'
+  /** A frame in orbit has arrived at the disc's centre, on the processing screen. */
+  | 'absorb';
 
 /**
  * Shortest gap between two of the same event, in milliseconds.
@@ -43,7 +46,9 @@ export type ScanHapticEvent =
  * Sector ticks come closest together by design — they are the texture of
  * the turn — but even they sit above the ~60ms a phone needs to make two
  * taps feel like two. Start and complete happen once per scan; the floor
- * there is a guard against a double-fire, not a design choice.
+ * there is a guard against a double-fire, not a design choice. Absorb
+ * taps arrive on the processing screen's own beat, one frame every
+ * 260ms; the floor sits under that beat and only stops a double.
  */
 export const SCAN_HAPTIC_FLOOR_MS: Record<ScanHapticEvent, number> = {
   start: 400,
@@ -51,6 +56,7 @@ export const SCAN_HAPTIC_FLOOR_MS: Record<ScanHapticEvent, number> = {
   sectorCaptured: 90,
   milestone: 250,
   complete: 800,
+  absorb: 120,
 };
 
 /** The strength of each event, in expo-haptics' own vocabulary. */
@@ -63,6 +69,7 @@ export const SCAN_HAPTIC_STYLE: Record<
   sectorCaptured: { kind: 'impact', style: 'Soft' },
   milestone: { kind: 'impact', style: 'Medium' },
   complete: { kind: 'success' },
+  absorb: { kind: 'impact', style: 'Soft' },
 };
 
 /** One expo-haptics call per event, bound on first use. */

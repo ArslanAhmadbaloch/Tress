@@ -707,7 +707,9 @@ export type StaticHairMeshProps = {
  * The cap held on a still.
  *
  * Built once per face and drawn as plain paths: no glide, no beam, no
- * tracking, no fill. A still carries no pose, so the cap is square on.
+ * tracking, no fill. A still that carries the head's angles from its
+ * shutter gets a cap turned the same way, so a frame taken from the
+ * side shows a cap seen from the side; one without them is square on.
  * It always draws on a photograph inside the dark instrument, so its
  * colours come from `darkColors` whichever appearance the app is in, as
  * the processing screen's do.
@@ -728,7 +730,9 @@ export function StaticHairMesh({
   const stroke = tone === 'neutral' ? white : interpolateColor(TONE_MIX, [0, 1], [white, sage]);
 
   const paths = useMemo(() => {
-    const pts = buildHeadCap(face);
+    const pts = buildHeadCap(
+      face.pose === undefined ? face : { ...face, yaw: face.pose.yaw, pitch: face.pose.pitch },
+    );
     const built = capPaths(pts, null);
     return {
       far: built[PATH_FAR],

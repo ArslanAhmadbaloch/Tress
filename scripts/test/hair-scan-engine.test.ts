@@ -963,6 +963,36 @@ test('mesh: the snapshot is the tracked face as fractions of the preview, unflip
   assert.equal(snapshotMesh(tf, { width: 0, height: 0 }), null);
 });
 
+test('mesh: the snapshot carries the head\'s angles, and only when they are numbers', () => {
+  const tracked = trackFrame(createTracker(), syntheticFace(VIEW, 0, 1000), 1000).face;
+  assert.ok(tracked);
+  const turned = { ...tracked, yaw: 24, pitch: -6, roll: 3 };
+  const mesh = snapshotMesh(turned, VIEW);
+  assert.ok(mesh);
+  assert.deepEqual(mesh.pose, { yaw: 24, pitch: -6, roll: 3 });
+
+  // A reading with a hole in it carries no pose: the still's cap is then square on, not NaN.
+  const blind = snapshotMesh({ ...tracked, roll: Number.NaN }, VIEW);
+  assert.ok(blind);
+  assert.equal(blind.pose, undefined);
+  assert.equal('pose' in blind, false);
+});
+
+test('mesh: laid into a box, the angles pass through untouched, and none is invented', () => {
+  const base = meshOf(0);
+  const posed: FrameMesh = { ...base, pose: { yaw: -31, pitch: 12, roll: -2 } };
+  const onDisc = meshInBox(posed, STILL, { width: 176, height: 176 });
+  assert.deepEqual(onDisc.pose, { yaw: -31, pitch: 12, roll: -2 });
+  // The angles are the head's, not the box's: the same whatever it is drawn into.
+  assert.deepEqual(meshInBox(posed, STILL, VIEW).pose, onDisc.pose);
+
+  const { pose: _dropped, ...bare } = posed;
+  void _dropped;
+  const flat = meshInBox(bare, STILL, { width: 176, height: 176 });
+  assert.equal(flat.pose, undefined);
+  assert.equal('pose' in flat, false);
+});
+
 test('mesh: laid into the still it lands where the preview showed it, through the crop', () => {
   const mesh = meshOf(0);
 

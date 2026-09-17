@@ -41,24 +41,32 @@ import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { buildReport } from '@/features/assessment/engine';
-import { PLANS } from '@/features/subscription/config';
+import { DEFAULT_PLAN, PLANS, PLAN_ORDER } from '@/features/subscription/config';
 import {
   CTA_COPY,
   HERO_COPY,
+  PAYWALL_HIGHLIGHTS,
+  PAYWALL_TITLE,
   PAYWALL_VARIANTS,
+  PLAN_BADGE,
+  PLAN_DISPLAY_ORDER,
   PREMIUM_BENEFITS,
   SECOND_ASK,
   ctaLabel,
   heroAccessibilityLabel,
   heroCaption,
   heroFor,
+  heroPill,
+  highlightBenefits,
+  nextScanLabel,
   paywallCopy,
+  planName,
   priceLine,
   renewalTerms,
   variantFor,
   type PaywallVariantId,
 } from '@/features/subscription/paywall-variants';
-import { EMPTY_DATA, type AppData, type Photo, type PhotoSession } from '@/types/domain';
+import { EMPTY_DATA, emptyJourney, type AppData, type Photo, type PhotoSession } from '@/types/domain';
 
 /* ------------------------------ fixtures ----------------------------- */
 
@@ -70,6 +78,14 @@ const repoFile = (rel: string) => new URL(`../../${rel}`, import.meta.url);
  * has to satisfy it rather than against the mere existence of a filename.
  */
 const source = (rel: string) => readFileSync(repoFile(rel), 'utf8');
+
+/**
+ * The same file with its comments removed. The screen's own comments say
+ * what it refuses to draw — "no free trial" — and a sweep that flagged
+ * its rulebook would be noise rather than signal.
+ */
+const stripComments = (text: string) =>
+  text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 /** A reading of the kind the segmenter leaves on a photograph. */
 function withCoverage(s: PhotoSession, fraction: number, verticalBalance: number): PhotoSession {
@@ -119,10 +135,16 @@ const profile: AppData['profile'] = {
 /** Every sentence a person can read on the paywall, lower-cased. */
 function everyLine(): string {
   return [
-    ...Object.values(PAYWALL_VARIANTS).map((v) => `${v.headline} ${v.body}`),
+    PAYWALL_TITLE,
+    ...Object.values(PAYWALL_VARIANTS).map((v) => v.body),
     `${SECOND_ASK.headline} ${SECOND_ASK.body} ${SECOND_ASK.accept} ${SECOND_ASK.decline}`,
     ...Object.values(HERO_COPY),
+    nextScanLabel(EMPTY_DATA),
     ...PREMIUM_BENEFITS.map((b) => `${b.title} ${b.body}`),
+    ...PAYWALL_HIGHLIGHTS.map((h) => h.label),
+    PLAN_BADGE,
+    planName(PLANS.yearly),
+    planName(PLANS.monthly),
     ...Object.values(CTA_COPY),
     priceLine(PLANS.yearly),
     priceLine(PLANS.monthly),
@@ -256,36 +278,89 @@ test('copy: nothing on the paywall is a testimonial or a borrowed face', () => {
 
 /* -------------------------------- hero ------------------------------- */
 
-test('hero: it is one photograph, never a before and an after', () => {
-  const copy = `${Object.values(HERO_COPY).join(' ')} ${heroCaption(heroFor({
+test('hero: it is one photograph and an empty frame, never a before and an after', () => {
+  /*
+    The reference's second card is the same photograph labelled "after".
+    Ours is an empty frame with the next scan's date on it, so every word
+    on or under the pair has to be free of the pairing vocabulary — the
+    pills, the caption, the frame's label and what a screen reader hears.
+  */
+  const withJourney: AppData = {
     ...EMPTY_DATA,
     profile,
-  })!)}`.toLowerCase();
+    journey: emptyJourney('j1', profile.id, '2026-01-05T09:00:00.000Z'),
+  };
+  const hero = heroFor(withJourney)!;
+  const next = nextScanLabel(withJourney);
+  const copy = [
+    ...Object.values(HERO_COPY),
+    heroCaption(hero),
+    heroPill(hero),
+    next,
+    nextScanLabel(EMPTY_DATA),
+    heroAccessibilityLabel(hero, next),
+    heroAccessibilityLabel(null, next),
+  ]
+    .join(' ')
+    .toLowerCase();
 
-  for (const pair of ['before', 'after', 'then and now', 'progress so far', 'vs']) {
+  for (const pair of ['before', 'after', 'then and now', 'progress so far', 'vs', 'result']) {
     assert.ok(!copy.includes(pair), `hero copy must not suggest a pair: "${pair}"`);
   }
   // What it does say is the one thing that is true in every state.
   assert.equal(HERO_COPY.onDevice, 'On this device');
 });
 
-test('hero: the baseline set leads with the hairline shot', () => {
+test('hero: the empty frame carries the record\'s next-scan date, and nothing without a journey', () => {
+  const journey = emptyJourney('j1', profile.id, '2026-01-05T09:00:00.000Z');
+  const label = nextScanLabel({ ...EMPTY_DATA, profile, journey });
+  assert.ok(label.startsWith(`${HERO_COPY.nextScan} · `), label);
+  assert.ok(label.length > `${HERO_COPY.nextScan} · `.length, 'a date follows the separator');
+  // The frame is a frame: it names a date the record already holds and
+  // says nothing about what will be in it.
+  assert.ok(!/\d\s*%|hair|grow/i.test(label), label);
+  assert.equal(nextScanLabel(EMPTY_DATA), HERO_COPY.nextScan);
+});
+
+test('hero: the card says "Today" only for a photograph taken today', () => {
+  // The reference labels the card "before" whatever its date. A card that
+  // said "Today" over a photograph from last month would be the same lie.
+  const now = new Date();
+  const today = heroFor({
+    ...EMPTY_DATA,
+    profile,
+    sessions: [session('s1', now.toISOString(), ['front'], true)],
+  })!;
+  assert.equal(heroPill(today, now), HERO_COPY.today);
+
+  const then = new Date(now.getTime() - 50 * 24 * 60 * 60 * 1000);
+  const older = heroFor({
+    ...EMPTY_DATA,
+    profile,
+    sessions: [session('s1', then.toISOString(), ['front'], true)],
+  })!;
+  const pill = heroPill(older, now);
+  assert.notEqual(pill, HERO_COPY.today);
+  assert.match(pill, /\d/, 'an older photograph is labelled with its date');
+});
+
+test('hero: the latest set leads with the hairline shot', () => {
   const data: AppData = {
     ...EMPTY_DATA,
     profile,
-    // Newest first, as the store keeps them. The baseline is the last.
+    // Newest first, as the store keeps them. The latest scan is the first.
     sessions: [
-      session('s2', '2026-03-01T10:00:00.000Z', ['front', 'top']),
+      session('s2', '2026-03-01T10:00:00.000Z', ['top', 'front']),
       session('s1', '2026-01-10T10:00:00.000Z', ['top', 'leftTemple', 'front'], true),
     ],
   };
   const hero = heroFor(data);
   assert.ok(hero);
   assert.equal(hero.source, 'session');
-  assert.equal(hero.uri, 'file:///photos/s1-front.jpg', 'the earliest set, not the latest');
-  assert.equal(hero.placeholderUri, 'file:///photos/s1-front-thumb.jpg');
+  assert.equal(hero.uri, 'file:///photos/s2-front.jpg', 'the latest set, as the card is captioned');
+  assert.equal(hero.placeholderUri, 'file:///photos/s2-front-thumb.jpg');
   assert.equal(hero.label, 'Hairline');
-  assert.equal(hero.takenAt, '2026-01-10T10:00:00.000Z');
+  assert.equal(hero.takenAt, '2026-03-01T10:00:00.000Z');
 });
 
 test('hero: without a hairline shot it takes a side before the top', () => {
@@ -319,12 +394,14 @@ test('hero: a session with no photographs does not shadow the portrait', () => {
   assert.equal(heroFor(data)?.source, 'portrait');
 });
 
-test('hero: with nothing at all it is null, and the empty frame says so', () => {
+test('hero: with nothing at all it is null, and the example is called an example', () => {
   assert.equal(heroFor(EMPTY_DATA), null);
   assert.equal(heroFor({ ...EMPTY_DATA, profile: { ...profile, avatarUri: undefined } }), null);
-  const label = heroAccessibilityLabel(null);
-  assert.match(label, /starting point/i);
+  const label = heroAccessibilityLabel(null, nextScanLabel(EMPTY_DATA));
+  assert.match(label, /example/i, 'a face the app did not name would read as a result');
+  assert.match(label, /next scan/i);
   assert.match(label, /on this device/i);
+  assert.equal(HERO_COPY.example, 'Example');
 });
 
 test('hero: the caption is the angle and the date, nothing else', () => {
@@ -337,10 +414,101 @@ test('hero: the caption is the angle and the date, nothing else', () => {
   assert.match(caption, /^Hairline · /);
   assert.match(caption, /2026/);
   // The screen reader hears the same facts, not a different story.
-  const spoken = heroAccessibilityLabel(hero);
+  const spoken = heroAccessibilityLabel(hero, HERO_COPY.nextScan);
   assert.match(spoken, /hairline photograph/i);
   assert.match(spoken, /2026/);
+  assert.match(spoken, /empty frame/i);
   assert.match(spoken, /on this device/i);
+});
+
+/* ----------------------------- highlights ---------------------------- */
+
+test('highlights: three columns, each a line from the ledger, with its own glyph', () => {
+  /*
+    The reference shows three icon benefits and nothing more. Ours are
+    drawn from PREMIUM_BENEFITS, so the row can only say what rule 2 has
+    already vouched for: a highlight that names no ledger line is dropped
+    rather than drawn, and this is what keeps that from ever happening.
+  */
+  assert.equal(PAYWALL_HIGHLIGHTS.length, 3, 'three, as the reference draws them');
+  const resolved = highlightBenefits();
+  assert.equal(resolved.length, PAYWALL_HIGHLIGHTS.length, 'every highlight names a ledger line');
+  for (const h of PAYWALL_HIGHLIGHTS) {
+    assert.ok(
+      PREMIUM_BENEFITS.some((b) => b.title === h.benefit),
+      `"${h.benefit}" is not on the Premium ledger`,
+    );
+    assert.ok(h.label.trim().length > 0 && h.label.length <= 30, `two short lines at most: "${h.label}"`);
+    // The shortened label may not say more than the line it stands for.
+    const claim = CLAIMS.find((c) => c.match.test(h.benefit));
+    assert.ok(claim, `"${h.benefit}" has no gate behind it`);
+    assert.notEqual(claim.gated, 'fact', 'the ungated fact is the footer line, not a highlight');
+  }
+  assert.equal(new Set(resolved.map((r) => r.icon)).size, resolved.length, 'no repeated glyph');
+  assert.equal(new Set(PAYWALL_HIGHLIGHTS.map((h) => h.label)).size, PAYWALL_HIGHLIGHTS.length);
+});
+
+/* ------------------------------- plans ------------------------------- */
+
+test('plans: the cards are named plainly and the tag makes no promise', () => {
+  assert.equal(planName(PLANS.yearly), 'Yearly');
+  assert.equal(planName(PLANS.monthly), 'Monthly');
+  assert.ok(!/free|trial|offer ends|limited/i.test(PLAN_BADGE), PLAN_BADGE);
+});
+
+test('plans: the short plan is drawn first and the chosen yearly card second, as the reference lists them', () => {
+  /*
+    The reference's order is a comparison made by position: the month's
+    price read first, then the year with the tick already in it. Every
+    plan the store can sell is drawn — none is hidden to make the other
+    look better — and the one drawn last is the one that opens selected.
+  */
+  assert.deepEqual([...PLAN_DISPLAY_ORDER].sort(), [...PLAN_ORDER].sort(), 'every plan is drawn');
+  assert.equal(PLAN_DISPLAY_ORDER[0], 'monthly');
+  assert.equal(PLAN_DISPLAY_ORDER[PLAN_DISPLAY_ORDER.length - 1], DEFAULT_PLAN);
+  assert.equal(DEFAULT_PLAN, 'yearly', 'the badge and the tick are on the same card');
+});
+
+test('screen: the first ask is headline then benefits, with no paragraph between', () => {
+  /*
+    The reference has nothing between "Unlock Lóvi Premium" and its three
+    icons, and no caption under its two cards. A framing paragraph in
+    either place pushed the plans a text block lower for the sake of
+    sentences the pills and the benefits already carried. The first
+    visit therefore has no body at all; only the second ask does.
+  */
+  for (const variant of Object.values(PAYWALL_VARIANTS)) {
+    assert.equal(paywallCopy(variant, false).body, null, 'no paragraph under the first-ask headline');
+  }
+  const screen = stripComments(source('src/app/paywall.tsx'));
+  assert.match(screen, /copy\.body \?/, 'the body is drawn only when the visit has one');
+
+  const hero = stripComments(source('src/components/paywall/hero-pair.tsx'));
+  assert.ok(!/heroCaption\(/.test(hero), 'no caption is drawn under the cards');
+  assert.ok(!/HERO_COPY\.emptyBody/.test(hero), 'the example note is spoken, not drawn');
+  assert.ok(!/HERO_COPY\.onDevice/.test(hero), 'the lock line lives in the footer, said once');
+  assert.match(screen, /HERO_COPY\.onDevice/, 'and the footer does say it');
+});
+
+test('screen: no trial toggle, and the promo code only where the store has a sheet', () => {
+  /*
+    The reference has a Premium | Free Trial segmented toggle under its
+    plans. The owner's decision is no trial, so the screen must not draw
+    one — checked on the JSX with the comments stripped, since the
+    comments are where the screen says so.
+  */
+  const screen = stripComments(source('src/app/paywall.tsx'));
+  assert.ok(!/\btrial\b/i.test(screen), 'the paywall must draw no trial toggle');
+  assert.ok(!/\bfree\b/i.test(screen), 'nor the word free');
+  assert.match(screen, /redeemCode \?/, 'the promo link is drawn only when the provider hands back a sheet to open');
+
+  const provider = source('src/features/subscription/provider.tsx');
+  assert.match(provider, /presentCodeRedemptionSheet/, 'the code goes to the store\'s own sheet');
+  assert.match(
+    provider,
+    /Platform\.OS !== 'ios'[^\n]*return null/,
+    'and only on iOS — Android has no sheet, so it gets no link',
+  );
 });
 
 /* ------------------------------ benefits ----------------------------- */
@@ -594,17 +762,24 @@ test('second ask: it does not threaten to take their journey away', () => {
   }
 });
 
-test('second ask: it replaces the headline and body, and nothing else', () => {
-  // The install's arm is untouched by the second ask — the same person
-  // sees the same variant again the moment the second ask is spent.
+test('second ask: it swaps the headline, adds the one paragraph, and nothing else', () => {
+  /*
+    The first visit is the fixed title alone, whatever the arm. The
+    second ask is where the arms differ: its paragraph opens with the
+    fixed reassurance and closes with the install's one framing sentence,
+    so the same person sees the same variant every time it is drawn.
+  */
   for (const variant of Object.values(PAYWALL_VARIANTS)) {
     const first = paywallCopy(variant, false);
-    assert.equal(first.headline, variant.headline);
-    assert.equal(first.body, variant.body);
+    assert.equal(first.headline, PAYWALL_TITLE, 'the title is fixed across arms');
+    assert.equal(first.body, null, 'and stands alone on the first visit');
 
     const second = paywallCopy(variant, true);
     assert.equal(second.headline, SECOND_ASK.headline);
-    assert.equal(second.body, SECOND_ASK.body);
+    assert.ok(second.body, 'the second ask is the one visit with a paragraph');
+    assert.ok(second.body.startsWith(SECOND_ASK.body), 'it opens with the reassurance');
+    assert.ok(second.body.endsWith(variant.body), 'and closes with the arm');
+    assert.ok(second.body.split(' ').length <= 45, `one short paragraph: "${second.body}"`);
     assert.deepEqual(Object.keys(second).sort(), ['body', 'headline'], 'no extra copy on the second visit');
   }
 });
@@ -612,9 +787,11 @@ test('second ask: it replaces the headline and body, and nothing else', () => {
 test('second ask: the price and the terms are not part of the copy it swaps', () => {
   // A second ask that moved the price would be a different offer wearing
   // the first one's clothes. The swap has no hook to touch either.
-  const copy = paywallCopy(PAYWALL_VARIANTS.record, true);
-  for (const line of [priceLine(PLANS.yearly), priceLine(PLANS.monthly), renewalTerms(PLANS.yearly)]) {
-    assert.ok(!copy.body.includes(line) && !copy.headline.includes(line));
+  for (const variant of Object.values(PAYWALL_VARIANTS)) {
+    const copy = paywallCopy(variant, true);
+    for (const line of [priceLine(PLANS.yearly), priceLine(PLANS.monthly), renewalTerms(PLANS.yearly)]) {
+      assert.ok(!copy.body?.includes(line) && !copy.headline.includes(line));
+    }
+    assert.ok(!/\$|£|€|\d/.test(`${copy.headline} ${copy.body}`), 'the second ask names no number');
   }
-  assert.ok(!/\$|£|€|\d/.test(`${copy.headline} ${copy.body}`), 'the second ask names no number');
 });

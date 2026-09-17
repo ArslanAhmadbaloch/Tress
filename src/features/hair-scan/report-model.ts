@@ -29,7 +29,8 @@
  * perhaps no segmenter — has to render a full report with real content
  * in every section, and it does: light, framing and the turn are almost
  * always true positives, the profile is the funnel's answers, the focus
- * block is about coverage, the tips need only a goal, the shelf says it
+ * block is about coverage, the tips need only a goal (and lean on the
+ * self-knowledge answers where a journey has them), the shelf says it
  * is empty, and the coach says what was kept. A record with a routine,
  * a streak, several scans and scanned products fills the same sections
  * more richly. Nothing is invented for either.
@@ -60,12 +61,18 @@ import { adherencePercent, currentStreak } from '@/store/selectors';
 import {
   APPROACH_LABELS,
   HAIR_GOAL_LABELS,
+  HAIR_TYPE_LABELS,
   MOTIVATION_LABELS,
   ONSET_LABELS,
+  SCALP_SENSITIVITY_LABELS,
+  SCALP_TYPE_LABELS,
   TRACKING_AREA_LABELS,
   isScanSession,
   joinPhrases,
   journeyGoals,
+  journeyHairType,
+  journeyScalpSensitivity,
+  journeyScalpType,
   type Angle,
   type AppData,
   type HairGoal,
@@ -85,7 +92,7 @@ import {
   stripQuotes,
 } from './report-copy';
 import { SCAN_THRESHOLDS, areaReading, focusWord, lightWord, lightingBand } from './result';
-import { tipsFor, type Tip } from './tips';
+import { tipProfileOf, tipsForProfile, type Tip } from './tips';
 
 /* -------------------------------- the model ------------------------------ */
 
@@ -528,23 +535,50 @@ function strengthCards(data: AppData, session: PhotoSession): StrengthCard[] {
 
 /* ------------------------------ the profile ------------------------------ */
 
+/**
+ * Four tiles: the goal, then how they described their hair, their scalp
+ * and its sensitivity — the answers the care notes lean on. A journey
+ * from before those questions existed has none of the three, and shows
+ * the older answers in their place — when they noticed, what they
+ * watch (or why it matters), what they were doing — rather than three
+ * tiles reading "Not answered" about questions it was never asked.
+ */
 function profileTiles(journey: Journey | null): ProfileTile[] {
   const goal = journey ? journeyGoals(journey)[0] : undefined;
+  const hairType = journey ? journeyHairType(journey) : undefined;
+  const scalpType = journey ? journeyScalpType(journey) : undefined;
+  const sensitivity = journey ? journeyScalpSensitivity(journey) : undefined;
   const watching = journey?.trackingAreas.find((a) => a in TRACKING_AREA_LABELS);
   const motivation = journey?.motivations.find((m) => m in MOTIVATION_LABELS);
   const approach = journey?.approaches.find((a) => a in APPROACH_LABELS);
   const noticed = journey?.noticed && journey.noticed in ONSET_LABELS ? journey.noticed : undefined;
   const none = COPY.profile.unanswered;
 
-  const third: ProfileTile = watching
-    ? { id: 'watching', icon: 'search', value: TRACKING_AREA_LABELS[watching], label: COPY.profile.watching }
-    : { id: 'motivation', icon: 'heart', value: motivation ? MOTIVATION_LABELS[motivation] : none, label: COPY.profile.motivation };
+  const second: ProfileTile = hairType
+    ? { id: 'hairType', icon: 'follicle', value: HAIR_TYPE_LABELS[hairType], label: COPY.profile.hairType }
+    : noticed
+      ? { id: 'noticed', icon: 'calendar', value: ONSET_LABELS[noticed], label: COPY.profile.noticed }
+      : { id: 'hairType', icon: 'follicle', value: none, label: COPY.profile.hairType };
+
+  const third: ProfileTile = scalpType
+    ? { id: 'scalpType', icon: 'drop', value: SCALP_TYPE_LABELS[scalpType], label: COPY.profile.scalpType }
+    : watching
+      ? { id: 'watching', icon: 'search', value: TRACKING_AREA_LABELS[watching], label: COPY.profile.watching }
+      : motivation
+        ? { id: 'motivation', icon: 'heart', value: MOTIVATION_LABELS[motivation], label: COPY.profile.motivation }
+        : { id: 'scalpType', icon: 'drop', value: none, label: COPY.profile.scalpType };
+
+  const fourth: ProfileTile = sensitivity
+    ? { id: 'sensitivity', icon: 'shield', value: SCALP_SENSITIVITY_LABELS[sensitivity], label: COPY.profile.sensitivity }
+    : approach
+      ? { id: 'approach', icon: 'leaf', value: APPROACH_LABELS[approach], label: COPY.profile.approach }
+      : { id: 'sensitivity', icon: 'shield', value: none, label: COPY.profile.sensitivity };
 
   return [
     { id: 'goal', icon: 'target', value: goal ? HAIR_GOAL_LABELS[goal] : none, label: COPY.profile.goal },
-    { id: 'noticed', icon: 'calendar', value: noticed ? ONSET_LABELS[noticed] : none, label: COPY.profile.noticed },
+    second,
     third,
-    { id: 'approach', icon: 'leaf', value: approach ? APPROACH_LABELS[approach] : none, label: COPY.profile.approach },
+    fourth,
   ];
 }
 
@@ -681,8 +715,8 @@ export function buildHairScanReport(
     if (tabsHeld.has(id)) tabs.push({ id, label: COPY.tabs[id] });
   }
 
-  const goal = data.journey ? journeyGoals(data.journey)[0] : undefined;
   const focus = focusBlock(data.journey, session, premium);
+  const tips = tipsForProfile(tipProfileOf(data.journey));
 
   const sections: { id: string; label: string }[] = [
     { id: 'analysis', label: COPY.sections.analysis },
@@ -711,7 +745,7 @@ export function buildHairScanReport(
     strengths: { heading: COPY.strengths.heading, cards: strengthCards(data, session) },
     profile: { heading: COPY.profile.heading, tiles: profileTiles(data.journey) },
     focus,
-    tips: { heading: COPY.tips.heading, subheading: COPY.tips.subheading, items: tipsFor(goal), locked: !premium },
+    tips: { heading: COPY.tips.heading, subheading: COPY.tips.subheading, items: tips.items, locked: !premium },
     routine: routineBlock(data, premium),
     says: { heading: COPY.says.heading, speaker: 'Tress', body: reportSummary(data, session, data.profile?.displayName, now) },
     sections,

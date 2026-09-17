@@ -20,7 +20,7 @@ import { iconSize, useTheme } from '@/theme';
 import { HAIR_SCAN_REPORT_UI_COPY as UI } from './ui-copy';
 
 /** The glyphs a profile tile may name. Anything else draws the fallback. */
-const TILE_ICONS: readonly IconName[] = ['target', 'calendar', 'search', 'heart', 'leaf'];
+const TILE_ICONS: readonly IconName[] = ['target', 'calendar', 'search', 'heart', 'leaf', 'follicle', 'drop', 'shield'];
 const TILE_ICON_FALLBACK: IconName = 'info';
 
 export function tileIcon(name: string): IconName {

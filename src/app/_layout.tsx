@@ -245,6 +245,13 @@ function Navigation() {
           name="paywall"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
+        {/*
+            The plan sequence between the funnel's report and the paywall.
+            Reached by a replace from the report, so there is nothing
+            behind it; it fades in over the report's last frame, and the
+            back gesture is off because the counts are a scene, not a
+            page somebody scrolled to. */}
+        <Stack.Screen name="plan" options={{ animation: 'fade', gestureEnabled: false }} />
         <Stack.Screen name="learn/[slug]" />
         <Stack.Screen
           name="journal"

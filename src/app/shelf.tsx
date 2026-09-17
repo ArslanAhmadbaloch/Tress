@@ -119,7 +119,9 @@ export default function ShelfScreen() {
 
         {shelf.answers.watching.length > 0 ||
         shelf.answers.goals.length > 0 ||
-        shelf.answers.using.length > 0 ? (
+        shelf.answers.using.length > 0 ||
+        shelf.answers.preferences.length > 0 ||
+        shelf.answers.reactions.length > 0 ? (
           <View>
             <SectionHeader title="What you told us" />
             <Text variant="footnote" color="textSecondary" style={{ marginBottom: spacing.md }}>
@@ -129,6 +131,8 @@ export default function ShelfScreen() {
               <AnswerGroup label="Watching" values={shelf.answers.watching} />
               <AnswerGroup label="Hoping for" values={shelf.answers.goals} />
               <AnswerGroup label="Using" values={shelf.answers.using} />
+              <AnswerGroup label="Looking for" values={shelf.answers.preferences} />
+              <AnswerGroup label="Reacted to" values={shelf.answers.reactions} />
             </Card>
           </View>
         ) : null}

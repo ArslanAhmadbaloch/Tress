@@ -437,8 +437,10 @@ test('funnel: nothing in the script claims an outcome or manufactures urgency', 
   // The app measures pixels on a phone. Every one of these words would
   // mean it had started describing what a person's hair is going to do,
   // or hurrying them past the point where they could decide not to.
+  // "Restore purchases" is the store's own name for bringing a
+  // subscription back — the one phrase in which the word is not about hair.
   const outcome =
-    /\b(thicker|fuller|regrow|regrowth|restore|restored|improve|improved|improvement|norwood|diagnos\w*|severe|advanced|guarantee\w*|results?)\b/i;
+    /\b(thicker|fuller|regrow|regrowth|restore(?! purchases)|restored|improve|improved|improvement|norwood|diagnos\w*|severe|advanced|guarantee\w*|results?)\b/i;
   const urgency =
     /\b(limited time|spots? left|last chance|hurry|act now|only today|don.t miss|expires?|before it.s too late)\b/i;
 
@@ -487,7 +489,9 @@ test('funnel: every button says continue, or says exactly what the tap does', ()
   // "That's My Goal" and "Build My Routine" narrated what you had just
   // done; eleven of those in a row read as a sales script. A button
   // either moves on, or names the one real thing it is about to do.
-  const allowed = /^(Continue|Get started|Choose a photo|Take the photo|Scan my hair)$/;
+  // "Next" and "Let's go" are the reference's own words for its mascot
+  // pages, and they move on as plainly as "Continue" does.
+  const allowed = /^(Continue|Next|Let’s go|Get started|Choose a photo|Take the photo|Scan my hair)$/;
   /*
     Walks nested copy, because the baseline's scan keeps its own cta one
     level down. Iterating the top level only left the one button this

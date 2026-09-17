@@ -10,6 +10,7 @@ import {
   TopicCard,
 } from '@/components/learn-cards';
 import { Card } from '@/components/ui/card';
+import { GlassOrb } from '@/components/ui/glass-orb';
 import { Icon } from '@/components/ui/icon';
 import { EmptyState, Screen, ScreenScroll, ScreenTitle, Separator } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
@@ -234,6 +235,14 @@ export default function LearnScreen() {
             {list(latest)}
 
             <FaqCard onPress={() => router.push('/learn/faq')} style={{ marginTop: spacing.lg }} />
+
+            {/*
+              The example journeys, re-homed from the funnel. They were
+              the breaks between its question blocks; the funnel now runs
+              in the reference's rhythm, which has no breaks, and a pair
+              of illustrated journeys belongs beside the reading anyway.
+            */}
+            <ExampleJourneysCard onPress={() => router.push('/learn/example-journeys')} />
           </>
         )}
 
@@ -244,6 +253,46 @@ export default function LearnScreen() {
         </Text>
       </ScreenScroll>
     </Screen>
+  );
+}
+
+/**
+ * The way to the example journeys: two illustrated pairs, months apart,
+ * and the habit behind each. Drawn like the FAQ card above it, so the
+ * two read as the library's two side doors.
+ */
+function ExampleJourneysCard({ onPress }: { onPress: () => void }) {
+  const { colors, spacing, radius, shadow } = useTheme();
+  return (
+    <PressableScale
+      onPress={onPress}
+      scaleTo={0.99}
+      accessibilityRole="button"
+      accessibilityLabel="Example journeys. Two illustrated pairs, months apart."
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          padding: spacing.md,
+          paddingLeft: spacing.lg,
+          marginTop: spacing.md,
+          borderRadius: radius.section,
+          backgroundColor: colors.surface,
+        },
+        shadow.soft,
+      ]}>
+      <GlassOrb size={44} ring={false}>
+        <Icon name="journey" size={20} color={colors.text} />
+      </GlassOrb>
+      <View style={{ flex: 1 }}>
+        <Text variant="headline">Example journeys</Text>
+        <Text variant="footnote" color="textSecondary" style={{ marginTop: 2 }}>
+          Two illustrated pairs, months apart, and the habit behind them.
+        </Text>
+      </View>
+      <Icon name="chevronRight" size={14} color={colors.textTertiary} />
+    </PressableScale>
   );
 }
 

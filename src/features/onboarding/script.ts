@@ -2,15 +2,17 @@
  * The onboarding funnel, as content.
  *
  * Kept apart from the screen that renders it so the whole arc can be read
- * in one place and reordered without touching layout code. The order is
- * the argument: who this is for, what you want, something useful in
- * return, where you are now, a report built from what you said — and
- * then the scan, which is the first thing the app does rather than says.
+ * in one place and reordered without touching layout code. The questions
+ * themselves live in `questions.ts` as data — shape, wording, options and
+ * where each answer is saved — and this file holds the rest of the
+ * script: the copy for the pages that are not questions, the choice
+ * lists the questions borrow, the routine seeds, and the invitation into
+ * the scan that ends the funnel.
  *
- * Every question screen is the question and its answers, and nothing
- * else. There used to be a line of helper text under each heading, and
- * the screens stopped rendering it because a question that needs a
- * sentence of explanation is the wrong question. The copy went with it.
+ * The arc is the reference app's: a welcome, the mascot, who you are and
+ * how you know your hair, a beat of encouragement, then what you hope
+ * for, what you have tried and the product and life questions — and the
+ * scan, which is the first thing the app does rather than says.
  *
  * Two rules run through every line here.
  *
@@ -50,6 +52,17 @@ import type {
   Trigger,
 } from '@/types/domain';
 
+/*
+  ── The retired sequence ────────────────────────────────────────────────
+  The funnel no longer walks these. It walks `FUNNEL_STEPS` in
+  `questions.ts`, which has no progress bar to count against, and the
+  card, analysing and profile-report pages have left it. `STEPS` and
+  `UNCOUNTED` stay exported only because scripts/test/selectors.test.ts
+  still pins their order; nothing in src reads them, and they go the day
+  that test is rewritten against `FUNNEL_STEPS`.
+*/
+
+/** @deprecated The funnel walks `FUNNEL_STEPS` in questions.ts. */
 export type StepId =
   | 'welcome'
   | 'you'
@@ -71,18 +84,12 @@ export type StepId =
   | 'profile'
   | 'baseline';
 
-/** The order people move through. Progress is measured against it. */
+/** @deprecated The funnel walks `FUNNEL_STEPS` in questions.ts. */
 export const STEPS: StepId[] = [
   'welcome',
-  // Who they are comes first now. It decides which reference photographs
-  // and which questions the rest of the funnel uses, and asking a person
-  // their name before asking how their hair makes them feel is simply the
-  // right order for that conversation.
   'you',
   'meaning',
   'goal',
-  // The breaks between question blocks. They used to be explainers;
-  // they are now one person's pair each, and then what the app does.
   'caseOne',
   'story',
   'impact',
@@ -95,34 +102,12 @@ export const STEPS: StepId[] = [
   'howItHelps',
   'photo',
   'card',
-  // Nothing is being asked here either — it is a reveal, and a bar that
-  // advanced during it would be charging somebody for watching.
   'analysing',
-  // The report the analysing beat was building. Their own answers read
-  // back to them, one card at a time, before anything is asked for.
   'profile',
-  /*
-    Straight from the report to the camera. There used to be two more
-    screens here — a "your journey is ready" summary and a timeline that
-    said you would be glad you started — and both were the report again
-    in different clothes. Somebody who has just read where they stand
-    does not need to be told it twice more before being allowed to open
-    the camera the whole funnel has been leading to.
-
-    It is the last step here, and the last one the funnel owns: the scan
-    it opens carries its own screens, and the reading on what it
-    photographed is the next thing the person sees.
-  */
   'baseline',
 ];
 
-/**
- * Steps that do not count toward the progress indicator.
- *
- * The two case studies, the what-it-does card and the reveals are not
- * asking anything, and a bar that advances while somebody reads makes
- * reading feel like a cost.
- */
+/** @deprecated There is no progress bar to count against any more. */
 export const UNCOUNTED: StepId[] = [
   'welcome',
   'caseOne',
@@ -130,8 +115,6 @@ export const UNCOUNTED: StepId[] = [
   'howItHelps',
   'system',
   'card',
-  // Nothing is being asked here either — it is a reveal, and a bar that
-  // advanced during it would be charging somebody for watching.
   'analysing',
   'profile',
   'baseline',
@@ -643,83 +626,93 @@ export function inviteExitPoint(rect: InviteRect, to: InvitePoint): InvitePoint 
 }
 
 export const COPY = {
+  /*
+    The first page. One honest line under the app mark — what the app is,
+    not what it will do to anybody's hair — and the way in. "Restore
+    purchases" is the quiet link the reference gives to "I already have
+    an account": there are no accounts here and nothing leaves the
+    device, so the only thing a returning person can bring back is a
+    subscription. The legal line links the terms and the privacy policy.
+  */
   welcome: {
+    tagline: 'A record of your hair, kept honestly.',
     cta: 'Get started',
+    /**
+     * The link that brings a subscription back, in the store's own words
+     * for the action. "Restore" is a word the funnel may not say about
+     * hair; here it is said about a purchase, and the sweeps allow that
+     * one phrase and nothing wider.
+     */
+    restore: 'Restore purchases',
+    /** The consent line in pieces, so the two links can be tapped. */
+    legal: {
+      before: 'By continuing you agree to the',
+      terms: 'Terms of Use',
+      between: 'and acknowledge the',
+      privacy: 'Privacy Policy',
+      after: '.',
+    },
   },
-  meaning: {
-    title: 'What would better hair mean to you{name}?',
+  /*
+    The mascot's own lines — here and on the interstitial. They are the
+    one place the app speaks as "I", because a mascot that says "the app"
+    is not a mascot. What the voice may not do is claim to know anything:
+    it keeps a record, and it says so. The intro is one headline over
+    two lines, as the reference sets it.
+  */
+  intro: {
+    title: 'Hi, I’m Tress.\nHere to help you keep an honest record of your hair.',
+    // "Next", as the reference's mascot page says it.
+    cta: 'Next',
+  },
+  name: {
+    title: 'What should we call you?',
+    accent: 'call you',
+    placeholder: 'Your name',
     cta: 'Continue',
   },
-  goal: {
-    // Their hope, asked as a hope. The options underneath are the things
-    // people say when asked this, and the one they pick is shown back to
-    // them in those words — never as something the app is going to do.
-    title: 'What are you hoping for{name}?',
-    cta: 'Continue',
+  /**
+   * The beat after the sensitivity question, where the reference puts
+   * its own. `{name}` is the person's name, and the comma addressing it
+   * goes with it when there is none — see `interstitialTitle`.
+   */
+  interstitial: {
+    title: 'Great start, {name}.',
+    body: 'I’m not here to fix anything. I’m here to help you see your hair clearly, over time.',
+    // The reference's "Let's start!", without the shout.
+    cta: 'Let’s go',
   },
-  story: {
-    title: 'When did you first notice something changing?',
-    second: 'What do you notice most?',
-    cta: 'Continue',
-  },
-  impact: {
-    title: 'How often does your hair cross your mind{name}?',
-    scaleLow: 'Rarely',
-    scaleHigh: 'Often',
-    second: 'When does it bother you most?',
-    cta: 'Continue',
-  },
-  approach: {
-    title: 'What are you doing for your hair right now?',
-    second: 'How consistent have you been?',
+  question: {
     cta: 'Continue',
   },
   medication: {
-    title: 'Are you using anything for your hair?',
     otherLabel: 'What are you using?',
     otherPlaceholder: 'e.g. Rosemary oil',
-    skip: 'Prefer not to say',
-    cta: 'Continue',
   },
-  products: {
-    title: 'What does your hair routine look like?',
-    second: 'Anything else?',
-    addPlaceholder: 'e.g. Rice water rinse',
-    addLabel: 'Add your own',
-    addCta: 'Add',
-    skip: 'I’ll set this up later',
-    cta: 'Continue',
-  },
-  system: {
-    title: 'You don’t need more willpower.',
-    titleMuted: 'Just something easier to keep.',
-    body: 'Tress keeps the small things visible, so staying with it is noticing rather than remembering.',
-    cta: 'Continue',
-  },
-  cadence: {
-    title: 'How often would you like to check in?',
-    cta: 'Continue',
-  },
-  photo: {
-    title: 'Add a photo of yourself.',
-    // True, and the only reason anyone needs: it goes on the card, and
-    // like every photograph in this app it never leaves the phone.
-    body: 'It goes on your card, and it stays on your phone.',
-    cta: 'Choose a photo',
-    skip: 'Not now',
-  },
-  you: {
-    title: 'First, a little about you.',
-    genderPrompt: 'You are',
-    nameLabel: 'What should we call you?',
-    second: 'And how old are you?',
-    cta: 'Continue',
-  },
-  card: {
-    cta: 'Continue',
-  },
-  profile: {
-    cta: 'Continue',
+  /*
+    The ask, before the invitation. The phone mock shows the one thing a
+    reminder will ever say. "A nudge, not a stream" is the whole promise,
+    and it is one the app can keep: two reminders exist and Settings
+    turns either off.
+  */
+  notifications: {
+    title: 'Allow notifications so you don’t forget your routine',
+    body: 'We won’t spam — a nudge, not a stream.',
+    /**
+     * The lock-screen card in the phone mock. A fixed date and the clock
+     * every phone is photographed at: it is a picture of a reminder, not
+     * a reminder, and a live date would only pretend otherwise.
+     */
+    preview: {
+      app: 'Tress',
+      line: 'Time for your hair check-in',
+      date: 'Thursday 17 September',
+      clock: '9:41',
+      time: 'now',
+    },
+    /** Not a `cta`: this button asks the system rather than moving on, and it says so. */
+    allow: 'Allow notifications',
+    notNow: 'Not now',
   },
   /*
     The last screen, and the camera behind it.
@@ -955,9 +948,19 @@ const FEMALE_MEDICATIONS: (Choice<Medication> & { covers?: Approach })[] = [
  * part, the temples — and "what do you notice most" sat oddly above
  * them. Everything else reads the same to everyone.
  */
+/**
+ * The onset question's wording. The funnel asks it from `questions.ts`
+ * now; the pair stays here because `FunnelContent` still carries it for
+ * the area follow-up the invitation's focus card can read.
+ */
+const STORY = {
+  title: 'When did you first notice something changing?',
+  second: 'What do you notice most?',
+};
+
 const FEMALE_COPY = {
   story: {
-    title: COPY.story.title,
+    title: STORY.title,
     second: 'Where do you notice it most?',
   },
 };
@@ -993,7 +996,7 @@ export function funnelContent(gender: Gender): FunnelContent {
     areas: MALE_AREAS,
     triggers: MALE_TRIGGERS,
     medications: MALE_MEDICATIONS,
-    story: { title: COPY.story.title, second: COPY.story.second },
+    story: { title: STORY.title, second: STORY.second },
   };
 }
 
@@ -1004,11 +1007,24 @@ export function funnelContent(gender: Gender): FunnelContent {
  * blank one takes the punctuation with it — the sentence reads either way
  * rather than ending up with a stray comma or a name jammed onto a word.
  *
- * Used on three screens and not on all of them: a funnel that says your
+ * Used on two screens and not on all of them: a funnel that says your
  * name in every heading stops sounding like it is talking to you and
  * starts sounding like a mail merge.
  */
 export function withName(line: string, name: string): string {
   const trimmed = name.trim();
   return line.replace('{name}', trimmed ? `, ${trimmed}` : '');
+}
+
+/**
+ * "Great start, Sam." — the interstitial's headline, with the name
+ * when there is one and without the comma when there is not. The same
+ * rule the kit's `greet` applies to the line, written out here so the
+ * copy can be checked without a native runtime. A full stop where the
+ * reference exclaims: the whole app is written for somebody anxious,
+ * and it does not shout.
+ */
+export function interstitialTitle(name: string): string {
+  const trimmed = name.trim();
+  return COPY.interstitial.title.replace(', {name}', trimmed ? `, ${trimmed}` : '');
 }

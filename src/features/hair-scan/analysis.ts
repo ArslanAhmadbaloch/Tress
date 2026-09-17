@@ -619,6 +619,23 @@ export const ORBIT_SETTLE_HOLD_MS = 500;
 /** After the last frame has gathered, how long the disc holds before the hand-off. */
 export const HANDOFF_HOLD_MS = 260;
 
+/*
+  The absorb: the gather the screen actually plays. The frames leave
+  orbit one at a time, each gliding into the disc's centre, and the disc
+  takes a breath as each arrives; once the last is in and the breath is
+  over, the disc holds, then the hand-off runs. `orbitConvergeMs` and
+  `handoffSchedule` above describe the earlier all-together gather and
+  are kept for what still holds them.
+*/
+/** One frame's glide from its place in orbit to the disc's centre. */
+export const ORBIT_ABSORB_MS = 560;
+/** The gap between one frame leaving orbit and the next. */
+export const ORBIT_ABSORB_STAGGER_MS = 260;
+/** The breath the disc takes as a frame arrives: 1 → 1.07 → 1. */
+export const ORBIT_ABSORB_PULSE_MS = 360;
+/** Once the last frame is in and the disc has settled, how long it holds before the hand-off. */
+export const ORBIT_ABSORB_SETTLE_MS = 450;
+
 /** The largest a frame in orbit is drawn, and the smallest a crowded ring shrinks one to. */
 export const ORBIT_FRAME_MAX = 80;
 export const ORBIT_FRAME_MIN = 56;
@@ -664,6 +681,28 @@ export function orbitSettleMs(count: number): number {
 /** How long, from the converge phase starting, until the last frame is gone. */
 export function orbitConvergeMs(count: number): number {
   return count <= 0 ? 0 : ORBIT_CONVERGE_MS + (count - 1) * ORBIT_CONVERGE_STAGGER_MS;
+}
+
+/** When, from the absorb beginning, frame `index` arrives at the disc's centre. */
+export function orbitAbsorbAtMs(index: number): number {
+  return index * ORBIT_ABSORB_STAGGER_MS + ORBIT_ABSORB_MS;
+}
+
+/** How long, from the absorb beginning, until the last frame has arrived at the disc. */
+export function orbitAbsorbMs(count: number): number {
+  return count <= 0 ? 0 : orbitAbsorbAtMs(count - 1);
+}
+
+/**
+ * How long, from the absorb beginning, until the screen may hand off:
+ * the last arrival, the breath the disc takes on it, and the settle. A
+ * scan that kept only the main frame has nothing to absorb, and under
+ * Reduce Motion the frames fade together instead of gliding; in both
+ * the disc still takes its one breath, so the beat reads.
+ */
+export function absorbHandoffMs(count: number, reduceMotion: boolean, reducedFadeMs = 240): number {
+  const gather = reduceMotion ? (count > 0 ? reducedFadeMs : 0) : orbitAbsorbMs(count);
+  return gather + ORBIT_ABSORB_PULSE_MS + ORBIT_ABSORB_SETTLE_MS;
 }
 
 /**

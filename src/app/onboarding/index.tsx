@@ -1,370 +1,165 @@
 /**
  * The onboarding funnel.
  *
- * One screen holding a step machine, rather than a route per step. Every
- * answer lives here until the card is revealed, which is the moment the
- * journey is actually created — so someone can go back and change anything
- * they said, and nothing is written until they have seen what it makes.
+ * One screen holding one state machine over the steps in
+ * features/onboarding/questions.ts: a page index and the record. Every
+ * answer is saved through the store the moment it is given, so there is
+ * no local copy of anything the person has said — the page reads its
+ * selection back from the record, and a killed app resumes one step past
+ * the furthest answer on it (`resumeIndex`).
  *
- * The order is the argument. Who this is for; what better hair would mean
- * to them, before anything about hair; somebody's pair in return before
- * the next block of questions; their card; a report built from what they
- * said; and then the scan. The report is the thing the funnel has been
- * promising, and the camera is one tap after it — everything that used to
- * sit between the two was the report repeated.
+ * The rhythm is the reference app's. No progress bar; a round back
+ * button on every page after the first; a single-choice page moves on by
+ * itself a beat after the chosen row shows as chosen; a multi-choice
+ * page waits for Continue, greyed until something is ticked. The pages
+ * are composed from the onboarding kit (components/onboarding/kit) and
+ * the words come from script.ts and questions.ts, so this file is the
+ * wiring and nothing else.
  *
- * The last step is the invitation into the hair scan itself, so the
- * reading the person is shown next is a reading of images they just took.
- * There is one scan and it is the same for everyone: it speaks its cues
- * aloud for a screen reader and finishes on its own at the forced finish,
- * so no other ending is needed. It can be declined — "Not now" finishes
- * the funnel without a baseline and lands on Home, where the first-scan
- * card carries the same invitation. See `startBaseline` and
- * `skipBaseline`.
+ * The last page is the invitation into the Hair Scan. The funnel is
+ * stamped complete there — on either button — so the app on the other
+ * side of the camera finds a finished journey. "Not now" finishes the
+ * funnel without a baseline and lands on Home, where the first-scan card
+ * carries the same invitation. See `startBaseline` and `skipBaseline`.
  */
 
-import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, TextInput, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Alert, TextInput, View } from 'react-native';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 
+import { ScanInvite } from '@/components/onboarding';
 import {
-  ChoiceRow,
-  FunnelShell,
-  Rise,
-  Scale,
-  StepTitle,
-  SubHeading,
-  Wash,
-} from '@/components/funnel';
-import { BrandLockup } from '@/components/brand-lockup';
-import { CaseStudyCard } from '@/components/case-study-card';
-import { CardFloat, MemberCard } from '@/components/member-card';
+  CardGrid,
+  ContinueBar,
+  FunnelPage,
+  Interstitial,
+  MascotIntro,
+  NotificationsPage,
+  OptionCard,
+  OptionPill,
+  OptionRow,
+  SpeechBubble,
+  Welcome,
+} from '@/components/onboarding/kit';
 import { Icon, type IconName } from '@/components/ui/icon';
-import { PressableScale } from '@/components/ui/pressable-scale';
-import { Text } from '@/components/ui/text';
-import { ProductRow } from '@/components/product-row';
 import {
-  ANALYSING_STEPS,
-  ANALYSING_TITLE,
-  welcomeTitle,
-} from '@/features/content/belonging';
+  answerOf,
+  answerPatch,
+  funnelSteps,
+  isCustomGlyph,
+  optionsOf,
+  profileName,
+  resumeIndex,
+  SELECT_SETTLE_MS,
+  toggleChoice,
+  type CustomGlyph,
+  type FunnelGlyph,
+  type Question,
+} from '@/features/onboarding/questions';
 import {
-  Analysing,
-  HowItWorks,
-  ProfileReportScreen,
-  ScanInvite,
-} from '@/components/onboarding';
-import { caseStudies, type CaseStudy } from '@/features/onboarding/case-studies';
-import { buildProfileReport } from '@/features/onboarding/profile-report';
-import {
-  HELP_FIGURES,
-  HELP_TITLE,
-} from '@/features/onboarding/how-it-helps';
-import { productOptions, type CustomProduct } from '@/features/onboarding/products';
-import {
-  APPROACH_CHOICES,
-  ASKS_MEDICATION,
-  CADENCE_CHOICES,
-  CONSISTENCY_CHOICES,
   COPY,
-  funnelContent,
-  GENDER_CHOICES,
   inviteCallouts,
   inviteHeadline,
-  MEANING_CHOICES,
-  MEDICATION_EXCLUSIVE,
-  NEEDS_SYSTEM,
-  ONSET_CHOICES,
   routineSeedsFor,
-  withName,
-  STEPS,
-  UNCOUNTED,
-  type Choice,
 } from '@/features/onboarding/script';
-import { inferRoutineIcon } from '@/features/routine/icons';
-import { persistProfilePhoto } from '@/lib/photo-storage';
+import { failureMessage } from '@/features/subscription/entitlement';
+import { useSubscription } from '@/features/subscription/provider';
+import {
+  currentReminderHour,
+  markRemindersOffered,
+  remindersAlreadyOffered,
+  routineReminderIsEnabled,
+  updateReminderIsEnabled,
+} from '@/lib/device-preferences';
+import { enableRemindersWithPrompt } from '@/lib/notifications';
 import { useAppStore } from '@/store/app-store';
 import { MIN_TOUCH_TARGET, useTheme, typography } from '@/theme';
-import {
-  goalSummary,
-  PREOCCUPATION_STEPS,
-  type Approach,
-  type Gender,
-  type HairGoal,
-  type Medication,
-  type Motivation,
-  type Onset,
-  type SelfConsistency,
-  type TrackingArea,
-  type Trigger,
-} from '@/types/domain';
-
-type Answers = {
-  motivations: Motivation[];
-  /** Several: people rarely want one thing, and the step takes them all. */
-  goals: HairGoal[];
-  noticed: Onset | null;
-  areas: TrackingArea[];
-  preoccupation: number | null;
-  triggers: Trigger[];
-  approaches: Approach[];
-  medications: Medication[];
-  medicationNote: string;
-  /** Ticked products, mapped to how often each happens. */
-  products: Record<string, number>;
-  /**
-   * The frequency last chosen for a product, kept even after it is
-   * unticked. Without it, unticking threw the choice away and ticking
-   * again silently restored the catalogue default — so somebody who set
-   * shampoo to four times a week, tapped the row again, and tapped back
-   * got two, with nothing on screen saying it had changed.
-   */
-  productFrequency: Record<string, number>;
-  customProducts: CustomProduct[];
-  productDraft: string;
-  consistency: SelfConsistency | null;
-  intervalDays: number;
-  avatarUri?: string;
-  name: string;
-  age: string;
-  gender: Gender;
-};
-
-const EMPTY: Answers = {
-  motivations: [],
-  goals: [],
-  noticed: null,
-  areas: [],
-  preoccupation: null,
-  triggers: [],
-  approaches: [],
-  medications: [],
-  medicationNote: '',
-  products: {},
-  productFrequency: {},
-  customProducts: [],
-  productDraft: '',
-  consistency: null,
-  intervalDays: 30,
-  name: '',
-  age: '',
-  // The set the app shipped with, so skipping the question changes nothing.
-  gender: 'male',
-};
-
-/** Toggle membership of a multi-select answer. */
-function toggle<T>(list: T[], value: T): T[] {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
-}
-
-/** Ticking this clears the rest, and the rest clear it. */
-const GOAL_EXCLUSIVE: HairGoal = 'unsure';
-
-/**
- * As above, but "I'm not sure yet" cannot stand beside something they
- * are sure about: an answer that says both is not an answer, and the
- * report would read it back to them as one.
- */
-function toggleGoal(list: HairGoal[], value: HairGoal): HairGoal[] {
-  if (value === GOAL_EXCLUSIVE) {
-    return list.includes(value) ? [] : [value];
-  }
-  return toggle(list.filter((g) => g !== GOAL_EXCLUSIVE), value);
-}
-
-/**
- * As above, but "Nothing right now" cannot be true alongside a treatment.
- * Letting both stand would put an item in the stack for someone who just
- * said they take nothing.
- */
-function toggleMedication(list: Medication[], value: Medication): Medication[] {
-  if (value === MEDICATION_EXCLUSIVE) {
-    return list.includes(value) ? [] : [value];
-  }
-  return toggle(list.filter((m) => m !== MEDICATION_EXCLUSIVE), value);
-}
+import { DEFAULT_UPDATE_INTERVAL_DAYS, journeyGoals, type Gender } from '@/types/domain';
 
 export default function OnboardingFunnel() {
-  const { colors, spacing, radius } = useTheme();
-  const { width } = useWindowDimensions();
   const router = useRouter();
-  const { createJourney } = useAppStore();
+  const { data, saveAnswer, finishOnboarding } = useAppStore();
+  const { restore, restoreState, acknowledge } = useSubscription();
 
-  const [answers, setAnswers] = useState<Answers>(EMPTY);
-  const [cursor, setCursor] = useState(0);
-
-  const set = (patch: Partial<Answers>) => setAnswers((prev) => ({ ...prev, ...patch }));
-
-  /**
-   * The willpower screen only appears for the people it is about. Telling
-   * someone who is already consistent that they need a system is a small
-   * insult, and it costs a screen.
-   */
-  const steps = useMemo(() => {
-    const needsSystem =
-      answers.consistency !== null && NEEDS_SYSTEM.includes(answers.consistency);
-    const asksMedication = answers.approaches.some((a) => ASKS_MEDICATION.includes(a));
-
-    return STEPS.filter((s) => {
-      if (s === 'system') return needsSystem;
-      if (s === 'medication') return asksMedication;
-      return true;
-    });
-  }, [answers.consistency, answers.approaches]);
+  /*
+    Whether to ask about reminders is decided once, on arrival. The flag
+    is set the moment the page is answered, and a page that vanished
+    from under the cursor at that moment would skip the page after it.
+  */
+  const [askReminders] = useState(() => !remindersAlreadyOffered());
+  const steps = funnelSteps(data.journey, { askReminders });
+  const [cursor, setCursor] = useState(() => resumeIndex(steps, data));
 
   const step = steps[Math.min(cursor, steps.length - 1)];
+  const gender: Gender = data.profile?.gender ?? 'male';
+  const name = profileName(data.profile);
 
-  const progress = useMemo(() => {
-    const counted = steps.filter((s) => !UNCOUNTED.includes(s));
-    const done = steps.slice(0, cursor).filter((s) => !UNCOUNTED.includes(s)).length;
-    return counted.length === 0 ? null : done / counted.length;
-  }, [steps, cursor]);
+  const next = useCallback(() => setCursor((c) => c + 1), []);
+  const back = useCallback(() => setCursor((c) => Math.max(0, c - 1)), []);
 
-  const next = () => setCursor((c) => Math.min(c + 1, steps.length - 1));
-  const back = () => setCursor((c) => Math.max(0, c - 1));
+  /* --------------------------- restore purchases -------------------------- */
 
-  /* ------------------------ committing the journey ---------------------- */
-
-  /**
-   * The ticked products and anything typed in, as routine seeds.
-   *
-   * Split, because the routine list now carries minoxidil and finasteride
-   * and those are not hair care: they lead the stack, and either of them
-   * may already have been named on the medication step. A bottle ticked
-   * in both places is still one bottle, so the one here drops.
-   */
-  const productSeeds = () => {
-    const options = productOptions(answers.gender);
-    const ticked = options.filter((option) => answers.products[option.id] !== undefined);
-
-    const asSeed = (option: (typeof options)[number]) => ({
-      label: option.label,
-      icon: option.icon,
-      timeOfDay: 'anytime' as const,
-      timesPerWeek: answers.products[option.id],
-    });
-
-    const alreadyNamed = (option: (typeof options)[number]) =>
-      option.covers?.some((m) => answers.medications.includes(m)) ?? false;
-
-    const treatments = ticked.filter((o) => o.treatment && !alreadyNamed(o)).map(asSeed);
-    const care = ticked.filter((o) => !o.treatment).map(asSeed);
-
-    const treatmentCovers = ticked
-      .filter((o) => o.treatment)
-      .flatMap((o) => o.coversApproach ?? []);
-
-    const typed = answers.customProducts.map((product) => ({
-      label: product.label,
-      icon: inferRoutineIcon(product.label),
-      timeOfDay: 'anytime' as const,
-      timesPerWeek: product.timesPerWeek,
-    }));
-
-    return { treatments, treatmentCovers, products: [...care, ...typed] };
-  };
-
-  /**
-   * The stack these answers build.
-   *
-   * Both the plan screen's preview and the commit read this, because they
-   * had drifted: the preview was built from a second call that had not
-   * been given the products, so it told somebody their routine was empty
-   * on the screen right before it was created with four things on it.
-   */
-  const seeds = () =>
-    routineSeedsFor({
-      approaches: answers.approaches,
-      medications: answers.medications,
-      medicationNote: answers.medicationNote.trim(),
-      ...productSeeds(),
-    });
-
-  const commit = () => {
-    const age = Number.parseInt(answers.age, 10);
-
-    const note = answers.medicationNote.trim();
-
-    createJourney({
-      displayName: answers.name,
-      age: Number.isFinite(age) && age > 0 && age < 120 ? age : undefined,
-      gender: answers.gender,
-      avatarUri: answers.avatarUri,
-      journey: {
-        // Today is the baseline, whatever they have been doing until now.
-        startedAt: new Date().toISOString(),
-        trackingAreas: answers.areas,
-        motivations: answers.motivations,
-        // Exactly what they ticked. The step will not let them past with
-        // nothing, and standing "I'm not sure yet" in for silence would
-        // be putting an answer in somebody's mouth.
-        goals: answers.goals,
-        noticed: answers.noticed ?? undefined,
-        preoccupation: answers.preoccupation ?? undefined,
-        triggers: answers.triggers,
-        approaches: answers.approaches,
-        medications: answers.medications.length > 0 ? answers.medications : undefined,
-        medicationNote: note || undefined,
-        selfConsistency: answers.consistency ?? undefined,
-        updateIntervalDays: answers.intervalDays,
-      },
-      routineSeeds: seeds(),
-    });
-  };
-
-  // Created on arrival at the card, not on the last tap: the card is the
-  // first thing that reads from the store, and it should read the truth.
+  /*
+    The welcome page's quiet link. There are no accounts, so the only
+    thing a returning person can bring back is a subscription, and the
+    result is told to them in a sentence rather than shown in a state
+    the page has no room for.
+  */
   useEffect(() => {
-    if (step === 'card') commit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
-
-  /* ------------------------------ the photo ----------------------------- */
-
-  const addPhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        'Photos are not available',
-        'Tress needs permission to open your photo library. You can turn it on in your device Settings, or skip this for now.',
-      );
-      return;
+    if (restoreState.kind === 'success') {
+      Alert.alert('Restored', restoreState.message, [{ text: 'OK', onPress: acknowledge }]);
+    } else if (restoreState.kind === 'failed') {
+      const message = failureMessage(restoreState.reason, 'restore');
+      Alert.alert(message.title, message.body, [{ text: 'OK', onPress: acknowledge }]);
     }
+  }, [restoreState, acknowledge]);
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.9,
-    });
-    if (result.canceled) return;
+  /* ------------------------------ reminders ------------------------------ */
 
-    try {
-      // The picker hands back a cache file the OS may clear; keep our own.
-      // Passing the current one lets "choose a different photo" replace it
-      // rather than leave the first behind.
-      set({ avatarUri: await persistProfilePhoto(result.assets[0].uri, answers.avatarUri) });
-      next();
-    } catch {
-      Alert.alert('That photo could not be saved', 'Try another, or skip for now.');
-    }
+  /*
+    The system prompt, asked once per install. The report's own offer
+    reads the same flag (`remindersAlreadyOffered`), so somebody asked
+    here is not asked again after their first scan. A refusal is final
+    and silent: the switches stay on, nothing is scheduled, and Settings
+    is where the system prompt is explained.
+  */
+  const allowReminders = () => {
+    void (async () => {
+      await enableRemindersWithPrompt({
+        routine: routineReminderIsEnabled(),
+        update: updateReminderIsEnabled(),
+        hour: currentReminderHour(),
+        intervalDays: data.journey?.updateIntervalDays ?? DEFAULT_UPDATE_INTERVAL_DAYS,
+      });
+      await markRemindersOffered();
+    })();
+    next();
+  };
+
+  const declineReminders = () => {
+    void markRemindersOffered();
+    next();
   };
 
   /* ---------------------------- the last step --------------------------- */
 
-  /*
-    The funnel ends at the hair scan, and only there. The old endings — a
-    walk for a screen reader, a single front photograph for a build with
-    no detector — are gone with the flow that needed them: the scan
-    announces every cue it shows (`AccessibilityInfo.announceForAccessibility`
-    on each change, in hair-scan.tsx) and always finishes by its forced
-    finish, so it is one path for everyone. A build that cannot follow a
-    head is told so by the scan itself, in words, rather than being
-    quietly handed a different camera here.
-  */
-  const baselineCopy = COPY.baseline.scan;
+  /**
+   * Stamps the funnel complete over the answers saved page by page, and
+   * seeds the routine from what they said they use. Once: both buttons
+   * on the invitation lead through here, and a second stamp would seed
+   * the routine twice.
+   */
+  const complete = () => {
+    if (data.onboardingCompletedAt !== null) return;
+    finishOnboarding(
+      routineSeedsFor({
+        approaches: data.journey?.approaches ?? [],
+        medications: data.journey?.medications,
+        medicationNote: data.journey?.medicationNote,
+      }),
+    );
+  };
 
   /*
     Replace, not push: the funnel is walked through once, and it should
@@ -376,830 +171,402 @@ export default function OnboardingFunnel() {
     the paywall at all.
   */
   const startBaseline = () => {
+    complete();
     router.replace({ pathname: '/hair-scan', params: { origin: 'onboarding' } });
   };
 
   /*
-    Declining the scan. The journey, profile and routine were written on
-    arrival at the card (`commit`), and that write is what marks
-    onboarding complete, so there is nothing left to save here: the
-    funnel is simply left, and Home opens on the card that offers the
-    first scan. Replace for the same reason as above — the funnel is not
-    a screen to come back to.
+    Declining the scan. The journey is complete either way, so Home opens
+    on the card that offers the first scan and keeps offering it.
   */
   const skipBaseline = () => {
+    complete();
     router.replace('/');
   };
 
   /* -------------------------------- render ------------------------------ */
 
-  const shell = (props: Omit<Parameters<typeof FunnelShell>[0], 'stepKey' | 'progress'>) => (
-    <FunnelShell
-      {...props}
-      stepKey={step}
-      progress={progress}
-      onBack={cursor > 0 ? back : undefined}
-    />
-  );
-
-  /* The question set follows the answer given on the first screen. */
-  const content = funnelContent(answers.gender);
-  /** Puts their name into the headings written with a slot for it. */
-  const named = (line: string) => withName(line, answers.name);
-
-  // Two goals and a count, which is what the line under the name holds.
-  const goalLabel = goalSummary(answers.goals);
-  const cardWidth = Math.min(320, width - spacing.lg * 2 - spacing.xl);
-
-  switch (step) {
-    /* ----------------------------- welcome ---------------------------- */
+  switch (step.kind) {
     case 'welcome':
+      return (
+        <Welcome
+          tagline={COPY.welcome.tagline}
+          startLabel={COPY.welcome.cta}
+          restoreLabel={COPY.welcome.restore}
+          legal={COPY.welcome.legal}
+          onStart={next}
+          onRestore={() => {
+            void restore();
+          }}
+          onTerms={() => router.push('/terms')}
+          onPrivacy={() => router.push('/privacy')}
+        />
+      );
+
+    case 'intro':
+      return <MascotIntro title={COPY.intro.title} cta={COPY.intro.cta} onNext={next} />;
+
+    case 'name':
+      return (
+        <NamePage
+          key="name"
+          initial={name}
+          onBack={back}
+          onSave={(displayName) => {
+            saveAnswer({ profile: { displayName } });
+            next();
+          }}
+        />
+      );
+
+    case 'interstitial':
+      return (
+        <Interstitial
+          name={name}
+          title={COPY.interstitial.title}
+          body={COPY.interstitial.body}
+          cta={COPY.interstitial.cta}
+          onNext={next}
+          onBack={back}
+        />
+      );
+
+    case 'notifications':
+      return (
+        <NotificationsPage
+          title={COPY.notifications.title}
+          body={COPY.notifications.body}
+          allowLabel={COPY.notifications.allow}
+          notNowLabel={COPY.notifications.notNow}
+          mock={{
+            date: COPY.notifications.preview.date,
+            clock: COPY.notifications.preview.clock,
+            app: COPY.notifications.preview.app,
+            message: COPY.notifications.preview.line,
+            time: COPY.notifications.preview.time,
+          }}
+          onAllow={allowReminders}
+          onNotNow={declineReminders}
+          onBack={back}
+        />
+      );
+
+    case 'question':
+      return (
+        <QuestionPage
+          key={step.id}
+          question={step.question}
+          gender={gender}
+          selected={answerOf(step.question, data) ?? []}
+          note={data.journey?.medicationNote ?? ''}
+          onSelect={(values) => saveAnswer(answerPatch(step.question, values))}
+          onNote={(medicationNote) => saveAnswer({ journey: { medicationNote } })}
+          onNext={next}
+          onBack={back}
+        />
+      );
+
+    case 'invite':
+    default: {
+      const journey = data.journey;
+      const copy = COPY.baseline.scan;
       /*
-       * The lockup and nothing else — the same artwork the launch
-       * animation just finished assembling, standing still. A person who
-       * has watched it resolve should find it exactly where it settled
-       * rather than meeting a second, differently drawn version of it.
-       */
-      return shell({
-        backdrop: <BrandLockup />,
-        cta: COPY.welcome.cta,
-        onCta: next,
-        children: <View style={{ flex: 1 }} />,
-      });
-
-    /* ---------------------------- what it means ----------------------- */
-    case 'meaning':
-      return shell({
-        cta: COPY.meaning.cta,
-        onCta: next,
-        ctaDisabled: answers.motivations.length === 0,
-        children: (
-          <>
-            <StepTitle title={named(COPY.meaning.title)} />
-            <Choices
-              choices={MEANING_CHOICES}
-              multi
-              selected={answers.motivations}
-              onToggle={(v) => set({ motivations: toggle(answers.motivations, v) })}
-              from={2}
+        The invitation: their name, the reference photograph with three
+        of their own answers pinned to it, and one line about the
+        record. The cards are labels of what they chose in the funnel,
+        placed where the scan is about to look — never findings, since
+        nothing has been photographed yet.
+      */
+      return (
+        <FunnelPage
+          back={back}
+          bottom={
+            <ContinueBar
+              label={copy.cta}
+              enabled
+              onPress={startBaseline}
+              secondary={{ label: copy.notNow, onPress: skipBaseline }}
             />
-          </>
-        ),
-      });
-
-    /* -------------------------------- goal ---------------------------- */
-    case 'goal':
-      return shell({
-        cta: COPY.goal.cta,
-        onCta: next,
-        // One at least: the report and the card are built from this, and
-        // there is nothing to say back to somebody who ticked nothing.
-        ctaDisabled: answers.goals.length === 0,
-        children: (
-          <>
-            <StepTitle title={named(COPY.goal.title)} />
-            {/*
-              Several, like the question above it. The square boxes and
-              the checkbox role are what say so — a line of copy telling
-              people they may pick more than one is a line explaining a
-              control that already explains itself.
-            */}
-            <Choices
-              choices={content.goals}
-              multi
-              selected={answers.goals}
-              onToggle={(v) => set({ goals: toggleGoal(answers.goals, v) })}
-              from={2}
-            />
-          </>
-        ),
-      });
-
-    /* ---------------------------- case studies ------------------------ */
-    /*
-      The breaks between question blocks. They were explainers; they are
-      now somebody's pair, because a person halfway through a form about
-      their hair would rather see where this goes than read a page about
-      follicle counts. Both cards carry their own disclosure — these are
-      illustrations, and the app records change rather than causing it.
-    */
-    case 'caseOne':
-      return shell({
-        cta: 'Continue',
-        onCta: next,
-        children: <CaseStudyScreen study={caseStudies(answers.gender)[0]} />,
-      });
-
-    case 'caseTwo':
-      return shell({
-        cta: 'Continue',
-        onCta: next,
-        children: <CaseStudyScreen study={caseStudies(answers.gender)[1]} />,
-      });
-
-    /* ---------------------------- what it does ------------------------ */
-    case 'howItHelps':
-      return shell({
-        cta: 'Continue',
-        onCta: next,
-        children: <HowItHelpsScreen />,
-      });
-
-    /* ------------------------------- story ---------------------------- */
-    case 'story':
-      return shell({
-        cta: COPY.story.cta,
-        onCta: next,
-        ctaDisabled: answers.noticed === null || answers.areas.length === 0,
-        children: (
-          <>
-            <StepTitle title={content.story.title} />
-            <Choices
-              choices={ONSET_CHOICES}
-              multi={false}
-              selected={answers.noticed ? [answers.noticed] : []}
-              onToggle={(v) => set({ noticed: v })}
-              from={1}
-            />
-
-            {answers.noticed ? (
-              <>
-                <SubHeading text={content.story.second} />
-                <Choices
-                  choices={content.areas}
-                  multi
-                  selected={answers.areas}
-                  onToggle={(v) => set({ areas: toggle(answers.areas, v) })}
-                />
-              </>
-            ) : null}
-          </>
-        ),
-      });
-
-    /* ------------------------------- impact --------------------------- */
-    case 'impact':
-      return shell({
-        cta: COPY.impact.cta,
-        onCta: next,
-        ctaDisabled: answers.preoccupation === null,
-        children: (
-          <>
-            <StepTitle title={named(COPY.impact.title)} />
-            <Scale
-              steps={PREOCCUPATION_STEPS}
-              value={answers.preoccupation}
-              low={COPY.impact.scaleLow}
-              high={COPY.impact.scaleHigh}
-              onChange={(v) => set({ preoccupation: v })}
-              index={1}
-            />
-
-            {answers.preoccupation !== null ? (
-              <>
-                <SubHeading text={COPY.impact.second} />
-                <Choices
-                  choices={content.triggers}
-                  multi
-                  selected={answers.triggers}
-                  onToggle={(v) => set({ triggers: toggle(answers.triggers, v) })}
-                />
-              </>
-            ) : null}
-          </>
-        ),
-      });
-
-    /* ------------------------------ approach -------------------------- */
-    case 'approach':
-      return shell({
-        cta: COPY.approach.cta,
-        onCta: next,
-        ctaDisabled: answers.approaches.length === 0 || answers.consistency === null,
-        children: (
-          <>
-            <StepTitle title={COPY.approach.title} />
-            <Choices
-              choices={APPROACH_CHOICES}
-              multi
-              selected={answers.approaches}
-              onToggle={(v) => set({ approaches: toggle(answers.approaches, v) })}
-              from={2}
-            />
-
-            {answers.approaches.length > 0 ? (
-              <>
-                <SubHeading text={COPY.approach.second} />
-                <Choices
-                  choices={CONSISTENCY_CHOICES}
-                  multi={false}
-                  selected={answers.consistency ? [answers.consistency] : []}
-                  onToggle={(v) => set({ consistency: v })}
-                />
-              </>
-            ) : null}
-          </>
-        ),
-      });
-
-    /* ----------------------------- medication ------------------------- */
-    case 'medication':
-      return shell({
-        cta: COPY.medication.cta,
-        onCta: next,
-        // Never disabled, and there is a way past without answering. This
-        // is the one question in the funnel that asks for medical
-        // information about a person, and it is theirs to withhold.
-        secondary: answers.medications.length === 0 ? COPY.medication.skip : undefined,
-        onSecondary: answers.medications.length === 0 ? next : undefined,
-        children: (
-          <>
-            <StepTitle
-              title={COPY.medication.title}
-            />
-            <Choices
-              choices={content.medications}
-              multi
-              selected={answers.medications}
-              onToggle={(v) => set({ medications: toggleMedication(answers.medications, v) })}
-              from={2}
-            />
-
-            {answers.medications.includes('other') ? (
-              <Rise index={2 + content.medications.length}>
-                <View style={{ marginTop: spacing.lg }}>
-                  <Field
-                    value={answers.medicationNote}
-                    onChange={(medicationNote) => set({ medicationNote })}
-                    placeholder={COPY.medication.otherPlaceholder}
-                    label={COPY.medication.otherLabel}
-                    autoFocus
-                  />
-                </View>
-              </Rise>
-            ) : null}
-          </>
-        ),
-      });
-
-    /* ------------------------------ products -------------------------- */
-    case 'products': {
-      const options = productOptions(answers.gender);
-      const chosen = Object.keys(answers.products).length + answers.customProducts.length;
-
-      const toggleProduct = (id: string, fallback: number) => {
-        const next = { ...answers.products };
-        if (next[id] === undefined) {
-          // Ticking again gives back what they chose last time, not the
-          // default they had already overridden.
-          next[id] = answers.productFrequency[id] ?? fallback;
-        } else {
-          delete next[id];
-        }
-        set({ products: next });
-      };
-
-      const chooseFrequency = (id: string, times: number) =>
-        set({
-          products: { ...answers.products, [id]: times },
-          productFrequency: { ...answers.productFrequency, [id]: times },
-        });
-
-      const addTyped = () => {
-        const label = answers.productDraft.trim();
-        if (!label) return;
-        set({
-          customProducts: [
-            ...answers.customProducts,
-            { id: `${Date.now()}`, label, timesPerWeek: 7 },
-          ],
-          productDraft: '',
-        });
-      };
-
-      return shell({
-        cta: COPY.products.cta,
-        onCta: next,
-        // Never required. A stack somebody was pushed into is a stack they
-        // abandon in a fortnight.
-        secondary: chosen === 0 ? COPY.products.skip : undefined,
-        onSecondary: chosen === 0 ? next : undefined,
-        children: (
-          <>
-            <StepTitle title={COPY.products.title} />
-
-            <View style={{ gap: spacing.sm }}>
-              {options.map((option, i) => (
-                <Rise key={option.id} index={2 + i}>
-                  <ProductRow
-                    label={option.label}
-                    icon={option.icon}
-                    selected={answers.products[option.id] !== undefined}
-                    timesPerWeek={
-                      answers.products[option.id] ?? option.defaultTimesPerWeek
-                    }
-                    onToggle={() => toggleProduct(option.id, option.defaultTimesPerWeek)}
-                    onFrequency={(times) => chooseFrequency(option.id, times)}
-                  />
-                </Rise>
-              ))}
-
-              {answers.customProducts.map((product) => (
-                <ProductRow
-                  key={product.id}
-                  label={product.label}
-                  icon={inferRoutineIcon(product.label)}
-                  selected
-                  timesPerWeek={product.timesPerWeek}
-                  onToggle={() =>
-                    set({
-                      customProducts: answers.customProducts.filter(
-                        (p) => p.id !== product.id,
-                      ),
-                    })
-                  }
-                  onRemove={() =>
-                    set({
-                      customProducts: answers.customProducts.filter(
-                        (p) => p.id !== product.id,
-                      ),
-                    })
-                  }
-                  onFrequency={(times) =>
-                    set({
-                      customProducts: answers.customProducts.map((p) =>
-                        p.id === product.id ? { ...p, timesPerWeek: times } : p,
-                      ),
-                    })
-                  }
-                />
-              ))}
-            </View>
-
-            {/* Whatever the list missed. Most routines have something on
-                them that no catalogue would guess. */}
-            <SubHeading text={COPY.products.second} index={2 + options.length} />
-            <Rise index={3 + options.length}>
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <Field
-                    value={answers.productDraft}
-                    onChange={(productDraft) => set({ productDraft })}
-                    placeholder={COPY.products.addPlaceholder}
-                    label={COPY.products.addLabel}
-                    onSubmit={addTyped}
-                  />
-                </View>
-                <PressableScale
-                  onPress={addTyped}
-                  disabled={answers.productDraft.trim().length === 0}
-                  accessibilityRole="button"
-                  accessibilityLabel={COPY.products.addCta}
-                  style={{
-                    width: MIN_TOUCH_TARGET + 12,
-                    height: MIN_TOUCH_TARGET + 12,
-                    borderRadius: radius.md,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor:
-                      answers.productDraft.trim().length === 0
-                        ? colors.fill
-                        : colors.accent,
-                  }}>
-                  <Icon
-                    name="plus"
-                    size={18}
-                    color={
-                      answers.productDraft.trim().length === 0
-                        ? colors.textTertiary
-                        : colors.textOnAccent
-                    }
-                  />
-                </PressableScale>
-              </View>
-            </Rise>
-          </>
-        ),
-      });
-    }
-
-    /* ------------------------------- system --------------------------- */
-    case 'system':
-      return shell({
-        centred: true,
-        cta: COPY.system.cta,
-        onCta: next,
-        children: (
-          <>
-            <Wash />
-            <Rise index={0}>
-              <Text variant="title1" center>
-                {COPY.system.title}
-              </Text>
-              <Text variant="title1" color="textTertiary" center>
-                {COPY.system.titleMuted}
-              </Text>
-            </Rise>
-
-            <Rise index={1}>
-              <Text
-                variant="callout"
-                color="textSecondary"
-                center
-                style={{ marginTop: spacing.lg, marginBottom: spacing.xxxl }}>
-                {COPY.system.body}
-              </Text>
-            </Rise>
-
-            {['Morning', 'Evening', 'Photo day'].map((label, i) => (
-              <Rise key={label} index={2 + i}>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: spacing.md,
-                    padding: spacing.lg,
-                    marginBottom: spacing.sm,
-                    borderRadius: radius.md,
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}>
-                  <Text variant="headline" style={{ flex: 1 }}>
-                    {label}
-                  </Text>
-                  <View
-                    style={{
-                      width: 24,
-                      height: 24,
-                      borderRadius: 12,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: colors.accent,
-                    }}>
-                    <Icon name="check" size={12} color={colors.textOnAccent} />
-                  </View>
-                </View>
-              </Rise>
-            ))}
-          </>
-        ),
-      });
-
-    /* ------------------------------ cadence --------------------------- */
-    case 'cadence':
-      return shell({
-        cta: COPY.cadence.cta,
-        onCta: next,
-        children: (
-          <>
-            <StepTitle title={COPY.cadence.title} />
-            <Choices
-              choices={CADENCE_CHOICES}
-              multi={false}
-              selected={[String(answers.intervalDays)]}
-              onToggle={(v) => set({ intervalDays: Number(v) })}
-              from={2}
-            />
-          </>
-        ),
-      });
-
-    /* ------------------------------- photo ---------------------------- */
-    case 'photo':
-      return shell({
-        centred: true,
-        cta: answers.avatarUri ? 'Continue' : COPY.photo.cta,
-        onCta: answers.avatarUri ? next : addPhoto,
-        secondary: answers.avatarUri ? 'Choose a different photo' : COPY.photo.skip,
-        onSecondary: answers.avatarUri ? addPhoto : next,
-        children: (
-          <>
-            <Wash />
-            <Rise index={0} style={{ alignItems: 'center', marginBottom: spacing.xxxl }}>
-              <View
-                style={{
-                  width: 160,
-                  height: 160,
-                  borderRadius: 80,
-                  overflow: 'hidden',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: answers.avatarUri ? colors.surface : colors.accentSoft,
-                }}>
-                {answers.avatarUri ? (
-                  <Image
-                    source={{ uri: answers.avatarUri }}
-                    style={{ width: '100%', height: '100%' }}
-                    contentFit="cover"
-                    accessibilityLabel="Your photo"
-                  />
-                ) : (
-                  <Icon name="profile" size={56} color={colors.accent} />
-                )}
-              </View>
-            </Rise>
-
-            <Rise index={1}>
-              <Text variant="question" center accessibilityRole="header">
-                {COPY.photo.title}
-              </Text>
-              <Text
-                variant="callout"
-                color="textSecondary"
-                center
-                style={{ marginTop: spacing.lg }}>
-                {COPY.photo.body}
-              </Text>
-            </Rise>
-          </>
-        ),
-      });
-
-    /* --------------------------------- you ---------------------------- */
-    case 'you':
-      return shell({
-        cta: COPY.you.cta,
-        onCta: next,
-        ctaDisabled: answers.name.trim().length === 0,
-        children: (
-          <>
-            <StepTitle title={COPY.you.title} />
-
-            {/*
-              Gender leads, because everything after this screen is drawn
-              from it: which reference photographs are shown, and which
-              questions the funnel asks. Asked plainly — it decides what
-              the app shows, not what it thinks of anybody.
-            */}
-            <SubHeading text={COPY.you.genderPrompt} index={1} />
-            <Choices
-              choices={GENDER_CHOICES}
-              multi={false}
-              selected={[answers.gender]}
-              onToggle={(gender) => set({ gender })}
-              from={2}
-            />
-
-            <SubHeading text={COPY.you.nameLabel} index={4} />
-            <Rise index={5}>
-              <Field
-                value={answers.name}
-                onChange={(name) => set({ name })}
-                placeholder="Your name"
-                label="Your name"
-              />
-            </Rise>
-
-            <SubHeading text={COPY.you.second} index={6} />
-            <Rise index={7}>
-              {/* The only optional answer in the funnel, and the field
-                  says so itself now that there is no line under the
-                  heading to say it. */}
-              <Field
-                value={answers.age}
-                onChange={(age) => set({ age: age.replace(/[^0-9]/g, '').slice(0, 3) })}
-                placeholder="Age (optional)"
-                label="Your age, optional"
-                keyboardType="number-pad"
-              />
-            </Rise>
-          </>
-        ),
-      });
-
-    /* -------------------------------- card ---------------------------- */
-    case 'card':
-      return shell({
-        centred: true,
-        cta: COPY.card.cta,
-        onCta: next,
-        children: (
-          <>
-            <Wash />
-            {/* The moment somebody joins. The line and the card, nothing
-                explaining either: the card says what it is by being one. */}
-            <StepTitle title={welcomeTitle(answers.name)} />
-
-            <Rise index={2} style={{ alignItems: 'center' }}>
-              <CardFloat>
-                <MemberCard
-                  name={answers.name.trim() || 'You'}
-                  age={answers.age ? Number(answers.age) : undefined}
-                  goalLabel={goalLabel}
-                  portraitUri={answers.avatarUri}
-                  startedAt={new Date().toISOString()}
-                  consistency={0}
-                  width={cardWidth}
-                />
-              </CardFloat>
-            </Rise>
-          </>
-        ),
-      });
-
-    /* ------------------------------ analysing ------------------------------ */
-    case 'analysing':
-      return shell({
-        centred: true,
-        /*
-          No button. The screen is a few seconds of visible work and then
-          it hands over on its own — a Continue here would either sit
-          disabled, which is a dead control, or let somebody skip the one
-          beat that makes the plan feel assembled rather than echoed.
-        */
-        cta: undefined,
-        onCta: undefined,
-        children: (
-          <Analysing
-            title={ANALYSING_TITLE}
-            steps={ANALYSING_STEPS}
-            onDone={next}
-          />
-        ),
-      });
-
-    /* ------------------------------- profile ------------------------------- */
-    case 'profile':
-      return shell({
-        cta: COPY.profile.cta,
-        onCta: next,
-        children: (
-          <ProfileReportScreen
-            report={buildProfileReport({
-              name: answers.name,
-              noticed: answers.noticed,
-              areas: answers.areas,
-              preoccupation: answers.preoccupation,
-              approaches: answers.approaches,
-              medications: answers.medications,
-              consistency: answers.consistency,
-              goals: answers.goals,
-              intervalDays: answers.intervalDays,
+          }>
+          <ScanInvite
+            gender={data.profile?.gender}
+            headline={inviteHeadline(name)}
+            body={copy.body}
+            callouts={inviteCallouts({
+              gender,
+              goals: journey ? journeyGoals(journey) : [],
+              areas: journey?.trackingAreas ?? [],
+              noticed: journey?.noticed ?? null,
+              approaches: journey?.approaches ?? [],
             })}
           />
-        ),
-      });
-
-    /* ------------------------------ baseline -------------------------- */
-    case 'baseline':
-    default:
-      return shell({
-        cta: baselineCopy.cta,
-        /*
-          The scan: the turn, then the reading of what it captured, then
-          the paywall. See `startBaseline`.
-        */
-        onCta: startBaseline,
-        /*
-          The way past. The baseline used to be compulsory, on the
-          argument that a journey without one has nothing for month three
-          to be compared with. That is still true, and it is still the
-          person's call: somebody who cannot scan right now should be let
-          into the app rather than turned away at its door, and the Home
-          screen keeps asking until they do. See `skipBaseline`.
-        */
-        secondary: baselineCopy.notNow,
-        onSecondary: skipBaseline,
-        /*
-          The invitation: their name, the reference photograph with three
-          of their own answers pinned to it, and one line about the
-          record. The cards are labels of what they chose in the funnel,
-          placed where the scan is about to look — never findings, since
-          nothing has been photographed yet.
-        */
-        children: (
-          <>
-            <Wash />
-            <ScanInvite
-              gender={answers.gender}
-              headline={inviteHeadline(answers.name)}
-              body={baselineCopy.body}
-              callouts={inviteCallouts({
-                gender: answers.gender,
-                goals: answers.goals,
-                areas: answers.areas,
-                noticed: answers.noticed,
-                approaches: answers.approaches,
-              })}
-            />
-          </>
-        ),
-      });
+        </FunnelPage>
+      );
+    }
   }
 }
 
-/* ------------------------------- fragments ------------------------------ */
+/* --------------------------------- pages -------------------------------- */
 
-function Choices<T extends string>({
-  choices,
-  multi,
+/**
+ * One question, in whichever of the four shapes it takes.
+ *
+ * The selection is the record's, handed in; a tap hands the new
+ * selection straight back out to be saved. A single-choice page then
+ * waits a beat — long enough for the chosen row to show as chosen — and
+ * moves on by itself; a second tap in that beat is ignored rather than
+ * moving on twice. Keyed by question in the funnel, so the beat's timer
+ * and the field's draft belong to one question only.
+ */
+function QuestionPage({
+  question,
+  gender,
   selected,
-  onToggle,
-  from = 0,
+  note,
+  onSelect,
+  onNote,
+  onNext,
+  onBack,
 }: {
-  choices: Choice<T>[];
-  multi: boolean;
-  selected: T[];
-  onToggle: (value: T) => void;
-  /** Where this list sits in the screen's stagger. */
-  from?: number;
+  question: Question;
+  gender: Gender;
+  selected: string[];
+  /** Whatever they typed after ticking "Something else" on the medication question. */
+  note: string;
+  onSelect: (values: string[]) => void;
+  onNote: (note: string) => void;
+  onNext: () => void;
+  onBack: () => void;
 }) {
   const { spacing } = useTheme();
+  const options = optionsOf(question, gender);
 
   /*
-    Twelve between rows, not eight. Borderless cards on a soft shadow
-    need a little more air than outlined ones did, or the shadows merge
-    and the list reads as one tall panel with lines across it.
+    The one selection the record cannot hold: nothing ticked on a page
+    whose "none of these" row is written as an empty list. Unticking the
+    last real choice writes that same empty list, and this keeps the page
+    showing nothing chosen — no row lit, Continue greyed — until the next
+    tap, as the reference does, rather than lighting the "none" row on
+    the person's behalf. Keyed by question, so it never outlives its page.
   */
-  return (
-    <View style={{ gap: spacing.md }}>
-      {choices.map((choice, i) => (
-        <ChoiceRow
-          key={choice.value}
-          label={choice.label}
-          detail={choice.detail}
-          icon={choice.icon as IconName | undefined}
-          multi={multi}
-          selected={selected.includes(choice.value)}
-          onPress={() => onToggle(choice.value)}
-          index={from + i}
-        />
-      ))}
-    </View>
+  const [emptied, setEmptied] = useState(false);
+  const shown = emptied ? [] : selected;
+
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (settle.current) clearTimeout(settle.current);
+    },
+    [],
   );
-}
 
-/**
- * One person's pair, between two blocks of questions.
- *
- * The headline is about the habit rather than the hair, because the habit
- * is the only half of this the app has anything to do with.
- */
-function CaseStudyScreen({ study }: { study: CaseStudy }) {
-  return (
-    <>
-      <Wash />
-      <StepTitle title={study.headline} />
+  const pick = (value: string) => {
+    if (question.multi) {
+      const toggled = toggleChoice(shown, value, question.exclusive);
+      setEmptied(question.emptyAs !== undefined && toggled.length === 0);
+      onSelect(toggled);
+      return;
+    }
+    if (settle.current) return;
+    onSelect([value]);
+    settle.current = setTimeout(onNext, SELECT_SETTLE_MS);
+  };
 
-      <Rise index={1}>
-        <CaseStudyCard study={study} />
-      </Rise>
-    </>
+  const isOn = (value: string) => shown.includes(value);
+  /*
+    Handed over as a function of colour: the kit knows what its disc is
+    filled with and draws the icon in the colour that reads on it — ink at
+    rest, the accent once chosen, the ground's colour on the dark disc — so
+    no row can end up with an ink glyph on an ink plate.
+  */
+  const glyph = (icon: FunnelGlyph | undefined) =>
+    icon ? (color: string) => <Glyph name={icon} color={color} /> : undefined;
+
+  const bubble = (
+    <SpeechBubble
+      title={question.title}
+      accentWord={question.accent}
+      subtitle={question.subtitle}
+      expression={question.expression}
+    />
   );
-}
 
-/**
- * What the app does, in the last break before the camera.
- *
- * Four things it does and three figures about itself. No outcome numbers:
- * there is no cohort to count, and a made-up percentage on this screen
- * would be a claim about somebody's hair — see how-it-helps.ts.
- */
-function HowItHelpsScreen() {
-  const { colors, spacing, radius } = useTheme();
-
-  return (
-    <>
-      <Wash />
-      <StepTitle title={HELP_TITLE} />
-
-      {/*
-        The four beats, performed rather than listed. Reading "drag
-        between an old set and a new one" teaches less than watching a
-        divider wipe, so the carousel demonstrates each action and the
-        copy underneath is unchanged.
-      */}
-      <Rise index={1} style={{ marginTop: spacing.xl }}>
-        <HowItWorks />
-      </Rise>
-
-      {/* Three things about the product, each checkable by opening it. */}
-      <Rise index={2} style={{ marginTop: spacing.xl }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            padding: spacing.lg,
-            borderRadius: radius.md,
-            backgroundColor: colors.accentSoft,
-            borderWidth: 1,
-            borderColor: colors.accentBorder,
-          }}>
-          {HELP_FIGURES.map((figure) => (
-            <View key={figure.label} style={{ flex: 1, gap: 2, alignItems: 'center' }}>
-              <Text variant="title3" color="accent" center>
-                {figure.value}
-              </Text>
-              <Text variant="caption" color="textSecondary" center>
-                {figure.label}
-              </Text>
-            </View>
+  let body: ReactNode;
+  switch (question.kind) {
+    case 'pill':
+      body = (
+        <View style={{ gap: spacing.md }}>
+          {options.map((option) => (
+            <OptionPill
+              key={option.value}
+              label={option.label}
+              selected={isOn(option.value)}
+              onPress={() => pick(option.value)}
+            />
           ))}
         </View>
-      </Rise>
-    </>
+      );
+      break;
+    case 'row':
+      body = (
+        <View style={{ gap: spacing.md }}>
+          {options.map((option) => (
+            <OptionRow
+              key={option.value}
+              icon={glyph(option.icon)}
+              title={option.label}
+              description={option.description}
+              selected={isOn(option.value)}
+              onPress={() => pick(option.value)}
+              tint={option.tint}
+              check={question.multi}
+            />
+          ))}
+        </View>
+      );
+      break;
+    case 'checkRows':
+      body = (
+        <View style={{ gap: spacing.md }}>
+          {options.map((option) => (
+            <OptionRow
+              key={option.value}
+              icon={glyph(option.icon)}
+              title={option.label}
+              selected={isOn(option.value)}
+              onPress={() => pick(option.value)}
+              check
+            />
+          ))}
+        </View>
+      );
+      break;
+    case 'cards':
+      body = (
+        <CardGrid>
+          {options.map((option) => (
+            <OptionCard
+              key={option.value}
+              icon={glyph(option.icon)}
+              label={option.label}
+              selected={isOn(option.value)}
+              onPress={() => pick(option.value)}
+            />
+          ))}
+        </CardGrid>
+      );
+      break;
+    case 'textCards':
+    default:
+      body = (
+        <CardGrid>
+          {options.map((option) => (
+            <OptionCard
+              key={option.value}
+              label={option.label}
+              sub={option.description}
+              selected={isOn(option.value)}
+              onPress={() => pick(option.value)}
+            />
+          ))}
+        </CardGrid>
+      );
+      break;
+  }
+
+  /*
+    The one free-text answer in the funnel: whatever "Something else"
+    on the medication question stands for. It is the only question
+    with a note, so the field is keyed to it rather than to a flag.
+  */
+  const askNote = question.id === 'medications' && isOn('other');
+
+  /*
+    A single-choice page hands over on its own, so it carries no bar. A
+    multi page waits for Continue — greyed until a pick — and a "none of
+    these" row, where the question has one, is the way past. The one
+    question that may be withheld carries its way past beneath the bar:
+    "Prefer not to say" writes the answer down as withheld (an empty
+    list), so it is not asked again on every return.
+  */
+  const secondary =
+    shown.length === 0 && question.skip
+      ? {
+          label: question.skip,
+          onPress: () => {
+            onSelect([]);
+            onNext();
+          },
+        }
+      : undefined;
+
+  const bar = question.multi ? (
+    <ContinueBar
+      label={COPY.question.cta}
+      enabled={shown.length > 0}
+      onPress={onNext}
+      secondary={secondary}
+    />
+  ) : undefined;
+
+  return (
+    <FunnelPage back={onBack} bottom={bar}>
+      {bubble}
+      <View style={{ height: spacing.lg }} />
+      {body}
+      {askNote ? (
+        <View style={{ marginTop: spacing.md }}>
+          <Field
+            value={note}
+            onChange={onNote}
+            placeholder={COPY.medication.otherPlaceholder}
+            label={COPY.medication.otherLabel}
+            autoFocus
+          />
+        </View>
+      ) : null}
+    </FunnelPage>
   );
 }
+
+/** What should we call you? */
+function NamePage({
+  initial,
+  onSave,
+  onBack,
+}: {
+  initial: string;
+  onSave: (name: string) => void;
+  onBack: () => void;
+}) {
+  const { spacing } = useTheme();
+  const [draft, setDraft] = useState(initial);
+  const trimmed = draft.trim();
+
+  return (
+    <FunnelPage
+      back={onBack}
+      bottom={
+        <ContinueBar
+          label={COPY.name.cta}
+          enabled={trimmed.length > 0}
+          onPress={() => onSave(trimmed)}
+        />
+      }>
+      <SpeechBubble title={COPY.name.title} accentWord={COPY.name.accent} expression="wink" />
+      <View style={{ height: spacing.lg }} />
+      <Field
+        value={draft}
+        onChange={setDraft}
+        placeholder={COPY.name.placeholder}
+        label={COPY.name.placeholder}
+        autoFocus
+      />
+    </FunnelPage>
+  );
+}
+
+/* ------------------------------- fragments ------------------------------ */
 
 /**
  * A text field that holds its own value.
@@ -1215,19 +582,14 @@ function Field({
   placeholder,
   label,
   autoFocus,
-  keyboardType,
-  onSubmit,
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder: string;
   label: string;
   autoFocus?: boolean;
-  keyboardType?: 'number-pad';
-  /** Return on the keyboard, for a field whose job is to add a row. */
-  onSubmit?: () => void;
 }) {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, radius, shadow } = useTheme();
   const [text, setText] = useState(value);
 
   const change = (next: string) => {
@@ -1237,28 +599,126 @@ function Field({
 
   return (
     <View
-      style={{
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.surface,
-        paddingHorizontal: spacing.lg,
-        height: MIN_TOUCH_TARGET + 12,
-        justifyContent: 'center',
-      }}>
+      style={[
+        {
+          borderRadius: radius.pill,
+          backgroundColor: colors.surface,
+          paddingHorizontal: spacing.xxl,
+          height: MIN_TOUCH_TARGET + 20,
+          justifyContent: 'center',
+        },
+        shadow.soft,
+      ]}>
       <TextInput
         value={text}
         onChangeText={change}
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
-        autoCapitalize={keyboardType === 'number-pad' ? 'none' : 'words'}
+        autoCapitalize="words"
         autoFocus={autoFocus}
-        returnKeyType={onSubmit ? 'done' : undefined}
-        onSubmitEditing={onSubmit}
-        keyboardType={keyboardType}
         accessibilityLabel={label}
         style={{ color: colors.text, fontSize: typography.body.fontSize }}
       />
     </View>
+  );
+}
+
+/* -------------------------------- glyphs -------------------------------- */
+
+/**
+ * The icon beside an option: the app's icon set where it has the glyph,
+ * and a small line drawing where it does not — the feather, the four
+ * hair shapes, the two gender signs, and the scalp textures the
+ * reference draws.
+ */
+function Glyph({ name, color, size = 24 }: { name: FunnelGlyph; color: string; size?: number }) {
+  if (isCustomGlyph(name)) return <CustomGlyphView name={name} color={color} size={size} />;
+  const iconName: IconName = name;
+  return <Icon name={iconName} size={size - 2} color={color} />;
+}
+
+const STROKE = 1.7;
+
+function CustomGlyphView({ name, color, size }: { name: CustomGlyph; color: string; size: number }) {
+  const stroke = { stroke: color, strokeWidth: STROKE, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' as const };
+
+  return (
+    // Decorative: the row it sits in carries the label.
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      {name === 'feather' ? (
+        <>
+          <Path d="M20 4c-6 0-11 4-13 10l-1 3 3-1c6-2 10-7 11-12z" {...stroke} />
+          <Line x1={4} y1={20} x2={13} y2={11} {...stroke} />
+        </>
+      ) : null}
+      {name === 'hairStraight' ? (
+        <>
+          <Line x1={7} y1={4} x2={7} y2={20} {...stroke} />
+          <Line x1={12} y1={4} x2={12} y2={20} {...stroke} />
+          <Line x1={17} y1={4} x2={17} y2={20} {...stroke} />
+        </>
+      ) : null}
+      {name === 'hairWavy' ? (
+        <>
+          <Path d="M7 4c3 2.5-3 5.5 0 8s-3 5.5 0 8" {...stroke} />
+          <Path d="M12 4c3 2.5-3 5.5 0 8s-3 5.5 0 8" {...stroke} />
+          <Path d="M17 4c3 2.5-3 5.5 0 8s-3 5.5 0 8" {...stroke} />
+        </>
+      ) : null}
+      {name === 'hairCurly' ? (
+        <>
+          <Path d="M8 4c5 0 5 4 0 4s-5 4 0 4-5 4 0 4-5 4 0 4" {...stroke} />
+          <Path d="M16 4c5 0 5 4 0 4s-5 4 0 4-5 4 0 4-5 4 0 4" {...stroke} />
+        </>
+      ) : null}
+      {name === 'hairCoily' ? (
+        <>
+          <Path d="M7 4l4 2.7-4 2.7 4 2.6-4 2.7 4 2.6-4 2.7" {...stroke} />
+          <Path d="M13 4l4 2.7-4 2.7 4 2.6-4 2.7 4 2.6-4 2.7" {...stroke} />
+        </>
+      ) : null}
+      {name === 'genderFemale' ? (
+        <>
+          <Circle cx={12} cy={9} r={5} {...stroke} />
+          <Line x1={12} y1={14} x2={12} y2={21} {...stroke} />
+          <Line x1={9} y1={18} x2={15} y2={18} {...stroke} />
+        </>
+      ) : null}
+      {name === 'genderMale' ? (
+        <>
+          <Circle cx={10} cy={14} r={5} {...stroke} />
+          <Line x1={13.5} y1={10.5} x2={19} y2={5} {...stroke} />
+          <Path d="M14 5h5v5" {...stroke} />
+        </>
+      ) : null}
+      {name === 'scalpDry' ? (
+        <Path d="M6 5l3 4-2 4 4 3-1 4M14 4l-1 5 4 3-2 5M9 3l2 3" {...stroke} />
+      ) : null}
+      {name === 'scalpNormal' ? (
+        <Path d="M5 8h5M12 8h6M7 12h6M15 12h3M5 16h4M11 16h7" {...stroke} />
+      ) : null}
+      {name === 'scalpCombination' ? (
+        <>
+          <Path d="M5 5l3 4-2 4 3 3M9 4l2 3" {...stroke} />
+          <Path d="M17 11c-2 3-3 4.2-3 5.7a3 3 0 006 0c0-1.5-1-2.7-3-5.7z" {...stroke} />
+        </>
+      ) : null}
+      {name === 'flakes' ? (
+        <>
+          <Circle cx={7} cy={7} r={1.6} {...stroke} />
+          <Circle cx={14} cy={5} r={1.6} {...stroke} />
+          <Circle cx={18} cy={11} r={1.6} {...stroke} />
+          <Circle cx={9} cy={14} r={1.6} {...stroke} />
+          <Circle cx={15} cy={17} r={1.6} {...stroke} />
+          <Circle cx={6} cy={19} r={1.6} {...stroke} />
+        </>
+      ) : null}
+      {name === 'strandBreak' ? (
+        <Path d="M7 4c2 4 3 7 4 9M13 14l1 2M15 18l1 2M17 4c-2 4-3 7-4 9" {...stroke} />
+      ) : null}
+      {name === 'frizz' ? (
+        <Path d="M4 12c2-3 4-3 6 0s4 3 6 0 4-3 6 0M8 6l1 2M15 6l-1 2M9 18l1-2M16 18l-1-2" {...stroke} />
+      ) : null}
+    </Svg>
   );
 }

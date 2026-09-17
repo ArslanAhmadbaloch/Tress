@@ -458,6 +458,9 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
     watching: 'What you watch',
     motivation: 'Why it matters',
     approach: 'Your approach',
+    hairType: 'Your hair type',
+    scalpType: 'Your scalp',
+    sensitivity: 'Scalp sensitivity',
     unanswered: 'Not answered',
   },
 

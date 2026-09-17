@@ -2,8 +2,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CaseStudyCard } from '@/components/case-study-card';
 import { ArticleCover } from '@/components/learn-cards';
 import { articleImageCredit } from '@/features/learn/images';
+import { caseStudies } from '@/features/onboarding/case-studies';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -23,7 +25,9 @@ import {
   articleBySlug,
 } from '@/features/learn/library';
 import { formatDate } from '@/lib/date';
+import { useAppStore } from '@/store/app-store';
 import { useTheme } from '@/theme';
+import type { Gender } from '@/types/domain';
 
 /**
  * Article reader, and the FAQ under the reserved slug "faq".
@@ -39,6 +43,7 @@ export default function ArticleScreen() {
   const router = useRouter();
 
   if (slug === 'faq') return <FaqScreen />;
+  if (slug === 'example-journeys') return <ExampleJourneysScreen />;
 
   const article = articleBySlug(String(slug));
 
@@ -253,6 +258,81 @@ function FaqScreen() {
               </Text>
             </Card>
           ))}
+        </View>
+      </ScreenScroll>
+    </Screen>
+  );
+}
+
+/**
+ * The example journeys, under the reserved slug "example-journeys".
+ *
+ * Two pairs per set, the set for whoever is holding the phone first.
+ * These are illustrations, not customers — the card says EXAMPLE JOURNEY
+ * across the top of every one, and the line above the cards says so
+ * again in words — and each is about the habit rather than the hair:
+ * the same scan on a schedule, with a line written beside it. See
+ * features/onboarding/case-studies.ts for what they are allowed to say.
+ */
+function ExampleJourneysScreen() {
+  const { colors, spacing, radius } = useTheme();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { data } = useAppStore();
+
+  const own: Gender = data.profile?.gender ?? 'male';
+  const other: Gender = own === 'female' ? 'male' : 'female';
+  const studies = [...caseStudies(own), ...caseStudies(other)];
+
+  return (
+    <Screen edges={[]} ground="plain">
+      <ScreenScroll contentContainerStyle={{ paddingTop: insets.top + spacing.sm }}>
+        <BackButton onPress={() => router.back()} />
+
+        <Text
+          variant="caption"
+          color="textTertiary"
+          style={{ letterSpacing: 2, marginTop: spacing.xl }}>
+          Examples
+        </Text>
+        <Text variant="title1" accessibilityRole="header" style={{ marginTop: spacing.sm }}>
+          Example journeys
+        </Text>
+        <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.md }}>
+          Illustrations, not customers: the people and the months are written for the
+          design. What is real is the habit — the same scan on a schedule, and a line
+          written beside each one.
+        </Text>
+
+        {studies.length === 0 ? (
+          <EmptyState icon="journey" title="No examples yet" body="Check back after the next update." />
+        ) : (
+          <View style={{ marginTop: spacing.xxl, gap: spacing.xxxl }}>
+            {studies.map((study) => (
+              <View key={study.id} style={{ gap: spacing.lg }}>
+                <Text variant="title3" accessibilityRole="header">
+                  {study.headline}
+                </Text>
+                <CaseStudyCard study={study} />
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View
+          style={{
+            marginTop: spacing.xxxl,
+            flexDirection: 'row',
+            gap: spacing.md,
+            padding: spacing.lg,
+            borderRadius: radius.md,
+            backgroundColor: colors.backgroundSubtle,
+          }}>
+          <Icon name="info" size={18} color={colors.textTertiary} />
+          <Text variant="footnote" color="textSecondary" style={{ flex: 1 }}>
+            The app records what a scan shows beside the last one. It does not treat
+            anything, and nothing in these examples is a claim about anybody’s hair.
+          </Text>
         </View>
       </ScreenScroll>
     </Screen>

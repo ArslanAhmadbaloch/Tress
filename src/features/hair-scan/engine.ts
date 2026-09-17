@@ -39,6 +39,7 @@ import type {
   DiscardReason,
   FaceReading,
   FrameMesh,
+  MeshPose,
   GuidanceCue,
   MeshFace,
   RegionScores,
@@ -919,7 +920,9 @@ export function coverFit(content: Size, box: Size): CoverFit {
 /**
  * The tracked face as the live mesh had it, frozen as fractions of the
  * preview view for the frame about to be taken. Null when the preview
- * has no size yet: a fraction of nothing is not a place.
+ * has no size yet: a fraction of nothing is not a place. The head's
+ * angles ride along when the tracker had a finite reading, so the cap
+ * drawn on the still can turn as the live one did.
  */
 export function snapshotMesh(face: TrackedFace, view: ViewSize): FrameMesh | null {
   if (!(view.width > 0) || !(view.height > 0)) return null;
@@ -929,6 +932,7 @@ export function snapshotMesh(face: TrackedFace, view: ViewSize): FrameMesh | nul
     if (!points || points.length === 0) continue;
     contours[name] = points.map((p) => ({ x: p.x / view.width, y: p.y / view.height }));
   }
+  const pose = meshPose(face);
   return {
     bounds: {
       x: (face.cx - face.width / 2) / view.width,
@@ -938,7 +942,16 @@ export function snapshotMesh(face: TrackedFace, view: ViewSize): FrameMesh | nul
     },
     contours,
     viewAspect: view.width / view.height,
+    ...(pose === null ? {} : { pose }),
   };
+}
+
+/** The tracked head's angles, or null when any of them is not a number. */
+function meshPose(face: Pick<TrackedFace, 'yaw' | 'pitch' | 'roll'>): MeshPose | null {
+  if (!Number.isFinite(face.yaw) || !Number.isFinite(face.pitch) || !Number.isFinite(face.roll)) {
+    return null;
+  }
+  return { yaw: face.yaw, pitch: face.pitch, roll: face.roll };
 }
 
 /**
@@ -974,6 +987,8 @@ export function meshInBox(mesh: FrameMesh, still: Size, box: Size): MeshFace {
     width: mesh.bounds.width * view.width * stretch,
     height: mesh.bounds.height * view.height * stretch,
     contours,
+    // Angles are the head's, not the box's: they pass through untouched.
+    ...(mesh.pose === undefined ? {} : { pose: mesh.pose }),
   };
 }
 

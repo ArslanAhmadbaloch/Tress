@@ -1,20 +1,22 @@
 /**
  * The "Tress says" paragraph at the foot of the hair scan report.
  *
- * Three or four sentences in the coach's voice — plain, specific, second
+ * Three to five sentences in the coach's voice — plain, specific, second
  * person, no exclamation marks — that read the report back to the
  * person: what this turn kept, which part of the record their own focus
  * points at, whether the figures above were counted or the segmenter
- * did not run, and when the next scan is due. Every sentence is about
- * the record or the images. None predicts, none diagnoses, and the
- * person's own answer is read back as a quotation, never adopted as a
- * claim — the same rule `answers.ts` keeps for the coach.
+ * did not run, which of their own answers the care notes lean on (when
+ * one does), and when the next scan is due. Every sentence is about the
+ * record, the images or the notes. None predicts, none diagnoses, and
+ * the person's own answer is read back as a quotation, never adopted as
+ * a claim — the same rule `answers.ts` keeps for the coach.
  *
  * Pure: no React, nothing native. Loaded by `node --test`.
  */
 
 import { quote } from '@/features/hair-scan/report-copy';
 import { areaReading } from '@/features/hair-scan/result';
+import { tipProfileOf, tipsForProfile, type TipSignal } from '@/features/hair-scan/tips';
 import { daysBetween } from '@/lib/date';
 import { nextUpdate } from '@/store/selectors';
 import {
@@ -109,6 +111,31 @@ function measuredSentence(session: PhotoSession): string | null {
 }
 
 /**
+ * The one answer the care notes lean on, named as theirs. Read off the
+ * same call the report's notes are built from, so the paragraph never
+ * says the notes were picked by an answer they were not. Null when the
+ * goal alone chose them, which is every journey from before the
+ * self-knowledge questions existed.
+ */
+export function profileSentence(signal: TipSignal | null): string | null {
+  if (signal === null) return null;
+  const said = quote(midSentence(signal.label));
+  const tail = 'and the care notes are picked with that in mind.';
+  switch (signal.kind) {
+    case 'heat':
+      return `You told Tress heat goes on your hair ${said}, ${tail}`;
+    case 'reaction':
+      return `You told Tress you have reacted to ${said}, ${tail}`;
+    case 'sensitivity':
+      return `You described your scalp as ${said}, ${tail}`;
+    case 'scalpType':
+      return `You described your scalp as ${said}, ${tail}`;
+    case 'concern':
+      return `You mentioned ${said} as something on your mind, ${tail}`;
+  }
+}
+
+/**
  * How the next scan joins the record: as the first thing this one can be
  * laid beside, or as one more beside the scans already there. Counted
  * from sessions the scanner saved, this one included, so an upgraded
@@ -139,7 +166,8 @@ function nextSentence(data: AppData, now: Date): string {
  */
 export function reportSummary(data: AppData, session: PhotoSession, name?: string, now: Date = new Date()): string {
   const who = name?.trim() || undefined;
-  return [opener(session, who), focusSentence(data), measuredSentence(session), nextSentence(data, now)]
+  const notes = profileSentence(tipsForProfile(tipProfileOf(data.journey)).shapedBy);
+  return [opener(session, who), focusSentence(data), measuredSentence(session), notes, nextSentence(data, now)]
     .filter((s): s is string => s !== null)
     .join(' ');
 }

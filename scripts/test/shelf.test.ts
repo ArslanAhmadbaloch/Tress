@@ -46,9 +46,13 @@ import { ATTRIBUTION, parseLookup } from '@/features/products/open-beauty-facts'
 import {
   EMPTY_DATA,
   HAIR_GOAL_LABELS,
+  INGREDIENT_REACTION_LABELS,
   MEDICATION_LABELS,
+  PRODUCT_FACTOR_LABELS,
   TRACKING_AREA_LABELS,
   journeyGoals,
+  journeyProductFactors,
+  journeyReactions,
   type AppData,
   type Journey,
   type Product,
@@ -571,6 +575,163 @@ test('a journey saved before goals took several answers still reads back', () =>
   ]);
 });
 
+/* ------------------------ what they look for on a label ---------------- */
+
+/** The facts about one record that concern their answers about labels. */
+function labelFacts(shelf: Shelf, barcode: string): ShelfFact[] {
+  const product = shelf.sections.flatMap((s) => s.products).find((p) => p.barcode === barcode);
+  if (!product) throw new Error(`expected a record for ${barcode}`);
+  return product.facts.filter((f) => f.id.includes(':factor:') || f.id.includes(':reaction:') || f.id.includes(':labels:'));
+}
+
+test('a preference is held against the printed words of the database list, hit or miss, and quotes the word as printed', () => {
+  // Head & Shoulders, from the real wire body: "Sodium Laureth Sulfate, ... Parfum, Dimethiconol, ... Benzyl Alcohol".
+  const shampoo = fromDatabase('5601059062534');
+  const shelf = buildShelf(
+    dataWith({
+      products: [shampoo],
+      journey: journey({
+        productFactors: ['sulfateFree', 'siliconeFree', 'parabenFree'],
+        ingredientReactions: ['fragrance', 'alcohols'],
+      }),
+    }),
+  );
+  const facts = labelFacts(shelf, shampoo.barcode);
+  const byId = (suffix: string) => {
+    const found = facts.find((f) => f.id.endsWith(suffix));
+    if (!found) throw new Error(`expected ${suffix}`);
+    return found;
+  };
+
+  const sulfate = byId(':factor:sulfateFree');
+  assert.equal(sulfate.mentioned, true);
+  assert.equal(
+    sulfate.text,
+    'You said you look for “Sulfate-free”. The word “Sulfate” is printed in the ingredient list Open Beauty Facts holds for this record.',
+  );
+  assert.deepEqual(sulfate.quotes, ['Sulfate-free', 'Sulfate']);
+
+  // Letters inside a longer printed word: the whole word is quoted, and what it contains is named.
+  // ("Dimethiconol" comes first in the list but spells methicon-ol; "Dimethicone" is the first word that contains the letters.)
+  const silicone = byId(':factor:siliconeFree');
+  assert.equal(silicone.mentioned, true);
+  assert.equal(
+    silicone.text,
+    'You said you look for “Silicone-free”. The word “Dimethicone” is printed in the ingredient list Open Beauty Facts holds for this record, and contains methicone.',
+  );
+
+  // A miss names what was looked for, so an absence is as checkable as a hit — and is never called "paraben-free".
+  const paraben = byId(':factor:parabenFree');
+  assert.equal(paraben.mentioned, false);
+  assert.equal(
+    paraben.text,
+    'You said you look for “Paraben-free”. Tress looked for the letters paraben in the ingredient list Open Beauty Facts holds for this record and found neither a word made of them nor a word containing them.',
+  );
+
+  const fragrance = byId(':reaction:fragrance');
+  assert.equal(
+    fragrance.text,
+    'You said you have reacted to “Fragrance/parfum”. The word “Parfum” is printed in the ingredient list Open Beauty Facts holds for this record.',
+  );
+  assert.equal(
+    byId(':reaction:alcohols').text,
+    'You said you have reacted to “Alcohols”. The word “Alcohol” is printed in the ingredient list Open Beauty Facts holds for this record.',
+  );
+  // The funnel asked "Have you ever reacted to any of these?" with no body part, so no reaction line names one.
+  for (const fact of facts.filter((f) => f.id.includes(':reaction:'))) assert.doesNotMatch(fact.text, /scalp|skin/i, fact.text);
+
+  // The lines close by saying what they are: words on a list, not a verdict on the bottle.
+  const note = byId(':labels:note');
+  assert.match(note.text, /statements about words on a list/);
+  assert.match(note.text, /not about the bottle/);
+  assert.equal(facts[facts.length - 1].id, note.id, 'the note is last');
+
+  // Every quoted span is the person's answer or the database's own text.
+  const data = dataWith({
+    products: [shampoo],
+    journey: journey({ productFactors: ['sulfateFree', 'siliconeFree', 'parabenFree'], ingredientReactions: ['fragrance', 'alcohols'] }),
+  });
+  assert.deepEqual(unownedQuotes(facts, storedStrings(data)), []);
+  sweep(authored(shelf), 'the label lines');
+});
+
+test('a vegan preference is answered from the database\'s own tag, and the absence of a tag says nothing either way', () => {
+  const tagged = product('0000000000030', { analysisTags: ['en:palm-oil-free', 'en:vegan'], ingredientsText: 'Aqua' });
+  const yes = labelFacts(buildShelf(dataWith({ products: [tagged], journey: journey({ productFactors: ['vegan'] }) })), tagged.barcode);
+  assert.equal(yes[0].mentioned, true);
+  assert.equal(yes[0].text, 'You said you look for “Vegan”. Open Beauty Facts tags this record vegan, in its own wording.');
+
+  // The real Mixa body carries "en:vegan-status-unknown", which is not a vegan tag and is not a non-vegan one.
+  const unknown = fromDatabase('3600551119816');
+  const no = labelFacts(buildShelf(dataWith({ products: [unknown], journey: journey({ productFactors: ['vegan'] }) })), unknown.barcode);
+  assert.equal(no[0].mentioned, false);
+  assert.equal(no[0].text, 'You said you look for “Vegan”. Open Beauty Facts states no vegan tag for this record, which says nothing either way.');
+});
+
+test('an answer nothing in the database record can be held against is said to be that, not guessed at', () => {
+  const shampoo = fromDatabase('5601059062534');
+  const facts = labelFacts(
+    buildShelf(dataWith({ products: [shampoo], journey: journey({ productFactors: ['crueltyFree'], ingredientReactions: ['essentialOils', 'hairDye'] }) })),
+    shampoo.barcode,
+  );
+  assert.deepEqual(facts.map((f) => f.id), [`${shampoo.barcode}:labels:unchecked`]);
+  assert.equal(
+    facts[0].text,
+    'Nothing in the database record can be held against “Cruelty-free”, “Essential oils” and “Hair dye (PPD)”, so Tress says nothing about them here.',
+  );
+  assert.deepEqual(facts[0].quotes, ['Cruelty-free', 'Essential oils', 'Hair dye (PPD)']);
+});
+
+test('a record with no ingredient list gets one line saying so, and a typed record gets no label lines at all', () => {
+  const bare = product('0000000000031');
+  const noList = labelFacts(
+    buildShelf(dataWith({ products: [bare], journey: journey({ productFactors: ['sulfateFree', 'fragranceFree'] }) })),
+    bare.barcode,
+  );
+  assert.deepEqual(noList.map((f) => f.id), [`${bare.barcode}:labels:noList`]);
+  assert.match(noList[0].text, /no ingredient list for this record/);
+
+  const typed: Product = { barcode: '0000000000032', source: 'manual', name: 'The green bottle', fetchedAt: NOW, ingredientsText: 'sulfate' };
+  assert.deepEqual(
+    labelFacts(buildShelf(dataWith({ products: [typed], journey: journey({ productFactors: ['sulfateFree'] }) })), typed.barcode),
+    [],
+  );
+});
+
+test('"no preferences" and "none" produce no lines, and a journey from before the questions produces none either', () => {
+  const shampoo = fromDatabase('5601059062534');
+  const none = labelFacts(
+    buildShelf(dataWith({ products: [shampoo], journey: journey({ productFactors: ['noPreference'], ingredientReactions: ['none'] }) })),
+    shampoo.barcode,
+  );
+  assert.deepEqual(none, []);
+  assert.deepEqual(labelFacts(buildShelf(dataWith({ products: [shampoo], journey: journey() })), shampoo.barcode), []);
+  assert.deepEqual(labelFacts(buildShelf(dataWith({ products: [shampoo] })), shampoo.barcode), []);
+
+  // The answers are still read back as chips, "none" included: they are answers.
+  const answers = buildShelf(
+    dataWith({ journey: journey({ productFactors: ['noPreference', 'vegan', 'vegan'], ingredientReactions: ['none', 'bogus' as never] }) }),
+  ).answers;
+  assert.deepEqual(answers.preferences, ['No preferences', 'Vegan']);
+  assert.deepEqual(answers.reactions, ['None']);
+});
+
+test('the shelf never calls a bottle anything-free: "free" appears only inside the person\'s own quoted answer', () => {
+  const shampoo = fromDatabase('5601059062534');
+  const shelf = buildShelf(
+    dataWith({
+      products: [shampoo, product('0000000000033', { analysisTags: ['en:vegan'] })],
+      journey: journey({
+        productFactors: ['sulfateFree', 'siliconeFree', 'fragranceFree', 'parabenFree', 'vegan', 'crueltyFree'],
+        ingredientReactions: ['sulfates', 'fragrance', 'essentialOils', 'alcohols', 'hairDye', 'smoothingTreatments'],
+      }),
+    }),
+  );
+  for (const sentence of authored(shelf)) {
+    assert.ok(!/-free\b/i.test(sentence), `"${sentence}" calls a bottle something-free`);
+  }
+});
+
 /* ------------------------------ the sweeps ----------------------------- */
 
 /** A shelf holding every branch at once, including hostile user text. */
@@ -599,6 +760,8 @@ function loadedData(): AppData {
       goals: ['fullness', 'routineWorking'],
       medications: ['minoxidilTopical', 'iron', 'other'],
       medicationNote: 'thinning tonic',
+      productFactors: ['sulfateFree', 'vegan', 'crueltyFree'],
+      ingredientReactions: ['fragrance', 'essentialOils'],
     }),
   });
 }
@@ -655,6 +818,8 @@ function storedStrings(data: AppData): string[] {
     if (area in TRACKING_AREA_LABELS) out.push(TRACKING_AREA_LABELS[area]);
   }
   if (j) for (const goal of journeyGoals(j)) out.push(HAIR_GOAL_LABELS[goal]);
+  if (j) for (const factor of journeyProductFactors(j)) out.push(PRODUCT_FACTOR_LABELS[factor]);
+  if (j) for (const reaction of journeyReactions(j)) out.push(INGREDIENT_REACTION_LABELS[reaction]);
 
   return out.filter((s) => s.length > 0);
 }
@@ -694,6 +859,10 @@ test('every quoted span comes from the data the shelf was built from', () => {
     facts.reduce((n, f) => n + f.quotes.length, 0) >= 6,
     'the fixture should exercise the quoting paths',
   );
+  assert.ok(
+    facts.some((f) => f.id.includes(':factor:')) && facts.some((f) => f.id.includes(':reaction:')),
+    'the fixture should exercise the label lines',
+  );
 });
 
 test('the answer chips are swept, and each one has to be an answer they gave', () => {
@@ -711,7 +880,11 @@ test('the answer chips are swept, and each one has to be an answer they gave', (
   const ids = shelfSentences(shelf).map((f) => f.id);
 
   const chipCount =
-    shelf.answers.watching.length + shelf.answers.goals.length + shelf.answers.using.length;
+    shelf.answers.watching.length +
+    shelf.answers.goals.length +
+    shelf.answers.using.length +
+    shelf.answers.preferences.length +
+    shelf.answers.reactions.length;
   assert.ok(chipCount > 0, 'the fixture should have answers to read back');
   assert.equal(
     ids.filter((id) => id.startsWith('answer:')).length,

@@ -301,6 +301,259 @@ export const SELF_CONSISTENCY_LABELS: Record<SelfConsistency, string> = {
   notStarted: "I haven't started",
 };
 
+/* ------------------------------------------------------------------ */
+/*
+  What the person knows about themselves.
+
+  The funnel's second set of questions. Every one of these is something
+  the person can answer from their own experience — how their hair falls,
+  how their scalp feels, what they have reacted to, what a professional
+  has told them, what is going on in their life — and every one is
+  recorded as the label of a choice they made. None is a reading the app
+  took, none is a finding, and none is used to work anything out about
+  their head: they are shown back as what they said, and the product
+  shelf and coach use them only to speak in the person's own terms.
+
+  Each list carries a "none" or "no preferences" answer of its own, so an
+  empty list means the question was never answered, not "nothing".
+*/
+
+/** How their hair falls, in their own estimate. */
+export type HairType = 'straight' | 'wavy' | 'curly' | 'coily';
+
+export const HAIR_TYPE_LABELS: Record<HairType, string> = {
+  straight: 'Straight',
+  wavy: 'Wavy',
+  curly: 'Curly',
+  coily: 'Coily',
+};
+
+/** One line under each hair type, describing the shape and nothing else. */
+export const HAIR_TYPE_DESCRIPTIONS: Record<HairType, string> = {
+  straight: 'Falls flat, with little or no bend',
+  wavy: 'Loose S-shaped bends along the length',
+  curly: 'Defined curls or ringlets',
+  coily: 'Tight coils or zigzag strands',
+};
+
+/** How their scalp tends to feel between washes. */
+export type ScalpType = 'oily' | 'dry' | 'normal' | 'combination';
+
+export const SCALP_TYPE_LABELS: Record<ScalpType, string> = {
+  oily: 'Oily',
+  dry: 'Dry',
+  normal: 'Normal',
+  combination: 'Combination',
+};
+
+export const SCALP_TYPE_DESCRIPTIONS: Record<ScalpType, string> = {
+  oily: 'Feels greasy within a day or so of washing',
+  dry: 'Feels tight or flaky',
+  normal: 'Neither oily nor dry most of the time',
+  combination: 'Oily in some places, dry in others',
+};
+
+/** Whether their scalp has reacted to products before. Their own account. */
+export type ScalpSensitivity = 'sensitive' | 'notSensitive';
+
+export const SCALP_SENSITIVITY_LABELS: Record<ScalpSensitivity, string> = {
+  sensitive: 'Sensitive',
+  notSensitive: 'Not sensitive',
+};
+
+export const SCALP_SENSITIVITY_DESCRIPTIONS: Record<ScalpSensitivity, string> = {
+  sensitive: 'My scalp has reacted to products before',
+  notSensitive: 'My scalp is fine with most products',
+};
+
+/**
+ * Anything else on their mind about their hair, beside the main goal.
+ *
+ * The names of things a person notices — more scalp showing in a photo,
+ * frizz, an itch — in the words they would use. Not a list of conditions,
+ * and never turned into one.
+ */
+export type HairConcern =
+  | 'moreScalpShowing'
+  | 'shedding'
+  | 'breakage'
+  | 'dryness'
+  | 'oilyRoots'
+  | 'dandruff'
+  | 'itchOrIrritation'
+  | 'greying'
+  | 'frizz';
+
+export const HAIR_CONCERN_LABELS: Record<HairConcern, string> = {
+  moreScalpShowing: 'More scalp showing',
+  shedding: 'Shedding',
+  breakage: 'Breakage',
+  dryness: 'Dryness',
+  oilyRoots: 'Oily roots',
+  dandruff: 'Dandruff',
+  itchOrIrritation: 'Itch or irritation',
+  greying: 'Greying',
+  frizz: 'Frizz',
+};
+
+/**
+ * Their age as a band, which is all the app has any use for. `Profile.age`
+ * stays for journeys that typed a number before the question became a
+ * choice.
+ */
+export type AgeBand = 'under25' | '25to34' | '35to44' | '45to60' | 'over60';
+
+export const AGE_BAND_LABELS: Record<AgeBand, string> = {
+  under25: 'Under 25',
+  '25to34': '25–34',
+  '35to44': '35–44',
+  '45to60': '45–60',
+  over60: 'Over 60',
+};
+
+/** What they are comfortable spending on hair products. Tiers, never sums. */
+export type Budget = 'everyday' | 'midRange' | 'premium' | 'luxury';
+
+export const BUDGET_LABELS: Record<Budget, string> = {
+  everyday: 'Everyday',
+  midRange: 'Mid-range',
+  premium: 'Premium',
+  luxury: 'Luxury',
+};
+
+/** What they look for on a label. Preferences, recorded as stated. */
+export type ProductFactor =
+  | 'sulfateFree'
+  | 'siliconeFree'
+  | 'fragranceFree'
+  | 'parabenFree'
+  | 'vegan'
+  | 'crueltyFree'
+  | 'noPreference';
+
+export const PRODUCT_FACTOR_LABELS: Record<ProductFactor, string> = {
+  sulfateFree: 'Sulfate-free',
+  siliconeFree: 'Silicone-free',
+  fragranceFree: 'Fragrance-free',
+  parabenFree: 'Paraben-free',
+  vegan: 'Vegan',
+  crueltyFree: 'Cruelty-free',
+  noPreference: 'No preferences',
+};
+
+/**
+ * Ingredients they tell us they have reacted to. Their own history, kept
+ * so the shelf can say "you said fragrance bothers you" beside a label
+ * that lists it — and nothing more than that.
+ */
+export type IngredientReaction =
+  | 'sulfates'
+  | 'fragrance'
+  | 'essentialOils'
+  | 'alcohols'
+  | 'hairDye'
+  | 'smoothingTreatments'
+  | 'none';
+
+export const INGREDIENT_REACTION_LABELS: Record<IngredientReaction, string> = {
+  sulfates: 'Sulfates',
+  fragrance: 'Fragrance/parfum',
+  essentialOils: 'Essential oils',
+  alcohols: 'Alcohols',
+  hairDye: 'Hair dye (PPD)',
+  smoothingTreatments: 'Keratin/smoothing treatments',
+  none: 'None',
+};
+
+/**
+ * Scalp conditions a professional has told them about.
+ *
+ * Self-report of somebody else's words: the question asks what they have
+ * been told, and the answer is stored as that. The app never arrives at
+ * one of these on its own, from a photograph or from anything else.
+ */
+export type ScalpCondition =
+  | 'dandruff'
+  | 'seborrheicDermatitis'
+  | 'psoriasis'
+  | 'eczema'
+  | 'none';
+
+export const SCALP_CONDITION_LABELS: Record<ScalpCondition, string> = {
+  dandruff: 'Dandruff',
+  seborrheicDermatitis: 'Seborrheic dermatitis',
+  psoriasis: 'Psoriasis',
+  eczema: 'Eczema',
+  none: 'None',
+};
+
+/**
+ * Things going on in their life that they chose to mention. Context for
+ * the record, in their words; the app draws no line from any of these to
+ * anything it shows.
+ */
+export type LifeFactor =
+  | 'pregnancyOrPostpartum'
+  | 'menopause'
+  | 'thyroidOrHormonal'
+  | 'newMedication'
+  | 'illnessOrSurgery'
+  | 'none';
+
+export const LIFE_FACTOR_LABELS: Record<LifeFactor, string> = {
+  pregnancyOrPostpartum: 'Pregnancy or postpartum',
+  menopause: 'Menopause or perimenopause',
+  thyroidOrHormonal: 'Thyroid or hormonal condition',
+  newMedication: 'Started a medication recently',
+  illnessOrSurgery: 'Major illness or surgery this year',
+  none: 'None',
+};
+
+/** How often they use heat on their hair. */
+export type HeatStyling = 'daily' | 'fewTimesWeek' | 'weekly' | 'rarely' | 'never';
+
+export const HEAT_STYLING_LABELS: Record<HeatStyling, string> = {
+  daily: 'Daily',
+  fewTimesWeek: 'A few times a week',
+  weekly: 'Weekly',
+  rarely: 'Rarely',
+  never: 'Never',
+};
+
+/**
+ * Whether a value off disk is one of the choices a label table names.
+ *
+ * Own keys only: `'constructor' in labels` is true of every object, and a
+ * blob is exactly the kind of place such a string turns up.
+ */
+function isChoiceIn<K extends string>(labels: Record<K, string>) {
+  return (value: unknown): value is K =>
+    typeof value === 'string' && Object.prototype.hasOwnProperty.call(labels, value);
+}
+
+/**
+ * The members of `list` that `labels` knows, in order.
+ *
+ * Everything here comes off disk, so none of it can be trusted to be
+ * what the type says. A value the app no longer offers — renamed in a
+ * later version, or simply corrupt — used to render as a blank line;
+ * once it is fed to a label table it becomes a crash on the Profile tab
+ * instead. And a list is only an array in the type: a string on disk has
+ * a length too, and would pass a truthiness check and then iterate
+ * character by character. Anything that is not an array reads as empty.
+ */
+export function knownChoices<K extends string>(list: unknown, labels: Record<K, string>): K[] {
+  return Array.isArray(list) ? list.filter(isChoiceIn(labels)) : [];
+}
+
+/** `value` when `labels` knows it, else undefined. Same rule, one answer. */
+export function knownChoice<K extends string>(
+  value: unknown,
+  labels: Record<K, string>,
+): K | undefined {
+  return isChoiceIn(labels)(value) ? value : undefined;
+}
+
 /** How often hair crosses their mind, from rarely to often. */
 export const PREOCCUPATION_STEPS = 5;
 
@@ -309,8 +562,13 @@ export const PREOCCUPATION_STEPS = 5;
 export type Profile = {
   id: string;
   displayName: string;
-  /** Asked at the end of onboarding, and optional. Shown on their card. */
+  /**
+   * A number, on journeys that typed one before the question became a
+   * choice of bands. Nothing writes it any more; read `profileAgeBand`.
+   */
   age?: number;
+  /** The band they picked. Optional: the question can be passed over. */
+  ageBand?: AgeBand;
   /** Chooses the reference imagery. See `Gender`. */
   gender?: Gender;
   /** Local file URI or remote URL; undefined renders initials. */
@@ -365,8 +623,123 @@ export type Journey = {
   selfConsistency?: SelfConsistency;
   /** Days between photo-session reminders. */
   updateIntervalDays: number;
+  /*
+    What the person knows about themselves, one field per funnel question.
+
+    All optional, and all additive: every one arrived after journeys were
+    already on disk, and `SCHEMA_VERSION` is not bumped for a field that
+    reads as "unanswered" when absent (see the note on SCHEMA_VERSION).
+    Read the lists through `journeyConcerns` and friends, never directly —
+    `migrateJourney` drops values the app no longer offers on the way in,
+    but a record built in memory has not been through it.
+  */
+  hairType?: HairType;
+  scalpType?: ScalpType;
+  scalpSensitivity?: ScalpSensitivity;
+  concerns?: HairConcern[];
+  budget?: Budget;
+  productFactors?: ProductFactor[];
+  ingredientReactions?: IngredientReaction[];
+  scalpConditions?: ScalpCondition[];
+  lifeFactors?: LifeFactor[];
+  heatStyling?: HeatStyling;
   createdAt: string;
 };
+
+/*
+  The answer fields, grouped by shape, so the migration and the accessors
+  share one list and a field added to the type cannot be missed by either.
+*/
+const JOURNEY_LIST_ANSWERS = {
+  concerns: HAIR_CONCERN_LABELS,
+  productFactors: PRODUCT_FACTOR_LABELS,
+  ingredientReactions: INGREDIENT_REACTION_LABELS,
+  scalpConditions: SCALP_CONDITION_LABELS,
+  lifeFactors: LIFE_FACTOR_LABELS,
+} as const satisfies { [K in keyof Journey]?: Record<string, string> };
+
+const JOURNEY_CHOICE_ANSWERS = {
+  hairType: HAIR_TYPE_LABELS,
+  scalpType: SCALP_TYPE_LABELS,
+  scalpSensitivity: SCALP_SENSITIVITY_LABELS,
+  budget: BUDGET_LABELS,
+  heatStyling: HEAT_STYLING_LABELS,
+} as const satisfies { [K in keyof Journey]?: Record<string, string> };
+
+/**
+ * Their answers to the self-knowledge questions, validated.
+ *
+ * Each reads its field through the label table that names the choices,
+ * the way `journeyGoals` reads goals: a value the app never offered comes
+ * out as absent, and a list that is not one comes out empty.
+ */
+export function journeyConcerns(journey: Pick<Journey, 'concerns'>): HairConcern[] {
+  return knownChoices(journey.concerns, HAIR_CONCERN_LABELS);
+}
+
+export function journeyProductFactors(
+  journey: Pick<Journey, 'productFactors'>,
+): ProductFactor[] {
+  return knownChoices(journey.productFactors, PRODUCT_FACTOR_LABELS);
+}
+
+export function journeyReactions(
+  journey: Pick<Journey, 'ingredientReactions'>,
+): IngredientReaction[] {
+  return knownChoices(journey.ingredientReactions, INGREDIENT_REACTION_LABELS);
+}
+
+export function journeyScalpConditions(
+  journey: Pick<Journey, 'scalpConditions'>,
+): ScalpCondition[] {
+  return knownChoices(journey.scalpConditions, SCALP_CONDITION_LABELS);
+}
+
+/** The life factors they chose to mention. */
+export function journeyFactors(journey: Pick<Journey, 'lifeFactors'>): LifeFactor[] {
+  return knownChoices(journey.lifeFactors, LIFE_FACTOR_LABELS);
+}
+
+export function journeyHairType(journey: Pick<Journey, 'hairType'>): HairType | undefined {
+  return knownChoice(journey.hairType, HAIR_TYPE_LABELS);
+}
+
+export function journeyScalpType(journey: Pick<Journey, 'scalpType'>): ScalpType | undefined {
+  return knownChoice(journey.scalpType, SCALP_TYPE_LABELS);
+}
+
+export function journeyScalpSensitivity(
+  journey: Pick<Journey, 'scalpSensitivity'>,
+): ScalpSensitivity | undefined {
+  return knownChoice(journey.scalpSensitivity, SCALP_SENSITIVITY_LABELS);
+}
+
+export function journeyBudget(journey: Pick<Journey, 'budget'>): Budget | undefined {
+  return knownChoice(journey.budget, BUDGET_LABELS);
+}
+
+export function journeyHeatStyling(
+  journey: Pick<Journey, 'heatStyling'>,
+): HeatStyling | undefined {
+  return knownChoice(journey.heatStyling, HEAT_STYLING_LABELS);
+}
+
+/**
+ * The band they picked, or the one a typed age from an older journey
+ * falls in, or nothing. A number outside any band — negative, NaN, a
+ * string that got in somehow — reads as nothing rather than as a guess.
+ */
+export function profileAgeBand(profile: Pick<Profile, 'age' | 'ageBand'>): AgeBand | undefined {
+  const picked = knownChoice(profile.ageBand, AGE_BAND_LABELS);
+  if (picked) return picked;
+  const age = profile.age;
+  if (typeof age !== 'number' || !Number.isFinite(age) || age < 0 || age > 130) return undefined;
+  if (age < 25) return 'under25';
+  if (age < 35) return '25to34';
+  if (age < 45) return '35to44';
+  if (age <= 60) return '45to60';
+  return 'over60';
+}
 
 /**
  * Their goals, whichever shape the record is in.
@@ -378,21 +751,11 @@ export type Journey = {
  * selected" arrives as an empty list rather than as a crash.
  */
 export function journeyGoals(journey: Pick<Journey, 'goals' | 'goal'>): HairGoal[] {
-  /*
-    Everything here comes off disk, so none of it can be trusted to be
-    what the type says. A goal the app no longer offers — renamed in a
-    later version, or simply corrupt — used to render as a blank line;
-    once it is fed to a label table it becomes a crash on the Profile
-    tab instead. And `goals` is only an array in the type: a string on
-    disk has a length too, and would pass a truthiness check and then
-    iterate character by character.
-  */
-  const known = (value: unknown): value is HairGoal =>
-    typeof value === 'string' && value in HAIR_GOAL_LABELS;
-
-  const list = Array.isArray(journey.goals) ? journey.goals.filter(known) : [];
+  // Off disk, so validated the way every answer is: see `knownChoices`.
+  const list = knownChoices(journey.goals, HAIR_GOAL_LABELS);
   if (list.length > 0) return list;
-  return known(journey.goal) ? [journey.goal] : [];
+  const single = knownChoice(journey.goal, HAIR_GOAL_LABELS);
+  return single ? [single] : [];
 }
 
 /**
@@ -1063,6 +1426,11 @@ export type AppData = {
  * NOT bumped for `PhotoSession.scan` or `Photo.capture: 'scan'` either,
  * by the same rule again — nor for `Photo.regions`, which the report
  * reads as "crop by the fallback" when it is absent.
+ *
+ * NOT bumped for the self-knowledge answers (`Journey.hairType` through
+ * `heatStyling`, and `Profile.ageBand`): every one is optional, absent
+ * means unanswered, and `migrateJourney` drops a value the app no longer
+ * offers instead of crashing on it.
  */
 export const SCHEMA_VERSION = 2;
 
@@ -1093,7 +1461,129 @@ export const EMPTY_DATA: AppData = {
 export function migrateJourney(journey: Journey): Journey {
   const next: Journey = { ...journey, goals: journeyGoals(journey) };
   delete next.goal;
+
+  /*
+    The self-knowledge answers: a value the app no longer offers is
+    dropped rather than carried to a label table that would crash on it.
+    Only fields that are present are touched — an absent answer stays
+    absent, so a journey from before the questions existed comes out
+    exactly as it went in, with no new keys.
+  */
+  const record = next as Record<string, unknown>;
+  // Entries of a union of tables: each is read as a plain table of strings.
+  const lists = Object.entries(JOURNEY_LIST_ANSWERS) as [string, Record<string, string>][];
+  const choices = Object.entries(JOURNEY_CHOICE_ANSWERS) as [string, Record<string, string>][];
+  for (const [field, labels] of lists) {
+    if (!Object.prototype.hasOwnProperty.call(record, field)) continue;
+    record[field] = knownChoices(record[field], labels);
+  }
+  for (const [field, labels] of choices) {
+    if (!Object.prototype.hasOwnProperty.call(record, field)) continue;
+    if (knownChoice(record[field], labels) === undefined) delete record[field];
+  }
   return next;
+}
+
+/**
+ * One profile, brought forward by the same rule: an age band the app
+ * never offered is dropped; everything else, including a typed `age`,
+ * is left exactly as it was.
+ */
+export function migrateProfile(profile: Profile): Profile {
+  if (!Object.prototype.hasOwnProperty.call(profile, 'ageBand')) return profile;
+  if (profileAgeBand({ ageBand: profile.ageBand }) !== undefined) return profile;
+  const next = { ...profile };
+  delete next.ageBand;
+  return next;
+}
+
+/* ------------------------------------------------------------------ */
+/*
+  Saving the funnel one answer at a time.
+
+  The funnel used to hold every answer in screen state and write a journey
+  once, at the end. Now each page saves what it was told as it is told, so
+  a person who closes the app on question nine finds their answers on
+  question nine. The first answer creates the profile and journey it lands
+  on; every later one merges in. Nothing here touches
+  `onboardingCompletedAt`, so a journey with answers and no completion
+  stamp is a funnel in progress, and `hasJourney` still says so.
+*/
+
+/** What one funnel page can set. Either half may be absent. */
+export type FunnelAnswer = {
+  profile?: Partial<Pick<Profile, 'displayName' | 'age' | 'ageBand' | 'gender' | 'avatarUri'>>;
+  journey?: Partial<Omit<Journey, 'id' | 'profileId' | 'createdAt'>>;
+};
+
+/** Days between reminders before the person has chosen. */
+export const DEFAULT_UPDATE_INTERVAL_DAYS = 30;
+
+/** A journey with nothing answered yet, for the first answer to land on. */
+export function emptyJourney(id: string, profileId: string, now: string): Journey {
+  return {
+    id,
+    profileId,
+    startedAt: now,
+    trackingAreas: [],
+    motivations: [],
+    goals: [],
+    triggers: [],
+    approaches: [],
+    updateIntervalDays: DEFAULT_UPDATE_INTERVAL_DAYS,
+    createdAt: now,
+  };
+}
+
+/** Ids and a timestamp for records `withAnswer` may have to create. */
+export type FreshRecords = { profileId: string; journeyId: string; now: string };
+
+/**
+ * The data with one answer merged in.
+ *
+ * Creates the profile and journey when there are none yet — ids and the
+ * timestamp come from `fresh`, so this stays a pure function the tests
+ * can pin — and otherwise merges into what is there. Answers go through
+ * the same validation as a record off disk, so an unknown value is
+ * dropped at the moment it is written rather than the next time the app
+ * loads; and a single `goal`, which the main-goal page still sets, is
+ * folded into `goals` here the way the loader folds it.
+ *
+ * A display name is trimmed, and an empty one keeps whatever name was
+ * there before: a person who clears the field and moves on has not
+ * renamed themselves to nothing.
+ */
+export function withAnswer(data: AppData, answer: FunnelAnswer, fresh: FreshRecords): AppData {
+  const profile: Profile = data.profile ?? {
+    id: fresh.profileId,
+    displayName: 'You',
+    createdAt: fresh.now,
+  };
+  const journey: Journey = data.journey ?? emptyJourney(fresh.journeyId, profile.id, fresh.now);
+
+  let nextProfile = profile;
+  if (answer.profile) {
+    const { displayName, ...rest } = answer.profile;
+    const trimmed = displayName?.trim();
+    nextProfile = migrateProfile({
+      ...profile,
+      ...rest,
+      displayName: trimmed || profile.displayName,
+    });
+  }
+
+  let nextJourney = journey;
+  if (answer.journey) {
+    const patch = { ...answer.journey };
+    // The main-goal page picks one; `goals` is where every reader looks.
+    if (patch.goal !== undefined && patch.goals === undefined) {
+      const goal = knownChoice(patch.goal, HAIR_GOAL_LABELS);
+      patch.goals = goal ? [goal] : [];
+    }
+    nextJourney = migrateJourney({ ...journey, ...patch });
+  }
+
+  return { ...data, profile: nextProfile, journey: nextJourney };
 }
 
 /**
@@ -1115,5 +1605,9 @@ export function migrateStoredData(parsed: unknown): AppData | null {
   // Fields added since the blob was written read their default from
   // EMPTY_DATA; fields whose shape changed are migrated by hand.
   const data: AppData = { ...EMPTY_DATA, ...stored };
-  return { ...data, journey: data.journey ? migrateJourney(data.journey) : null };
+  return {
+    ...data,
+    profile: data.profile ? migrateProfile(data.profile) : null,
+    journey: data.journey ? migrateJourney(data.journey) : null,
+  };
 }

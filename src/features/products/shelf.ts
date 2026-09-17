@@ -25,7 +25,13 @@
  *      judgement.
  *   3. WHAT THEY TOLD US — the onboarding answers, read back in their own
  *      words, and a plain word comparison between those answers and the
- *      text on their list.
+ *      text on their list — or, for what they look for on a label and
+ *      what they have reacted to, between those answers and the words
+ *      of the database's own ingredient text and tags. A hit quotes the
+ *      word as the database prints it; a miss names the words looked
+ *      for. "Sulfate-free" is never said of a bottle: the database does
+ *      not state it, and a list that does not print a word is only a
+ *      list that does not print that word.
  *
  * ── What this module deliberately does NOT do ─────────────────────────
  * An earlier draft held a fixed table of four things a routine might be
@@ -63,11 +69,17 @@ import { formatDate } from '@/lib/date';
 import { activeRoutineItems } from '@/store/selectors';
 import {
   HAIR_GOAL_LABELS,
+  INGREDIENT_REACTION_LABELS,
   MEDICATION_LABELS,
+  PRODUCT_FACTOR_LABELS,
   TRACKING_AREA_LABELS,
   journeyGoals,
+  journeyProductFactors,
+  journeyReactions,
   type AppData,
+  type IngredientReaction,
   type Product,
+  type ProductFactor,
   type ProductSource,
   type RoutineItem,
 } from '@/types/domain';
@@ -150,6 +162,10 @@ export type ShelfAnswers = {
   goals: string[];
   /** Verbatim MEDICATION_LABELS, plus whatever they typed. */
   using: string[];
+  /** Verbatim PRODUCT_FACTOR_LABELS: what they look for on a label. */
+  preferences: string[];
+  /** Verbatim INGREDIENT_REACTION_LABELS: what they said has bothered them. */
+  reactions: string[];
 };
 
 export type Shelf = {
@@ -209,6 +225,39 @@ const GENERIC_WORDS: ReadonlySet<string> = new Set([
   'something',
   'else',
 ]);
+
+/**
+ * The letters looked for in the database's ingredient text, for each
+ * answer about labels that has something to look for.
+ *
+ * Each entry is a run of letters an ingredient name is printed with —
+ * "sulfate" in "Sodium Laureth Sulfate", "paraben" inside
+ * "Methylparaben", "methicone" inside "Dimethicone" — and the sentence
+ * that reports one quotes the whole printed word it was found in, so
+ * the reader can check it against the list on the same screen. It is a
+ * statement about letters on a list and nothing more: Tress does not
+ * know what any of these does, and says so under the lines. An answer
+ * with no entry here — cruelty-free, essential oils, a dye, a smoothing
+ * service — has nothing in a database record to be held against, and
+ * the shelf says that rather than inventing a word to look for.
+ *
+ * Five letters or more each, so a run cannot land inside an unrelated
+ * word the way "oil" lands in "boiling".
+ */
+const LABEL_LETTERS: Partial<Record<ProductFactor | IngredientReaction, readonly string[]>> = {
+  sulfateFree: ['sulfate', 'sulphate'],
+  sulfates: ['sulfate', 'sulphate'],
+  fragranceFree: ['parfum', 'fragrance'],
+  fragrance: ['parfum', 'fragrance'],
+  parabenFree: ['paraben'],
+  siliconeFree: ['silicone', 'methicone', 'siloxane'],
+  alcohols: ['alcohol'],
+};
+
+/** The one answer the database states as a tag of its own. */
+const TAGGED_FACTOR: Partial<Record<ProductFactor, { tag: string; word: string }>> = {
+  vegan: { tag: 'en:vegan', word: 'vegan' },
+};
 
 /* ------------------------------ helpers ------------------------------- */
 
@@ -355,9 +404,153 @@ function findWord(
   return undefined;
 }
 
+/**
+ * The first printed word of `text` that contains `letters`, as printed.
+ *
+ * A word here is a run of letters between anything else — a comma, a
+ * space, a slash, a digit — so "PARFUM/FRAGRANCE" yields "PARFUM" and
+ * "Methylparaben" is returned whole for "paraben". Case is kept so the
+ * sentence quotes the list as it is shown.
+ */
+function printedWordContaining(text: string, letters: string): string | undefined {
+  for (const word of text.split(/[^A-Za-z]+/)) {
+    if (word.length > 0 && word.toLowerCase().includes(letters)) return word;
+  }
+  return undefined;
+}
+
+/** What they said about labels, as the shelf reads it: answers with nothing to say are left out. */
+type LabelAnswers = {
+  factors: ProductFactor[];
+  reactions: IngredientReaction[];
+};
+
+function labelAnswersOf(data: AppData): LabelAnswers {
+  const journey = data.journey;
+  if (!journey) return { factors: [], reactions: [] };
+  return {
+    factors: journeyProductFactors(journey).filter((f) => f !== 'noPreference'),
+    reactions: journeyReactions(journey).filter((r) => r !== 'none'),
+  };
+}
+
+/**
+ * The lines about a database record and what they told us about labels.
+ *
+ * One per answer, on every record the database holds text for. Each
+ * opens with the answer as they gave it, then states what was found:
+ * the database's own tag, quoted; a printed word from its ingredient
+ * list, quoted; or the letters that were looked for and not found. A
+ * record with no ingredient list gets one line saying so. A typed
+ * record gets nothing here — there is no database text to hold an
+ * answer against, and `ingredientsNote` already says that.
+ */
+function buildLabelFacts(product: Product, answers: LabelAnswers): ShelfFact[] {
+  if (product.source !== 'openBeautyFacts') return [];
+  const asked: { id: string; opener: string; label: string; key: ProductFactor | IngredientReaction; tag?: { tag: string; word: string } }[] = [
+    ...answers.factors.map((f) => ({
+      id: `${product.barcode}:factor:${f}`,
+      opener: `You said you look for ${quoted(PRODUCT_FACTOR_LABELS[f])}.`,
+      label: PRODUCT_FACTOR_LABELS[f],
+      key: f,
+      tag: TAGGED_FACTOR[f],
+    })),
+    ...answers.reactions.map((r) => ({
+      id: `${product.barcode}:reaction:${r}`,
+      opener: `You said you have reacted to ${quoted(INGREDIENT_REACTION_LABELS[r])}.`,
+      label: INGREDIENT_REACTION_LABELS[r],
+      key: r,
+    })),
+  ];
+  if (asked.length === 0) return [];
+
+  const facts: ShelfFact[] = [];
+  const text = product.ingredientsText;
+  const tags = Array.isArray(product.analysisTags) ? product.analysisTags : [];
+  const nothingToCheck: string[] = [];
+  let listNeeded = false;
+
+  for (const ask of asked) {
+    if (ask.tag) {
+      const stated = tags.includes(ask.tag.tag);
+      facts.push({
+        id: ask.id,
+        text: stated
+          ? `${ask.opener} Open Beauty Facts tags this record ${ask.tag.word}, in its own wording.`
+          : `${ask.opener} Open Beauty Facts states no ${ask.tag.word} tag for this record, which says nothing either way.`,
+        quotes: [ask.label],
+        mentioned: stated,
+      });
+      continue;
+    }
+
+    const letters = LABEL_LETTERS[ask.key];
+    if (!letters) {
+      nothingToCheck.push(ask.label);
+      continue;
+    }
+    if (text === undefined) {
+      listNeeded = true;
+      continue;
+    }
+
+    let hit: { letters: string; word: string } | undefined;
+    for (const run of letters) {
+      const word = printedWordContaining(text, run);
+      if (word !== undefined) {
+        hit = { letters: run, word };
+        break;
+      }
+    }
+
+    if (hit) {
+      const whole = hit.word.toLowerCase() === hit.letters;
+      facts.push({
+        id: ask.id,
+        text: whole
+          ? `${ask.opener} The word ${quoted(hit.word)} is printed in the ingredient list Open Beauty Facts holds for this record.`
+          : `${ask.opener} The word ${quoted(hit.word)} is printed in the ingredient list Open Beauty Facts holds for this record, and contains ${hit.letters}.`,
+        quotes: [ask.label, hit.word],
+        mentioned: true,
+      });
+    } else {
+      const looked = letters.length === 1 ? `the letters ${letters[0]}` : `the letters ${letters.join(' or ')}`;
+      facts.push({
+        id: ask.id,
+        text: `${ask.opener} Tress looked for ${looked} in the ingredient list Open Beauty Facts holds for this record and found neither a word made of them nor a word containing them.`,
+        quotes: [ask.label],
+        mentioned: false,
+      });
+    }
+  }
+
+  if (listNeeded) {
+    facts.push({
+      id: `${product.barcode}:labels:noList`,
+      text: 'Open Beauty Facts holds no ingredient list for this record, so there is no text to hold your answers about labels against.',
+      quotes: [],
+    });
+  }
+  if (nothingToCheck.length > 0) {
+    facts.push({
+      id: `${product.barcode}:labels:unchecked`,
+      text: `Nothing in the database record can be held against ${quotedList(nothingToCheck)}, so Tress says nothing about ${nothingToCheck.length === 1 ? 'it' : 'them'} here.`,
+      quotes: [...nothingToCheck],
+    });
+  }
+  if (facts.some((f) => f.mentioned !== undefined)) {
+    facts.push({
+      id: `${product.barcode}:labels:note`,
+      text: 'Those are statements about words on a list and tags in a database, not about the bottle: a list can name the same thing another way, and Tress holds no information about what anything in it does.',
+      quotes: [],
+    });
+  }
+  return facts;
+}
+
 /* ------------------------------ building ------------------------------ */
 
-function buildProduct(product: Product, linkedTo: RoutineItem | undefined): ShelfProduct {
+function buildProduct(product: Product, linkedTo: RoutineItem | undefined, answers: LabelAnswers): ShelfProduct {
   const fromDatabase = product.source === 'openBeautyFacts';
   const facts: ShelfFact[] = [];
 
@@ -382,6 +575,8 @@ function buildProduct(product: Product, linkedTo: RoutineItem | undefined): Shel
           quotes: [],
         },
   );
+
+  facts.push(...buildLabelFacts(product, answers));
 
   const databaseNotes = fromDatabase ? analysisNotes(product.analysisTags) : [];
 
@@ -587,11 +782,20 @@ function buildAnswers(data: AppData): ShelfAnswers {
   */
   const once = (values: string[]): string[] => [...new Set(values)];
 
+  const preferences = journey
+    ? journeyProductFactors(journey).map((f) => PRODUCT_FACTOR_LABELS[f])
+    : [];
+  const reactions = journey
+    ? journeyReactions(journey).map((r) => INGREDIENT_REACTION_LABELS[r])
+    : [];
+
   return {
     note: 'Your own answers from the start, read back. They decide nothing on this screen.',
     watching: once(watching),
     goals: once(goals),
     using: once(using),
+    preferences: once(preferences),
+    reactions: once(reactions),
   };
 }
 
@@ -615,10 +819,11 @@ export function buildShelf(data: AppData): Shelf {
   const sorted = [...data.products].sort(byRecency);
   const onYourList: ShelfProduct[] = [];
   const scannedOnly: ShelfProduct[] = [];
+  const labelAnswers = labelAnswersOf(data);
 
   for (const product of sorted) {
     const linkedTo = linkedBy.get(product.barcode);
-    const built = buildProduct(product, linkedTo);
+    const built = buildProduct(product, linkedTo, labelAnswers);
     (linkedTo ? onYourList : scannedOnly).push(built);
   }
 
@@ -691,6 +896,8 @@ export function shelfSentences(shelf: Shelf): ShelfFact[] {
     ['watching', shelf.answers.watching],
     ['goals', shelf.answers.goals],
     ['using', shelf.answers.using],
+    ['preferences', shelf.answers.preferences],
+    ['reactions', shelf.answers.reactions],
   ];
   for (const [group, values] of chipGroups) {
     values.forEach((text, i) => {

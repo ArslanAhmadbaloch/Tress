@@ -1,31 +1,54 @@
 /**
- * The onboarding script's last step: the invitation into the Hair Scan.
+ * The onboarding funnel: its order, its questions, and its last step.
+ *
+ * The funnel runs in the reference app's rhythm — welcome, the mascot,
+ * a name, the questions with one beat of encouragement among them, the
+ * notifications ask, and the invitation into the Hair Scan. The order is
+ * pinned here, and so is the shape of every question: the word the
+ * bubble colours is a word the title has, a pill row is label only, a
+ * row has its icon, a multi question has a way past, and every answer
+ * lands on the field it names and reads back as the choice that was
+ * made. That last one is the funnel's resume mechanism, so it is walked
+ * end to end below.
+ *
+ * The words are swept the way every sentence in the app is swept. The
+ * questions ask what the person knows about themselves and promise
+ * nothing; the options are the labels of choices; the mascot is the one
+ * voice allowed to say "I", and it may not claim to know anything.
  *
  * The baseline is one continuous scan, and every word before the camera
- * — the invitation, the what-it-does beats, the example journeys, the
- * profile report — must describe that scan rather than the five-angle
- * capture it replaced. The old flow's language is swept here, alongside
- * the claims no copy in the app may make.
- *
- * The invitation itself is held to two shapes: the headline carries the
- * person's name when there is one and stands on its own when there is
- * not, and the three cards pinned to the photograph are labels of what
- * they chose, never findings about them.
- *
- * The hero's geometry is checked here too, because it failed once by
- * arithmetic: a ring on a temple sat under the card meant to point at
- * it. Every ring must sit clear of every card, every line must be long
- * enough to read as a line, no line may pass under another card and no
- * two lines may cross — at every width the app runs on, whatever the
- * cards' heights.
+ * must describe that scan rather than the five-angle capture it
+ * replaced. The invitation is held to two shapes: the headline carries
+ * the person's name when there is one and stands on its own when there
+ * is not, and the three cards pinned to the photograph are labels of
+ * what they chose, never findings about them. The hero's geometry is
+ * checked here too, because it failed once by arithmetic: every ring
+ * must sit clear of every card, every line must be long enough to read
+ * as a line, no line may pass under another card and no two lines may
+ * cross — at every width the app runs on, whatever the cards' heights.
  */
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { greet, splitAccent } from '@/components/onboarding/kit/copy';
 import { caseStudies } from '@/features/onboarding/case-studies';
 import { HELP_BEATS, HELP_FIGURES, HELP_TITLE } from '@/features/onboarding/how-it-helps';
 import { buildProfileReport } from '@/features/onboarding/profile-report';
+import {
+  FUNNEL_STEPS,
+  QUESTIONS,
+  SELECT_SETTLE_MS,
+  answerOf,
+  answerPatch,
+  funnelSteps,
+  optionsOf,
+  profileName,
+  resumeIndex,
+  toggleChoice,
+  type FunnelStep,
+  type Question,
+} from '@/features/onboarding/questions';
 import {
   COPY,
   INVITE_CARD_PAD,
@@ -33,6 +56,7 @@ import {
   INVITE_PILLS,
   areaChoiceLabel,
   funnelContent,
+  interstitialTitle,
   inviteCallouts,
   inviteCardRect,
   inviteExitPoint,
@@ -43,9 +67,15 @@ import {
   type InvitePoint,
   type InviteRect,
 } from '@/features/onboarding/script';
-import { HAIR_GOAL_LABELS } from '@/types/domain';
+import {
+  EMPTY_DATA,
+  HAIR_GOAL_LABELS,
+  withAnswer,
+  type AppData,
+  type Gender,
+} from '@/types/domain';
 
-import { assertHonest } from './honesty-words';
+import { ADVICE, FLATTERY, HAIR_CLAIMS, URGENCY, assertHonest } from './honesty-words';
 
 const OLD_FLOW = /\bfive\b|5[- ]angles?|photo sets?|set of photos|one at a time|hold still for each/i;
 
@@ -497,4 +527,346 @@ test('onboarding: the profile report describes the scan, not the old photo sets'
       assert.match(watching?.meaning ?? '', /front, both sides and the top/);
     }
   }
+});
+
+/* ------------------------------ the funnel ------------------------------ */
+
+const FRESH = { profileId: 'prof_test', journeyId: 'jrn_test', now: '2026-09-17T09:41:00.000Z' };
+
+const ids = (steps: FunnelStep[]) => steps.map((s) => s.id);
+const indexOf = (steps: FunnelStep[], id: FunnelStep['id']) => ids(steps).indexOf(id);
+const questionSteps = (steps: FunnelStep[]) =>
+  steps.filter((s): s is Extract<FunnelStep, { kind: 'question' }> => s.kind === 'question');
+
+/** Both wordings of every question's options. */
+const everyOption = (q: Question) =>
+  (['male', 'female'] as Gender[]).flatMap((g) => optionsOf(q, g));
+
+/**
+ * The sweep for a choice the person makes: the words are theirs, so the
+ * first-person ban does not apply, but nothing they can tick may claim,
+ * flatter, advise, hurry or shout. "Nothing right now" is the one
+ * choice that shares words with a nudge — it is an answer, not a push —
+ * so that phrase alone is lifted from the urgency check here.
+ */
+const CHOICE_URGENCY = new RegExp(URGENCY.source.replace('|right now', ''), 'i');
+
+function assertHonestChoices(sentences: string[], context: string): void {
+  const text = sentences.join(' ');
+  const lower = text.toLowerCase();
+  for (const w of [...HAIR_CLAIMS, ...FLATTERY, ...ADVICE]) {
+    assert.ok(!lower.includes(w), `${context} must not say "${w}"`);
+  }
+  assert.ok(!CHOICE_URGENCY.test(text), `${context} hurries somebody: ${text}`);
+  assert.ok(!text.includes('!'), `${context} must not exclaim`);
+}
+
+/**
+ * The sweep for the mascot's own lines. It is the one voice allowed to
+ * say "I", so that clause of the persona check is lifted — and only
+ * that clause: it may still not think, know, read or promise anything,
+ * may not call itself an AI, and may not claim any expertise at all.
+ * Typographic apostrophes are normalised first so the lift is explicit
+ * rather than an accident of punctuation.
+ */
+function assertMascotVoice(sentences: string[], context: string): void {
+  const text = sentences.join(' ').replace(/’/g, "'");
+  const lower = text.toLowerCase();
+  for (const w of [...HAIR_CLAIMS, ...FLATTERY, ...ADVICE]) {
+    assert.ok(!lower.includes(w), `${context} must not say "${w}"`);
+  }
+  assert.ok(!URGENCY.test(text), `${context} hurries somebody: ${text}`);
+  assert.ok(!text.includes('!'), `${context} must not exclaim`);
+  assert.ok(
+    !/\b(AI|assistant|bot)\b|\bI (think|believe|can|cannot|would|read|am|will|know)\b/.test(text),
+    `${context} claims a mind: ${text}`,
+  );
+  assert.ok(
+    !/expert|dermatolog|scien|clinic|trust|analy|diagnos|result/i.test(text),
+    `${context} claims expertise: ${text}`,
+  );
+}
+
+test('funnel: the steps run in the reference order, with no progress bar to count against', () => {
+  assert.deepEqual(ids(FUNNEL_STEPS), [
+    'welcome',
+    'intro',
+    'name',
+    'age',
+    'gender',
+    'hairType',
+    'scalpType',
+    'scalpSensitivity',
+    'interstitial',
+    'goal',
+    'concerns',
+    'noticed',
+    'approaches',
+    'medications',
+    'budget',
+    'productFactors',
+    'ingredientReactions',
+    'scalpConditions',
+    'lifeFactors',
+    'heatStyling',
+    'notifications',
+    'invite',
+  ]);
+  // The beat sits where the reference puts its own: after the sensitivity question.
+  assert.equal(indexOf(FUNNEL_STEPS, 'interstitial'), indexOf(FUNNEL_STEPS, 'scalpSensitivity') + 1);
+  assert.equal(FUNNEL_STEPS[FUNNEL_STEPS.length - 1].id, 'invite', 'the scan invitation is the last page');
+  assert.equal(FUNNEL_STEPS[FUNNEL_STEPS.length - 2].id, 'notifications');
+  assert.equal(FUNNEL_STEPS[0].id, 'welcome');
+  // Every question the funnel has is on the walk, once.
+  assert.deepEqual(
+    questionSteps(FUNNEL_STEPS).map((s) => s.id),
+    QUESTIONS.map((q) => q.id),
+  );
+});
+
+test('funnel: the medication question is only asked of somebody it is worth asking, and reminders once', () => {
+  const asked = (approaches: never[] | string[]) =>
+    ids(funnelSteps({ approaches: approaches as never }, { askReminders: true }));
+  assert.ok(!asked([]).includes('medications'), 'nothing tried yet: no list of drugs');
+  assert.ok(!asked(['nothing', 'figuring']).includes('medications'));
+  assert.ok(asked(['topical']).includes('medications'));
+  assert.ok(asked(['clinic']).includes('medications'));
+  assert.ok(!ids(funnelSteps(null, { askReminders: false })).includes('notifications'));
+  assert.ok(ids(funnelSteps(null, { askReminders: true })).includes('notifications'));
+});
+
+test('funnel: every question has the word its bubble colours, the shape its options take, and a way past', () => {
+  for (const q of QUESTIONS) {
+    const parts = splitAccent(q.title, q.accent);
+    assert.ok(parts, `${q.id}: "${q.accent}" is not a word of "${q.title}"`);
+    assert.equal(parts.before + parts.word + parts.after, q.title);
+
+    for (const gender of ['male', 'female'] as Gender[]) {
+      const options = optionsOf(q, gender);
+      assert.ok(options.length >= 2, `${q.id} offers a choice`);
+      assert.equal(new Set(options.map((o) => o.value)).size, options.length, `${q.id}: one value each`);
+      switch (q.kind) {
+        case 'pill':
+          for (const o of options) {
+            assert.equal(o.icon, undefined, `${q.id}: a pill row is label only`);
+            assert.equal(o.description, undefined, `${q.id}: a pill row is label only`);
+          }
+          break;
+        case 'row':
+        case 'checkRows':
+          for (const o of options) assert.ok(o.icon, `${q.id}: "${o.label}" needs its outline icon`);
+          break;
+        case 'cards':
+          for (const o of options) assert.ok(o.icon, `${q.id}: "${o.label}" needs its icon`);
+          break;
+        case 'textCards':
+          for (const o of options) assert.equal(o.icon, undefined, `${q.id}: text cards carry no icon`);
+          break;
+      }
+      if (q.exclusive !== undefined) {
+        assert.ok(options.some((o) => o.value === q.exclusive), `${q.id}: the exclusive choice is on offer`);
+      }
+      // Only the budget rows carry a coloured disc.
+      for (const o of options) {
+        assert.equal(o.tint !== undefined, q.id === 'budget', `${q.id}: tint on "${o.label}"`);
+      }
+    }
+
+    if (q.multi) {
+      // The way past is a row of the question's own — the reference's
+      // "No, I don't" — never a helper control beneath the bar.
+      const escape = q.exclusive !== undefined ||
+        everyOption(q).some((o) => ['nothing', 'none', 'noPreference'].includes(o.value));
+      assert.ok(escape, `${q.id}: a multi question needs a way past with nothing ticked`);
+      if (q.emptyAs !== undefined) {
+        assert.equal(q.exclusive, q.emptyAs, `${q.id}: the "none" row clears the rest`);
+        assert.ok(!(q.skip), `${q.id}: one way past, not two`);
+      }
+    } else {
+      assert.equal(q.exclusive, undefined, `${q.id}: a single choice has nothing to be exclusive of`);
+      assert.equal(q.emptyAs, undefined, `${q.id}: a single choice advances on its own`);
+      assert.equal(q.skip, undefined, `${q.id}: a single choice advances on its own`);
+    }
+  }
+  // Only the one question that asks for medical information may be withheld.
+  assert.deepEqual(QUESTIONS.filter((q) => q.skip).map((q) => q.id), ['medications']);
+  // The concerns page is the reference's: full-width rows with a check, and a "nothing else" row of its own.
+  assert.deepEqual(QUESTIONS.filter((q) => q.emptyAs).map((q) => q.id), ['concerns']);
+  assert.equal(QUESTIONS.find((q) => q.id === 'concerns')?.kind, 'checkRows');
+  assert.ok(SELECT_SETTLE_MS >= 120 && SELECT_SETTLE_MS <= 300, 'the chosen row shows before the page moves');
+});
+
+test('funnel: every answer lands on the field it names and reads back as the choice made', () => {
+  for (const q of QUESTIONS) {
+    for (const gender of ['male', 'female'] as Gender[]) {
+      const options = optionsOf(q, gender).filter((o) => o.value !== q.exclusive);
+      const values = q.multi ? options.slice(0, 2).map((o) => o.value) : [options[0].value];
+      const data = withAnswer(EMPTY_DATA, answerPatch(q, values), FRESH);
+      assert.deepEqual(answerOf(q, data), values, `${q.id} (${gender}) round-trips`);
+
+      // The record is created by the first answer, and not completed by it.
+      assert.ok(data.journey && data.profile);
+      assert.equal(data.onboardingCompletedAt, null);
+    }
+    assert.equal(answerOf(q, EMPTY_DATA), null, `${q.id} reads as unanswered on an empty record`);
+  }
+
+  // The main goal is one choice that every reader finds under `goals`.
+  const goal = QUESTIONS.find((q) => q.id === 'goal');
+  assert.ok(goal);
+  const withGoal = withAnswer(EMPTY_DATA, answerPatch(goal, ['shedding']), FRESH);
+  assert.deepEqual(withGoal.journey?.goals, ['shedding']);
+
+  // "Nothing else" is a row the record has no word for: it is written as
+  // an empty list, which is an answer, not a gap, and reads back as the row.
+  const concerns = QUESTIONS.find((q) => q.id === 'concerns');
+  assert.ok(concerns);
+  const nothingElse = withAnswer(EMPTY_DATA, answerPatch(concerns, ['none']), FRESH);
+  assert.deepEqual(nothingElse.journey?.concerns, []);
+  assert.deepEqual(answerOf(concerns, nothingElse), ['none']);
+  assert.deepEqual(toggleChoice(['shedding', 'frizz'], 'none', 'none'), ['none']);
+  assert.deepEqual(toggleChoice(['none'], 'frizz', 'none'), ['frizz']);
+
+  // A withheld medication answer is on record as withheld: answered, nothing chosen.
+  const medications = QUESTIONS.find((q) => q.id === 'medications');
+  assert.ok(medications);
+  assert.deepEqual(answerOf(medications, withAnswer(EMPTY_DATA, answerPatch(medications, []), FRESH)), []);
+  // Where no such row exists, an empty list is the store's default and reads as unanswered.
+  const approaches = QUESTIONS.find((q) => q.id === 'approaches');
+  assert.ok(approaches);
+  assert.equal(answerOf(approaches, withAnswer(EMPTY_DATA, { journey: { approaches: [] } }, FRESH)), null);
+
+  // A value the app never offered is dropped where it is written.
+  const hairType = QUESTIONS.find((q) => q.id === 'hairType');
+  assert.ok(hairType);
+  assert.equal(answerOf(hairType, withAnswer(EMPTY_DATA, answerPatch(hairType, ['spiky']), FRESH)), null);
+});
+
+test('funnel: ticking the exclusive choice clears the rest, and the rest clear it', () => {
+  assert.deepEqual(toggleChoice([], 'a'), ['a']);
+  assert.deepEqual(toggleChoice(['a'], 'a'), []);
+  assert.deepEqual(toggleChoice(['a'], 'b', 'none'), ['a', 'b']);
+  assert.deepEqual(toggleChoice(['a', 'b'], 'none', 'none'), ['none']);
+  assert.deepEqual(toggleChoice(['none'], 'a', 'none'), ['a']);
+  assert.deepEqual(toggleChoice(['none'], 'none', 'none'), []);
+});
+
+test('funnel: a killed app comes back one step past the furthest answer on record', () => {
+  const steps = funnelSteps({ approaches: ['topical'] }, { askReminders: true });
+  const walk = (through: string, withholding: string[] = []): AppData => {
+    let data: AppData = withAnswer(EMPTY_DATA, { profile: { displayName: 'Sam' } }, FRESH);
+    for (const step of questionSteps(steps)) {
+      // "Prefer not to say" writes an empty answer, as the page does.
+      const first = withholding.includes(step.id) ? [] : [optionsOf(step.question, 'female')[0].value];
+      data = withAnswer(data, answerPatch(step.question, first), FRESH);
+      if (step.id === through) break;
+    }
+    return data;
+  };
+
+  assert.equal(resumeIndex(steps, EMPTY_DATA), 0, 'nothing on record: the welcome page');
+  assert.equal(
+    resumeIndex(steps, withAnswer(EMPTY_DATA, { profile: { displayName: 'Sam' } }, FRESH)),
+    indexOf(steps, 'age'),
+    'a name only: the first question',
+  );
+  assert.equal(resumeIndex(steps, walk('scalpSensitivity')), indexOf(steps, 'interstitial'));
+  assert.equal(resumeIndex(steps, walk('approaches')), indexOf(steps, 'medications'));
+  // The one question that may be withheld is not asked again on every return —
+  // even when it was the last thing answered before the app was killed.
+  assert.equal(resumeIndex(steps, walk('medications', ['medications'])), indexOf(steps, 'budget'));
+  assert.equal(resumeIndex(steps, walk('budget', ['medications'])), indexOf(steps, 'productFactors'));
+  assert.equal(resumeIndex(steps, walk('heatStyling', ['medications'])), indexOf(steps, 'notifications'));
+  const quiet = funnelSteps({ approaches: ['topical'] }, { askReminders: false });
+  assert.equal(resumeIndex(quiet, walk('heatStyling')), indexOf(quiet, 'invite'));
+  assert.equal(resumeIndex(quiet, walk('heatStyling')), quiet.length - 1, 'never past the last page');
+
+  // The store's placeholder is not a name somebody gave.
+  assert.equal(profileName({ displayName: 'You' }), '');
+  assert.equal(profileName({ displayName: '  Amara ' }), 'Amara');
+  assert.equal(profileName(null), '');
+  const placeholder = withAnswer(EMPTY_DATA, { journey: { hairType: 'wavy' } }, FRESH);
+  assert.equal(placeholder.profile?.displayName, 'You');
+  assert.equal(resumeIndex(steps, placeholder), indexOf(steps, 'scalpType'), 'an answer without a name still resumes');
+});
+
+test('funnel: the questions ask what the person knows, the options are their words, and nothing promises', () => {
+  for (const q of QUESTIONS) {
+    assertHonest(assert, [q.title, q.subtitle ?? ''], `question ${q.id}`);
+    assert.ok(!/\b(AI|scan|analy|detect|diagnos)\b/i.test(q.title + (q.subtitle ?? '')), `${q.id} asks, it does not read`);
+    /*
+      The goal lists are the funnel's oldest words — the person's hopes,
+      in the words people use for them — and they are held by
+      selectors.test.ts to the rules they were written under. Every
+      other option is swept here.
+    */
+    if (q.id === 'goal') continue;
+    assertHonestChoices(
+      everyOption(q).flatMap((o) => [o.label, o.description ?? '']),
+      `options of ${q.id}`,
+    );
+  }
+});
+
+test('funnel: the pages around the questions keep the same register', () => {
+  const { welcome, name, question, notifications, medication } = COPY;
+  assertHonest(
+    assert,
+    [
+      welcome.tagline,
+      welcome.cta,
+      welcome.legal.before,
+      welcome.legal.terms,
+      welcome.legal.between,
+      welcome.legal.privacy,
+      name.title,
+      name.placeholder,
+      name.cta,
+      question.cta,
+      notifications.title,
+      notifications.body,
+      notifications.preview.line,
+      notifications.preview.date,
+      notifications.allow,
+      notifications.notNow,
+      medication.otherLabel,
+      medication.otherPlaceholder,
+    ],
+    'funnel pages',
+  );
+  // One honest tagline: what the app is, not what it will do to anybody's hair.
+  assert.ok(!/\b(AI|science|trust|result|expert)/i.test(welcome.tagline), `"${welcome.tagline}" oversells`);
+  assert.match(welcome.tagline, /record/i);
+  // No accounts to sign into: the only thing to bring back is a subscription,
+  // and the link says so in the store's own words for it. "Restore" is a word
+  // the funnel may not say about hair, and this is the one phrase in which it
+  // is not about hair — so the phrase, exactly, and nothing wider.
+  assert.equal(welcome.restore, 'Restore purchases');
+  assert.equal(question.cta, 'Continue');
+  assert.equal(COPY.intro.cta, 'Next', 'the mascot page moves on as the reference does');
+  assert.equal(COPY.interstitial.cta, 'Let’s go', 'the beat moves on as the reference does, without the shout');
+  assert.equal(notifications.allow, 'Allow notifications', 'the button says what the tap asks');
+  assert.equal(notifications.notNow, 'Not now', 'the ask can be declined');
+  assert.match(notifications.body, /nudge, not a stream/, 'the promise is one the app can keep');
+  assert.ok(!/spam!|promise!/i.test(notifications.body), 'no pinky promise');
+  assert.ok(splitAccent(name.title, name.accent), 'the name bubble colours a word it has');
+});
+
+test('funnel: the mascot says who it is and keeps a record; it claims no expertise and does not shout', () => {
+  const { intro, interstitial } = COPY;
+  assertMascotVoice([intro.title, intro.cta], 'mascot intro');
+  assertMascotVoice([interstitial.title, interstitial.body, interstitial.cta], 'interstitial');
+  assert.match(intro.title, /^Hi, I’m Tress\./, 'it introduces itself by name');
+  assert.match(intro.title, /record/, 'and says what it is here for');
+  assert.match(interstitial.body, /not here to fix/, 'the beat is support, not a fix');
+  assert.match(interstitial.body, /over time/, 'and it is about the record');
+
+  // The headline carries the name, and the comma goes with a missing one.
+  assert.equal(interstitialTitle('Sam'), 'Great start, Sam.');
+  assert.equal(interstitialTitle('  Amara  '), 'Great start, Amara.');
+  assert.equal(interstitialTitle(''), 'Great start.');
+  // The kit's greeting reads the same line the same way.
+  assert.equal(greet(interstitial.title, 'Sam'), interstitialTitle('Sam'));
+  assert.equal(greet(interstitial.title, ''), interstitialTitle(''));
+  assert.equal(greet(interstitial.title, undefined), interstitialTitle(''));
 });

@@ -214,7 +214,7 @@ export default function HairScanRoute() {
     else router.replace('/');
   }, [router]);
   const done = useCallback(() => router.replace('/journey'), [router]);
-  const toPaywall = useCallback(() => router.replace('/paywall'), [router]);
+  const toPaywall = useCallback(() => router.replace('/plan'), [router]); // by way of the plan sequence, which ends on the paywall
   // A new run is a new scanner: every ref, tracker and timer starts clean.
   return (
     <Scanner
@@ -767,6 +767,7 @@ function Scanner({
         <Processing
           frames={processingFrames}
           onComplete={onProcessed}
+          onAbsorb={() => haptics.play('absorb')}
           onError={onProcessingError}
         />
         <TopBar

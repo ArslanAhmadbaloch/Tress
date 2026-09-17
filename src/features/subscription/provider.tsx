@@ -24,6 +24,8 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import Purchases, { type CustomerInfo } from 'react-native-purchases';
 import {
   createContext,
   useCallback,
@@ -36,7 +38,7 @@ import {
 } from 'react';
 
 import { createBilling, type BillingFailure } from './billing';
-import { PLANS, type PlanConfig, type PlanId } from './config';
+import { PLANS, PREMIUM_ENTITLEMENT, type PlanConfig, type PlanId } from './config';
 import {
   NO_ENTITLEMENT,
   TESTER_BUILD,
@@ -77,6 +79,12 @@ type SubscriptionContextValue = {
 
   purchase: (plan: PlanId) => Promise<void>;
   restore: () => Promise<void>;
+  /**
+   * Opens the store's own offer-code sheet. Null where there is no sheet
+   * to open — Android, Expo Go, a build with no store key — so the
+   * paywall hides the link rather than showing one that cannot work.
+   */
+  redeemCode: (() => Promise<void>) | null;
   /** Clears a finished purchase/restore result. */
   acknowledge: () => void;
 
@@ -275,6 +283,55 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     setRestoreState({ kind: 'failed', reason: result.reason });
   }, [billing, remember]);
 
+  /*
+    A promotional or offer code, redeemed through the store's own sheet.
+
+    iOS only: the sheet is StoreKit's, and Google Play has no equivalent
+    that RevenueCat presents. The SDK is already configured by the time
+    anyone can tap the link — the paywall is on screen, so the effect
+    above has asked for products — and a sheet that cannot be shown is
+    caught and changes nothing.
+
+    The sheet does not say when it closes or whether a code went through,
+    so the answer arrives the way RevenueCat delivers every change to a
+    customer: through its listener, which is registered on the first tap
+    and not before (a listener registered at launch would be one more
+    thing touching the store on an install that never opened the
+    paywall). Only a grant is acted on. A code that fails leaves the
+    cached entitlement exactly as it was, and Restore remains the way to
+    pick up a code redeemed outside the app.
+  */
+  const [listeningForCode, setListeningForCode] = useState(false);
+  useEffect(() => {
+    if (!listeningForCode) return;
+    const listener = (info: CustomerInfo) => {
+      const active = info.entitlements.active[PREMIUM_ENTITLEMENT];
+      if (!active || !alive.current) return;
+      void remember({
+        isPremium: true,
+        source: 'subscription',
+        status: active.willRenew ? 'active' : 'cancelledButActive',
+        expiresAt: active.expirationDate,
+      });
+    };
+    Purchases.addCustomerInfoUpdateListener(listener);
+    return () => {
+      Purchases.removeCustomerInfoUpdateListener(listener);
+    };
+  }, [listeningForCode, remember]);
+
+  const redeemCode = useMemo(() => {
+    if (Platform.OS !== 'ios' || !billing.isConfigured) return null;
+    return async () => {
+      setListeningForCode(true);
+      try {
+        await Purchases.presentCodeRedemptionSheet();
+      } catch {
+        // No sheet, no code, nothing changed.
+      }
+    };
+  }, [billing.isConfigured]);
+
   const acknowledge = useCallback(() => {
     setPurchaseState({ kind: 'idle' });
     setRestoreState({ kind: 'idle' });
@@ -302,13 +359,14 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       restoreState,
       purchase,
       restore,
+      redeemCode,
       acknowledge,
       testerPremium: tester,
       setTesterPremium: TESTER_BUILD ? setTesterPremium : null,
     }),
     [
       entitlement, isLoaded, plans, billing.isConfigured, purchaseState,
-      restoreState, purchase, restore, acknowledge, tester, setTesterPremium,
+      restoreState, purchase, restore, redeemCode, acknowledge, tester, setTesterPremium,
     ],
   );
 

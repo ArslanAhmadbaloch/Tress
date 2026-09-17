@@ -4,8 +4,12 @@
  * When the first bar fills, the other curated frames fade in at the
  * centre, scale up and glide out to their places on a ring around the
  * main frame, settle, and each receives a tick once the device has a
- * reading for it. At the end they glide back in and hand the screen to
- * the report. Slow enough to read, spatial, never wild: everything is one
+ * reading for it. At the end the disc takes them in, one at a time: a
+ * frame leaves its place, glides along a slight arc into the centre,
+ * shrinking as it goes and fading over its last stretch, and slips in
+ * behind the disc; the screen is told the moment it arrives, so the
+ * disc can breathe and the phone can tap. The next frame follows a beat
+ * later. Slow enough to read, spatial, never wild: everything is one
  * eased glide plus a soft spring on the scale, and the only thing that
  * repeats is a drift of a few points so the ring does not look pinned.
  *
@@ -28,7 +32,8 @@
  * the hair.
  *
  * Reduced Motion: frames appear in place with a short fade, the tick
- * appears rather than springs, and nothing drifts.
+ * appears rather than springs, nothing drifts, and at the end the frames
+ * fade out together rather than glide.
  */
 
 import { Image } from 'expo-image';
@@ -46,11 +51,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { Icon } from '@/components/ui/icon';
 import {
-  ORBIT_CONVERGE_MS,
-  ORBIT_CONVERGE_STAGGER_MS,
+  ORBIT_ABSORB_MS,
+  ORBIT_ABSORB_STAGGER_MS,
   ORBIT_ENTER_MS,
   ORBIT_FRAME_MAX,
   ORBIT_STAGGER_MS,
@@ -66,6 +72,10 @@ import { StaticHairMesh } from './hair-mesh';
 
 export {
   HANDOFF_HOLD_MS,
+  ORBIT_ABSORB_MS,
+  ORBIT_ABSORB_PULSE_MS,
+  ORBIT_ABSORB_SETTLE_MS,
+  ORBIT_ABSORB_STAGGER_MS,
   ORBIT_CONVERGE_MS,
   ORBIT_CONVERGE_STAGGER_MS,
   ORBIT_ENTER_MS,
@@ -73,7 +83,10 @@ export {
   ORBIT_FRAME_MIN,
   ORBIT_SETTLE_HOLD_MS,
   ORBIT_STAGGER_MS,
+  absorbHandoffMs,
   handoffSchedule,
+  orbitAbsorbAtMs,
+  orbitAbsorbMs,
   orbitConvergeMs,
   orbitFrameSize,
   orbitPositions,
@@ -94,6 +107,10 @@ const DRIFT_MS = 2600;
 
 /** Where a frame starts and ends: a little inside the centre, small. */
 const CENTRE_SCALE = 0.35;
+/** How far off the straight line a frame swings on its way into the disc, in points. */
+const ABSORB_ARC_PX = 22;
+/** The share of the glide over which an absorbed frame fades: its last stretch, once it is under the disc's edge. */
+const ABSORB_FADE_SHARE = 0.2;
 
 /** The room the light needs around a frame, as a fraction of its side. */
 const FRAME_HALO_RATIO = 0.55;
@@ -155,8 +172,8 @@ export type OrbitPhase =
   | 'hidden'
   /** Frames glide out and hold. */
   | 'orbit'
-  /** Frames glide back into the centre. */
-  | 'converge';
+  /** Frames glide into the disc one at a time, in reading order. */
+  | 'absorb';
 
 /** What the device has to say about one frame in orbit. */
 type FrameStanding =
@@ -175,6 +192,7 @@ function OrbitFrameView({
   phase,
   standing,
   leadMs,
+  onAbsorbed,
 }: {
   frame: OrbitFrame;
   index: number;
@@ -183,6 +201,8 @@ function OrbitFrameView({
   phase: OrbitPhase;
   standing: FrameStanding;
   leadMs: number;
+  /** Told, on the JS thread, the moment this frame arrives at the disc. Must be stable: a new one restarts the glide. */
+  onAbsorbed?: (index: number) => void;
 }) {
   const reduceMotion = useReducedMotion();
   /** 0 at the centre, 1 in orbit. */
@@ -192,6 +212,8 @@ function OrbitFrameView({
   const opacity = useSharedValue(0);
   /** 0 → 1 → 0 → …, the slow drift once settled. */
   const drift = useSharedValue(0);
+  /** 0 on the way out, 1 on the way in: whether the path bows. */
+  const bow = useSharedValue(0);
   const tick = useSharedValue(0);
   /** 1 while the device may still read it; lower once it could not. */
   const presence = useSharedValue(1);
@@ -219,19 +241,37 @@ function OrbitFrameView({
       );
       return;
     }
-    // Converge. Together rather than one by one, so it reads as a gather.
-    const delay = reduceMotion ? 0 : index * ORBIT_CONVERGE_STAGGER_MS;
+    // Absorb. One at a time, in reading order: each frame waits its
+    // turn, then glides along a slight arc into the disc's centre,
+    // shrinking as it goes, and fades over its last stretch, by which
+    // time it is under the disc. The arrival is reported from the UI
+    // thread once the glide has actually finished, so the disc's breath
+    // and the tap land on the frame, not on a clock that guessed.
     drift.set(0);
     if (reduceMotion) {
       opacity.set(withTiming(0, { duration: motion.duration.base }));
       return;
     }
+    const delay = index * ORBIT_ABSORB_STAGGER_MS;
+    bow.set(1);
     enter.set(
-      withDelay(delay, withTiming(0, { duration: ORBIT_CONVERGE_MS, easing: Easing.in(Easing.cubic) })),
+      withDelay(
+        delay,
+        withTiming(0, { duration: ORBIT_ABSORB_MS, easing: Easing.inOut(Easing.cubic) }, (finished) => {
+          if (finished === true && onAbsorbed !== undefined) scheduleOnRN(onAbsorbed, index);
+        }),
+      ),
     );
-    scale.set(withDelay(delay, withTiming(CENTRE_SCALE, { duration: ORBIT_CONVERGE_MS })));
-    opacity.set(withDelay(delay + ORBIT_CONVERGE_MS * 0.4, withTiming(0, { duration: ORBIT_CONVERGE_MS * 0.6 })));
-  }, [phase, index, leadMs, reduceMotion, enter, scale, opacity, drift]);
+    scale.set(
+      withDelay(delay, withTiming(CENTRE_SCALE, { duration: ORBIT_ABSORB_MS, easing: Easing.in(Easing.quad) })),
+    );
+    opacity.set(
+      withDelay(
+        delay + ORBIT_ABSORB_MS * (1 - ABSORB_FADE_SHARE),
+        withTiming(0, { duration: ORBIT_ABSORB_MS * ABSORB_FADE_SHARE }),
+      ),
+    );
+  }, [phase, index, leadMs, reduceMotion, enter, scale, opacity, drift, bow, onAbsorbed]);
 
   useEffect(() => {
     if (standing === 'pending') return;
@@ -253,14 +293,25 @@ function OrbitFrameView({
     presence.set(withDelay(wait, withTiming(UNREAD_OPACITY, { duration: motion.duration.slow })));
   }, [standing, reduceMotion, tick, presence, enter, leadMs, index]);
 
+  /*
+    The bow of the path in: a push at right angles to the line from the
+    ring to the centre, largest halfway and nothing at either end, all
+    frames swinging the same way round so the gather reads as one slow
+    turn into the disc rather than a scatter of independent dives.
+  */
+  const reach = Math.hypot(position.x, position.y) || 1;
+  const bowX = (-position.y / reach) * ABSORB_ARC_PX;
+  const bowY = (position.x / reach) * ABSORB_ARC_PX;
+
   const style = useAnimatedStyle(() => {
     const t = enter.get();
     const dy = interpolate(drift.get(), [0, 1], [-DRIFT_PX, DRIFT_PX]);
+    const swing = Math.sin(Math.PI * t) * bow.get();
     return {
       opacity: opacity.get() * presence.get(),
       transform: [
-        { translateX: position.x * t },
-        { translateY: position.y * t + dy },
+        { translateX: position.x * t + bowX * swing },
+        { translateY: position.y * t + dy + bowY * swing },
         { scale: scale.get() },
       ],
     };
@@ -352,7 +403,8 @@ function OrbitFrameView({
  * nothing for it; mounts the frames when the orbit begins and keeps them
  * mounted through the converge so their exit is theirs to animate.
  *
- * Place this inside a zero-size view at the ring's centre.
+ * Place this inside a zero-size view at the ring's centre, beneath the
+ * disc: an absorbed frame slips in under the disc's edge.
  */
 export function OrbitFrames({
   frames,
@@ -361,6 +413,7 @@ export function OrbitFrames({
   tickedIds,
   finishedIds = tickedIds,
   leadMs = 0,
+  onAbsorbed,
 }: {
   /** Every curated frame except the main one, in reading order. */
   frames: readonly OrbitFrame[];
@@ -377,6 +430,13 @@ export function OrbitFrames({
   finishedIds?: readonly string[];
   /** How long the first frame waits before leaving the centre. */
   leadMs?: number;
+  /**
+   * Called on the JS thread as each frame arrives at the disc during
+   * the absorb, with the frame's index in `frames`. Keep it stable
+   * across renders: a frame's glide is keyed to it. Not called under
+   * Reduce Motion, where the frames fade rather than arrive.
+   */
+  onAbsorbed?: (index: number) => void;
 }) {
   if (phase === 'hidden' || frames.length === 0) return null;
   const positions = orbitPositions(frames.length, ringRadius);
@@ -395,6 +455,7 @@ export function OrbitFrames({
             tickedIds.includes(frame.id) ? 'measured' : finishedIds.includes(frame.id) ? 'unread' : 'pending'
           }
           leadMs={leadMs}
+          onAbsorbed={onAbsorbed}
         />
       ))}
     </View>

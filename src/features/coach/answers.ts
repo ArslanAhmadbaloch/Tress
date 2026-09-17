@@ -45,10 +45,30 @@ import {
   ANGLES,
   ANGLE_LABELS,
   APPROACH_LABELS,
+  BUDGET_LABELS,
+  HAIR_CONCERN_LABELS,
   HAIR_GOAL_LABELS,
+  HAIR_TYPE_LABELS,
+  HEAT_STYLING_LABELS,
+  INGREDIENT_REACTION_LABELS,
+  LIFE_FACTOR_LABELS,
+  PRODUCT_FACTOR_LABELS,
+  SCALP_CONDITION_LABELS,
+  SCALP_SENSITIVITY_LABELS,
+  SCALP_TYPE_LABELS,
   isScanSession,
   joinPhrases,
+  journeyBudget,
+  journeyConcerns,
+  journeyFactors,
   journeyGoals,
+  journeyHairType,
+  journeyHeatStyling,
+  journeyProductFactors,
+  journeyReactions,
+  journeyScalpConditions,
+  journeyScalpSensitivity,
+  journeyScalpType,
   midSentence,
   missingAngles,
   SELF_CONSISTENCY_LABELS,
@@ -647,15 +667,73 @@ function journalAnswer(data: AppData): CoachAnswer {
   };
 }
 
+/**
+ * What they told Tress about themselves, as the labels they picked.
+ *
+ * Every entry is verbatim from a `*_LABELS` map, read through the
+ * validated accessors, so an answer this version no longer offers is
+ * dropped rather than rendered blank. "None" and "No preferences" are
+ * answers too and are read back as such.
+ */
+function selfKnowledgeLabels(journey: Journey): string[] {
+  const hairType = journeyHairType(journey);
+  const scalpType = journeyScalpType(journey);
+  const sensitivity = journeyScalpSensitivity(journey);
+  const budget = journeyBudget(journey);
+  const heat = journeyHeatStyling(journey);
+  return [
+    ...(hairType ? [HAIR_TYPE_LABELS[hairType]] : []),
+    ...(scalpType ? [SCALP_TYPE_LABELS[scalpType]] : []),
+    ...(sensitivity ? [SCALP_SENSITIVITY_LABELS[sensitivity]] : []),
+    ...journeyConcerns(journey).map((c) => HAIR_CONCERN_LABELS[c]),
+    ...(budget ? [BUDGET_LABELS[budget]] : []),
+    ...journeyProductFactors(journey).map((f) => PRODUCT_FACTOR_LABELS[f]),
+    ...journeyReactions(journey).map((r) => INGREDIENT_REACTION_LABELS[r]),
+    ...journeyScalpConditions(journey).map((c) => SCALP_CONDITION_LABELS[c]),
+    ...journeyFactors(journey).map((f) => LIFE_FACTOR_LABELS[f]),
+    ...(heat ? [HEAT_STYLING_LABELS[heat]] : []),
+  ];
+}
+
+/**
+ * One sentence stating how they described their hair and scalp, or
+ * null when they did not. The labels are quoted and attributed — "you
+ * told Tress" — never adopted: the coach has no view of its own on
+ * anybody's scalp, and this sentence says only what was ticked.
+ */
+function describedSentence(journey: Journey): string | null {
+  const hairType = journeyHairType(journey);
+  const scalpType = journeyScalpType(journey);
+  const sensitivity = journeyScalpSensitivity(journey);
+  const said = (label: string) => `“${midSentence(label)}”`;
+
+  const scalp = [
+    ...(scalpType ? [said(SCALP_TYPE_LABELS[scalpType])] : []),
+    ...(sensitivity ? [said(SCALP_SENSITIVITY_LABELS[sensitivity])] : []),
+  ];
+  const parts = [
+    ...(hairType ? [`your hair is ${said(HAIR_TYPE_LABELS[hairType])}`] : []),
+    ...(scalp.length > 0 ? [`your scalp is ${joinPhrases(scalp)}`] : []),
+  ];
+  if (parts.length === 0) return null;
+  return `You told Tress ${joinPhrases(parts)}.`;
+}
+
 function goalsAnswer(journey: Journey): CoachAnswer {
   // Medications are not echoed here: the stack answer covers what they
   // use, in the words they typed rather than a funnel label.
   const goals = journeyGoals(journey);
+  const about = selfKnowledgeLabels(journey);
 
+  // Deduped: "Dandruff" is a concern and a condition, "None" closes
+  // several lists, and a line read back twice is no truer.
   const echo = [
-    ...goals.map((g) => HAIR_GOAL_LABELS[g]),
-    ...journey.trackingAreas.map((a) => TRACKING_AREA_LABELS[a]),
-    ...journey.approaches.map((a) => APPROACH_LABELS[a]),
+    ...new Set([
+      ...goals.map((g) => HAIR_GOAL_LABELS[g]),
+      ...journey.trackingAreas.map((a) => TRACKING_AREA_LABELS[a]),
+      ...journey.approaches.map((a) => APPROACH_LABELS[a]),
+      ...about,
+    ]),
   ];
 
   /*
@@ -668,13 +746,18 @@ function goalsAnswer(journey: Journey): CoachAnswer {
     goals.length === 0 ? null : goals.length === 1 ? 'Your goal' : 'What you said you want',
     journey.trackingAreas.length > 0 ? 'The areas you watch' : null,
     journey.approaches.length > 0 ? 'What you were doing then' : null,
+    about.length > 0 ? 'What you told Tress about yourself' : null,
   ].filter((c): c is string => c !== null);
+
+  const described = describedSentence(journey);
 
   return {
     intent: 'goals',
     source: 'From your answers at the start',
     headline: 'What you said you wanted, and where you were starting from.',
-    detail: 'Kept as you said it, shown back as you said it.',
+    detail: described
+      ? `${described} Kept as you said it, shown back as you said it.`
+      : 'Kept as you said it, shown back as you said it.',
     echoLabel:
       captions.length > 0
         ? joinPhrases(captions.map((c, i) => (i === 0 ? c : midSentence(c))))

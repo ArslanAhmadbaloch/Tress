@@ -7,17 +7,27 @@
  * frame draws in to a disc in a soft light, the other frames glide out
  * into orbit around it, settle, and each takes a tick once the device
  * has a reading for it, while the second bar builds the report. At the
- * end the frames gather back into the disc and the screen hands off.
+ * end the disc takes the frames in one at a time — each glides into its
+ * centre, and the disc swells a little and settles as it arrives, with a
+ * soft tap — then holds, and the screen hands off.
  *
  * ── Two clocks, one hand-off ──────────────────────────────────────────
  * The bars run on the runner's clock: they move when a unit finishes and
  * never otherwise. The ring runs on its own: it takes a fixed time to
- * form, however fast the pass was. The gather and the hand-off wait for
+ * form, however fast the pass was. The absorb and the hand-off wait for
  * the later of the two — the pass finished, and the ring formed — so a
  * build whose pass ends at its total floor (any build without the
  * segmenter, the simulator included) still shows the whole ring rather
- * than yanking the frames back mid-glide. The rule is `handoffSchedule`
- * in the analysis module, and the tests hold it there.
+ * than yanking the frames back mid-glide. The absorb's own length is
+ * `absorbHandoffMs` in the analysis module: the last arrival, the
+ * disc's breath on it, and a settle; the hand-off runs on that clock.
+ *
+ * ── The absorb ────────────────────────────────────────────────────────
+ * Each frame's arrival is reported from the UI thread when its glide has
+ * actually finished; on it the disc breathes — scale 1 → 1.07 → 1 with
+ * the light behind it brightening the same beat — and the screen plays
+ * the caller's soft tap. A scan that kept only the main frame has
+ * nothing to absorb; the disc still breathes once, so the beat reads.
  *
  * ── What the two builds show ──────────────────────────────────────────
  * With the segmenter, a frame's area unit runs during the second bar, so
@@ -56,12 +66,14 @@
  *
  * Reduced Motion: the frame becomes the disc without the morph, the
  * orbit frames appear in place, the bars still move, and the mesh on
- * the still keeps its lines and loses its lit points.
+ * the still keeps its lines and loses its lit points. At the end the
+ * frames fade together, and the disc's one breath is a brightening of
+ * the light behind it rather than a change of size.
  */
 
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   Easing,
@@ -69,7 +81,6 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withDelay,
   withSequence,
   withSpring,
   withTiming,
@@ -95,12 +106,12 @@ import { darkColors, motion, radius, spacing } from '@/theme';
 
 import { StaticHairMesh } from './hair-mesh';
 import {
-  HANDOFF_HOLD_MS,
   Halo,
+  ORBIT_ABSORB_PULSE_MS,
   ORBIT_FRAME_W,
+  absorbHandoffMs,
   orbitFrameSize,
   OrbitFrames,
-  orbitConvergeMs,
   orbitReadyMs,
   type OrbitPhase,
 } from './orbit-frames';
@@ -115,6 +126,12 @@ const DISC_HALO = 64;
 const MORPH_MS = 650;
 /** The orbit begins this long into the morph, so the two overlap. */
 const ORBIT_LEAD_MS = 320;
+/** How far the disc swells as a frame arrives. */
+const PULSE_SCALE = 1.07;
+/** The share of the breath spent swelling; the rest is the settle. */
+const PULSE_RISE = 0.4;
+/** How much brighter the light behind the disc gets at the top of the breath: a second halo at this opacity. */
+const PULSE_FLARE = 0.75;
 
 /** The bars' track. */
 const BAR = 12;
@@ -318,13 +335,19 @@ export type ProcessingProps = {
    * result is the runner's — per-frame measurements for the mapper.
    */
   onComplete: (result: AnalysisResult) => void;
+  /**
+   * Called as each frame is taken into the disc at the end, on the beat
+   * the disc breathes: the screen plays its soft tap here. Once for the
+   * lone breath when there is nothing to absorb or motion is reduced.
+   */
+  onAbsorb?: () => void;
   /** Called if the pass could not start at all (the measurement modules failed to load). */
   onError?: (error: Error) => void;
   /** Tests and previews stand the measurements in here; the app leaves it unset. */
   deps?: AnalysisDeps;
 };
 
-export function Processing({ frames, onComplete, onError, deps }: ProcessingProps) {
+export function Processing({ frames, onComplete, onAbsorb, onError, deps }: ProcessingProps) {
   const reduceMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -343,8 +366,8 @@ export function Processing({ frames, onComplete, onError, deps }: ProcessingProp
     analyseDone,
     orbitReadyMs(others.length, leadMs, reduceMotion, motion.duration.base),
   );
-  const gathering = finished && orbitReady;
-  const orbitPhase: OrbitPhase = gathering ? 'converge' : analyseDone ? 'orbit' : 'hidden';
+  const absorbing = finished && orbitReady;
+  const orbitPhase: OrbitPhase = absorbing ? 'absorb' : analyseDone ? 'orbit' : 'hidden';
 
   /* ----------------------------- geometry ---------------------------- */
 
@@ -372,8 +395,10 @@ export function Processing({ frames, onComplete, onError, deps }: ProcessingProp
 
   /** 0 while the frame is the card, 1 once it is the disc. */
   const disc = useSharedValue(0);
-  /** A breath the disc takes as the frames gather. */
+  /** The disc's scale: 1 at rest, swelling to `PULSE_SCALE` as a frame arrives. */
   const pulse = useSharedValue(1);
+  /** The extra light behind the disc on the same beat: 0 at rest, 1 at the top of the breath. */
+  const flare = useSharedValue(0);
 
   useEffect(() => {
     if (!analyseDone) return;
@@ -383,29 +408,64 @@ export function Processing({ frames, onComplete, onError, deps }: ProcessingProp
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
   }, [analyseDone, reduceMotion, disc]);
 
+  /*
+    The breath. Played once per arriving frame, from the ring's own
+    report of the arrival, and once on its own when there is nothing to
+    absorb. The caller's tap is read through a ref so the callback the
+    ring holds stays the same object across renders: the ring keys each
+    frame's glide to it, and a fresh one would restart the glide.
+  */
+  const onAbsorbRef = useRef(onAbsorb);
   useEffect(() => {
-    if (!gathering) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-    if (!reduceMotion) {
+    onAbsorbRef.current = onAbsorb;
+  }, [onAbsorb]);
+  const reduceMotionRef = useRef(reduceMotion);
+  useEffect(() => {
+    reduceMotionRef.current = reduceMotion;
+  }, [reduceMotion]);
+
+  const breathe = useCallback(() => {
+    const rise = ORBIT_ABSORB_PULSE_MS * PULSE_RISE;
+    const settle = ORBIT_ABSORB_PULSE_MS - rise;
+    flare.set(
+      withSequence(
+        withTiming(1, { duration: rise, easing: Easing.out(Easing.cubic) }),
+        withTiming(0, { duration: settle, easing: Easing.inOut(Easing.cubic) }),
+      ),
+    );
+    if (!reduceMotionRef.current) {
       pulse.set(
-        withDelay(
-          orbitConvergeMs(others.length) * 0.6,
-          withSequence(withTiming(1.05, { duration: 220 }), withSpring(1, motion.spring.gentle)),
+        withSequence(
+          withTiming(PULSE_SCALE, { duration: rise, easing: Easing.out(Easing.cubic) }),
+          withTiming(1, { duration: settle, easing: Easing.inOut(Easing.cubic) }),
         ),
       );
     }
-  }, [gathering, reduceMotion, pulse, others.length]);
+    onAbsorbRef.current?.();
+  }, [pulse, flare]);
 
-  // The hand-off waits for the frames to gather, so the report opens on
-  // a disc rather than on a ring still in flight. `gathering` already
-  // waited for the ring to have formed.
+  // With nothing gliding in — no other frames, or Reduce Motion, where
+  // they fade together instead — the disc still takes its one breath,
+  // once the fade (if any) is over.
   useEffect(() => {
-    if (!gathering || run.result === null) return;
+    if (!absorbing) return;
+    if (others.length > 0 && !reduceMotion) return;
+    const wait = others.length > 0 ? motion.duration.base : 0;
+    const timer = setTimeout(breathe, wait);
+    return () => clearTimeout(timer);
+  }, [absorbing, others.length, reduceMotion, breathe]);
+
+  // The hand-off waits for the last frame to be taken in, the breath on
+  // it, and the settle, so the report opens on a disc at rest rather
+  // than on a ring still in flight. `absorbing` already waited for the
+  // ring to have formed.
+  useEffect(() => {
+    if (!absorbing || run.result === null) return;
     const result = run.result;
-    const wait = (reduceMotion ? motion.duration.base : orbitConvergeMs(others.length)) + HANDOFF_HOLD_MS;
+    const wait = absorbHandoffMs(others.length, reduceMotion, motion.duration.base);
     const timer = setTimeout(() => onComplete(result), wait);
     return () => clearTimeout(timer);
-  }, [gathering, run.result, reduceMotion, others.length, onComplete]);
+  }, [absorbing, run.result, reduceMotion, others.length, onComplete]);
 
   useEffect(() => {
     if (run.error === null) return;
@@ -451,7 +511,13 @@ export function Processing({ frames, onComplete, onError, deps }: ProcessingProp
 
   const haloStyle = useAnimatedStyle(() => ({
     opacity: disc.get(),
-    transform: [{ scale: interpolate(disc.get(), [0, 1], [0.7, 1]) }],
+    transform: [{ scale: interpolate(disc.get(), [0, 1], [0.7, 1]) * pulse.get() }],
+  }));
+  // The brightening on the beat: a second light over the first, at
+  // nothing between breaths and `PULSE_FLARE` at the top of one.
+  const flareStyle = useAnimatedStyle(() => ({
+    opacity: disc.get() * flare.get() * PULSE_FLARE,
+    transform: [{ scale: pulse.get() }],
   }));
 
   /* ------------------------------- words ----------------------------- */
@@ -501,6 +567,31 @@ export function Processing({ frames, onComplete, onError, deps }: ProcessingProp
           ]}>
           <Halo size={haloSize} />
         </Animated.View>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            { position: 'absolute', width: haloSize, height: haloSize },
+            flareStyle,
+          ]}>
+          <Halo size={haloSize} />
+        </Animated.View>
+
+        {/*
+          The ring's centre is the stage's centre, which is the disc's.
+          It sits beneath the disc so a frame being taken in slips under
+          the disc's edge rather than over its face.
+        */}
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+          <OrbitFrames
+            frames={others}
+            radius={ringRadius}
+            phase={orbitPhase}
+            leadMs={leadMs}
+            tickedIds={progress?.measuredFrameIds ?? []}
+            finishedIds={progress?.completedFrameIds ?? []}
+            onAbsorbed={breathe}
+          />
+        </View>
 
         {mainUri !== null ? (
           <Animated.View
@@ -537,18 +628,6 @@ export function Processing({ frames, onComplete, onError, deps }: ProcessingProp
             ) : null}
           </Animated.View>
         ) : null}
-
-        {/* The ring's centre is the stage's centre, which is the disc's. */}
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-          <OrbitFrames
-            frames={others}
-            radius={ringRadius}
-            phase={orbitPhase}
-            leadMs={leadMs}
-            tickedIds={progress?.measuredFrameIds ?? []}
-            finishedIds={progress?.completedFrameIds ?? []}
-          />
-        </View>
       </View>
 
       <View

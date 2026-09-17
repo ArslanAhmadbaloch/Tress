@@ -26,7 +26,10 @@ import {
   EMPTY_DATA,
   migrateStoredData,
   patchPhotoIn,
+  withAnswer,
+  type AgeBand,
   type AppData,
+  type FunnelAnswer,
   type JournalEntry,
   type Gender,
   type Journey,
@@ -50,24 +53,42 @@ function makeId(prefix: string): string {
     .slice(2, 8)}`;
 }
 
+/** A routine item as the funnel proposes it, from what they said they use. */
+export type RoutineSeed = Pick<RoutineItem, 'label' | 'icon' | 'timeOfDay' | 'timesPerWeek'>;
+
+/** Routine items from the funnel's seeds, attached to the journey. */
+function seedRoutine(seeds: RoutineSeed[], journeyId: string, now: string): RoutineItem[] {
+  return seeds.map((seed) => ({
+    ...seed,
+    id: makeId('rti'),
+    journeyId,
+    // Seven times a week is daily; anything less is a weekly target.
+    cadence:
+      seed.timesPerWeek === undefined || seed.timesPerWeek >= 7
+        ? ('daily' as const)
+        : ('weekly' as const),
+    createdAt: now,
+  }));
+}
+
 /**
  * Everything the funnel gathered.
  *
- * Taken whole rather than in pieces: a journey is created once, at the
- * moment the person's card is revealed to them, and every answer that led
- * there belongs to it.
+ * Taken whole, at the end: the journey is created — or, when the pages
+ * have been saving as they went (see `saveAnswer`), completed — at the
+ * moment the funnel finishes, and every answer that led there belongs to
+ * it. Answers saved page by page survive underneath whatever is passed
+ * here; what is passed wins where the two overlap.
  */
 export type CreateJourneyInput = {
   displayName: string;
   age?: number;
+  ageBand?: AgeBand;
   gender?: Gender;
   avatarUri?: string;
   journey: Omit<Journey, 'id' | 'profileId' | 'createdAt'>;
   /** Seeded from what they said they are already doing. */
-  routineSeeds: Pick<
-    RoutineItem,
-    'label' | 'icon' | 'timeOfDay' | 'timesPerWeek'
-  >[];
+  routineSeeds: RoutineSeed[];
 };
 
 type AppStore = {
@@ -76,6 +97,22 @@ type AppStore = {
   isLoaded: boolean;
 
   createJourney: (input: CreateJourneyInput) => void;
+  /**
+   * Saves one funnel page's answer as it is given.
+   *
+   * The first call creates the profile and journey; later calls merge
+   * in. The funnel is not complete until `finishOnboarding` (or
+   * `createJourney`) says so, so a person who leaves on question nine
+   * comes back to a journey with nine answers and no completion stamp.
+   * See `withAnswer` for the rules, including validation of the values.
+   */
+  saveAnswer: (answer: FunnelAnswer) => void;
+  /**
+   * Stamps the funnel complete over the answers `saveAnswer` gathered,
+   * seeding the routine from `routineSeeds`. Does nothing without a
+   * journey to complete.
+   */
+  finishOnboarding: (routineSeeds?: RoutineSeed[]) => void;
   updateJourney: (patch: Partial<Omit<Journey, 'id' | 'profileId'>>) => void;
   updateProfile: (patch: Partial<Omit<Profile, 'id' | 'createdAt'>>) => void;
 
@@ -192,38 +229,61 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const createJourney = useCallback((input: CreateJourneyInput) => {
     const now = new Date().toISOString();
-    const profileId = makeId('prof');
-    const journeyId = makeId('jrn');
 
-    setData((prev) => ({
-      ...prev,
-      profile: {
-        id: profileId,
-        displayName: input.displayName.trim() || 'You',
-        age: input.age,
-        gender: input.gender,
-        avatarUri: input.avatarUri,
-        createdAt: now,
-      },
-      journey: {
-        ...input.journey,
-        id: journeyId,
-        profileId,
-        createdAt: now,
-      },
-      routineItems: input.routineSeeds.map((seed) => ({
-        ...seed,
-        id: makeId('rti'),
-        journeyId,
-        // Seven times a week is daily; anything less is a weekly target.
-        cadence:
-          seed.timesPerWeek === undefined || seed.timesPerWeek >= 7
-            ? ('daily' as const)
-            : ('weekly' as const),
-        createdAt: now,
-      })),
-      onboardingCompletedAt: now,
-    }));
+    setData((prev) => {
+      /*
+        A funnel that saved as it went has a profile and journey here with
+        no completion stamp. Those are the same records this call
+        finishes — same ids, and every answer they hold that the input
+        does not repeat is kept. Once a journey is complete this creates
+        a new one, as it always did.
+      */
+      const draft = prev.onboardingCompletedAt === null;
+      const draftProfile = draft ? prev.profile : null;
+      const draftJourney = draft ? prev.journey : null;
+      const profileId = draftProfile?.id ?? makeId('prof');
+      const journeyId = draftJourney?.id ?? makeId('jrn');
+
+      return {
+        ...prev,
+        profile: {
+          ...draftProfile,
+          id: profileId,
+          displayName: input.displayName.trim() || draftProfile?.displayName || 'You',
+          age: input.age ?? draftProfile?.age,
+          ageBand: input.ageBand ?? draftProfile?.ageBand,
+          gender: input.gender ?? draftProfile?.gender,
+          avatarUri: input.avatarUri ?? draftProfile?.avatarUri,
+          createdAt: draftProfile?.createdAt ?? now,
+        },
+        journey: {
+          ...draftJourney,
+          ...input.journey,
+          id: journeyId,
+          profileId,
+          createdAt: draftJourney?.createdAt ?? now,
+        },
+        routineItems: seedRoutine(input.routineSeeds, journeyId, now),
+        onboardingCompletedAt: now,
+      };
+    });
+  }, []);
+
+  const saveAnswer = useCallback((answer: FunnelAnswer) => {
+    const fresh = { profileId: makeId('prof'), journeyId: makeId('jrn'), now: new Date().toISOString() };
+    setData((prev) => withAnswer(prev, answer, fresh));
+  }, []);
+
+  const finishOnboarding = useCallback((routineSeeds: RoutineSeed[] = []) => {
+    const now = new Date().toISOString();
+    setData((prev) => {
+      if (!prev.journey) return prev;
+      return {
+        ...prev,
+        routineItems: [...prev.routineItems, ...seedRoutine(routineSeeds, prev.journey.id, now)],
+        onboardingCompletedAt: now,
+      };
+    });
   }, []);
 
   const updateJourney = useCallback(
@@ -523,6 +583,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       data,
       isLoaded,
       createJourney,
+      saveAnswer,
+      finishOnboarding,
       updateJourney,
       updateProfile,
       addSession,
@@ -545,6 +607,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       data,
       isLoaded,
       createJourney,
+      saveAnswer,
+      finishOnboarding,
       updateJourney,
       updateProfile,
       addSession,

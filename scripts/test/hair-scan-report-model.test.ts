@@ -10,9 +10,10 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { reportSummary } from '@/features/coach/report-summary';
+import { profileSentence, reportSummary } from '@/features/coach/report-summary';
 import {
   FOCUS_REGIONS,
   STRENGTHS_MAX,
@@ -23,15 +24,31 @@ import {
   type HairScanReportModel,
 } from '@/features/hair-scan/report-model';
 import { HAIR_SCAN_REPORT_MODEL_COPY as COPY, quotedSpans, reportCopySentences, stripQuotes } from '@/features/hair-scan/report-copy';
-import { TIPS_BY_GOAL, TIPS_PER_GOAL, tipSentences, tipsFor } from '@/features/hair-scan/tips';
+import { reminderOfferInterval } from '@/features/hair-scan/result';
+import {
+  PROFILE_TIPS,
+  PROFILE_TIPS_MAX,
+  TIPS_BY_GOAL,
+  TIPS_PER_GOAL,
+  tipProfileOf,
+  tipSentences,
+  tipsFor,
+  tipsForProfile,
+} from '@/features/hair-scan/tips';
 import { toDateKey } from '@/lib/date';
 import {
   ANGLES,
   APPROACH_LABELS,
   EMPTY_DATA,
+  HAIR_CONCERN_LABELS,
   HAIR_GOAL_LABELS,
+  HAIR_TYPE_LABELS,
+  HEAT_STYLING_LABELS,
+  INGREDIENT_REACTION_LABELS,
   MOTIVATION_LABELS,
   ONSET_LABELS,
+  SCALP_SENSITIVITY_LABELS,
+  SCALP_TYPE_LABELS,
   TRACKING_AREA_LABELS,
   type Angle,
   type AppData,
@@ -187,10 +204,38 @@ function matureRecord(): { data: AppData; session: PhotoSession } {
   return { data, session: latest };
 }
 
+/**
+ * A journey from the current funnel: every self-knowledge question
+ * answered. The same first scan as `firstScanMeasured`, so the only
+ * thing that differs between the two reports is what the person said.
+ */
+function newFunnelJourney(): Journey {
+  return journey({
+    goals: ['overall'],
+    hairType: 'wavy',
+    scalpType: 'oily',
+    scalpSensitivity: 'sensitive',
+    concerns: ['frizz', 'dandruff'],
+    budget: 'midRange',
+    productFactors: ['sulfateFree', 'fragranceFree'],
+    ingredientReactions: ['fragrance'],
+    scalpConditions: ['none'],
+    lifeFactors: ['none'],
+    heatStyling: 'daily',
+  });
+}
+
+function newFunnelRecord(): { data: AppData; session: PhotoSession } {
+  const f = firstScanMeasured();
+  f.data.journey = newFunnelJourney();
+  return f;
+}
+
 const FIXTURES: [string, () => { data: AppData; session: PhotoSession }][] = [
   ['first scan, no segmenter', firstScanNoSegmenter],
   ['first scan, measured', firstScanMeasured],
   ['mature record', matureRecord],
+  ['new funnel, first scan', newFunnelRecord],
 ];
 
 const NOW = new Date('2026-09-17T15:00:00.000Z');
@@ -207,6 +252,12 @@ const KNOWN_LABELS = new Set<string>([
   ...Object.values(TRACKING_AREA_LABELS),
   ...Object.values(MOTIVATION_LABELS),
   ...Object.values(APPROACH_LABELS),
+  ...Object.values(HAIR_TYPE_LABELS),
+  ...Object.values(SCALP_TYPE_LABELS),
+  ...Object.values(SCALP_SENSITIVITY_LABELS),
+  ...Object.values(HAIR_CONCERN_LABELS),
+  ...Object.values(HEAT_STYLING_LABELS),
+  ...Object.values(INGREDIENT_REACTION_LABELS),
   COPY.profile.unanswered,
 ]);
 
@@ -500,7 +551,35 @@ test('profile: four tiles, each the label of a choice, never a finding', () => {
   );
   for (const tile of m.profile.tiles) assert.ok(KNOWN_LABELS.has(tile.value), `${tile.id} is not a label: ${tile.value}`);
 
-  // No tracking area falls back to the motivation; no answer at all is said to be none.
+  // The current funnel: the goal, then how they described their hair, their scalp and its sensitivity.
+  const current = build(newFunnelRecord);
+  assert.deepEqual(
+    current.profile.tiles.map((t) => [t.id, t.value, t.label]),
+    [
+      ['goal', 'Better-looking overall hair', 'Your focus'],
+      ['hairType', 'Wavy', 'Your hair type'],
+      ['scalpType', 'Oily', 'Your scalp'],
+      ['sensitivity', 'Sensitive', 'Scalp sensitivity'],
+    ],
+  );
+  for (const tile of current.profile.tiles) assert.ok(KNOWN_LABELS.has(tile.value), `${tile.id} is not a label: ${tile.value}`);
+
+  // Every glyph a tile names is one the section draws by name, so no tile falls back to the generic mark.
+  const section = readFileSync(new URL('../../src/components/hair-scan/report-sections/profile.tsx', import.meta.url), 'utf8');
+  const drawn = new Set([...section.match(/TILE_ICONS: readonly IconName\[\] = \[([^\]]*)\]/)![1].matchAll(/'([a-z]+)'/g)].map((x) => x[1]));
+  for (const [name, fixture] of FIXTURES) {
+    for (const tile of build(fixture).profile.tiles) assert.ok(drawn.has(tile.icon), `${name}: ${tile.id} names ${tile.icon}, which the section does not draw`);
+  }
+
+  // A value off disk the app never offered reads as unanswered, and the older answer takes the tile.
+  const corrupt = build(() => {
+    const f = newFunnelRecord();
+    f.data.journey = { ...newFunnelJourney(), hairType: 'mullet' as unknown as Journey['hairType'], noticed: 'months' };
+    return f;
+  });
+  assert.deepEqual(corrupt.profile.tiles[1], { id: 'noticed', icon: 'calendar', value: 'A few months ago', label: 'When you noticed' });
+
+  // No tracking area falls back to the motivation; no answer at all is said to be none — under the current question.
   const sparse = build(() => {
     const f = firstScanMeasured();
     f.data.journey = journey({ trackingAreas: [], motivations: ['worry'], goals: [], approaches: [], noticed: undefined });
@@ -510,9 +589,9 @@ test('profile: four tiles, each the label of a choice, never a finding', () => {
     sparse.profile.tiles.map((t) => [t.id, t.value]),
     [
       ['goal', 'Not answered'],
-      ['noticed', 'Not answered'],
+      ['hairType', 'Not answered'],
       ['motivation', 'Stop worrying about my hair'],
-      ['approach', 'Not answered'],
+      ['sensitivity', 'Not answered'],
     ],
   );
   // With no journey at all the tiles still stand, all unanswered.
@@ -522,6 +601,7 @@ test('profile: four tiles, each the label of a choice, never a finding', () => {
     return f;
   });
   assert.equal(none.profile.tiles.length, 4);
+  assert.deepEqual(none.profile.tiles.map((t) => t.id), ['goal', 'hairType', 'scalpType', 'sensitivity']);
   assert.ok(none.profile.tiles.every((t) => t.value === 'Not answered'));
   assert.equal(none.focus, null);
 });
@@ -674,6 +754,73 @@ test('tips: four per goal, the goal decides which, and none is a treatment or an
   }
   // A note is a habit, never a habit-for-a-purpose: no ", so the" purpose clause.
   for (const sentence of sentences) assert.ok(!/, so the\b/.test(sentence), `"${sentence}" is advice with a purpose clause`);
+  // The profile notes reach the same sweep as the goal notes.
+  for (const tip of Object.values(PROFILE_TIPS)) {
+    assert.ok(sentences.includes(tip.body), `${tip.id} is swept`);
+    assert.ok(/^[A-Z]/.test(tip.body) && /[.]$/.test(tip.body), tip.id);
+  }
+});
+
+test('tips: the self-knowledge answers choose up to two notes, the goal the rest, one note per topic', () => {
+  // Nothing answered beyond the goal: exactly the goal's four, and nothing shaped them.
+  const plain = tipsForProfile({ goal: 'hairline' });
+  assert.deepEqual(plain.items, [...TIPS_BY_GOAL.hairline]);
+  assert.equal(plain.shapedBy, null);
+  assert.deepEqual(tipsForProfile({}).items, [...TIPS_BY_GOAL.overall]);
+  assert.deepEqual(tipsForProfile(tipProfileOf(null)).items, [...TIPS_BY_GOAL.overall]);
+
+  // Heat most days and a fragrance reaction: those two lead, then the goal fills in without repeating a topic.
+  const shaped = tipsForProfile({ goal: 'overall', heatStyling: 'daily', ingredientReactions: ['fragrance'], scalpType: 'oily' });
+  assert.equal(shaped.items.length, TIPS_PER_GOAL);
+  assert.deepEqual(shaped.items.slice(0, PROFILE_TIPS_MAX).map((t) => t.id), ['heat_often', 'reaction_fragrance']);
+  assert.ok(!shaped.items.some((t) => t.id === 'overall_2'), 'the goal\'s own heat note is the same topic, shown once');
+  assert.ok(!shaped.items.some((t) => t.id === 'scalp_oily'), 'the profile chooses at most two');
+  assert.equal(new Set(shaped.items.map((t) => t.kicker.toLowerCase())).size, TIPS_PER_GOAL, 'one note per topic');
+  assert.deepEqual(shaped.shapedBy, { kind: 'heat', label: 'Daily' });
+
+  // Heat weekly or less earns no heat note; a normal scalp earns none; a scalp that has not reacted earns none.
+  for (const heat of ['weekly', 'rarely', 'never'] as const) {
+    assert.ok(!tipsForProfile({ goal: 'overall', heatStyling: heat }).items.some((t) => t.id === 'heat_often'), heat);
+  }
+  assert.equal(tipsForProfile({ goal: 'crown', scalpType: 'normal', scalpSensitivity: 'notSensitive' }).shapedBy, null);
+
+  // "A few times a week" earns the same heat note as "Daily", so the note must not restate either frequency as theirs.
+  const fewTimes = tipsForProfile({ goal: 'overall', heatStyling: 'fewTimesWeek' });
+  assert.equal(fewTimes.items[0].id, 'heat_often');
+  assert.deepEqual(fewTimes.shapedBy, { kind: 'heat', label: 'A few times a week' });
+  assert.doesNotMatch(PROFILE_TIPS.heatOften.body, /daily|most days|every day|times a week|weekly/i, PROFILE_TIPS.heatOften.body);
+
+  // A sensitive scalp, and each scalp type, brings its own note.
+  assert.equal(tipsForProfile({ goal: 'crown', scalpSensitivity: 'sensitive' }).items[0].id, 'scalp_sensitive');
+  assert.equal(tipsForProfile({ goal: 'crown', scalpType: 'dry' }).items[0].id, 'scalp_dry');
+  assert.equal(tipsForProfile({ goal: 'crown', scalpType: 'combination' }).items[0].id, 'scalp_combination');
+  assert.deepEqual(tipsForProfile({ goal: 'crown', scalpType: 'oily' }).shapedBy, { kind: 'scalpType', label: 'Oily' });
+
+  // A concern brings a habit for it, and never a second note on a topic the goal already covers.
+  const concerned = tipsForProfile({ goal: 'lessBreakage', concerns: ['breakage', 'frizz'] });
+  assert.equal(concerned.items.filter((t) => t.kicker === 'Wet hair').length, 1);
+  assert.ok(concerned.items.some((t) => t.id === 'concern_frizz'));
+  assert.deepEqual(concerned.shapedBy, { kind: 'concern', label: 'Breakage' });
+  for (const concern of ['dandruff', 'itchOrIrritation'] as const) {
+    assert.ok(tipsForProfile({ goal: 'fullerPonytail', concerns: [concern] }).items.some((t) => t.id === 'concern_scalp'), concern);
+  }
+  assert.equal(tipsForProfile({ goal: 'crown', concerns: ['greying'] }).shapedBy, null, 'a concern with no habit for it changes nothing');
+
+  // Always four, never a note twice, whatever the combination.
+  const everything = tipsForProfile({
+    goal: 'crown', heatStyling: 'fewTimesWeek', ingredientReactions: ['fragrance', 'sulfates'],
+    scalpSensitivity: 'sensitive', scalpType: 'dry', concerns: ['dryness', 'frizz', 'shedding', 'moreScalpShowing'],
+  });
+  assert.equal(everything.items.length, TIPS_PER_GOAL);
+  assert.equal(new Set(everything.items.map((t) => t.id)).size, TIPS_PER_GOAL);
+
+  // The report reads the journey through the same call, validated, so a value the app never offered is ignored.
+  const m = build(newFunnelRecord);
+  assert.equal(m.tips.items.length, TIPS_PER_GOAL);
+  assert.deepEqual(m.tips.items.slice(0, 2).map((t) => t.id), ['heat_often', 'reaction_fragrance']);
+  const off = tipProfileOf({ ...newFunnelJourney(), heatStyling: 'always' as unknown as Journey['heatStyling'], concerns: 'frizz' as unknown as Journey['concerns'] });
+  assert.equal(off.heatStyling, undefined);
+  assert.deepEqual(off.concerns, []);
 });
 
 /* -------------------------------- routine ------------------------------- */
@@ -741,6 +888,53 @@ test('says: three or four sentences, addressed by name, quoting the goal, saying
   const empty = reportSummary(data, { ...s, photos: [] }, 'Sam', NOW);
   assert.match(empty, /kept no frames from your turn/);
   assert.ok(!/hair-area reading/.test(empty));
+});
+
+test('says: when their own answer shaped the care notes, the paragraph names that answer, and only as a quotation', () => {
+  // The paragraph's sentence and the notes are read off the same call, so they cannot name different answers.
+  const m = build(newFunnelRecord);
+  const shapedBy = tipsForProfile(tipProfileOf(newFunnelJourney())).shapedBy;
+  assert.deepEqual(shapedBy, { kind: 'heat', label: 'Daily' });
+  const sentence = profileSentence(shapedBy)!;
+  assert.equal(sentence, 'You told Tress heat goes on your hair “daily”, and the care notes are picked with that in mind.');
+  assert.ok(m.says.body.includes(sentence), m.says.body);
+  const sentences = m.says.body.split(/(?<=[.])\s+/);
+  assert.ok(sentences.length >= 3 && sentences.length <= 5, `${sentences.length} sentences: ${m.says.body}`);
+  assert.ok(!stripQuotes(sentence).includes('daily'), 'the answer stays inside the quotation');
+
+  // Each kind of answer has its own sentence, all attributed, none adopted.
+  assert.match(profileSentence({ kind: 'reaction', label: INGREDIENT_REACTION_LABELS.fragrance })!, /^You told Tress you have reacted to “fragrance\/parfum”, and/);
+  // The funnel asked "Have you ever reacted to any of these?" with no body part, so the echo names none.
+  for (const reaction of Object.values(INGREDIENT_REACTION_LABELS)) {
+    assert.doesNotMatch(profileSentence({ kind: 'reaction', label: reaction })!, /scalp|skin|hair has/i, reaction);
+  }
+  assert.match(profileSentence({ kind: 'sensitivity', label: 'Sensitive' })!, /^You described your scalp as “sensitive”, and/);
+  assert.match(profileSentence({ kind: 'scalpType', label: 'Combination' })!, /^You described your scalp as “combination”, and/);
+  assert.match(profileSentence({ kind: 'concern', label: 'More scalp showing' })!, /^You mentioned “more scalp showing” as something on your mind, and/);
+  assert.equal(profileSentence(null), null);
+
+  // A journey from before the questions existed gets no such sentence, and reads as it always did.
+  const older = build(firstScanMeasured).says.body;
+  assert.ok(!/care notes are picked/.test(older));
+  assert.equal(older.split(/(?<=[.])\s+/).length, 4);
+});
+
+/* ------------------------------- reminders ------------------------------ */
+
+test('reminders: the report asks the system only when nothing on this install has asked yet', () => {
+  // The once-per-install rule itself, from the result module the screen reads it through.
+  assert.equal(reminderOfferInterval(true, 30), null, 'already offered — by the funnel or an earlier report — means no ask');
+  assert.equal(reminderOfferInterval(false, 30), 30);
+
+  // And the screen reaches the system prompt only through that rule: the
+  // guard comes first, the prompt after it, and the flag is set after the ask.
+  const source = readFileSync(new URL('../../src/components/hair-scan/report.tsx', import.meta.url), 'utf8');
+  const effect = source.slice(source.indexOf('reminderOfferInterval(remindersAlreadyOffered()'));
+  const guard = effect.indexOf('if (intervalDays === null) return;');
+  const prompt = effect.indexOf('enableRemindersWithPrompt(');
+  const mark = effect.indexOf('markRemindersOffered()');
+  assert.ok(guard >= 0 && prompt > guard && mark > prompt, 'guard, then prompt, then the flag');
+  assert.equal((source.match(/enableRemindersWithPrompt\(/g) ?? []).length, 1, 'one ask on the report');
 });
 
 /* -------------------------------- locking ------------------------------- */
@@ -820,6 +1014,16 @@ test('honesty: a percentage appears on a row only when an area reading is behind
       if (printed) assert.ok(counted, `${name}/${row.id} prints a percentage nothing counted`);
     }
   }
+});
+
+test('honesty: the new-funnel report reads the self-knowledge answers back only as labels of choices', () => {
+  const model = build(newFunnelRecord);
+  const quotes = reportModelQuotes(model);
+  for (const label of ['Wavy', 'Oily', 'Sensitive']) assert.ok(quotes.includes(label), label);
+  assert.ok(quotes.includes('daily'), 'the paragraph quotes the heat answer');
+  // Nothing authored describes the scalp: the words are theirs, inside quotation marks.
+  const authored = reportModelSentences(model).join(' ');
+  assert.ok(!/\boily\b|\bwavy\b|\bsensitive\b/i.test(authored), authored);
 });
 
 test('honesty: the sweep is not vacuous — the raw report really does carry a label the sweep forbids', () => {

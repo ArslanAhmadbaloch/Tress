@@ -297,10 +297,10 @@ let remindersOffered = false;
  * The reminder switches default to on, but a default is not permission:
  * iOS and Android still have to ask, and the prompt can only be shown
  * once per install. Asking at launch, before anybody knows what the app
- * is for, is the reliable way to be told no for ever — so the ask waits
- * until the first reading is on screen, which is the moment the offer
- * makes sense ("come back next month and this becomes a comparison").
- * This flag is what stops it being asked a second time.
+ * is for, is the reliable way to be told no for ever — so the ask comes
+ * at the end of the funnel, once the person has said what they want to
+ * keep a record of, and the first report asks instead if the funnel did
+ * not. This flag is what stops it being asked a second time.
  */
 export function remindersAlreadyOffered(): boolean {
   return remindersOffered;

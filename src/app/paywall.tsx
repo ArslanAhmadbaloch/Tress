@@ -9,21 +9,31 @@
  *
  * What that rules out is most of the genre. No countdown, no struck-through
  * "was" price, no "3 spots left", no interstitial that hides its close
- * button for four seconds. The price is visible above the button that
- * charges it, the renewal terms are on the screen rather than a tap away,
- * and the close control is there from the first frame.
+ * button for four seconds. The price is on the card that is chosen and in
+ * the terms under the button that charges it, and the close control is
+ * there from the first frame.
  *
  * ── The page, top to bottom ────────────────────────────────────────────
- * One headline, centred, in the display face. The person's own first
- * photograph in a white frame, because the thing being sold is a record
- * and the record is of them. Then the list of what Premium includes —
- * every line of it a screen that exists, which is the only test a bullet
- * on this page has to pass. Two plans. Then, pinned, the price and the
- * button that charges it.
+ * The reference's paywall, in this palette. Two tilted cards: their
+ * latest scan on the left, and on the right an EMPTY dashed frame carrying
+ * the date the record says the next scan is due — never a second copy of
+ * the photograph, never a generated after. The headline, alone. Three
+ * icon benefits in a row directly under it, each a thing the entitlement
+ * really decides. Two plan cards, the month first and the year second
+ * with the tick already in it. A promo-code link (iOS, where the store
+ * has a sheet for it) and Restore. Then, pinned, the button, the renewal
+ * terms, and one row of small print: where the photographs are kept,
+ * and the two legal links.
  *
- * There is no free trial on this screen and no code path that could draw
- * one. The offer is a straight subscription: one price, stated above the
- * button, charged when they tap it.
+ * Nothing between the cards and the plans but the headline and the
+ * three benefits — no caption under the cards, no framing paragraph
+ * under the title. The reference has neither, and each one pushed the
+ * plans a text block further from the top. The one paragraph this
+ * screen ever draws is the second ask's, on the single visit that is.
+ *
+ * There is no free trial on this screen, no trial toggle, and no code
+ * path that could draw one. The offer is a straight subscription: one
+ * price, on the card, charged when they tap.
  *
  * Every sentence on it lives in paywall-variants.ts, where the tests can
  * read it. This file is layout.
@@ -38,22 +48,23 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { currentPaywallAsk, setPaywallAsk } from '@/lib/device-preferences';
 import { useBackOrHome } from '@/lib/navigation';
 import { Rise } from '@/components/funnel';
-import { PremiumFeatureList } from '@/components/subscription/feature-list';
-import { PaywallHeroCard } from '@/components/subscription/hero';
-import { SubscriptionPlanCard } from '@/components/subscription/plan-card';
+import { PaywallHeroPair, PaywallHighlights, PaywallPlanCard } from '@/components/paywall';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ScrollEdgeEffect } from '@/components/ui/layout';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
-import { DEFAULT_PLAN, PLAN_ORDER, type PlanId } from '@/features/subscription/config';
+import { DEFAULT_PLAN, type PlanId } from '@/features/subscription/config';
 import { failureMessage } from '@/features/subscription/entitlement';
 import {
   CTA_COPY,
+  HERO_COPY,
+  PLAN_BADGE,
+  PLAN_DISPLAY_ORDER,
   ctaLabel,
   heroFor,
+  nextScanLabel,
   paywallCopy,
-  priceLine,
   renewalTerms,
   variantFor,
 } from '@/features/subscription/paywall-variants';
@@ -64,9 +75,11 @@ import { useTheme } from '@/theme';
 /** The headline and body hold a narrower measure than the cards, so a
     centred line breaks where a sentence would rather than at the edge. */
 const COPY_MEASURE = 320;
+/** The round close control, top right, over the cards. */
+const CLOSE = 44;
 
 export default function PaywallScreen() {
-  const { colors, spacing, radius } = useTheme();
+  const { colors, spacing, radius, shadow } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   /*
@@ -80,7 +93,7 @@ export default function PaywallScreen() {
   const { data } = useAppStore();
   const {
     entitlement, plans, canPurchase,
-    purchaseState, restoreState, purchase, restore, acknowledge,
+    purchaseState, restoreState, purchase, restore, redeemCode, acknowledge,
   } = useSubscription();
 
   const [selected, setSelected] = useState<PlanId>(DEFAULT_PLAN);
@@ -119,6 +132,7 @@ export default function PaywallScreen() {
     });
   }, [navigation]);
   const hero = useMemo(() => heroFor(data), [data]);
+  const nextLabel = useMemo(() => nextScanLabel(data), [data]);
   const plan = plans[selected];
   const scroller = useRef<ScrollView>(null);
 
@@ -163,79 +177,122 @@ export default function PaywallScreen() {
   // do not need to be told what they just did.
   const showFailure = Boolean(failure && failure.title);
 
+  const closeTop = insets.top + spacing.sm;
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         ref={scroller}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          paddingTop: insets.top + spacing.md,
+          // The cards start under the close control, not beside it.
+          paddingTop: closeTop + CLOSE + spacing.sm,
           paddingHorizontal: spacing.xl,
           paddingBottom: spacing.xxxl,
         }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-          <PressableScale
-            hitSlop={6}
-            onPress={leave}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-            style={{
-              width: 36, height: 36, borderRadius: 18,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: colors.fill,
-            }}>
-            <Icon name="close" size={15} color={colors.text} />
-          </PressableScale>
-        </View>
+        <Rise index={0}>
+          <PaywallHeroPair hero={hero} gender={data.profile?.gender} nextLabel={nextLabel} />
+        </Rise>
 
         {/*
-          Centred, like the funnel's questions. Which framing somebody sees
-          is fixed for the life of their install — see paywall-variants.ts.
-          All three name the same price and the same features; only the
-          door in is different. The one exception is the visit after a
-          dismissal, which swaps these two lines for the second ask and
-          nothing else.
+          The title, and under it the three benefits — nothing in between,
+          as the reference draws it. The one visit that carries a body is
+          the second ask, which swaps the headline and adds its paragraph
+          and nothing else; see paywall-variants.ts.
         */}
-        <Rise index={0} style={{ alignItems: 'center', marginTop: spacing.lg }}>
-          <Text variant="overline" color="textSecondary" center>
-            Tress Premium
-          </Text>
+        <Rise index={1} style={{ alignItems: 'center', marginTop: spacing.xxl }}>
           <Text
             variant="title1"
             center
             accessibilityRole="header"
-            style={{ marginTop: spacing.sm, maxWidth: COPY_MEASURE }}>
+            style={{ maxWidth: COPY_MEASURE }}>
             {copy.headline}
           </Text>
-          <Text
-            variant="callout"
-            color="textSecondary"
-            center
-            style={{ marginTop: spacing.md, maxWidth: COPY_MEASURE }}>
-            {copy.body}
-          </Text>
+          {copy.body ? (
+            <Text
+              variant="callout"
+              color="textSecondary"
+              center
+              style={{ marginTop: spacing.md, maxWidth: COPY_MEASURE }}>
+              {copy.body}
+            </Text>
+          ) : null}
         </Rise>
 
-        <Rise index={1} style={{ marginTop: spacing.xxxl }}>
-          <PaywallHeroCard hero={hero} />
-        </Rise>
+        <View style={{ marginTop: spacing.xl }}>
+          <PaywallHighlights firstIndex={2} />
+        </View>
 
-        <Rise index={2} style={{ marginTop: spacing.xxxl, paddingHorizontal: spacing.xs }}>
-          <PremiumFeatureList />
-        </Rise>
-
-        <Rise index={3} style={{ marginTop: spacing.xxxl }}>
+        <Rise index={5} style={{ marginTop: spacing.xxxl }}>
           <View accessibilityRole="radiogroup" style={{ gap: spacing.md }}>
-            {PLAN_ORDER.map((id) => (
-              <SubscriptionPlanCard
+            {PLAN_DISPLAY_ORDER.map((id) => (
+              <PaywallPlanCard
                 key={id}
                 plan={plans[id]}
                 selected={selected === id}
                 onSelect={() => setSelected(id)}
-                badge={id === 'yearly' ? 'Best value' : undefined}
+                badge={id === 'yearly' ? PLAN_BADGE : undefined}
               />
             ))}
           </View>
+        </Rise>
+
+        {/*
+          The promo-code link appears only where the store has a sheet to
+          open — provider.tsx hands back null everywhere else — and Restore
+          is always there. Both read as controls rather than small print
+          through the type scale's emphasised small step, not a weight
+          written here.
+        */}
+        <Rise
+          index={6}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: spacing.xxl,
+            marginTop: spacing.xl,
+            minHeight: 40,
+          }}>
+          {restoreState.kind === 'working' ? (
+            <>
+              <ActivityIndicator color={colors.textSecondary} />
+              <Text variant="footnote" color="textSecondary" accessibilityLiveRegion="polite">
+                {CTA_COPY.restoring}
+              </Text>
+            </>
+          ) : (
+            <>
+              {redeemCode ? (
+                <PressableScale
+                  onPress={() => { void redeemCode(); }}
+                  disabled={busy}
+                  hitSlop={10}
+                  haptic="none"
+                  accessibilityRole="button"
+                  accessibilityLabel={CTA_COPY.promoCode}
+                  accessibilityHint="Opens the App Store's code redemption sheet"
+                  style={{ paddingVertical: spacing.xs, paddingHorizontal: spacing.sm }}>
+                  <Text variant="subhead" color="textSecondary">
+                    {CTA_COPY.promoCode}
+                  </Text>
+                </PressableScale>
+              ) : null}
+              <PressableScale
+                onPress={restore}
+                disabled={busy}
+                hitSlop={10}
+                haptic="none"
+                accessibilityRole="button"
+                accessibilityLabel={CTA_COPY.restore}
+                accessibilityHint="Looks for a Premium subscription already bought with this store account"
+                style={{ paddingVertical: spacing.xs, paddingHorizontal: spacing.sm }}>
+                <Text variant="subhead" color="textSecondary">
+                  {CTA_COPY.restore}
+                </Text>
+              </PressableScale>
+            </>
+          )}
         </Rise>
 
         {showFailure && failure ? (
@@ -247,7 +304,7 @@ export default function PaywallScreen() {
               style={{
                 flexDirection: 'row',
                 gap: spacing.md,
-                marginTop: spacing.xl,
+                marginTop: spacing.lg,
                 padding: spacing.lg,
                 borderRadius: radius.md,
                 backgroundColor: colors.backgroundSubtle,
@@ -270,17 +327,41 @@ export default function PaywallScreen() {
               color="success"
               center
               accessibilityLiveRegion="polite"
-              style={{ marginTop: spacing.xl }}>
+              style={{ marginTop: spacing.lg }}>
               {restoreState.message}
             </Text>
           </Animated.View>
         ) : null}
       </ScrollView>
 
+      {/* The close control, there from the first frame and never
+          scrolled away: a white disc over the cards, as in the reference. */}
+      <PressableScale
+        hitSlop={6}
+        onPress={leave}
+        accessibilityRole="button"
+        accessibilityLabel="Close"
+        style={[
+          {
+            position: 'absolute',
+            top: closeTop,
+            right: spacing.xl,
+            width: CLOSE,
+            height: CLOSE,
+            borderRadius: CLOSE / 2,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.surface,
+          },
+          shadow.soft,
+        ]}>
+        <Icon name="close" size={16} color={colors.text} />
+      </PressableScale>
+
       {/*
         The footer is pinned, and content scrolls beneath it. No rule
         between the two: the scroll edge effect dissolves the cards before
-        they reach the price, which is what makes them read as passing
+        they reach the button, which is what makes them read as passing
         under the footer rather than being cut off by it.
       */}
       <View pointerEvents="none" style={{ height: 0 }}>
@@ -293,78 +374,47 @@ export default function PaywallScreen() {
           paddingTop: spacing.sm,
           backgroundColor: colors.background,
         }}>
-        {/* The price sits directly above the button that charges it, so
-            there is never a tap whose cost is off screen. */}
-        <Text variant="footnote" color="textSecondary" center>
-          {priceLine(plan)}
-        </Text>
-
         <Button
           label={ctaLabel(succeeded)}
           onPress={() => purchase(selected)}
           loading={purchaseState.kind === 'working'}
           succeeded={succeeded}
           disabled={busy || succeeded}
-          style={{ marginTop: spacing.md }}
           accessibilityHint={
             canPurchase
-              ? 'Subscribes and unlocks your journey'
+              ? `Subscribes to the ${selected} plan and unlocks your journey`
               : 'Premium is not open for purchase in this version'
           }
         />
 
+        {/* The terms name the price and the period, directly under the
+            button that charges it, so there is never a tap whose cost is
+            off screen. */}
+        <Text variant="caption" color="textTertiary" center style={{ marginTop: spacing.sm }}>
+          {renewalTerms(plan)}
+        </Text>
+
+        {/* One row of small print: where the photographs are kept —
+            the one ungated line on the Premium ledger, said once, here,
+            where somebody about to pay for a year of photo storage will
+            read it — and the two legal links. */}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: spacing.sm,
-            marginTop: spacing.sm,
-            minHeight: 32,
-          }}>
-          {restoreState.kind === 'working' ? (
-            <>
-              <ActivityIndicator color={colors.textSecondary} />
-              <Text variant="footnote" color="textSecondary" accessibilityLiveRegion="polite">
-                {CTA_COPY.restoring}
-              </Text>
-            </>
-          ) : (
-            <PressableScale
-              onPress={restore}
-              disabled={busy}
-              hitSlop={10}
-              haptic="none"
-              accessibilityRole="button"
-              accessibilityLabel={CTA_COPY.restore}
-              accessibilityHint="Looks for a Premium subscription already bought with this store account"
-              style={{ paddingVertical: spacing.xs, paddingHorizontal: spacing.sm }}>
-              {/*
-                Restore has to read as a control rather than as another
-                line of small print, and the weight that does that comes
-                from the scale — `subhead` is the emphasised small step —
-                not from a fontWeight written here. A weight set inline
-                is a weight the type scale cannot change, and on Android
-                it asks for a face that is not bundled.
-              */}
-              <Text variant="subhead" color="textSecondary">
-                {CTA_COPY.restore}
-              </Text>
-            </PressableScale>
-          )}
-        </View>
-
-        <Text variant="caption" color="textTertiary" center style={{ marginTop: spacing.xs }}>
-          {renewalTerms(plan)}
-        </Text>
-
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'center',
             gap: spacing.xl,
             marginTop: spacing.xs,
           }}>
+          <View
+            accessible
+            accessibilityLabel={HERO_COPY.onDevice}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+            <Icon name="lock" size={11} color={colors.textTertiary} />
+            <Text variant="caption" color="textTertiary">
+              {HERO_COPY.onDevice}
+            </Text>
+          </View>
           <PressableScale
             onPress={() => router.push('/privacy')}
             hitSlop={10}

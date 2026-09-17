@@ -467,7 +467,7 @@ record(
 // The paywall hero is one large image on a detail-like screen, loaded at
 // full resolution with the thumbnail as its placeholder on purpose — the
 // 320px thumbnail would blur across a 340pt frame. Not a list.
-const FULL_RES_OK = ['session/[id].tsx', 'compare.tsx', 'subscription/hero.tsx'];
+const FULL_RES_OK = ['session/[id].tsx', 'compare.tsx', 'paywall/hero-pair.tsx'];
 const listImageOffenders = FILES.filter((f) => {
   if (FULL_RES_OK.some((ok) => f.rel.endsWith(ok))) return false;
   if (!f.text.includes('<Image')) return false;

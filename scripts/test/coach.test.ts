@@ -46,12 +46,23 @@ import {
 import {
   ANGLES,
   APPROACH_LABELS,
+  BUDGET_LABELS,
   EMPTY_DATA,
+  HAIR_CONCERN_LABELS,
   HAIR_GOAL_LABELS,
+  HAIR_TYPE_LABELS,
+  HEAT_STYLING_LABELS,
+  INGREDIENT_REACTION_LABELS,
+  LIFE_FACTOR_LABELS,
+  PRODUCT_FACTOR_LABELS,
+  SCALP_CONDITION_LABELS,
+  SCALP_SENSITIVITY_LABELS,
+  SCALP_TYPE_LABELS,
   SCHEMA_VERSION,
   SELF_CONSISTENCY_LABELS,
   TRACKING_AREA_LABELS,
   type AppData,
+  type Journey,
   type Photo,
   type PhotoSession,
   type RoutineCadence,
@@ -237,8 +248,27 @@ const twoMeaningful = withSessions(
 
 const full = withJournal(withRoutine(twoMeaningful));
 
+/** A journey from the current funnel: every self-knowledge question answered, "none" answers included. */
+function withSelfKnowledge(data: AppData): AppData {
+  const journey: Journey = {
+    ...data.journey!,
+    hairType: 'wavy',
+    scalpType: 'oily',
+    scalpSensitivity: 'sensitive',
+    concerns: ['frizz', 'dandruff'],
+    budget: 'midRange',
+    productFactors: ['sulfateFree', 'noPreference'],
+    ingredientReactions: ['fragrance'],
+    scalpConditions: ['dandruff'],
+    lifeFactors: ['none'],
+    heatStyling: 'daily',
+  };
+  return { ...data, journey };
+}
+
 const FIXTURES: Record<string, AppData> = {
   empty: base(),
+  selfKnown: withSelfKnowledge(full),
   routineOnly: withRoutine(base()),
   routineToday: { ...base(), routineItems: [item('new', 'Topical', 0)] },
   oneUnmeasured: withSessions(base(), session('s1', 30, ANGLES)),
@@ -548,6 +578,16 @@ test('coach: echo isolation', () => {
     ...Object.values(TRACKING_AREA_LABELS),
     ...Object.values(APPROACH_LABELS),
     ...Object.values(SELF_CONSISTENCY_LABELS),
+    ...Object.values(HAIR_TYPE_LABELS),
+    ...Object.values(SCALP_TYPE_LABELS),
+    ...Object.values(SCALP_SENSITIVITY_LABELS),
+    ...Object.values(HAIR_CONCERN_LABELS),
+    ...Object.values(BUDGET_LABELS),
+    ...Object.values(PRODUCT_FACTOR_LABELS),
+    ...Object.values(INGREDIENT_REACTION_LABELS),
+    ...Object.values(SCALP_CONDITION_LABELS),
+    ...Object.values(LIFE_FACTOR_LABELS),
+    ...Object.values(HEAT_STYLING_LABELS),
   ]);
 
   let echoed = 0;
@@ -605,6 +645,40 @@ test('coach: a journey saved before the change still answers about its goal', ()
     journey: { ...FIXTURES.full.journey!, goals: undefined, goal: 'hairline' },
   };
   assert.deepEqual(ask('goals', legacy).echo!.slice(0, 1), ['A stronger-looking hairline']);
+});
+
+test('coach: what they told Tress about themselves is read back as the labels they picked', () => {
+  const a = ask('goals', FIXTURES.selfKnown);
+  assert.equal(a.refusal, false);
+  // The one sentence that states an answer attributes it and quotes it; the rest stays as it was.
+  assert.equal(
+    a.detail,
+    'You told Tress your hair is “wavy” and your scalp is “oily” and “sensitive”. Kept as you said it, shown back as you said it.',
+  );
+  assert.equal(
+    a.echoLabel,
+    'Your goal, the areas you watch and what you told Tress about yourself',
+  );
+  // Every new label is in the echo, once — "Dandruff" is both a concern and a condition, and "none" closes a list.
+  for (const label of ['Wavy', 'Oily', 'Sensitive', 'Frizz', 'Dandruff', 'Mid-range', 'Sulfate-free', 'No preferences', 'Fragrance/parfum', 'None', 'Daily']) {
+    assert.equal(a.echo!.filter((line) => line === label).length, 1, label);
+  }
+  assert.ok(!answerSentences(a).join(' ').includes('Wavy'), 'the capitalised label lives in the echo, not the template');
+  assertHonest(assert, answerSentences(a), 'goals with self-knowledge');
+
+  // Any one of the three describes on its own; a value the app never offered is dropped, not printed.
+  const scalpOnly: AppData = { ...FIXTURES.full, journey: { ...FIXTURES.full.journey!, scalpType: 'dry' } };
+  assert.match(ask('goals', scalpOnly).detail!, /^You told Tress your scalp is “dry”\. Kept/);
+  const hairOnly: AppData = { ...FIXTURES.full, journey: { ...FIXTURES.full.journey!, hairType: 'coily' } };
+  assert.match(ask('goals', hairOnly).detail!, /^You told Tress your hair is “coily”\. Kept/);
+  const off: AppData = { ...FIXTURES.full, journey: { ...FIXTURES.full.journey!, hairType: 'mullet' as unknown as Journey['hairType'] } };
+  assert.equal(ask('goals', off).detail, 'Kept as you said it, shown back as you said it.');
+  assert.ok(!ask('goals', off).echo!.includes('mullet'));
+
+  // A journey from before the questions reads exactly as it did.
+  const before = ask('goals', FIXTURES.full);
+  assert.equal(before.detail, 'Kept as you said it, shown back as you said it.');
+  assert.equal(before.echoLabel, 'Your goal and the areas you watch');
 });
 
 test('coach: a journey with no goal at all captions only what it has', () => {
