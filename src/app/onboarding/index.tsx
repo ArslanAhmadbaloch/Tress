@@ -590,12 +590,6 @@ function Field({
   autoFocus?: boolean;
 }) {
   const { colors, spacing, radius, shadow } = useTheme();
-  const [text, setText] = useState(value);
-
-  const change = (next: string) => {
-    setText(next);
-    onChange(next);
-  };
 
   return (
     <View
@@ -609,9 +603,15 @@ function Field({
         },
         shadow.soft,
       ]}>
+      {/*
+        Uncontrolled on purpose: the native field keeps the text and reports
+        each change. A controlled value re-rendered after every keystroke
+        can lag a fast typist and drop characters — the first letter
+        survived and the rest did not on the simulator.
+      */}
       <TextInput
-        value={text}
-        onChangeText={change}
+        defaultValue={value}
+        onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
         autoCapitalize="words"
