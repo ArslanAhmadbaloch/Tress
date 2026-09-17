@@ -1037,7 +1037,9 @@ export function syntheticFace(view: ViewSize, t: number, at: number = t): RawFac
     cy,
     width,
     height,
-    yaw: Math.sin(t / 2600) * 12,
+    // Inside the 8° front lock at every phase, so the stand-in's Start is
+    // live the way a person facing a phone is; the sway is still visible.
+    yaw: Math.sin(t / 2600) * 6,
     pitch: Math.sin(t / 3100) * 3,
     roll,
     contours: syntheticContours(cx, cy, width, height, roll),

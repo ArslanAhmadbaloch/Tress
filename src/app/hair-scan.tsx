@@ -90,6 +90,7 @@ import type {
 } from '@/features/hair-scan/types';
 import { deletePhotoFiles, persistCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
+import { hairContent } from '@/features/content/hair-content';
 import { darkColors, iconSize, motion, radius, spacing, useTheme } from '@/theme';
 import { sessionToExtend, type Angle, type PhotoSession } from '@/types/domain';
 
@@ -268,6 +269,13 @@ function Scanner({
   const router = useRouter();
   const { data, addSession } = useAppStore();
   const { isPremium } = usePremium();
+  /*
+    The frame the simulator's stand-in camera shows and photographs — the
+    bundled front example, matched to the profile the way the rest of the
+    app matches it. A real camera ignores it; without it the stand-in has
+    nothing to load and every capture request fails.
+  */
+  const sampleFrame = hairContent(data.profile?.gender).angles.front.example;
 
   /* ---------------------------- the free tier ---------------------------- */
 
@@ -844,6 +852,7 @@ function Scanner({
             onTrackingChanged={onTrackingChanged}
             extraOutputs={extraOutputs}
             demoTracking
+            sampleSource={sampleFrame}
           />
           <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
             <Path d={scrim} fill={darkColors.photoScrim} fillRule="evenodd" />

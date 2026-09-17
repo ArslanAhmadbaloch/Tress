@@ -13,11 +13,14 @@
  * not — a machine that cannot start yet is still a machine, not a greyed
  * label — and only the rings go quiet while the head is being found.
  *
- * One press is one activation. The button latches on the press, so a
- * second tap inside the animation does nothing, and it unlatches — disc
- * and rings returning — only when `ready` goes false and comes back, which
- * is the screen saying the scan did not begin (an error retried, a scan
- * abandoned before it started). No key or remount is needed.
+ * One press is one activation, and an armed press always arrives. The
+ * button latches on the press, so a second tap inside the animation does
+ * nothing, and the hand-over is not cancelled by anything that happens
+ * during those 520 ms — a head that drifts a few degrees while the rings
+ * fly must not swallow the press. Only after the screen has heard
+ * `onActivate` does a `ready` that goes false and comes back re-arm the
+ * button — disc and rings returning — which is the screen saying the scan
+ * did not begin (an error retried, a scan abandoned before it started).
  *
  * The disc gives no haptic of its own: the scanner's haptic table owns the
  * start tap, and the screen plays `start` from `onPress`, so the person
@@ -86,17 +89,24 @@ export function StartButton({ label, onActivate, onPress, ready, hint, style }: 
   const reduceMotion = useReducedMotion();
 
   /*
-   * The latch. Set on the press; cleared when `ready` comes back true
-   * after having been false. Tracked as state so the disc's hit-testing
-   * follows it, and derived during render so no effect sets state.
+   * The latch. `pressed` is set on the press and `delivered` once the
+   * screen has heard `onActivate`; both are cleared together when `ready`
+   * comes back true after having been false — but only for a delivered
+   * press, so a readiness flicker inside the activation can never cancel
+   * it. Tracked as state so the disc's hit-testing follows it, and derived
+   * during render so no effect sets state.
    */
-  const [latched, setLatched] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [delivered, setDelivered] = useState(false);
   const [readyWas, setReadyWas] = useState(ready);
   if (ready !== readyWas) {
     setReadyWas(ready);
-    if (ready) setLatched(false);
+    if (ready && delivered) {
+      setPressed(false);
+      setDelivered(false);
+    }
   }
-  const armed = ready && !latched;
+  const armed = ready && !pressed;
 
   /* Breathing, on the rings only: the disc stays still so its label does. */
   const breath = useSharedValue(0);
@@ -118,35 +128,37 @@ export function StartButton({ label, onActivate, onPress, ready, hint, style }: 
   }, [armed, reduceMotion, breath]);
 
   /*
-   * Activation, 0 → 1 once per press. When the screen re-arms the button
-   * the disc and rings come back; a press whose animation was still
-   * running when that happened is cancelled and never reaches the screen.
+   * Activation, 0 → 1 once per press. The disc and rings come back only
+   * when the button is re-armed, which happens after the press has been
+   * delivered — so nothing interrupts an activation in flight, and the
+   * screen hears every press it armed.
    */
   const activation = useSharedValue(0);
   useEffect(() => {
-    if (!ready) return;
+    if (pressed) return;
     activation.set(reduceMotion ? 0 : withTiming(0, { duration: motion.duration.base }));
-  }, [ready, reduceMotion, activation]);
+  }, [pressed, reduceMotion, activation]);
+
+  const deliver = useCallback(() => {
+    setDelivered(true);
+    onActivate();
+  }, [onActivate]);
 
   const handlePress = useCallback(() => {
     if (!armed) return;
-    setLatched(true);
+    setPressed(true);
     onPress?.();
     if (reduceMotion) {
       activation.set(1);
-      onActivate();
+      deliver();
       return;
     }
     activation.set(
-      withTiming(
-        1,
-        { duration: START_BUTTON_ACTIVATE_MS, easing: Easing.out(Easing.cubic) },
-        (finished) => {
-          if (finished) runOnJS(onActivate)();
-        },
-      ),
+      withTiming(1, { duration: START_BUTTON_ACTIVATE_MS, easing: Easing.out(Easing.cubic) }, () => {
+        runOnJS(deliver)();
+      }),
     );
-  }, [armed, activation, onActivate, onPress, reduceMotion]);
+  }, [armed, activation, deliver, onPress, reduceMotion]);
 
   const outerRing = useAnimatedStyle(() => {
     const t = activation.get();
