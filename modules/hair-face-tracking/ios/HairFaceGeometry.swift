@@ -359,7 +359,15 @@ enum HairFacePose {
   ///
   ///   yaw   +ve = nose toward the viewer's RIGHT on screen  → -yawEye
   ///   pitch +ve = chin lifted, face looking up              → +pitchEye
-  ///   roll  +ve = head tilted counter-clockwise on screen   → +rollEye
+  ///   roll  +ve = head tilted counter-clockwise on screen   → -rollEye
+  ///
+  /// Roll is negated for the same reason yaw is, and it was not: a mirror
+  /// reverses the handedness of the image plane, so a head the camera
+  /// sees tilting one way is drawn on screen tilting the other. Shipped
+  /// unnegated, the cap sat on a head that leaned the opposite way to the
+  /// face under it — the mesh followed the real head while the preview
+  /// showed its reflection. Pitch is the exception because it turns about
+  /// an axis the mirror leaves alone.
   ///
   /// which is ML Kit's convention, so `headDirection` in the scan engine
   /// reads an ARKit face and an ML Kit face the same way.
@@ -382,7 +390,7 @@ enum HairFacePose {
     return (
       yaw: -yawEye * toDegrees,
       pitch: pitchEye * toDegrees,
-      roll: rollEye * toDegrees
+      roll: -rollEye * toDegrees
     )
   }
 }

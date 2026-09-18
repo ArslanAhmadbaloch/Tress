@@ -705,6 +705,25 @@ test('the angles pass through untouched — they are already in ML Kit’s conve
   assert.equal(raw?.roll, 4.25);
 });
 
+
+/*
+  The mirror reverses the image plane, so a head the camera sees leaning
+  one way is drawn on screen leaning the other. Yaw was negated for that
+  and roll was not, and the cap rode on a head tilted opposite to the face
+  beneath it. Both live in one return in HairFaceGeometry.swift; this
+  reads it rather than trusting the comment above it.
+*/
+test('the mirrored preview negates both rotations in the image plane, and not pitch', () => {
+  const swift = readFileSync(
+    new URL('../../modules/hair-face-tracking/ios/HairFaceGeometry.swift', import.meta.url),
+    'utf8',
+  );
+  const returned = swift.slice(swift.indexOf('return (', swift.indexOf('static func degrees')));
+  assert.match(returned, /yaw:\s*-yawEye/, 'yaw turns the other way in a mirror');
+  assert.match(returned, /roll:\s*-rollEye/, 'so does roll — it is a rotation in the same plane');
+  assert.match(returned, /pitch:\s*pitchEye/, 'pitch turns about the one axis a mirror leaves alone');
+});
+
 test('the mesh crosses over whole, in the order it arrived', () => {
   const points: number[] = [];
   const facing: number[] = [];
