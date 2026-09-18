@@ -11,6 +11,56 @@
  * centre, and the disc swells a little and settles as it arrives, with a
  * soft tap — then holds, and the screen hands off.
  *
+ * ── How many frames are in orbit ──────────────────────────────────────
+ * Every frame the scan kept, which since build 20 is nine to eleven
+ * rather than four: two or three moments of each of the four capture
+ * regions, so that the crown — the one place on the head that only the
+ * last step sees — is read more than once and has an error bar at all
+ * (`measure/noise.ts`, and `engine.ts`'s header for what the other five
+ * places already had). Nothing here counts them — `others` is whatever
+ * the caller handed in, `orbitPositions` spaces them and
+ * `orbitFrameSize` shrinks them so a crowded ring does not overlap — so
+ * the screen shows what was read rather than a fixed four.
+ *
+ * ── What that would have cost, and what is done about it ──────────────
+ * `analysis.ts` plans 2N+1 units for N frames and holds each finished
+ * unit for `ANALYSIS_PACING.unitFloorMs` (350 ms) so a person can see it
+ * land. That is a PER-UNIT figure tuned when a scan was four frames:
+ * 9 units, 3150 ms. Nine to eleven frames is 19 to 23 units, so left
+ * alone this screen would have gone from 3.2 s to 6.7–8.1 s of holding
+ * — three and a half to five seconds added, none of it work.
+ *
+ * So `unitFloorFor` divides the hold by the plan's own unit count and
+ * this screen passes it in as `pacing`. The held part of the pass lands
+ * back at about 3.2 s whatever the frame count, the bar advances in
+ * smaller and more frequent steps, and every unit still runs and still
+ * reports. See `PASS_HOLD_BUDGET_MS`.
+ *
+ * ── What that does NOT cover, stated because the code computes it ─────
+ * The hold is one of three things a person waits through, and scaling
+ * it back does nothing to the other two. This screen's own ring is
+ * paced by the frame count in `orbitReadyMs` (the frames arriving and
+ * settling) and `absorbHandoffMs` (the same frames gathering into the
+ * disc), and the hand-off runs strictly after both. Through the real
+ * functions, at `ORBIT_LEAD_MS` with motion on:
+ *
+ *   4 frames   hold 3150 ms   ring ready 1880 ms   absorb 1890 ms
+ *   9 frames   hold 3154 ms   ring ready 2630 ms   absorb 3190 ms
+ *  11 frames   hold 3450 ms   ring ready 2930 ms   absorb 3710 ms
+ *
+ * The screen cannot end before `max(hold, ring) + absorb`, so it is
+ * about 5.0 s at four frames and 6.3–7.2 s at nine to eleven: one to
+ * two seconds longer than build 19, not equal to it. That is the price
+ * of showing the frames the owner asked to see rotating, and it is a
+ * number this file's own schedule produces, so it is written down here
+ * rather than left to be discovered. `hair-scan-engine.test.ts` pins
+ * all three terms and a ceiling on their sum.
+ *
+ * The real work is not shortened by any of this either: the segmenter
+ * runs once per frame, nine times now rather than four, and on a phone
+ * slow enough for that to exceed the hold it is what the person waits
+ * for. That is the honest cost of reading nine frames instead of four.
+ *
  * ── Two clocks, one hand-off ──────────────────────────────────────────
  * The first bar runs on the runner's clock: it moves when a unit
  * finishes and never otherwise. The ring runs on its own: it takes a
@@ -114,7 +164,9 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import {
   ANALYSIS_COPY,
+  ANALYSIS_PACING,
   pickMainFrame,
+  planAnalysis,
   runAnalysis,
   type AnalysisDeps,
   type AnalysisFrame,
@@ -164,6 +216,42 @@ const BAR = 12;
 /** The check beside each bar's label. */
 const MARK = 20;
 
+/* ---------------------------- the pass's pace -------------------------- */
+
+/**
+ * How long the deliberate part of the pass is allowed to take, whatever
+ * the frame count.
+ *
+ * `analysis.ts` holds each finished unit on screen for
+ * `ANALYSIS_PACING.unitFloorMs` before starting the next, so a person
+ * can see it land. That hold was tuned against a four-frame scan: nine
+ * units, 3150 ms. It is a PER-UNIT figure, so build 20's nine to eleven
+ * frames would have carried it to 19–23 units and 6650–8050 ms — three
+ * and a half to five seconds added to a screen the owner wants at a KYC
+ * pace, and not one millisecond of it real work.
+ *
+ * So the hold is divided by the units the plan actually has, to land the
+ * whole held part back where a four-frame scan put it, and floored at
+ * `UNIT_FLOOR_MIN_MS` so a unit never flicks past unseen. Nothing is
+ * skipped and nothing is faked: every unit still runs, reports and
+ * lands, the bar just advances in smaller, more frequent steps.
+ *
+ * What this does NOT shorten is the real work — the segmenter still runs
+ * once per frame, and on a slow phone that, not the hold, is what the
+ * person waits for. This only stops the app waiting on purpose for
+ * longer than it used to.
+ */
+export const PASS_HOLD_BUDGET_MS = 3_150;
+/** The least a finished unit stays up. Below this the bar's step is not seen. */
+export const UNIT_FLOOR_MIN_MS = 150;
+
+/** The per-unit hold for a plan of this many units. Never longer than the default. */
+export function unitFloorFor(units: number): number {
+  if (!Number.isFinite(units) || units <= 0) return ANALYSIS_PACING.unitFloorMs;
+  const share = Math.round(PASS_HOLD_BUDGET_MS / units);
+  return Math.min(ANALYSIS_PACING.unitFloorMs, Math.max(UNIT_FLOOR_MIN_MS, share));
+}
+
 /* ------------------------------- the run ------------------------------ */
 
 export type ProcessingFrame = AnalysisFrame & {
@@ -202,9 +290,16 @@ function useAnalysisRun(
   useEffect(() => {
     const controller = new AbortController();
     let live = true;
+    /*
+      The hold is sized against the longest plan these frames could make
+      — every frame read for area — so the budget is never overrun. A
+      build with no segmenter plans fewer units and finishes inside it.
+    */
+    const units = planAnalysis(frames, true).units.length;
     runAnalysis(frames, {
       deps,
       signal: controller.signal,
+      pacing: { unitFloorMs: unitFloorFor(units) },
       ...(capturedAt === undefined ? {} : { capturedAt }),
       onPlan: (plan) => {
         if (live) setState((s) => ({ ...s, plan }));
@@ -704,6 +799,7 @@ export function Processing({
                 <Animated.View style={[{ width: meshBox.width, height: meshBox.height }, meshStyle]}>
                   <StaticHairMesh
                     face={meshBox.face}
+                    fit={meshBox.face.fit}
                     width={meshBox.width}
                     height={meshBox.height}
                     points

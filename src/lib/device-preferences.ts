@@ -24,6 +24,7 @@ const ROUTINE_REMINDER_KEY = 'hj.reminderRoutine';
 const UPDATE_REMINDER_KEY = 'hj.reminderUpdate';
 const REMINDER_INTERVAL_KEY = 'hj.reminderIntervalDays';
 const REMINDER_IDS_KEY = 'hj.reminderIdsAdopted';
+const SCAN_DIAGNOSTICS_KEY = 'hj.scanDiagnostics';
 
 /* ----------------------------- capture timer ---------------------------- */
 
@@ -62,6 +63,31 @@ export function hapticsAreEnabled(): boolean {
 export function setHapticsEnabled(enabled: boolean): void {
   hapticsEnabled = enabled;
   AsyncStorage.setItem(HAPTICS_KEY, enabled ? '1' : '0').catch(() => undefined);
+}
+
+/* --------------------------- scan diagnostics --------------------------- */
+
+/*
+  Off for everybody, and meant for one person.
+
+  The scanner's cap is fitted to the hair only when a long chain holds:
+  ARKit running, the camera live, the app in front, the native sampler in
+  the binary, Nitro present, the segmenter imported, and a mask the fit
+  did not refuse. When it does not hold, the standing dome is drawn — and
+  the two are indistinguishable on screen, which has already cost two
+  rounds of "it still looks like a dome" with no way to tell whether the
+  shape was too subtle or the segmenter never ran at all. With this on,
+  the scanner says which it is.
+*/
+let scanDiagnostics = false;
+
+export function scanDiagnosticsOn(): boolean {
+  return scanDiagnostics;
+}
+
+export function setScanDiagnostics(enabled: boolean): void {
+  scanDiagnostics = enabled;
+  AsyncStorage.setItem(SCAN_DIAGNOSTICS_KEY, enabled ? '1' : '0').catch(() => undefined);
 }
 
 /* ---------------------------- reminder time ----------------------------- */
@@ -243,7 +269,7 @@ async function bootstrapReminders(): Promise<void> {
  */
 export async function loadDevicePreferences(): Promise<void> {
   try {
-    const [haptics, hour, ask, routine, update, interval, ids, offered] =
+    const [haptics, hour, ask, routine, update, interval, ids, offered, diagnostics] =
       await AsyncStorage.multiGet([
         HAPTICS_KEY,
         REMINDER_HOUR_KEY,
@@ -253,6 +279,7 @@ export async function loadDevicePreferences(): Promise<void> {
         REMINDER_INTERVAL_KEY,
         REMINDER_IDS_KEY,
         REMINDER_PROMPT_KEY,
+        SCAN_DIAGNOSTICS_KEY,
       ]);
     // Absent means never set, which is on: the app has always buzzed.
     hapticsEnabled = haptics[1] !== '0';
@@ -270,6 +297,8 @@ export async function loadDevicePreferences(): Promise<void> {
     if (Number.isFinite(days) && days > 0) reminderIntervalDays = days;
     reminderIdsAdopted = ids[1] === '1';
     remindersOffered = offered[1] === '1';
+    // Off unless somebody has deliberately turned it on.
+    scanDiagnostics = diagnostics[1] === '1';
   } catch {
     // Defaults are already in place; an unreadable store is not an error.
   }

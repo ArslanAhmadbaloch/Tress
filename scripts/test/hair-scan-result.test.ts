@@ -261,7 +261,16 @@ test('closestAngle: an unreadable turn is no angle, never the front', () => {
 
 /* ----------------------------- the curation ---------------------------- */
 
-test('scanPhotos: one photograph per angle, in capture order, marked as scanned', () => {
+test('scanPhotos: every frame is kept, grouped by angle, best of each angle first', () => {
+  /*
+    The repeats are not spares. A region photographed once has nothing to
+    disagree with, and the measurement engine's error bar for a region is
+    the disagreement between its frames — so a record that kept one
+    photograph an angle would be a record that could never be
+    re-measured. What is preserved is the ORDER: the best of an angle
+    comes first, which is the photograph every `find(angle)` reader in
+    the app was written against.
+  */
   const photos = scanPhotos([
     frame({ uri: 'a', pose: { yaw: 1, pitch: 0, roll: 0 } }),
     frame({ uri: 'b', pose: { yaw: -35, pitch: 0, roll: 0 } }),
@@ -271,11 +280,22 @@ test('scanPhotos: one photograph per angle, in capture order, marked as scanned'
   ]);
 
   assert.deepEqual(
-    photos.map((p) => p.angle),
-    ['leftTemple', 'rightTemple', 'crown', 'front'],
+    photos.map((p) => [p.angle, p.uri]),
+    [
+      ['leftTemple', 'd'],
+      ['rightTemple', 'b'],
+      ['rightTemple', 'c'],
+      ['crown', 'e'],
+      ['front', 'a'],
+    ],
+  );
+  assert.equal(
+    photos.find((p) => p.angle === 'rightTemple')?.uri,
+    'b',
+    'the fuller turn leads its angle, as it did when only one was kept',
   );
   assert.ok(photos.every((p) => p.capture === 'scan'));
-  assert.ok(ANGLES.indexOf('leftTemple') < ANGLES.indexOf('front'), 'the store order is the capture order');
+  assert.ok(ANGLES.indexOf('leftTemple') < ANGLES.indexOf('front'), 'the store order is the angle order');
 });
 
 test('scanPhotos: a measured frame beats a sharper unmeasured one, then focus decides', () => {
@@ -283,8 +303,9 @@ test('scanPhotos: a measured frame beats a sharper unmeasured one, then focus de
     frame({ uri: 'sharp', pose: { yaw: 0, pitch: 0, roll: 0 }, quality: { ...GOOD, sharpness: 40 } }),
     frame({ uri: 'measured', pose: { yaw: 4, pitch: 0, roll: 0 }, quality: DARK, coverage: area(0.3) }),
   ]);
-  assert.equal(photos.length, 1);
-  assert.equal(photos[0].uri, 'measured');
+  // Both are kept — they are two readings of one angle — and the measured
+  // one leads, which is what every reader that asks for the angle gets.
+  assert.deepEqual(photos.map((p) => p.uri), ['measured', 'sharp']);
 
   const focus = scanPhotos([
     frame({ uri: 'soft', pose: { yaw: 0, pitch: 0, roll: 0 }, quality: { ...GOOD, sharpness: 3 } }),

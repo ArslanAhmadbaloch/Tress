@@ -106,7 +106,14 @@ export function ReportHero({
           pointerEvents="none"
           entering={reduceMotion ? undefined : FadeIn.delay(MESH_DELAY).duration(MESH_IN_MS)}
           style={{ position: 'absolute', top: 0, left: 0, width: box.width, height: box.height }}>
-          <StaticHairMesh face={face} width={box.width} height={box.height} tone="good" points />
+          <StaticHairMesh
+            face={face}
+            fit={face.fit}
+            width={box.width}
+            height={box.height}
+            tone="good"
+            points
+          />
         </Animated.View>
       ) : null}
 

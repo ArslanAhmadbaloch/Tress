@@ -48,10 +48,14 @@
  *     clears a head of hair instead of hugging the scalp.
  *   • where a mask can say how much hair there actually is, the
  *     segmenter's silhouette comes in through `setHair` and REPLACES
- *     that guess with the measured shape: taller, wider, nudged across
- *     for a parting. The stretch is the same three dimensionless numbers
- *     (`CapFit`) and it eases in, so the mesh grows onto the hair
- *     instead of stepping at the segmenter's rate.
+ *     that guess with the measured one: a SIZE — taller, wider, nudged
+ *     across for a parting — and a SHAPE, which is what stops the thing
+ *     on the head being a dome. The shape is a radial scale per ray of
+ *     a dial cast from the middle of the cap (`CapFit.profile` in
+ *     head-cap.ts), so a swept fringe comes out swept, a flat top flat,
+ *     and hair standing higher on one side higher on one side. Both
+ *     ease in, ray by ray, so the mesh GROWS onto the hair instead of
+ *     stepping at the segmenter's rate.
  *
  * `setHair` is called, and where from matters enough to write down:
  * `src/app/hair-scan.tsx` runs a slow loop — about three beats a second,
@@ -219,6 +223,20 @@ export type HairMeshHandle = {
    * is shown, stored or compared.
    */
   setHair(hair: HairSilhouette | null, from?: CapSource): void;
+  /**
+   * The fit the cap is being DRAWN to at this instant — not the one the
+   * last reading asked for. The two differ while the cap is still
+   * growing towards a new shape, and it is the drawn one a still should
+   * carry, because that is the cap the person was looking at when the
+   * shutter fired.
+   *
+   * Read it at a shutter and hand it to `snapshotMesh`, so the
+   * processing screen and the report hero draw the cap the camera drew
+   * rather than rebuilding the standing allowance. It never causes a
+   * render, and on a build that never calls `setHair` it is the
+   * standing allowance, which is what those screens drew before.
+   */
+  fit(): CapFit;
 };
 
 export type HairMeshProps = {
@@ -355,17 +373,25 @@ const TWINKLE_SLOTS = Array.from({ length: TWINKLE_COUNT }, (_, i) => i);
  * on top are ten flicks and six blooms: thirty-two animated nodes, the
  * same count this drew before the near side and the twinkles arrived.
  *
- * Sitting the cap on the hair did not change that count either. The
- * fit is three numbers applied to the dome's three axes before the
- * 191 vertices are written — no vertex added, no segment added, no
- * node added — and it is COMPUTED off the drawn frame entirely, on the
- * JS thread, when a silhouette arrives. What it costs there is not
- * small and is counted honestly on `fitHairCap`: three walks of the
- * tracked point cloud, two dome writes, eight walks of these 191
- * vertices and six of the silhouette's own points. That is why the
- * handle asks to be called once per captured frame rather than at the
- * segmenter's rate. The UI thread's per-frame work is unchanged: the
- * same 191 vertices and 370 segments it always was.
+ * Sitting the cap on the hair did not change that count either, and
+ * neither did giving it a shape. The fit is three numbers applied to
+ * the dome's three axes and one radial scale per vertex, all before the
+ * 191 vertices are written — no vertex added, no segment added, no node
+ * added — and it is COMPUTED off the drawn frame entirely, on the JS
+ * thread, when a silhouette arrives. What it costs there is not small
+ * and is counted honestly on `fitHairCap`: three walks of the tracked
+ * point cloud, three dome writes, eleven walks of these 191 vertices
+ * and eight of the silhouette's own points, about 80 µs measured. That
+ * is why the handle asks to be called once per captured frame rather
+ * than at the segmenter's rate.
+ *
+ * The UI thread's per-frame work is unchanged: the same 191 vertices
+ * and 370 segments it always was. On the JS thread, building one cap
+ * from one tracked face of 1,224 points measured 25 µs with no shape on
+ * it — which is every phone without a segmenter, and what it cost
+ * before any of this — and 29 µs with one. The 2.6 µs between them is
+ * one cheap radial scale per vertex (`turnOf`, deliberately not
+ * `Math.atan2`, which measured 6.9).
  */
 const PATH_FAR = 0;
 const PATH_GRID = 1;
@@ -604,6 +630,10 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage, regions }:
         const fit =
           hair === null || face === null ? null : fitHairCap(face, hair, drawnFit.current);
         fitState.current = nextCapFit(fitState.current, fit);
+      },
+      fit() {
+        // The drawn fit, not the wanted one: see the handle's note.
+        return drawnFit.current;
       },
     }),
     [target, current, visible, dirty],
@@ -967,8 +997,11 @@ export type StaticHairMeshProps = {
    * Carried for the same reason the tracked mesh is: the camera drew a
    * cap sitting on this person's hair, and a still that rebuilt a
    * differently-shaped dome would show a different cap on the same head
-   * a second later. Left out, the standing allowance is drawn — which is
-   * what a phone with no segmenter showed live too, so the two agree.
+   * a second later. The SHAPE travels inside it — a `CapFit` is the
+   * size and the shape together — so a still handed the live fit wears
+   * the same fringe the camera drew. Left out, the standing allowance
+   * is drawn, which is the dome, and is what a phone with no segmenter
+   * showed live too, so the two agree.
    */
   fit?: CapFit;
   /** 0–1: how strongly the lines are drawn. A thumbnail draws faint. */

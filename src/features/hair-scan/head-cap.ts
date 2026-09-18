@@ -518,14 +518,33 @@ type Dome = {
   /** Radians of yaw and pitch actually applied. */
   psi: number;
   alpha: number;
+  /**
+   * The shape the hair asked for: one radial scale per ray of the
+   * profile's dial, or absent for the bare ellipsoid. See `CAP_PROFILE`.
+   */
+  profile?: readonly number[];
 };
 
 /**
- * Writes one dome into `out`: `CAP_LENGTH` numbers — x, y, facing per
- * vertex — in the same points the face is in, every one of them finite.
+ * One dome's own maths: where a point on its surface lands, which way
+ * that point faces, and where the ellipsoid's centre sits.
+ *
+ * Pulled out of `writeDome` because the hair fit needs the centre — the
+ * point every ray of a profile is cast from — and deriving it a second
+ * time somewhere else is how the drawn cap and the measured cap come to
+ * disagree about where the middle of the head is.
+ *
+ * `origin` is that centre in the frame's own axes, with the profile's
+ * own stretch of the anchor already taken out, so writing a vertex is
+ * `origin + scaled surface point` and the base row's middle vertex
+ * lands on the brow whatever the shape does.
  */
-function writeDome(out: number[], dome: Dome): number[] {
-  const { frame, ax, ay, az, phiBrow, thetaBrow, psi, alpha } = dome;
+function domeGeometry(dome: Dome): {
+  surface: (theta: number, phi: number) => [number, number, number];
+  facing: (theta: number, phi: number) => number;
+  origin: { x: number; y: number };
+} {
+  const { ax, ay, az, psi, alpha } = dome;
   const cosPsi = Math.cos(psi);
   const sinPsi = Math.sin(psi);
   const cosAlpha = Math.cos(alpha);
@@ -557,11 +576,37 @@ function writeDome(out: number[], dome: Dome): number[] {
     return n[2];
   };
 
-  // The anchor: the brow, on the meridian this reading measured it on.
-  const anchor = surface(dome.pinTheta, phiBrow);
+  // The anchor: the brow, on the meridian this reading measured it on,
+  // carried out by the profile exactly as every other point is.
+  const anchor = surface(dome.pinTheta, dome.phiBrow);
+  const stretch = profileScale(dome.profile, anchor[0], anchor[1]);
+  return {
+    surface,
+    facing,
+    origin: { x: dome.anchorX - anchor[0] * stretch, y: dome.anchorY - anchor[1] * stretch },
+  };
+}
+
+/**
+ * Writes one dome into `out`: `CAP_LENGTH` numbers — x, y, facing per
+ * vertex — in the same points the face is in, every one of them finite.
+ *
+ * Where a profile is carried, each vertex is pushed out (or drawn in)
+ * along its own direction from the centre by that profile, so the drawn
+ * outline follows the hair rather than the ellipsoid. The FACING is not
+ * re-derived from the stretched shape: it stays the ellipsoid's own
+ * normal, because it is a shading cue — how squarely a line meets the
+ * phone — and a radial scale of a flat outline has no normal of its own
+ * to offer. A stretched cap is therefore lit like the head it is drawn
+ * around, which is what it is for.
+ */
+function writeDome(out: number[], dome: Dome): number[] {
+  const { frame, phiBrow, thetaBrow, profile } = dome;
+  const { surface, facing, origin } = domeGeometry(dome);
 
   const write = (index: number, sx: number, sy: number, f: number) => {
-    const p = fromLocal(frame, dome.anchorX + (sx - anchor[0]), dome.anchorY + (sy - anchor[1]));
+    const stretch = profileScale(profile, sx, sy);
+    const p = fromLocal(frame, origin.x + sx * stretch, origin.y + sy * stretch);
     const k = index * CAP_STRIDE;
     out[k] = Number.isFinite(p.x) ? p.x : frame.ox;
     out[k + 1] = Number.isFinite(p.y) ? p.y : frame.oy;
@@ -1150,7 +1195,9 @@ function domeOf(face: CapSource): Dome | null {
  * the dome to it.
  *
  * ── What a fit is ─────────────────────────────────────────────────────
- * Three dimensionless numbers, and deliberately only three:
+ * A SIZE and a SHAPE.
+ *
+ * The size is three dimensionless numbers:
  *
  *   lift   how much taller the dome has to be to reach the top of the
  *          hair, as a multiple of its own rise above the brow
@@ -1160,9 +1207,41 @@ function domeOf(face: CapSource): Dome | null {
  *
  * Dimensionless on purpose: the person leaning in doubles every length
  * in the picture and changes none of these, so a fit taken a second ago
- * is still the right fit now. And only three, because three is what a
- * silhouette honestly carries. Anything finer would be reading detail
- * out of an outline that is not in it.
+ * is still the right fit now.
+ *
+ * For a long time that was the whole of it, and it was the standing
+ * complaint: three numbers can only RESCALE an ellipsoid, so whatever
+ * the mask said, the thing drawn on the head was a dome — the same dome,
+ * bigger. A swept fringe, a flat top, hair standing higher on one side
+ * all came out as the same egg.
+ *
+ * So a fit also carries a SHAPE: `profile`, one radial scale per ray of
+ * a dial cast from the middle of the cap (see `CAP_PROFILE`). Ray by
+ * ray, it is how far the hair reaches in that direction against how far
+ * the cap reaches in it — so the drawn outline is pushed out where the
+ * hair stands proud and drawn in where it lies flat, and a fringe is a
+ * fringe. It is dimensionless for the same reason the other three are,
+ * and it is measured against the SIZED dome, so it says nothing about
+ * how big the head is and everything about what shape it is.
+ *
+ * ── Why a dial and not the cap's own meridians ────────────────────────
+ * The obvious move is one radius per meridian, and it does not work:
+ * projected, the nineteen meridians all converge on the pole, so the
+ * whole top of the drawn cap is a handful of vertices around one
+ * direction and no head-fixed longitude can move it sideways. The dial
+ * is cast in the picture — the plane the silhouette was read in and the
+ * plane the eye judges — where the top of the head has as many
+ * directions as the sides do.
+ *
+ * What that costs is worth saying plainly: a shape read in the picture
+ * is a shape ABOUT the picture, so it does not turn with the head
+ * between readings. A fringe swept to the right stays swept to the
+ * right of the screen for the third of a second until the next mask
+ * arrives, rather than swinging round with a turning head. At three
+ * readings a second against a shape that eases in over half a second,
+ * that is a shape a little behind the head and never a shape in the
+ * wrong place; and the alternative — a head-fixed shape — cannot draw
+ * the top of the head at all, which is where the hair is.
  *
  * ── What a fit is NOT ─────────────────────────────────────────────────
  * Not a measurement, and it is never shown as one. It moves a wireframe
@@ -1185,7 +1264,7 @@ function domeOf(face: CapSource): Dome | null {
  * returns null and the cap is drawn to `CAP_FIT_DEFAULT` — the standing
  * allowance below, which is the bare dome plus a hand's breadth of hair.
  * The scan works either way; that is the point of keeping the fit a
- * separate three numbers rather than a different road through the
+ * separate size and shape rather than a different road through the
  * geometry.
  *
  * ── When the readings stop ────────────────────────────────────────────
@@ -1206,7 +1285,7 @@ export type HairSilhouette = {
   points: readonly number[];
 };
 
-/** How far the dome is stretched to reach the hair. All three dimensionless. */
+/** How far the dome is stretched to reach the hair. All dimensionless. */
 export type CapFit = {
   /** The dome's rise above the brow, as a multiple of the bare head's. */
   lift: number;
@@ -1214,6 +1293,17 @@ export type CapFit = {
   widen: number;
   /** The hair's middle off the cap's, as a share of that half-width. */
   shift: number;
+  /**
+   * The shape, ray by ray: `CAP_PROFILE.rays` radial scales about the
+   * middle of the cap, ray 0 pointing straight up the head and running
+   * clockwise on the screen. 1 is the dome's own reach in that
+   * direction, so an absent profile and an all-ones profile are the
+   * same cap — the dome — and that is what every phone without a mask
+   * draws.
+   *
+   * Never a measurement of anybody. It is where a wireframe is drawn.
+   */
+  profile?: readonly number[];
 };
 
 /** The bare head: the dome with no allowance for hair at all. */
@@ -1302,14 +1392,200 @@ export const CAP_FIT = {
   deadband: 0.02,
 } as const;
 
+/**
+ * The shape half of a fit: the dial it is read on, and the rules that
+ * stop a bad mask becoming a bad cap.
+ *
+ * ── The dial ──────────────────────────────────────────────────────────
+ * `rays` directions, cast from the middle of the cap in the picture,
+ * ray 0 straight up the head and running clockwise on the screen. It is
+ * the scan ring's own count, for the plainest reason: twenty-four rays
+ * is about fifteen degrees each, which is fine enough that the cap's
+ * own outline lands a vertex in every ray of the half-circle it
+ * occupies — measured, eleven rays of it answer on a square-on head —
+ * and coarse enough that a ray is the reach of several boundary points
+ * rather than of one. (`turnOf` below spaces them 11° to 18° rather
+ * than 15° dead; it is the same dial at both ends, so the spacing is a
+ * fact about the dial and not an error in it.)
+ *
+ * ── Why a wrong shape is worse than a dome ────────────────────────────
+ * A dome that clears the hair reads as a loose instrument. A shape with
+ * a horn on it reads as broken. So every ray is answered three times
+ * over:
+ *
+ *   • CONFIDENCE. A ray is believed in proportion to how much boundary
+ *     actually spoke for it: `support` points of the silhouette is a
+ *     full answer, none at all is the dome, and between the two the
+ *     measured reach is blended towards the dome's. A head turned away,
+ *     a mask that stops at the jaw, a crown out of frame — each simply
+ *     leaves its rays at 1 and keeps the dome there.
+ *   • NEIGHBOURS. No ray may stand more than `slope` away from the ray
+ *     beside it. One bright speck of mask cannot grow a spike, because
+ *     a spike is exactly what that rule shaves off, and the shaving is
+ *     idempotent — clamping an already-smooth profile changes nothing,
+ *     which is what lets `blendCapFit` and `nextCapFit` pass shapes
+ *     around without them creeping.
+ *   • BOUNDS. And under all of it, a floor and a ceiling on any one
+ *     ray. They are not symmetric on purpose: a cap sitting INSIDE
+ *     somebody's hair is the complaint this whole file exists to
+ *     answer, so a ray may reach well out and only a little in. The
+ *     floor is also what bounds the one reading this cannot tell apart
+ *     from a shape — a mask CUT OFF by the edge of the frame, whose cut
+ *     is a boundary like any other and reads as hair stopping there.
+ *     The cap comes in a fifth in that direction and no further.
+ *
+ * Nothing here is a measurement of a person. Every number decides where
+ * a wireframe is drawn and is never shown, stored or compared.
+ */
+export const CAP_PROFILE = {
+  /** Directions the shape is read on, round the whole turn. */
+  rays: 24,
+  /** How far one ray may depart from the dome, out and in. */
+  out: 1.35,
+  in: 0.8,
+  /** The most two neighbouring rays may differ. */
+  slope: 0.12,
+  /** Silhouette points in a ray before it is believed whole. */
+  support: 3,
+  /** Cap vertices in a ray before the cap has a reach worth dividing by. */
+  minCap: 2,
+  /** Rays that must have answered before there is a shape at all. */
+  minRays: 5,
+  /** Sweeps of the neighbour rule before it is taken as settled. */
+  passes: 6,
+} as const;
+
+/**
+ * How far round the dial a direction lies, as a fraction of a turn:
+ * 0 straight up the head, a quarter to the screen's right, measured in
+ * the head's own upright axes so a tilted head's fringe is still at the
+ * front of the dial.
+ *
+ * ── Not the true angle, and that is deliberate ────────────────────────
+ * This is the diamond angle — the fraction of the way round a SQUARE
+ * rather than a circle — which is one divide and no transcendental
+ * where `Math.atan2` is fifty nanoseconds. It rises with the true angle
+ * and never falls, agrees with it exactly on the axes and the
+ * diagonals, and stands at most four and a half degrees off between
+ * them. That is a dial whose rays are 11° apart near the axes and 18°
+ * apart near the diagonals instead of 15° everywhere, which is neither
+ * better nor worse for reading the shape of a head of hair — and it is
+ * the SAME dial the reading is taken on and the drawing is stretched
+ * by, so nothing can disagree with anything.
+ *
+ * The saving is most of what the shape costs at all. One angle per
+ * vertex is 192 of them per drawn cap; measured on this laptop against
+ * a 1,224-point cloud, a cap with no shape on it costs 25 µs, a shaped
+ * one 29 µs this way, and 32 µs with `Math.atan2` — so the dial spends
+ * 2.6 µs a cap where the true angle spends 6.9.
+ */
+function turnOf(x: number, y: number): number {
+  const up = -y;
+  const span = Math.abs(x) + Math.abs(up);
+  if (!(span > 0)) return 0;
+  const quarter =
+    x >= 0 ? (up >= 0 ? x / span : 1 - up / span) : up < 0 ? 2 - x / span : 3 + up / span;
+  return quarter / 4;
+}
+
+/**
+ * Which ray a direction from the middle of the cap belongs to: the
+ * nearest one on the dial above.
+ */
+function rayOf(x: number, y: number): number {
+  const n = CAP_PROFILE.rays;
+  const index = Math.round(turnOf(x, y) * n);
+  return ((index % n) + n) % n;
+}
+
+/**
+ * How far out a point is pushed by a profile: the two rays either side
+ * of its direction, blended.
+ *
+ * Blended rather than stepped, because a step is a facet: at fifteen
+ * degrees a stepped profile would draw a cap with twenty-four flat
+ * sides, and the eye finds those instantly on a curved thing. No
+ * profile is 1, which is the dome, everywhere.
+ */
+function profileScale(profile: readonly number[] | undefined, x: number, y: number): number {
+  if (profile === undefined) return 1;
+  const n = profile.length;
+  if (n === 0) return 1;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return 1;
+  const u = turnOf(x, y) * n;
+  const lo = Math.floor(u);
+  const t = u - lo;
+  const a = profile[((lo % n) + n) % n];
+  const b = profile[(((lo + 1) % n) + n) % n];
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 1;
+  return a + (b - a) * t;
+}
+
+/**
+ * A profile made safe: every ray inside its bounds, no ray further than
+ * `slope` from its neighbours, and nothing but numbers.
+ *
+ * The neighbour rule is sweeps round the dial, each pulling a ray down
+ * to its neighbour plus the slope. Done both ways round until nothing
+ * moves, the result satisfies `k[i] <= k[i±1] + slope` everywhere, which is the
+ * same as saying no two neighbours differ by more than the slope: the
+ * largest smooth profile that fits under the reading. It is therefore
+ * idempotent — a profile that already obeys the rule comes back
+ * untouched — and that matters, because `clampFit` runs on every blend
+ * of every frame and a rule that crept would walk the cap.
+ *
+ * Null for a profile that is not one: the wrong length, or one the
+ * rules flatten back onto the dome, which IS the dome and is better
+ * carried as the absence of a shape than as an array of ones.
+ */
+function clampProfile(profile: readonly number[] | undefined): readonly number[] | null {
+  if (profile === undefined) return null;
+  const n = CAP_PROFILE.rays;
+  if (profile.length !== n) return null;
+  const out = new Array<number>(n);
+  for (let i = 0; i < n; i += 1) {
+    const value = profile[i];
+    out[i] = Number.isFinite(value) ? clamp(value, CAP_PROFILE.in, CAP_PROFILE.out) : 1;
+  }
+  // Round and round until nothing moves. A sweep carries a low ray to
+  // every ray after it in its own direction, so one pass of the two
+  // settles everything but the seam at ray 0, and the pass after that
+  // settles the seam; the loop is written to notice it has finished
+  // rather than to trust that count, and the cap is there so a reading
+  // these bounds somehow let oscillate costs a few hundred comparisons
+  // and not a frame.
+  for (let pass = 0; pass < CAP_PROFILE.passes; pass += 1) {
+    let moved = false;
+    for (let i = 0; i < n; i += 1) {
+      const before = out[(i + n - 1) % n];
+      if (out[i] > before + CAP_PROFILE.slope) {
+        out[i] = before + CAP_PROFILE.slope;
+        moved = true;
+      }
+    }
+    for (let i = n - 1; i >= 0; i -= 1) {
+      const after = out[(i + 1) % n];
+      if (out[i] > after + CAP_PROFILE.slope) {
+        out[i] = after + CAP_PROFILE.slope;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  for (let i = 0; i < n; i += 1) if (out[i] !== 1) return out;
+  return null;
+}
+
 function clampFit(fit: CapFit): CapFit {
   const lift = Number.isFinite(fit.lift) ? fit.lift : 1;
   const widen = Number.isFinite(fit.widen) ? fit.widen : 1;
   const shift = Number.isFinite(fit.shift) ? fit.shift : 0;
+  const profile = clampProfile(fit.profile);
   return {
     lift: clamp(lift, CAP_FIT.lift.min, CAP_FIT.lift.max),
     widen: clamp(widen, CAP_FIT.widen.min, CAP_FIT.widen.max),
     shift: clamp(shift, -CAP_FIT.shift, CAP_FIT.shift),
+    ...(profile === null ? {} : { profile }),
   };
 }
 
@@ -1324,7 +1600,7 @@ function clampFit(fit: CapFit): CapFit {
  * seen from two sides of the head.
  */
 function fitted(dome: Dome, fit: CapFit): Dome {
-  const { lift, widen, shift } = clampFit(fit);
+  const { lift, widen, shift, profile } = clampFit(fit);
   const ax = dome.ax * widen;
   return {
     ...dome,
@@ -1332,6 +1608,11 @@ function fitted(dome: Dome, fit: CapFit): Dome {
     az: dome.az * widen,
     ay: dome.ay * lift,
     anchorX: dome.anchorX + shift * ax,
+    // Stated outright rather than carried over by the spread: a dome
+    // fitted with a size and no shape is the sized DOME, and inheriting
+    // the shape of whatever it was fitted with last is how a cap keeps
+    // wearing a fringe the mask has stopped reporting.
+    profile,
   };
 }
 
@@ -1380,6 +1661,81 @@ function spanOf(local: readonly number[], lo: number, hi: number): Shape | null 
   return { halfWidth, mid: (minX + maxX) / 2 };
 }
 
+/**
+ * How far a scatter of points reaches in each ray of the profile's
+ * dial, measured from one centre, and how many of them spoke for each
+ * ray.
+ *
+ * The FARTHEST point in a ray, not the average: the silhouette is an
+ * outline, and what the cap has to reach in a direction is the outside
+ * of the hair in that direction, not the middle of the boundary pixels
+ * that happen to fall in the ray. The count beside it is what the
+ * confidence weight is made of — a ray two stray points spoke for is
+ * not a ray, and it ends up back on the dome.
+ *
+ * One walk of the points. Nothing here is a measurement of a person:
+ * both the cap and the silhouette are read the same way so that their
+ * ratio means "how much further out is the hair than the wireframe".
+ */
+type Reach = { far: number[]; support: number[] };
+
+function reachOf(pairs: readonly number[], ox: number, oy: number): Reach {
+  const n = CAP_PROFILE.rays;
+  const far = new Array<number>(n).fill(0);
+  const support = new Array<number>(n).fill(0);
+  for (let i = 0; i + 1 < pairs.length; i += 2) {
+    const x = pairs[i] - ox;
+    const y = pairs[i + 1] - oy;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const r = Math.hypot(x, y);
+    if (!(r > 0)) continue;
+    const ray = rayOf(x, y);
+    support[ray] += 1;
+    if (r > far[ray]) far[ray] = r;
+  }
+  return { far, support };
+}
+
+/**
+ * The shape one silhouette asks of one drawn cap: ray by ray, how far
+ * the hair reaches against how far the cap does.
+ *
+ * Null when too few rays had anything to say — a mask that caught a
+ * corner of a head is a size at best, and a shape read off it would be
+ * a shape read off nothing. The dome stands in, as it does everywhere
+ * else in this file.
+ *
+ * Two rules do the work, and both are about being wrong safely:
+ *
+ *   • a ray with no cap under it is skipped entirely. The cap occupies
+ *     the top half of the dial — its base is the brow — so the rays
+ *     below the ears have no reach to divide by and mean nothing.
+ *   • a ray is blended towards the dome by how much boundary spoke for
+ *     it, so a partial mask (a turned head, a crown out of frame) keeps
+ *     the dome exactly where it said nothing, and the profile fades
+ *     into the dome across the rays either side rather than stepping.
+ */
+function profileOf(cap: readonly number[], strands: readonly number[], ox: number, oy: number): readonly number[] | null {
+  const n = CAP_PROFILE.rays;
+  const capReach = reachOf(cap, ox, oy);
+  const hairReach = reachOf(strands, ox, oy);
+  const out = new Array<number>(n).fill(1);
+  let answered = 0;
+  for (let i = 0; i < n; i += 1) {
+    const under = capReach.far[i];
+    const over = hairReach.far[i];
+    if (!(under > 0) || !(over > 0)) continue;
+    if (capReach.support[i] < CAP_PROFILE.minCap) continue;
+    const weight = Math.min(1, hairReach.support[i] / CAP_PROFILE.support);
+    if (!(weight > 0)) continue;
+    const reach = over / under;
+    if (!Number.isFinite(reach)) continue;
+    out[i] = 1 + weight * (reach - 1);
+    answered += 1;
+  }
+  return answered >= CAP_PROFILE.minRays ? out : null;
+}
+
 /** A flat list of view points, in the head's own upright axes. */
 function localPairs(points: readonly number[], frame: Frame): number[] {
   const out: number[] = [];
@@ -1417,16 +1773,23 @@ function capPairs(pts: readonly number[], frame: Frame): number[] {
  *     1,200 points it is roughly 3,600 point transforms before any cap
  *     exists. On the detector road it is one walk of the oval instead,
  *     which is nothing.
- *   • then `CAP_FIT.passes` — two — refinement passes, each of which is
- *     one `writeDome` over the 191 vertices plus `capPairs`, `riseOf`
- *     and `spanOf` over the same 191 (four walks), and `localPairs`,
- *     `riseOf` and `spanOf` over the silhouette's own points (three
- *     walks of however many the trace carries).
+ *   • then `CAP_FIT.passes` — two — refinement passes for the SIZE, each
+ *     of which is one `writeDome` over the 191 vertices plus `capPairs`,
+ *     `riseOf` and `spanOf` over the same 191 (four walks), and
+ *     `localPairs`, `riseOf` and `spanOf` over the silhouette's own
+ *     points (three walks of however many the trace carries).
+ *   • then ONE pass for the SHAPE: a third `writeDome`, `capPairs` and
+ *     `reachOf` over the 191, and `localPairs` and `reachOf` over the
+ *     silhouette. `reachOf` is a divide and a compare per point and no
+ *     transcendental — see `turnOf` — so the shape is the cheapest of
+ *     the three passes, not the dearest.
  *
- * So: three walks of the cloud, two dome writes, eight walks of 191, and
- * six walks of the silhouette. Fine a few times a second on the JS
- * thread; NEVER per frame, and worth measuring on a device before it is
- * put anywhere near a 60 Hz tracker.
+ * So: three walks of the cloud, three dome writes, eleven walks of 191,
+ * and eight walks of the silhouette. Measured on this laptop, over a
+ * 1,224-point cloud and a 160-point silhouette, the whole call is about
+ * 80 µs. Fine a few times a second on the JS thread; NEVER per frame,
+ * and worth measuring on a device before it is put anywhere near a
+ * 60 Hz tracker.
  *
  * `from` is the fit currently drawn: passing it starts the refinement
  * where the cap already is, so a steady head converges to a steady
@@ -1445,7 +1808,13 @@ export function fitHairCap(face: CapSource, hair: HairSilhouette, from?: CapFit)
   const dome = domeOf(face);
   if (dome === null) return null;
 
-  let fit = from === undefined ? CAP_FIT_DEFAULT : clampFit(from);
+  // The size is refined from where the cap already is; the SHAPE never
+  // is. A ray's answer is the hair against the DOME, measured afresh
+  // every time, so it cannot accumulate: refining a shape from the
+  // shape already worn is how a small error becomes a horn over twenty
+  // readings, and how a fringe outlives the mask that reported it.
+  const start = from === undefined ? CAP_FIT_DEFAULT : clampFit(from);
+  let fit: CapFit = { lift: start.lift, widen: start.widen, shift: start.shift };
   let answered = false;
   const scratch = new Array<number>(CAP_LENGTH).fill(0);
 
@@ -1476,7 +1845,24 @@ export function fitHairCap(face: CapSource, hair: HairSilhouette, from?: CapFit)
     answered = true;
   }
 
-  return answered ? fit : null;
+  if (!answered) return null;
+
+  // The shape, once, against the dome the size just settled on. One
+  // more dome write and two walks — the cap's 191 vertices and the
+  // silhouette's own points — on top of the passes above.
+  const shaped = fitted(dome, fit);
+  writeDome(scratch, shaped);
+  const { origin } = domeGeometry(shaped);
+  const profile = profileOf(
+    capPairs(scratch, shaped.frame),
+    localPairs(hair.points, shaped.frame),
+    origin.x,
+    origin.y,
+  );
+  // `clampFit` is where a profile is made safe — bounded, smoothed, and
+  // dropped altogether when it comes back as the dome — so the shape
+  // goes out through it and never round it.
+  return profile === null ? fit : clampFit({ ...fit, profile });
 }
 
 /**
@@ -1491,11 +1877,46 @@ export function blendCapFit(from: CapFit, to: CapFit, t: number): CapFit {
   const k = clamp(Number.isFinite(t) ? t : 0, 0, 1);
   const a = clampFit(from);
   const b = clampFit(to);
+  if (k <= 0) return a;
+  if (k >= 1) return b;
   return {
     lift: a.lift + (b.lift - a.lift) * k,
     widen: a.widen + (b.widen - a.widen) * k,
     shift: a.shift + (b.shift - a.shift) * k,
+    ...blendedShape(a.profile, b.profile, k),
   };
+}
+
+/**
+ * The shape half of a blend: every ray walked on its own.
+ *
+ * Per ray, because that is what makes a new shape GROW. Taken whole,
+ * the cap would jump into a fringe three times a second; walked ray by
+ * ray at the same constant the size uses, the fringe sweeps out of the
+ * dome over about half a second, and a ray that has not changed does
+ * not move at all.
+ *
+ * A missing profile on either side is the dome — all ones — so letting
+ * go of a shape is the same easing, backwards, rather than a collapse.
+ * A blend that lands back on the dome carries no profile at all, which
+ * keeps "the bare dome" one thing and not two.
+ */
+function blendedShape(
+  from: readonly number[] | undefined,
+  to: readonly number[] | undefined,
+  k: number,
+): { profile?: readonly number[] } {
+  if (from === undefined && to === undefined) return {};
+  const n = CAP_PROFILE.rays;
+  const out = new Array<number>(n);
+  let shaped = false;
+  for (let i = 0; i < n; i += 1) {
+    const a = from === undefined ? 1 : from[i];
+    const b = to === undefined ? 1 : to[i];
+    out[i] = a + (b - a) * k;
+    if (out[i] !== 1) shaped = true;
+  }
+  return shaped ? { profile: out } : {};
 }
 
 /**
@@ -1515,11 +1936,19 @@ export const CAP_FIT_START: CapFitState = { wanted: CAP_FIT_DEFAULT, misses: 0 }
 
 /** Whether two fits are the same reading, within `CAP_FIT.deadband`. */
 function sameFit(a: CapFit, b: CapFit): boolean {
-  return (
-    Math.abs(a.lift - b.lift) < CAP_FIT.deadband &&
-    Math.abs(a.widen - b.widen) < CAP_FIT.deadband &&
-    Math.abs(a.shift - b.shift) < CAP_FIT.deadband
-  );
+  if (Math.abs(a.lift - b.lift) >= CAP_FIT.deadband) return false;
+  if (Math.abs(a.widen - b.widen) >= CAP_FIT.deadband) return false;
+  if (Math.abs(a.shift - b.shift) >= CAP_FIT.deadband) return false;
+  // And the shape, ray by ray, against the same deadband: a classifier
+  // jitters a percent or two on a head that has not moved, and a cap
+  // that re-aimed at every ray of that jitter would crawl.
+  if (a.profile === undefined && b.profile === undefined) return true;
+  for (let i = 0; i < CAP_PROFILE.rays; i += 1) {
+    const x = a.profile === undefined ? 1 : a.profile[i];
+    const y = b.profile === undefined ? 1 : b.profile[i];
+    if (Math.abs(x - y) >= CAP_FIT.deadband) return false;
+  }
+  return true;
 }
 
 /**

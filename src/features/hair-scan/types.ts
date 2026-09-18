@@ -16,6 +16,7 @@
  *   of the four things a person is asked to do with their head.
  */
 
+import type { CapFit } from './head-cap';
 import type { Contours } from './tracking';
 
 /** Which screen the scanner is on. One value, never a set of flags. */
@@ -186,16 +187,42 @@ export type ScanTarget = 'hairline' | 'leftTemple' | 'rightTemple' | 'crown';
 /**
  * What the scan has of one region.
  *
+ * A region holds SEVERAL frames, not one. That is not decoration: the
+ * measurement engine's error bar is the disagreement BETWEEN the frames
+ * a place on the head was read in (`measure/noise.ts`), and two is the
+ * fewest readings that can disagree.
+ *
+ * Mind the two senses of "region", which this feature keeps confusing.
+ * These four are CAPTURE regions — poses the scan goes and photographs.
+ * `measure/regions.ts` has six MEASUREMENT regions, four of them
+ * identically named, and `measureScan` reads all six out of every frame
+ * however it was filed. So one frame a capture region was never one
+ * reading: at build 19 five of the six measurement regions were already
+ * repeated, and it was the CROWN — in shot only on the last step — that
+ * came away with a single reading, `SINGLE_FRAME_SPREAD` in place of a
+ * measured one, confidence pinned to `UNREPEATED_CONFIDENCE`, and a
+ * refusal from `compareScans`. Two frames a capture region is what puts
+ * the crown over the line. See `engine.ts`'s header for the figures.
+ *
+ * `frameIds` is best first, so `frameIds[0]` is the picture the report
+ * leads with and the rest are the repeats behind it. `quality` is the
+ * best of them and `weakest` the poorest — the two ends of the list, so
+ * `targetWants` can tell "this region still wants a moment" from "this
+ * region wants a better picture than its poorest".
+ *
  * `reach` is how far towards the pose that region wants the head has ever
  * come, 0–1, and only ever rises: it is what the progress figure is made
  * of, so progress cannot fall when somebody turns back through the middle.
  */
 export type TargetProgress = {
+  /** True from the first kept frame. One frame is a picture; two are a measurement. */
   captured: boolean;
-  /** The quality of the kept frame, or 0. */
+  /** The quality of the best kept frame, or 0. */
   quality: number;
-  /** The id of the kept frame, or null. */
-  frameId: string | null;
+  /** The quality of the poorest kept frame, or 0. */
+  weakest: number;
+  /** The ids of the kept frames, best first. Empty until one lands. */
+  frameIds: string[];
   /** 0–1, monotonic: how near the head has come to this region's pose. */
   reach: number;
 };
@@ -307,6 +334,22 @@ export type FrameMesh = {
    * finite reading; the cap is then square on.
    */
   pose?: MeshPose;
+  /**
+   * The hair fit the live cap was WEARING when the shutter fired: the
+   * size and, where a mask supported one, the shape.
+   *
+   * Without it the processing screen and the report hero rebuild the
+   * cap from `CAP_FIT_DEFAULT` — the standing allowance — so the person
+   * watches a cap sitting on their fringe in the camera and an
+   * unshaped dome on the same head a second later. Carried so the two
+   * are the same drawing.
+   *
+   * Transient, like the rest of `FrameMesh`: it is a fact about how the
+   * instrument was drawn, never a measurement of the hair, and it is
+   * never written to the journal. Absent on every build with no
+   * segmenter, which is the behaviour this field replaced.
+   */
+  fit?: CapFit;
 };
 
 /**
@@ -329,6 +372,13 @@ export type MeshFace = {
   contours: Contours;
   /** The head's angles at the shutter, carried through from the frame's mesh. Absent: square on. */
   pose?: MeshPose;
+  /**
+   * The hair fit the live cap wore at the shutter, carried through from
+   * the frame's mesh untouched. A fit is dimensionless — scales about
+   * the cap's own centre — so it survives the map into a box without
+   * being rescaled with the lengths. Absent: the standing allowance.
+   */
+  fit?: CapFit;
 };
 
 /** A captured frame the engine has chosen to keep. */
@@ -342,6 +392,15 @@ export type ScanFrame = CapturedImage & {
   yaw: number;
   pitch: number;
   quality: number;
+  /**
+   * When the engine ASKED for this picture: the instant the pose above
+   * was read. `capturedAt` is a camera round trip later, and two requests
+   * a comfortable distance apart can land almost together when the first
+   * shutter is slow — so this, not `capturedAt`, is the clock two frames
+   * of one region are told apart by (`distinctMoment`).
+   */
+  requestedAt: number;
+  /** When the file landed. */
   capturedAt: number;
   /** The mesh the live camera had at the shutter, when the tracker had a face. */
   mesh?: FrameMesh;
@@ -380,13 +439,18 @@ export type ScanMilestone =
 /**
  * Why the engine let go of an image.
  *
- * - `outscored`: it landed for a region whose kept frame was already better.
- * - `replaced`: a better frame landed for its region.
+ * - `outscored`: it landed for a region that was already holding better —
+ *   either a better picture of the same moment, or a full list whose
+ *   poorest frame it could not beat.
+ * - `replaced`: a better frame landed and took its place in its region's
+ *   list, either as the better picture of one moment or as the frame that
+ *   pushed the poorest out of a full list.
  * - `late`: it answered a request the engine had stopped waiting for.
  * - `abandoned`: the scan was cancelled or restarted before the report.
  *
- * There is no `evicted` any more: the store holds one frame per wanted
- * region and there are four regions, so nothing is ever crowded out.
+ * There is no `evicted`: a region's list has its own cap and nothing
+ * crosses from one region to another, so a frame is only ever let go of
+ * by the region it was taken for.
  */
 export type DiscardReason = 'outscored' | 'replaced' | 'late' | 'abandoned';
 
@@ -482,7 +546,11 @@ export type ScanState = {
   regions: RegionScores;
   /** The head has been seen square to the camera, framed and steady. */
   frontLocked: boolean;
-  /** Curated frames: one per wanted region, so at most `MAX_FRAMES` — four. */
+  /**
+   * Curated frames: several per wanted region, best kept, near-identical
+   * moments merged rather than collected — at most `FRAMES_PER_REGION`
+   * each and so at most `MAX_FRAMES` in all.
+   */
   frames: ScanFrame[];
   /** Requests the camera has not answered yet. */
   pending: CaptureRequest[];

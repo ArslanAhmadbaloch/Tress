@@ -37,6 +37,8 @@ import {
   setUpdateReminderEnabled,
   updateReminderIsEnabled,
   type ReminderHour,
+  scanDiagnosticsOn,
+  setScanDiagnostics,
 } from '@/lib/device-preferences';
 import { clearAllPhotos, formatBytes, photoStorageBytes } from '@/lib/photo-storage';
 import {
@@ -98,6 +100,7 @@ export default function SettingsScreen() {
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [reminderAt, setReminderAt] = useState<ReminderHour>(currentReminderHour);
   const [haptics, setHaptics] = useState(hapticsAreEnabled);
+  const [diagnostics, setDiagnostics] = useState(scanDiagnosticsOn);
   // The passcode sheet writes to the keychain and closes; this screen has
   // to re-read on the way back or its toggle would still say "off".
   const refreshLock = lock.refresh;
@@ -262,6 +265,11 @@ export default function SettingsScreen() {
     setHapticsEnabled(next);
   };
 
+  const toggleDiagnostics = (next: boolean) => {
+    setDiagnostics(next);
+    setScanDiagnostics(next);
+  };
+
   const biometricLabel = BIOMETRIC_LABELS[lock.state.biometric];
 
   /**
@@ -375,6 +383,19 @@ export default function SettingsScreen() {
             detail="A small tap when something responds to you."
             value={haptics}
             onChange={toggleHaptics}
+          />
+          {/*
+            For working out why a scan looked the way it did. The cap is
+            fitted to the hair only when a long chain holds, and a dome
+            and a fitted cap are hard to tell apart on a photograph of a
+            head; with this on the scanner says which one it drew.
+          */}
+          <ToggleRow
+            icon="search"
+            label="Scan diagnostics"
+            detail="Shows what the scanner is reading while it runs."
+            value={diagnostics}
+            onChange={toggleDiagnostics}
           />
         </SettingsGroup>
 

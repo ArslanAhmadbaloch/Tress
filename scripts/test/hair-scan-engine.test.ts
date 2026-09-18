@@ -23,6 +23,9 @@ import {
   CROWN_PITCH_DEG,
   DOWN_PITCH_DEG,
   FORCED_FINISH_MS,
+  FRAMES_PER_REGION,
+  FRAME_GAP_MS,
+  FRAME_TURN_DEG,
   FRONT_DEVIATION,
   FRONT_YAW_DEG,
   GOOD_QUALITY,
@@ -36,8 +39,10 @@ import {
   NUDGE_PLATEAU_MS,
   NUDGE_SAY_MS,
   NUDGE_STARTED_SHARE,
+  PENDING_PER_TARGET,
   PITCH_DOWN_FULL_DEG,
   REACH_CEILING,
+  REGION_MIN_FRAMES,
   REGION_NEEDED,
   REGION_OF_STEP,
   REPLACE_MARGIN,
@@ -69,6 +74,7 @@ import {
   completionOf,
   coverFit,
   createScanState,
+  distinctMoment,
   fillFor,
   ringDirection,
   frameQuality,
@@ -81,6 +87,7 @@ import {
   poseFit,
   primaryFrame,
   reduce,
+  regionFrames,
   regionOfBin,
   requiredFrames,
   sectorOf,
@@ -97,6 +104,20 @@ import {
   targetWants,
   turnFurtherWanted,
 } from '@/features/hair-scan/engine';
+import type { MaskImage } from '@/features/assessment/hair-mask';
+import {
+  ANALYSIS_PACING,
+  absorbHandoffMs,
+  orbitReadyMs,
+  planAnalysis,
+} from '@/features/hair-scan/analysis';
+import { measureScan, type FaceObservation, type ScanFrameInput } from '@/features/hair-scan/measure';
+import {
+  REPEATED_FRAMES,
+  SINGLE_FRAME_SPREAD,
+  SPREAD_FLOOR,
+  UNREPEATED_CONFIDENCE,
+} from '@/features/hair-scan/measure/noise';
 import { faceRegionRects } from '@/features/hair-scan/region-crops';
 import { ANGLE_OF_TARGET } from '@/features/hair-scan/result';
 import { createTracker, syntheticFace, trackFrame } from '@/features/hair-scan/tracking';
@@ -582,11 +603,13 @@ test('regions: progress is the mean of the four, and sufficiency is all four cap
   assert.ok(!isSufficient(state.targets));
   const all = { ...state.targets };
   for (const region of REQUIRED_REGIONS) {
-    all[region] = { captured: true, quality: 0.8, frameId: region, reach: 1 };
+    all[region] = { captured: true, quality: 0.8, weakest: 0.8, frameIds: [region], reach: 1 };
   }
   assert.equal(journeyProgress(all), 1);
   assert.ok(isSufficient(all));
-  assert.ok(!isSufficient({ ...all, crown: { captured: false, quality: 0, frameId: null, reach: 0 } }));
+  assert.ok(
+    !isSufficient({ ...all, crown: { captured: false, quality: 0, weakest: 0, frameIds: [], reach: 0 } }),
+  );
 });
 
 /*
@@ -601,7 +624,7 @@ test('regions: the journey figure cannot reach 1 without the four photographs', 
   const state = createScanState();
   const moved = { ...state.targets };
   for (const region of REQUIRED_REGIONS) {
-    moved[region] = { captured: false, quality: 0, frameId: null, reach: 1 };
+    moved[region] = { captured: false, quality: 0, weakest: 0, frameIds: [], reach: 1 };
   }
   assert.equal(journeyProgress(moved), REACH_CEILING);
   assert.ok(REACH_CEILING < 1);
@@ -609,9 +632,9 @@ test('regions: the journey figure cannot reach 1 without the four photographs', 
 
   const threeOfFour = {
     ...moved,
-    hairline: { captured: true, quality: 0.8, frameId: 'a', reach: 1 },
-    leftTemple: { captured: true, quality: 0.8, frameId: 'b', reach: 1 },
-    rightTemple: { captured: true, quality: 0.8, frameId: 'c', reach: 1 },
+    hairline: { captured: true, quality: 0.8, weakest: 0.8, frameIds: ['a'], reach: 1 },
+    leftTemple: { captured: true, quality: 0.8, weakest: 0.8, frameIds: ['b'], reach: 1 },
+    rightTemple: { captured: true, quality: 0.8, weakest: 0.8, frameIds: ['c'], reach: 1 },
   };
   assert.ok(journeyProgress(threeOfFour) < 1, 'a missing crown is never 100%');
 });
@@ -867,7 +890,10 @@ test('nudge: a turn that arrives never sees it, and neither does a turn still co
   // A turn that takes six seconds to make is still a turn being made: it
   // gains ground the whole way, so there is no plateau to notice.
   let slow = walk(scanning(), 900, () => face({ stability: 0.95 }));
-  slow = walk(slow, 6200, path(SQUARE, { yaw: TURN_HANDOVER_DEG, pitch: 0 }, 6000));
+  // Past the arrival by the settle beat: the step hands over on its
+  // target rather than on its timeout, and a six-second turn is still a
+  // turn being made, so nothing is ever asked for.
+  slow = walk(slow, 6000 + STEP_SETTLE_MS + 200, path(SQUARE, { yaw: TURN_HANDOVER_DEG, pitch: 0 }, 6000));
   assert.deepEqual(of(slow.events, 'cue').map((e) => e.cue).filter(isTurnFurtherCue), []);
   assert.equal(slow.state.step, 'left', 'and it got there inside its own time');
 });
@@ -1165,8 +1191,12 @@ test('honesty: the engine names poses and pictures, and never anything about hai
   for (const region of REQUIRED_REGIONS) {
     const target = d.state.targets[region];
     assert.ok(target.quality >= 0 && target.quality <= 1);
-    // A region reads as captured only while a frame it names is held.
-    assert.equal(target.captured, d.state.frames.some((f) => f.id === target.frameId));
+    assert.ok(target.weakest >= 0 && target.weakest <= target.quality);
+    // A region reads as captured only while the frames it names are held.
+    assert.equal(target.captured, target.frameIds.length > 0);
+    for (const id of target.frameIds) {
+      assert.ok(d.state.frames.some((f) => f.id === id), `${region} names a frame it has not got`);
+    }
   }
 });
 
@@ -1180,7 +1210,7 @@ test('choreography: a crown taken deeper replaces one taken at the edge of the n
   d = landAll(run(d, CAPTURE_INTERVAL_MS + 66, () => face({ pitch: -CROWN_FULL_DEG, stability: 0.95 })));
   const better = held(d.state, 'crown');
   assert.ok(better.quality > first.quality + REPLACE_MARGIN, `${first.quality} → ${better.quality}`);
-  assert.notEqual(better.frameId, first.frameId);
+  assert.notEqual(better.frameIds[0], first.frameIds[0]);
 });
 
 test('choreography: the whole scan is budgeted in seconds, and the timeouts are the ceiling', () => {
@@ -1223,11 +1253,13 @@ test('choreography: there is no shutter — the engine asks for the frames itsel
   );
 });
 
-test('choreography: several frames per step, the best kept and every other one named for deletion', () => {
+test('choreography: several frames per step, all of them kept and every other image named for deletion', () => {
   const d = walk(scanning(), 2400, path(SQUARE, RIGHT, 1200));
   const asked = of(d.events, 'capture').filter((r) => r.request.target === 'leftTemple').length;
   assert.ok(asked >= 2, `only ${asked} frames asked for across a step`);
-  assert.equal(d.state.frames.filter((f) => f.target === 'leftTemple').length, 1, 'one is kept');
+  const kept = d.state.frames.filter((f) => f.target === 'leftTemple');
+  assert.ok(kept.length >= REGION_MIN_FRAMES, `${kept.length} kept: a region needs two to disagree`);
+  assert.ok(kept.length <= FRAMES_PER_REGION, `${kept.length} kept: past the region's own cap`);
   const let_go = of(d.events, 'discard').flatMap((e) => e.images).length;
   const landed = of(d.events, 'frame').length;
   assert.equal(landed - d.state.frames.length, let_go, 'every other image was named for deletion');
@@ -1389,75 +1421,166 @@ test('capture: a request needs a steady head near the step’s own target, and n
 });
 
 /*
-  What the throttle is, and what it is not.
+  What paces the shutter, and what does not.
 
-  `CAPTURE_INTERVAL_MS` is a floor between two requests, not the rate.
-  A step asks only for its own region and `targetWants` refuses a second
-  request while one is out for it, so the shutter is really paced by the
-  camera's round trip — which is why a whole four-step scan raises a
-  handful of requests rather than a handful per step.
+  `CAPTURE_INTERVAL_MS` is a floor between two requests; `FRAME_GAP_MS`
+  is what makes a second picture worth taking at all. A still head is
+  therefore photographed about every `FRAME_GAP_MS` and a turning one
+  every `CAPTURE_INTERVAL_MS`, because the picture is changing — and a
+  region may have two requests out at once, so a step no longer has to
+  wait out a whole camera round trip between frames.
 */
-test('capture: one request at a time per region, no sooner than the throttle allows', () => {
+test('capture: two requests may be in flight for a region, and never two for one moment', () => {
   let d = scanning();
   d = run(d, 33, () => face());
   assert.equal(of(d.events, 'capture').length, 1);
   const first = of(d.events, 'capture')[0]?.request as CaptureRequest;
 
-  d = run(d, 990, () => face());
-  assert.equal(of(d.events, 'capture').length, 1, 'no duplicate while pending');
+  // The throttle has passed and the head has not moved: a second
+  // photograph of one instant measures nothing and costs a file.
+  d = run(d, CAPTURE_INTERVAL_MS + 66, () => face());
+  assert.equal(of(d.events, 'capture').length, 1, 'the same instant is not asked for twice');
 
+  // The gap passes and the region asks again with the first still out.
+  d = run(d, FRAME_GAP_MS, () => face());
+  assert.equal(of(d.events, 'capture').length, 2, 'a new moment, while the first is still unanswered');
+  const second = of(d.events, 'capture')[1]?.request as CaptureRequest;
+  assert.ok(second.at - first.at >= CAPTURE_INTERVAL_MS, 'never sooner than the throttle');
+  assert.ok(second.at - first.at >= FRAME_GAP_MS, 'and never for a moment the region already has');
+  assert.equal(d.state.pending.length, PENDING_PER_TARGET);
+
+  // And never a third while those two are out.
+  d = run(d, FRAME_GAP_MS * 2, () => face());
+  assert.equal(of(d.events, 'capture').length, 2, 'two in flight is the ceiling');
+
+  // A failed request frees the flight and is asked again.
   d = dispatch(d, { type: 'captureFailed', requestId: first.id, at: d.now });
   d = run(d, 33, () => face());
-  assert.equal(of(d.events, 'capture').length, 2, 'a failed request is asked again once the throttle allows');
-  const second = of(d.events, 'capture')[1]?.request as CaptureRequest;
-  assert.ok(second.at - first.at >= CAPTURE_INTERVAL_MS);
+  assert.equal(of(d.events, 'capture').length, 3, 'a failed request leaves room for another');
 
-  d = dispatch(d, { type: 'captureFailed', requestId: second.id, at: d.now });
-  d = run(d, 330, () => face());
-  assert.equal(of(d.events, 'capture').length, 2, 'throttled');
-  d = run(d, CAPTURE_INTERVAL_MS, () => face());
-  assert.equal(of(d.events, 'capture').length, 3);
+  // A head that has turned is a new picture without waiting for the clock.
+  let e = scanning();
+  e = run(e, 33, () => face());
+  assert.equal(of(e.events, 'capture').length, 1);
+  e = run(e, CAPTURE_INTERVAL_MS + 33, turn(0, 12, 400));
+  assert.equal(of(e.events, 'capture').length, 2, 'a turn is a new picture, clock or no clock');
+  const moved = of(e.events, 'capture')[1]?.request as CaptureRequest;
+  assert.ok(Math.abs(moved.yaw) >= FRAME_TURN_DEG, `${moved.yaw}° is not a different picture`);
 });
 
-test('capture: a good frame is not asked for again; a poor one is replaced by a better one', () => {
-  // The rule, on its own. A region with nothing wants anything; a region
-  // holding a good picture wants nothing; a region holding a poor one
-  // wants a frame that beats it by more than the margin.
+test('capture: two requests in flight is never two shutters at once', () => {
+  /*
+    The device risk this phase introduced, pinned in the only place a
+    reducer test can reach it: the screen's source.
+
+    Build 19 could not have two capture requests out for one region, so
+    it could not ask the camera for two photographs at once. This one
+    can. On iOS every `capture()` builds a `CIImage` over one of the AR
+    session's pixel buffers and holds it until the JPEG encode finishes,
+    on a serial queue — two in flight hold two slots of a pool ARKit is
+    still filling from the camera, and the second encode queues behind
+    the first anyway. So `hair-scan.tsx` chains the `takePhoto` calls.
+
+    If the chain ever goes, this fails, and the engine's constant keeps
+    its meaning: a limit on OUTSTANDING REQUESTS, not on shutters.
+  */
+  assert.ok(PENDING_PER_TARGET > 1, 'the chain below is only needed while this is');
+  const screen = readFileSync('src/app/hair-scan.tsx', 'utf8');
+  assert.match(screen, /const shutter = useRef<Promise<unknown>>/, 'no shutter queue');
+  assert.match(screen, /shutter\.current = shot\.then\(/, 'the queue never advances');
+  /*
+    Two places in this file ask the camera for a still, and both are
+    accounted for: the scan's own capture, which goes through the chain,
+    and the ready screen's light-meter probe, which only fires while the
+    scanner is at 'ready' and which the chain waits for (`probeShot`). A
+    third would be a shutter nobody is queueing.
+  */
+  const takes = screen.match(/camera\.current\?\.takePhoto\(\)/g) ?? [];
+  assert.equal(takes.length, 2, `${takes.length} shutters in this file; two are queued`);
+  assert.match(screen, /const free = probeShot\.current/, 'the probe is not the first link');
+});
+
+test('capture: a region wants two moments whatever they score, then only a better picture', () => {
+  /*
+    The rule, on its own, and the first line of it is the one that
+    changed. A capture region with one perfect photograph still wants a
+    second, because a place on the head that only one step ever sees —
+    the crown — then has one reading, nothing to disagree with, and no
+    error bar: `measure/noise.ts` caps it and `compareScans` refuses it,
+    for the life of the journal. Quality decides which frames are kept;
+    it does not decide whether that measurement is allowed to exist.
+  */
   const base = createScanState();
-  const withHairline = (quality: number): ScanState => ({
+  const withFrames = (...qualities: number[]): ScanState => ({
     ...base,
-    targets: { ...base.targets, hairline: { captured: true, quality, frameId: 'h', reach: 1 } },
+    targets: {
+      ...base.targets,
+      hairline: {
+        captured: qualities.length > 0,
+        quality: Math.max(0, ...qualities),
+        weakest: qualities.length === 0 ? 0 : Math.min(...qualities),
+        frameIds: qualities.map((_, i) => `h${i}`),
+        reach: 1,
+      },
+    },
   });
   assert.ok(targetWants(base, 'hairline', 0.1), 'nothing yet: anything is worth having');
-  assert.ok(!targetWants(withHairline(GOOD_QUALITY), 'hairline', 1), 'good: never asked again');
-  assert.ok(!targetWants(withHairline(0.5), 'hairline', 0.5 + REPLACE_MARGIN / 2), 'not enough better');
-  assert.ok(targetWants(withHairline(0.5), 'hairline', 0.5 + REPLACE_MARGIN + 0.01));
   assert.ok(
-    !targetWants({ ...withHairline(0.2), pending: [pendingFor('hairline')] }, 'hairline', 0.9),
-    'and never while one is already in flight for it',
+    targetWants(withFrames(1), 'hairline', 0.1),
+    'one perfect picture is still one picture: the region has no spread of its own yet',
+  );
+  assert.ok(
+    !targetWants(withFrames(GOOD_QUALITY, GOOD_QUALITY), 'hairline', 1),
+    'two good ones: nothing more is asked for',
+  );
+  assert.ok(
+    targetWants(withFrames(GOOD_QUALITY, 0.5), 'hairline', 0.1),
+    'a third, while the poorest of them is short of good',
+  );
+  assert.ok(
+    !targetWants(withFrames(0.9, 0.6, 0.5), 'hairline', 0.5 + REPLACE_MARGIN / 2),
+    'a full region: not enough better than its poorest',
+  );
+  assert.ok(targetWants(withFrames(0.9, 0.6, 0.5), 'hairline', 0.5 + REPLACE_MARGIN + 0.01));
+  assert.ok(
+    !targetWants(
+      { ...withFrames(0.2), pending: [pendingFor('hairline'), { ...pendingFor('hairline'), id: 'p2' }] },
+      'hairline',
+      0.9,
+    ),
+    'and never a third request while two are in flight for it',
+  );
+  assert.ok(
+    !targetWants({ ...withFrames(GOOD_QUALITY), pending: [pendingFor('hairline')] }, 'hairline', 0.9),
+    'a request in flight counts towards the region’s list',
   );
 
   // And on the step itself: held short of the turn it asks for, the step
-  // keeps working, and each frame it lands beats the one before it.
+  // keeps working, takes the moments it can get up to the region's cap,
+  // and then only a better picture is worth a shutter.
   let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
   assert.equal(d.state.step, 'right');
   const part = TURN_HANDOVER_DEG - 1;
   // Turned into the pose rather than snapped to it: a jump is a whip.
   d = landAll(run(d, 600, (t) => face({ yaw: (part * Math.min(t, 600)) / 600, stability: 0.6 }), 0.4));
-  d = landAll(run(d, 500, () => face({ yaw: part, stability: 0.6 }), 0.4));
+  d = landAll(run(d, FRAME_GAP_MS * FRAMES_PER_REGION, () => face({ yaw: part, stability: 0.6 }), 0.4));
   const poor = held(d.state, 'leftTemple');
-  assert.ok(poor.captured && poor.quality < 0.7, `${poor.quality}`);
+  assert.equal(poor.frameIds.length, FRAMES_PER_REGION, 'the region filled up on what it could get');
+  assert.ok(poor.quality < 0.7, `${poor.quality}`);
   assert.equal(d.state.step, 'right', 'the step is still waiting for the turn itself');
 
   const n = of(d.events, 'capture').length;
-  d = run(d, CAPTURE_INTERVAL_MS + 66, () => face({ yaw: part, stability: 0.6 }), 0.4);
-  assert.equal(of(d.events, 'capture').length, n, 'the same pose in the same light is not worth a shutter');
+  d = run(d, FRAME_GAP_MS + 66, () => face({ yaw: part, stability: 0.6 }), 0.4);
+  assert.equal(of(d.events, 'capture').length, n, 'a full region does not ask for more of the same');
 
-  d = run(d, CAPTURE_INTERVAL_MS + 66, () => face({ yaw: part, stability: 1 }), 0.95);
+  // A short beat, because the gap has long since passed: the very next
+  // tick in better light is worth a shutter, and one is all it takes.
+  d = run(d, 99, () => face({ yaw: part, stability: 1 }), 0.95);
   assert.equal(of(d.events, 'capture').length, n + 1, 'better light and a steadier hand are');
   d = landAll(d);
-  assert.equal(d.state.frames.filter((f) => f.target === 'leftTemple').length, 1, 'replaced, not added');
-  assert.ok(held(d.state, 'leftTemple').quality > poor.quality);
+  const after = held(d.state, 'leftTemple');
+  assert.equal(after.frameIds.length, FRAMES_PER_REGION, 'the cap holds: the poorest made way');
+  assert.ok(after.weakest > poor.weakest, `${poor.weakest} → ${after.weakest}`);
   assert.ok(of(d.events, 'frame').some((f) => f.replaced), 'and the old one was named as replaced');
 });
 
@@ -1482,35 +1605,74 @@ test('capture: a worse frame landing for a bin is dropped, the better one kept',
   );
 });
 
-test('curation: a replaced frame is named for deletion, and only its own region’s', () => {
+test('curation: a better picture of one moment replaces it; a new moment joins it', () => {
+  /*
+    The two halves of the curation, and they answer different questions.
+    A frame that stands for a moment the region already holds is the SAME
+    reading twice: keeping both would hand the measurement engine a
+    spread of zero it never measured. A frame from a different moment is
+    a second reading, which is the only thing that gives the region an
+    error bar at all — so it joins rather than displaces.
+  */
   let d = scanning();
   d = run(d, 33, () => face({ stability: 0.6 }), 0.4);
+  const poorAt = d.now;
   d = dispatch(d, { type: 'captured', requestId: 'c1', image: { ...image, uri: 'file:///poor.jpg' }, at: d.now });
-  d = run(d, CAPTURE_INTERVAL_MS, () => face(), 0.9);
-  assert.equal(d.state.pending.length, 1);
-  d = { ...d, events: [] };
-  d = landAll(d);
+  const first = d.state.frames[0] as ScanFrame;
+  assert.equal(d.state.frames.length, 1);
+
+  // A better picture of that same instant: the engine would not ask for
+  // one — `newMoment` sees to that — but a camera answering out of order
+  // can still land one, so the rule is tested where it is enforced.
+  const twin: CaptureRequest = {
+    ...first,
+    id: 'twin',
+    quality: first.quality + 0.3,
+    at: poorAt + FRAME_GAP_MS / 2,
+  };
+  assert.ok(!distinctMoment(first, { ...twin, requestedAt: twin.at }), 'the twin really is the same moment');
+  d = { ...d, state: { ...d.state, pending: [twin] }, events: [] };
+  d = dispatch(d, { type: 'captured', requestId: 'twin', image: { ...image, uri: 'file:///twin.jpg' }, at: d.now });
+  assert.equal(d.state.frames.length, 1, 'one moment, one photograph of it');
   assert.deepEqual(of(d.events, 'frame').map((f) => f.replaced), [true]);
   assert.deepEqual(
     of(d.events, 'discard').map((e) => [e.reason, e.images.map((i) => i.uri)]),
     [['replaced', ['file:///poor.jpg']]],
   );
 
-  // Four frames, all four in the same ring bin, one per region. A better
-  // crown lands: it replaces the crown and nothing else is touched.
-  const frames = REQUIRED_REGIONS.map((region) => spare(region, region === 'crown' ? 0.4 : 0.7));
+  // A different moment, and no better: it joins, and nothing is let go of.
+  const later: CaptureRequest = { ...first, id: 'later', quality: 0.3, at: poorAt + FRAME_GAP_MS * 2 };
+  d = { ...d, state: { ...d.state, pending: [later] }, events: [] };
+  d = dispatch(d, { type: 'captured', requestId: 'later', image: { ...image, uri: 'file:///later.jpg' }, at: d.now });
+  assert.equal(d.state.frames.length, 2, 'two moments, two photographs');
+  assert.deepEqual(of(d.events, 'discard'), [], 'and nothing thrown away for being second');
+  assert.deepEqual(held(d.state, 'hairline').frameIds, ['twin', 'later'], 'best first');
+});
+
+test('curation: a full region gives up its poorest, and only its own region’s', () => {
+  // A region holding its three, all in the same ring bin, and a better
+  // crown lands: the poorest crown goes and nothing else is touched.
+  const crowns = [0.4, 0.55, 0.6].map((quality, i) => ({
+    ...spare('crown', quality, `file:///crown${i}.jpg`),
+    id: `f-crown${i}`,
+    requestedAt: i * FRAME_GAP_MS * 2,
+  }));
+  const frames = [
+    ...(['hairline', 'leftTemple', 'rightTemple'] as const).map((region) => spare(region, 0.7)),
+    ...crowns,
+  ];
   const better: CaptureRequest = {
     id: 'last', bin: SHARED_BIN, region: regionOfBin(SHARED_BIN), target: 'crown',
-    sector: SHARED_BIN, yaw: 0, pitch: -26, quality: 0.75, at: d.now,
+    sector: SHARED_BIN, yaw: 0, pitch: -26, quality: 0.75, at: 6000,
   };
-  let e: Driver = { state: { ...scanning().state, frames, pending: [better] }, events: [], now: d.now };
+  let e: Driver = { state: { ...scanning().state, frames, pending: [better] }, events: [], now: 6000 };
   e = dispatch(e, { type: 'captured', requestId: 'last', image: { ...image, uri: 'file:///better-crown.jpg' }, at: e.now });
-  assert.equal(e.state.frames.length, REQUIRED_REGIONS.length);
+  assert.equal(e.state.frames.filter((f) => f.target === 'crown').length, FRAMES_PER_REGION, 'the cap holds');
   assert.ok(e.state.frames.some((f) => f.id === 'last'), 'the better crown is kept');
   assert.deepEqual(
     of(e.events, 'discard').map((x) => [x.reason, x.images.map((i) => i.uri)]),
-    [['replaced', ['file:///crown.jpg']]],
-    'the old crown, and nothing that shared its bin',
+    [['replaced', ['file:///crown0.jpg']]],
+    'the poorest crown, and nothing that shared its bin',
   );
   for (const region of ['hairline', 'leftTemple', 'rightTemple'] as const) {
     assert.ok(e.state.frames.some((f) => f.target === region), `${region} survived the crown landing`);
@@ -1632,7 +1794,10 @@ test('curation: the crown is not thrown away for sharing a ring bin with the hai
       stepIndex: 3,
       stage: 'crown',
       frames: [hairline],
-      targets: { ...createScanState().targets, hairline: { captured: true, quality: 0.9, frameId: hairline.id, reach: 1 } },
+      targets: {
+        ...createScanState().targets,
+        hairline: { captured: true, quality: 0.9, weakest: 0.9, frameIds: [hairline.id], reach: 1 },
+      },
       pending: [crown],
     },
     events: [],
@@ -1663,7 +1828,10 @@ test('curation: a strong crown cannot take a weak temple’s place', () => {
       stepIndex: 3,
       stage: 'crown',
       frames: [temple],
-      targets: { ...createScanState().targets, leftTemple: { captured: true, quality: 0.3, frameId: temple.id, reach: 1 } },
+      targets: {
+        ...createScanState().targets,
+        leftTemple: { captured: true, quality: 0.3, weakest: 0.3, frameIds: [temple.id], reach: 1 },
+      },
       pending: [crown],
     },
     events: [],
@@ -1671,20 +1839,29 @@ test('curation: a strong crown cannot take a weak temple’s place', () => {
   };
   e = dispatch(e, { type: 'captured', requestId: 'crown1', image: { ...image, uri: 'file:///crown1.jpg' }, at: e.now });
   assert.ok(held(e.state, 'leftTemple').captured, 'the temple is still the report’s');
-  assert.equal(held(e.state, 'leftTemple').frameId, temple.id);
+  assert.deepEqual(held(e.state, 'leftTemple').frameIds, [temple.id]);
   assert.ok(held(e.state, 'crown').captured);
 });
 
-test('curation: a whole scan keeps one frame per region and never more than four', () => {
+test('curation: a whole scan keeps several frames per region and never more than the cap', () => {
   const d = fullScan();
-  assert.equal(MAX_FRAMES, REQUIRED_REGIONS.length);
-  assert.ok(d.state.frames.length <= MAX_FRAMES);
-  const targets = d.state.frames.map((f) => f.target);
-  assert.equal(new Set(targets).size, targets.length, 'one frame per region');
+  assert.equal(MAX_FRAMES, REQUIRED_REGIONS.length * FRAMES_PER_REGION);
+  assert.ok(d.state.frames.length <= MAX_FRAMES, `${d.state.frames.length} frames`);
+  // What the owner asked for — several pictures, not four — and what the
+  // measurement needs, which is the same thing said in arithmetic.
+  assert.ok(d.state.frames.length >= 5, `${d.state.frames.length} frames is not several`);
+  for (const region of REQUIRED_REGIONS) {
+    const kept = d.state.frames.filter((f) => f.target === region);
+    assert.ok(kept.length <= FRAMES_PER_REGION, `${region} holds ${kept.length}`);
+  }
   assert.equal(primaryFrame(d.state)?.target, 'hairline');
-  assert.deepEqual(orderedFrames(d.state).map((f) => f.target), [...REQUIRED_REGIONS]);
+  assert.deepEqual(
+    [...new Set(orderedFrames(d.state).map((f) => f.target))],
+    [...REQUIRED_REGIONS],
+    'region by region, in the order the scan asked for them',
+  );
   const four = requiredFrames(d.state);
-  assert.equal(four.length, 4, 'a frame for each of the four regions');
+  assert.equal(four.length, 4, 'and one best picture for each of the four regions');
   assert.deepEqual(four.map((f) => f.target), [...REQUIRED_REGIONS]);
   const right = four.find((f) => f.target === 'rightTemple');
   const left = four.find((f) => f.target === 'leftTemple');
@@ -1727,20 +1904,23 @@ test('choreography: a phone held below eye level still gets all four regions', (
 */
 test('curation: a frame is labelled by what it is of, not by the bin it fell in', () => {
   const low = -10;
-  let d = scanning();
-  d = landAll(run(d, 300, () => face({ pitch: low, stability: 0.95 })));
+  let d = walk(scanning(), 900, () => face({ pitch: low, stability: 0.95 }));
   const hairline = d.state.frames.find((f) => f.target === 'hairline');
   assert.ok(hairline, 'no hairline frame');
   assert.equal(hairline.bin, SHARED_BIN, 'the pose really was off to one side of the ring');
   assert.equal(hairline.region, 'front', 'and the picture is still of the front of the head');
 
-  d = landAll(run(d, 2000, turn(0, TEMPLE_FULL_DEG, 2000, low)));
+  d = walk(d, 2000, path({ yaw: 0, pitch: low }, { yaw: TEMPLE_FULL_DEG, pitch: low }, 1200));
   assert.equal(d.state.frames.find((f) => f.target === 'leftTemple')?.region, 'left');
-  d = landAll(run(d, 2000, turn(TEMPLE_FULL_DEG, 0, 2000, low)));
-  d = landAll(run(d, 2000, turn(0, -TEMPLE_FULL_DEG, 2000, low)));
+  d = walk(d, 2600, path({ yaw: TEMPLE_FULL_DEG, pitch: low }, { yaw: -TEMPLE_FULL_DEG, pitch: low }, 1800));
   assert.equal(d.state.frames.find((f) => f.target === 'rightTemple')?.region, 'right');
-  d = landAll(run(d, 1500, nod(low, -CROWN_FULL_DEG, 1500)));
+  d = walk(d, 2600, path({ yaw: -TEMPLE_FULL_DEG, pitch: low }, { yaw: -4, pitch: -CROWN_FULL_DEG }, 1800));
   assert.equal(d.state.frames.find((f) => f.target === 'crown')?.region, 'chin');
+  // Every repeat a region kept is labelled the same way: the label comes
+  // from what the step asked for, never from the pose that answered.
+  for (const frame of d.state.frames) {
+    assert.equal(frame.region, d.state.frames.find((f) => f.target === frame.target)?.region);
+  }
 });
 
 test('completion: the figure cannot read 100% while the crown is missing', () => {
@@ -1823,6 +2003,319 @@ test('scanning: the hold-still cue appears only after lingering unsteadily where
   assert.equal(d.state.cue, null, 'steady again: the step’s own instruction is all there is');
 });
 
+/* ------------------------- the repeated region ----------------------- */
+
+/**
+ * A still, a face in it and a mask over it, for the one test that takes
+ * a driven scan all the way into the measurement engine.
+ *
+ * Deliberately crude, and only the poses are real. The face is a box
+ * whose width narrows with the yaw and whose height narrows with the
+ * pitch, as a detector's does; the mask is a head-shaped blob with a
+ * slanted hairline across it, so a region's reading changes when the box
+ * it is measured in moves. What the test is entitled to conclude from it
+ * is about FRAME COUNTS and whether a spread was measured at all —
+ * never about hair, and never about a person.
+ */
+const MEASURE_STILL = { width: 1000, height: 1000 };
+const DEG = Math.PI / 180;
+
+function observationOf(frame: Pick<ScanFrame, 'yaw' | 'pitch'>): FaceObservation {
+  const width = 0.3 * Math.cos(frame.yaw * DEG);
+  const height = 0.4 * Math.cos(frame.pitch * DEG);
+  return {
+    bounds: { x: 0.5 - width / 2, y: 0.52 - height / 2, width, height },
+    image: MEASURE_STILL,
+    yaw: frame.yaw,
+    pitch: frame.pitch,
+    roll: 0,
+  };
+}
+
+const MEASURE_MASK: MaskImage = (() => {
+  const side = 160;
+  const data = new Float32Array(side * side);
+  for (let row = 0; row < side; row += 1) {
+    for (let col = 0; col < side; col += 1) {
+      const x = (col + 0.5) / side;
+      const y = (row + 0.5) / side;
+      const onHead = Math.hypot((x - 0.5) / 0.32, (y - 0.44) / 0.38) <= 1;
+      data[row * side + col] = onHead && y < 0.3 + 0.22 * x ? 1 : 0;
+    }
+  }
+  return { width: side, height: side, data };
+})();
+
+
+/*
+  What several frames a region buys, in three statements.
+
+  The owner asked for more pictures — "it only captures like 3 total
+  images... we need 5-6, so when there is the rotation part there are
+  multiple images rotating" — and that is the half of this he can see.
+
+  The half he cannot needs a distinction to be stated carefully, because
+  the first version of these tests' prose overstated it. A CAPTURE
+  region (`ScanTarget`, four of them) is not a MEASUREMENT region
+  (`measure/regions.ts`'s `ScanRegion`, six of them), and `measureScan`
+  reads all six out of every frame whatever it was filed under. So build
+  19's four frames were never four readings: driven through this same
+  motion they gave hairline 4, partLine 4, leftTemple 3, rightTemple 3,
+  midScalp 2 — all repeated, all comparable — and CROWN 1. The crown is
+  the region only the last step sees, and it was the one with no error
+  bar, pinned to `UNREPEATED_CONFIDENCE` and refused by `compareScans`.
+
+  So these three tests are one narrower statement made three ways: the
+  scan keeps several moments a capture region, they are genuinely
+  different moments, and the measurement that comes out the other end
+  has an error bar of its own for every place on the head — the crown
+  included, which is the part that changed.
+*/
+
+test('frames: a driven scan keeps several moments a region, and never one instant twice', () => {
+  const d = fullScan();
+  const kept = d.state.frames.length;
+  assert.ok(kept >= 5, `${kept} frames is not the several the owner asked for`);
+  assert.ok(kept <= MAX_FRAMES, `${kept} frames is past the ceiling`);
+
+  const repeated = REQUIRED_REGIONS.filter(
+    (region) => d.state.targets[region].frameIds.length >= REGION_MIN_FRAMES,
+  );
+  assert.ok(repeated.length >= 3, `only ${repeated.length} regions were photographed more than once`);
+
+  // And no region holds one instant twice. Two frames of one moment
+  // would agree by construction and publish a spread of zero — an error
+  // bar claiming a precision nobody measured, which is worse than none.
+  for (const region of REQUIRED_REGIONS) {
+    const frames = regionFrames(d.state, region);
+    for (let i = 0; i < frames.length; i += 1) {
+      for (let j = i + 1; j < frames.length; j += 1) {
+        const a = frames[i] as ScanFrame;
+        const b = frames[j] as ScanFrame;
+        assert.ok(
+          distinctMoment(a, b),
+          `${region}: ${a.id} and ${b.id} are the same instant twice`,
+        );
+        const apart = Math.abs(a.requestedAt - b.requestedAt);
+        const moved = Math.hypot(a.yaw - b.yaw, a.pitch - b.pitch);
+        assert.ok(
+          apart >= FRAME_GAP_MS || moved >= FRAME_TURN_DEG,
+          `${region}: ${apart} ms and ${moved.toFixed(1)}° apart is neither`,
+        );
+      }
+    }
+  }
+});
+
+test('frames: the extra moments cost the scan no time a person would notice', () => {
+  /*
+    Measured, not asserted from the timeouts. The same driven motion
+    through the same four steps took 7194 ms on build 19, which kept one
+    frame a region, and 7260 ms here, which keeps nine: one tick of
+    difference, because what paces a driven scan is the head's own
+    movement and not the shutter. Driven again with the camera answering
+    150, 300 and 500 ms late instead of on the spot: 7260 / 7260 /
+    7425 ms here against 7260 / 7260 / 7425 ms at build 19 — identical,
+    keeping 9 / 10 / 11 frames against 4 / 4 / 4.
+
+    THIS IS THE CAPTURE ONLY. The processing screen that follows is paced
+    by `analysis.ts`, which plans 2N+1 units, and that IS longer with
+    more frames; `processing.tsx` divides the per-unit hold by the unit
+    count to hold the deliberate part of it near where four frames put
+    it. The segmenter still runs once per frame either way.
+  */
+  const d = fullScan();
+  const elapsed = (d.state.completedAt ?? d.now) - (d.state.startedAt ?? d.now);
+  assert.ok(elapsed <= 8_000, `${elapsed} ms is not a KYC pace`);
+  const timeouts = SCAN_STEPS.reduce((sum, step) => sum + STEP_TIMEOUT_MS[step], 0);
+  assert.ok(elapsed < timeouts / 2, `${elapsed} ms of a ${timeouts} ms ceiling`);
+  assert.equal(d.state.completeReason, 'coverage');
+});
+
+test('frames: the extra moments cost the processing screen a second, not four', () => {
+  /*
+    The cost the capture timings above do NOT cover, and the part a
+    person actually waits through.
+
+    `analysis.ts` plans 2N+1 units for N frames and holds each finished
+    one for `ANALYSIS_PACING.unitFloorMs` so it can be seen landing. That
+    is a per-unit figure tuned when a scan was four frames, so more
+    frames multiply it: left alone, this phase would have taken the held
+    part of the pass from 3150 ms to 6650–8050 ms. `processing.tsx`
+    divides the hold by the plan's own unit count (`unitFloorFor`,
+    budget `PASS_HOLD_BUDGET_MS`) and passes it in as `pacing`.
+
+    Asserted here because this is the test that answers the pace
+    question, and because nothing else in the suite loads a .tsx. The
+    arithmetic is checked against the real planner; the wiring is checked
+    against the screen's own source.
+  */
+  const framesOf = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `f${i}`,
+      uri: `file:///f${i}.jpg`,
+      angle: (i === 0 ? 'front' : 'leftTemple') as 'front' | 'leftTemple',
+    }));
+  const unitsFor = (n: number) => planAnalysis(framesOf(n) as never, true).units.length;
+  assert.equal(unitsFor(4), 9, 'build 19: four frames, nine units');
+  assert.equal(unitsFor(9), 19);
+  assert.equal(unitsFor(11), 23);
+  // What the unscaled hold would have cost, stated so the saving is not
+  // a claim about a number nobody wrote down.
+  assert.equal(unitsFor(4) * ANALYSIS_PACING.unitFloorMs, 3150);
+  assert.equal(unitsFor(9) * ANALYSIS_PACING.unitFloorMs, 6650);
+  assert.equal(unitsFor(11) * ANALYSIS_PACING.unitFloorMs, 8050);
+
+  const screen = readFileSync('src/components/hair-scan/processing.tsx', 'utf8');
+  const budget = /PASS_HOLD_BUDGET_MS = ([\d_]+)/.exec(screen)?.[1]?.replace(/_/g, '');
+  const floorMin = /UNIT_FLOOR_MIN_MS = ([\d_]+)/.exec(screen)?.[1]?.replace(/_/g, '');
+  assert.ok(budget && floorMin, 'the screen no longer states a hold budget');
+  const held = (units: number) =>
+    units *
+    Math.min(ANALYSIS_PACING.unitFloorMs, Math.max(Number(floorMin), Math.round(Number(budget) / units)));
+  for (const n of [4, 9, 10, 11]) {
+    const ms = held(unitsFor(n));
+    assert.ok(ms <= 3_500, `${n} frames would hold the screen for ${ms} ms`);
+  }
+  assert.equal(held(unitsFor(4)), 3150, 'a four-frame scan is paced exactly as it was');
+  assert.match(
+    screen,
+    /pacing: \{ unitFloorMs: unitFloorFor\(units\) \}/,
+    'the screen computes a hold and then does not pass it in',
+  );
+
+  /*
+    And the two terms the hold does NOT cover, which are the ones that
+    actually grew. An earlier version of this test asserted the hold
+    alone under the name "does not stretch the processing screen", which
+    was false: the ring is paced by the frame count in `orbitReadyMs`
+    and `absorbHandoffMs`, and the hand-off runs strictly after both, so
+    the screen cannot end before `max(hold, ring) + absorb`.
+
+    Pinned as a ceiling and a floor, so neither can drift: more frames
+    must cost something (they are more pictures to show) and must not
+    cost the four seconds the unscaled hold would have.
+  */
+  const lead = Number(/ORBIT_LEAD_MS = ([\d_]+)/.exec(screen)?.[1]?.replace(/_/g, ''));
+  assert.ok(Number.isFinite(lead), 'the screen no longer states an orbit lead');
+  const screenFloor = (n: number) =>
+    Math.max(held(unitsFor(n)), orbitReadyMs(n - 1, lead, false)) + absorbHandoffMs(n - 1, false);
+  const atFour = screenFloor(4);
+  assert.equal(atFour, 5040, 'a four-frame screen is paced exactly as it was');
+  for (const n of [9, 10, 11]) {
+    const ms = screenFloor(n);
+    assert.ok(ms > atFour, `${n} frames somehow show faster than four`);
+    assert.ok(ms - atFour <= 2_500, `${n} frames add ${ms - atFour} ms to the screen`);
+    assert.ok(ms <= 7_500, `${n} frames hold the screen for ${ms} ms`);
+  }
+  // Written down in the file itself, so the accounting in its header is
+  // the whole accounting and not just the part that was fixed.
+  assert.match(screen, /orbitReadyMs/, 'the header must name the terms it did not scale');
+  assert.match(screen, /absorbHandoffMs/);
+});
+
+test('frames: the repeats are what give the measurement an error bar of its own', () => {
+  /*
+    End to end, engine into `measure`. The mask and the face observations
+    are synthetic — this is a reducer test, there is no camera — but the
+    POSES are the ones the engine actually kept, and that is the whole
+    point: a region's readings differ here because the frames it kept are
+    different moments of the turn. On a phone they would differ for that
+    reason and for every other reason `measure/noise.ts` names.
+  */
+  const d = fullScan();
+  const inputs: ScanFrameInput[] = orderedFrames(d.state).map((f) => ({
+    mask: MEASURE_MASK,
+    face: observationOf(f),
+    quality: f.quality,
+  }));
+  const measurement = measureScan(inputs, '2026-09-19T09:00:00.000Z');
+
+  for (const [region, read] of Object.entries(measurement.regions)) {
+    assert.ok(read, region);
+    assert.ok(read.frames >= REPEATED_FRAMES, `${region} was read in ${read.frames} frame(s)`);
+    /*
+      `spreadOf` is `Math.max(SPREAD_FLOOR, sd)`, so "spread > 0" is true
+      of anything at all and would assert nothing — an earlier version of
+      this test made exactly that mistake. What is worth asserting is
+      that the number came from the readings: it is the sample deviation
+      or the floor under one, and NOT `SINGLE_FRAME_SPREAD`, which is
+      this module's stand-in for a region it could not repeat.
+    */
+    assert.ok(read.spread >= SPREAD_FLOOR, `${region}: ${read.spread} is under the floor`);
+    assert.notEqual(read.spread, SINGLE_FRAME_SPREAD, `${region} fell back to the stand-in spread`);
+    assert.ok(
+      read.confidence > UNREPEATED_CONFIDENCE,
+      `${region} is still capped as unrepeated at ${read.confidence}`,
+    );
+  }
+  /*
+    And at least one region's frames genuinely disagreed — a spread ABOVE
+    the floor, measured rather than clamped.
+
+    Only one, and said plainly: on this synthetic mask five of the six
+    land exactly on `SPREAD_FLOOR` and `leftTemple` (about 0.059) is the
+    one that clears it. That is the mask's fault, not the engine's — it
+    is a hard 0/1 blob with a straight hairline, so most regions read the
+    same number from every frame by construction. A floor-valued spread
+    is an honest "these agreed to within the mask's own wobble", not a
+    missing error bar; what would be dishonest is `SINGLE_FRAME_SPREAD`,
+    asserted against above, and that is the one this phase removed.
+  */
+  const measured = Object.entries(measurement.regions).filter(
+    ([, read]) => (read?.spread ?? 0) > SPREAD_FLOOR,
+  );
+  assert.ok(measured.length >= 1, 'no region measured a spread above the floor');
+
+  /*
+    And the counterfactual, which is the bug the owner could not see —
+    stated at exactly its real size. The same scan curated the way build
+    19 curated it (the best frame of each capture region and nothing
+    else) leaves FIVE of the six places on the head repeated and
+    comparable, and the CROWN read in ONE frame: its spread is this
+    module's stand-in rather than anything measured, and its confidence
+    sits exactly on the unrepeated cap, below every bar `compareScans`
+    acts on. So it is the crown, and only the crown, that no scan could
+    ever have reported a change in. The assertions below say only that.
+  */
+  const oneEach = measureScan(
+    requiredFrames(d.state).map((f) => ({
+      mask: MEASURE_MASK,
+      face: observationOf(f),
+      quality: f.quality,
+    })),
+    '2026-09-19T09:00:00.000Z',
+  );
+  const crown = oneEach.regions.crown;
+  assert.ok(crown);
+  assert.equal(crown.frames, 1);
+  assert.equal(crown.spread, SINGLE_FRAME_SPREAD, 'assumed, not measured');
+  assert.equal(crown.confidence, UNREPEATED_CONFIDENCE, 'capped, and below every bar');
+  const now = measurement.regions.crown;
+  assert.ok(now && now.confidence > crown.confidence, 'the repeats are what lifted it');
+
+  /*
+    The other half of the counterfactual, asserted so the claim above
+    cannot quietly grow back into "build 19 could never measure
+    anything". Every OTHER place on the head was already repeated on four
+    frames, because `measureScan` reads all six out of every frame.
+  */
+  const alreadyRepeated = Object.entries(oneEach.regions).filter(
+    ([region, read]) => region !== 'crown' && (read?.frames ?? 0) >= REPEATED_FRAMES,
+  );
+  assert.equal(
+    alreadyRepeated.length,
+    Object.keys(oneEach.regions).length - 1,
+    'build 19 already repeated every region but the crown; do not claim otherwise',
+  );
+  for (const [region, read] of alreadyRepeated) {
+    assert.ok(
+      (read?.confidence ?? 0) > UNREPEATED_CONFIDENCE,
+      `${region} was already comparable at build 19`,
+    );
+  }
+});
+
 /* ------------------------------ finishing ---------------------------- */
 
 test('finish: a scan nobody follows still ends, on the steps’ own timeouts', () => {
@@ -1831,7 +2324,10 @@ test('finish: a scan nobody follows still ends, on the steps’ own timeouts', (
   let d = scanning();
   d = landAll(run(d, 33, () => face()));
   assert.equal(d.state.frames.length, 1, 'the hairline, which needs nothing doing');
+  // Nothing answers the camera from here on, so the frames stay at one
+  // and the requests still out are given up on at the settle.
   d = toEnd(d, () => face({ yaw: 5, stability: 0.9 }));
+  d = run(d, SETTLE_MS + 66, () => face({ yaw: 5, stability: 0.9 }));
   assert.deepEqual(of(d.events, 'scanComplete'), [{ type: 'scanComplete', reason: 'timeout' }]);
   assert.equal(d.state.scanner, 'complete');
   assert.equal(d.state.status, 'complete');
@@ -1853,8 +2349,10 @@ test('finish: completing waits for in-flight frames, but not forever', () => {
   // A camera that answers the hairline and then goes quiet: the temple's
   // request is still out when the forced finish arrives.
   let d = scanning();
-  d = landAll(run(d, 33, () => face()));
-  assert.equal(d.state.frames.length, 1);
+  // Two hairline frames, so the front step is satisfied and hands over.
+  d = landAll(run(d, FRAME_GAP_MS + 66, () => face()));
+  assert.equal(d.state.frames.length, REGION_MIN_FRAMES);
+  assert.equal(d.state.step, 'right');
   d = run(d, 800, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
   assert.ok(d.state.pending.length > 0, 'a request is out');
   d = toEnd(d, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
@@ -1868,7 +2366,7 @@ test('finish: completing waits for in-flight frames, but not forever', () => {
   assert.equal(d.state.scanner, 'complete', 'gave up waiting');
   assert.equal(d.state.pending.length, 0);
   assert.equal(of(d.events, 'capture').length, n);
-  assert.equal(d.state.frames.length, 1, 'the one frame that landed');
+  assert.equal(d.state.frames.length, REGION_MIN_FRAMES, 'the frames that landed');
 
   // The camera answers after all: the file is discarded, the frame set is not touched.
   const lateId = d.state.abandoned[0];
@@ -1876,7 +2374,7 @@ test('finish: completing waits for in-flight frames, but not forever', () => {
   d = { ...d, events: [] };
   d = dispatch(d, { type: 'captured', requestId: lateId, image: { ...image, uri: 'file:///late.jpg' }, at: d.now });
   assert.equal(d.state.scanner, 'complete');
-  assert.equal(d.state.frames.length, 1);
+  assert.equal(d.state.frames.length, REGION_MIN_FRAMES);
   assert.deepEqual(d.events, [{ type: 'discard', images: [{ ...image, uri: 'file:///late.jpg' }], reason: 'late' }]);
   assert.ok(!d.state.abandoned.includes(lateId));
 
@@ -1886,11 +2384,20 @@ test('finish: completing waits for in-flight frames, but not forever', () => {
   e = run(e, 800, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
   e = toEnd(e, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
   assert.equal(e.state.status, 'completing');
-  const [outstanding] = e.state.pending;
-  assert.ok(outstanding);
-  e = dispatch(e, { type: 'captured', requestId: outstanding.id, image: { ...image, uri: 'file:///in-time.jpg' }, at: e.now });
-  assert.equal(e.state.scanner, 'complete');
-  assert.ok(e.state.frames.some((f) => f.id === outstanding.id), 'it was kept');
+  const outstanding = [...e.state.pending];
+  assert.ok(outstanding.length > 0);
+  for (const request of outstanding) {
+    e = dispatch(e, {
+      type: 'captured',
+      requestId: request.id,
+      image: { ...image, uri: `file:///in-time-${request.id}.jpg` },
+      at: e.now,
+    });
+  }
+  assert.equal(e.state.scanner, 'complete', 'every one of them landed, so there is nothing left to wait for');
+  for (const request of outstanding) {
+    assert.ok(e.state.frames.some((f) => f.id === request.id), `${request.id} was kept`);
+  }
 });
 
 test('quality: a frame at a region’s edge is never good; the same conditions at the turn are', () => {
@@ -1953,12 +2460,13 @@ test('mesh: a frame keeps the mesh it landed with, and only that one', () => {
   d = dispatch(d, { type: 'captured', requestId: 'c1', image, mesh: poor, at: d.now });
   assert.deepEqual(d.state.frames[0]?.mesh, poor);
 
-  // A better frame replaces it, and brings its own mesh — the old one goes with the old frame.
-  d = run(d, CAPTURE_INTERVAL_MS, () => face(), 0.9);
+  // A better picture of the same moment replaces it, and brings its own
+  // mesh — the old one goes with the old frame.
+  const kept = d.state.frames[0] as ScanFrame;
   const better = meshOf(400);
   assert.notDeepEqual(better, poor, 'the synthetic head had moved');
-  const [request] = d.state.pending;
-  assert.ok(request);
+  const request: CaptureRequest = { ...kept, id: 'twin', quality: kept.quality + 0.3, at: kept.requestedAt };
+  d = { ...d, state: { ...d.state, pending: [request] } };
   d = dispatch(d, { type: 'captured', requestId: request.id, image, mesh: better, at: d.now });
   assert.equal(d.state.frames.length, 1);
   assert.deepEqual(d.state.frames[0]?.mesh, better);
@@ -1988,12 +2496,15 @@ test('mesh: curation and ordering carry every survivor’s mesh through', () => 
   const lastMesh = meshOf(1500);
   let e: Driver = { state: { ...scanning().state, frames, pending: [better] }, events: [], now: 5000 };
   e = dispatch(e, { type: 'captured', requestId: 'last', image, mesh: lastMesh, at: e.now });
-  assert.equal(e.state.frames.length, REQUIRED_REGIONS.length);
+  // A different moment from the shallow crown, so it joins rather than
+  // displaces it: the region now has two readings and an error bar.
+  assert.equal(e.state.frames.length, REQUIRED_REGIONS.length + 1);
+  assert.ok(e.state.frames.some((f) => f.id === 'f-crown'), 'the shallow crown is a reading too');
   for (const f of orderedFrames(e.state)) {
     const expected = f.id === 'last' ? lastMesh : meshes.get(f.target);
     assert.deepEqual(f.mesh, expected, `frame ${f.id} lost its mesh`);
   }
-  assert.ok(!e.state.frames.some((f) => f.id === 'f-crown'), 'the shallow crown still goes');
+  assert.deepEqual(held(e.state, 'crown').frameIds, ['last', 'f-crown'], 'best first, both kept');
 });
 
 test('cover: a still fills its box on the longer side and is centred on the other', () => {
@@ -2134,6 +2645,7 @@ function spare(target: ScanTarget, quality: number, uri = `file:///${target}.jpg
     yaw: 0,
     pitch: -10,
     quality,
+    requestedAt: 0,
     capturedAt: 0,
   };
 }
@@ -2217,3 +2729,67 @@ function fullScan(): Driver {
   assert.equal(d.state.scanner, 'complete');
   return d;
 }
+
+test('mesh: the cap a still wears is the cap the camera drew, fringe and all', () => {
+  /*
+    The half of the shaped-cap work that is not arithmetic at all.
+
+    `fitHairCap` sits the live cap on the hair, and a `CapFit` now
+    carries the SHAPE as well as the size. But the processing screen and
+    the report hero rebuild the cap from a still, and if nothing hands
+    them the fit they rebuild `CAP_FIT_DEFAULT` — the standing allowance
+    — so a person watches a cap sitting on their fringe in the camera
+    and a plain dome on the same head a second later. That is not a
+    wrong number anywhere; it is two different drawings of one head, and
+    only a reader looking at both screens would ever catch it.
+
+    So the road is pinned end to end: the shutter reads the DRAWN fit
+    off the mesh handle, `snapshotMesh` freezes it onto the frame,
+    `meshInBox` carries it into the box untouched (a fit is
+    dimensionless — there is nothing in it to rescale), and all three
+    screens that draw a still hand it to `StaticHairMesh`.
+  */
+  const tracked = trackFrame(createTracker(), syntheticFace(VIEW, 0, 1000), 1000);
+  const tf = tracked.face;
+  assert.ok(tf);
+
+  // A fit with a shape in it: a fringe standing proud on one side.
+  const worn = { lift: 1.2, widen: 1.05, shift: -0.04, profile: [1.3, 1.2, 1.0, 0.9, 1.0, 1.1] };
+  const carried = snapshotMesh(tf, VIEW, worn);
+  assert.ok(carried);
+  assert.deepEqual(carried.fit, worn, 'the shutter froze the fit onto the frame');
+  const inBox = meshInBox(carried, STILL, { width: 176, height: 176 });
+  assert.deepEqual(inBox.fit, worn, 'and the box carried it through unrescaled');
+
+  // A build with no segmenter never had one, and must still say nothing
+  // rather than an invented fit: that is what the screens drew before.
+  const bare = snapshotMesh(tf, VIEW);
+  assert.ok(bare);
+  assert.ok(!('fit' in bare), 'no fit key at all when none was worn');
+  assert.ok(!('fit' in meshInBox(bare, STILL, { width: 176, height: 176 })), 'and none downstream');
+
+  // And the screens. Read off their own source with the comments
+  // stripped, because a comment saying a still wears the live cap is
+  // exactly what shipped last time nothing passed it.
+  const bare_ = (path: string) =>
+    readFileSync(path, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+      .join('\n');
+  assert.match(
+    bare_('src/app/hair-scan.tsx'),
+    /snapshotMesh\(face, previewSize\.current, mesh\.current\?\.fit\(\)\)/,
+    'the shutter must read the drawn fit off the live mesh',
+  );
+  for (const screen of [
+    'src/components/hair-scan/processing.tsx',
+    'src/components/hair-scan/orbit-frames.tsx',
+    'src/components/hair-scan/report-sections/hero.tsx',
+  ]) {
+    const source = bare_(screen);
+    const call = /<StaticHairMesh[\s\S]*?\/>/.exec(source);
+    assert.ok(call, `${screen} no longer draws a static mesh`);
+    assert.match(call[0], /fit=\{/, `${screen} draws a still without the cap the camera drew`);
+  }
+});

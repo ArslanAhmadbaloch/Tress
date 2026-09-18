@@ -77,6 +77,120 @@ identical on both platforms.
 smoothing almost off; leaving it out would smooth an already-stable pose
 and reintroduce the lag the module exists to remove.
 
+## Handedness
+
+Which way round everything is. This has been re-derived twice from scratch,
+each time at the cost of a phase, so it is written down once here and the
+tests hold the Swift to it.
+
+### There are FOUR flips, not one
+
+An earlier draft of this section said the module had a single mirroring in
+it and that the single mirroring was `captureOrientation`. That was wrong,
+and wrong in the way that costs a phase: a reader who believes it changes
+`captureOrientation` expecting all five rows below to move with it, and gets
+a **half-flip** — still and sample one way, preview and mesh the other, no
+error anywhere, and a symmetric head looking perfectly fine while the
+record's sides swap.
+
+Four independent expressions, in three files, decide the handedness. They
+agree with each other today, and the convention *is* that agreement:
+
+| # | the flip | where | what it turns |
+| --- | --- | --- | --- |
+| 1 | `mirrorTransform`, `CGAffineTransform(scaleX: -1, y: 1)`, set on the `ARSCNView` in `layoutSubviews` | `ios/HairFaceTrackingView.swift:38`, applied at `:157` | the **preview**. `ARSCNView` does not mirror a front feed — this line does. Delete it and the preview un-mirrors on its own. |
+| 2 | `let x = 1 - Double(projected.x) / Double(size.width)` | `ios/HairFaceTrackingView.swift:435` (the two rings) and `:479` (the pose-only fallback box) | every **point** a frame reports — `cx`, the rim ring, the inner ring — into the mirrored preview's fractions |
+| 3 | `yaw: -yawEye`, and the sense carried by `roll: rollEye` | `ios/HairFaceGeometry.swift:383` and `:385` | the **angles**, into ML Kit's on-screen signs |
+| 4 | `captureOrientation`, whose every case is a `…Mirrored` variant | `ios/HairFaceTrackingView.swift:292`–`:299`, used at `ios/HairFaceTrackingModule.swift:184` (`capture()`) and `:336` (`sampleFrame()`) | the **still** and the **live sample** |
+
+`atan2(-dx, dy)` in `HairFaceOutline.init`
+(`ios/HairFaceGeometry.swift:115`) is **not** a fifth flip, although its
+comment talks about the mirror. It is the clockwise-from-noon **ring
+ordering** in the face anchor's own space: it decides which 10° slot a vertex
+falls in, and nothing at all about which side of the image that vertex is
+drawn on. Change it and the ring runs the other way round; the picture keeps
+its hand.
+
+So the table that matters:
+
+| what | handedness | decided by |
+| --- | --- | --- |
+| the preview (`HairFaceTrackingView`) | **mirrored** — raise your right hand, it appears on the right | flip 1, `mirrorTransform` |
+| the frame's points (`cx`, `cy`, rim, inner) | **mirrored** — view fractions of that preview | flip 2, the `1 - x` |
+| `yaw` / `roll` | **mirrored** — signs taken on screen | flip 3, in `HairFacePose.degrees` |
+| `sampleFrame()` bytes | **mirrored** — matches the preview exactly | flip 4, `captureOrientation` |
+| `capture()` still | **mirrored** — matches the preview exactly | flip 4, `captureOrientation` |
+
+A test reads all three Swift files and fails if a horizontal flip is added,
+moved or removed anywhere in the module, so the count above cannot drift
+without somebody being told.
+
+### Mirrored is not "wrong", and un-mirrored is not "anatomically true"
+
+A mirrored photograph shows the same flesh as an un-mirrored one; what
+differs is which side of the frame it is on. Because every scan is mirrored
+the same way, two scans months apart lay side by side correctly, and the
+rectangles the report crops — measured on the mirrored preview — land on the
+flesh they name.
+
+Say that last part exactly, because it is the whole of the argument: a crop
+filed as `leftTemple` is cut from the image-left of a mirrored still, and the
+image-left of a mirrored still **is the person's own left temple**. The
+*label* is already anatomically true. What is reversed is only the framing a
+viewer expects of a portrait — subject's left on the viewer's right — and
+lettering in the background, which reads backwards. Neither is a measurement
+error, and un-mirroring the still without moving everything in the list below
+does not make the label truer; it makes it false. Weigh that against the
+section below before changing anything.
+
+### If the still is ever un-mirrored, these move in the SAME commit
+
+The app reads the still **by image side**, so a flip here is a flip of the
+record's left and right. Flipping `captureOrientation` alone swaps every
+temple with the other temple, silently, and on a symmetric head it looks
+perfectly fine while it does it.
+
+Inside the module first — these are the lines the decision is actually
+enacted at, or consciously left alone at, and they are flips 1, 2 and 4 of
+the four above:
+
+- `ios/HairFaceTrackingView.swift:292`–`:299` — `captureOrientation`. The
+  still and the sample. Dropping `Mirrored` from the four cases is the whole
+  of the camera-end change, and by itself it is the half-flip.
+- `ios/HairFaceTrackingView.swift:38` and `:157` — `mirrorTransform`. If the
+  **preview** is meant to stay mirrored (it is: it is what every front camera
+  does, and the person is using it as a mirror), this line does **not** move,
+  and that is the deliberate asymmetry the rest of the list then has to
+  absorb.
+- `ios/HairFaceTrackingView.swift:435` and `:479` — the `1 - x`. The mesh is
+  drawn on the preview, so it stays mirrored with the preview; but
+  `region-crops.ts` lays that same mesh straight onto the still, so an
+  un-mirrored still means the mesh must be un-mirrored **on the way to the
+  crop** and nowhere else. Deciding where that happens is the real work of
+  the change, and it is not in this module.
+
+And then in the app:
+
+- `src/features/hair-scan/region-crops.ts` — the "Mirroring" note, and the
+  `leftTemple` / `rightTemple` rectangles, which are `cx - …` and `cx + …`
+  in mesh coordinates laid straight onto the still by
+  `meshInBox(mesh, still, still)`. Mesh x is preview x; an un-mirrored still
+  needs `1 − x − w`.
+- `src/features/hair-scan/measure/regions.ts` — `REGION_BOXES`, whose
+  negative u *is* image-left, and the comment above it that says image-left
+  is the person's own left. This is the measurement, not the picture.
+- `src/features/hair-scan/result.ts` — `closestAngle`'s `leftSign` default,
+  and `faceObservationFor`'s `eyes.left` / `eyes.right`, which are
+  image-left and image-right on purpose.
+- `src/features/hair-scan/engine.ts` — `REGION_OF_STEP`, whose comment
+  derives the step → region mapping from the mirrored still.
+- Old records. Every photograph already on the phone is mirrored, and
+  nothing in `Photo` records which convention it was written under, so a
+  flip without a stored flag makes a second scan uncomparable with a first.
+
+The last point is the expensive one: the honest version of this change is a
+recorded handedness on each photograph, not a one-line orientation swap.
+
 ## What a frame carries
 
 `onFace` fires at most 60 times a second with either `{ lost: true }` or a
@@ -226,7 +340,10 @@ TrueDepth camera. On the first build, check these in order — each has a
 named fix beside it.
 
 1. **The preview is mirrored and upright.** Raise your right hand; it should
-   appear on the right of the screen.
+   appear on the right of the screen. If it is not mirrored, the fix is
+   `mirrorTransform` (`ios/HairFaceTrackingView.swift:38`, applied in
+   `layoutSubviews` at `:157`) — *not* anything in `capture()`. ARKit hands
+   over an un-mirrored front feed; that one line is what reverses it.
 2. **The rim ring sits on the edge of the face**, index 0 at the top of the
    forehead, running clockwise. Log the first few points and watch which way
    they go. If they run counter-clockwise, flip the sign of the
@@ -258,10 +375,14 @@ named fix beside it.
    the lens** and negative for the far side once you turn. If it is inverted
    everywhere, the winding measurement in `HairFaceOutline.init` is the place
    to look, not the per-frame path.
-9. **A still from `capture()` is upright and mirrored like the preview.** If
-   it is upside down, swap `.leftMirrored` for `.rightMirrored` in
-   `captureOrientation`; if it is un-mirrored, swap it for `.right`. The full
-   table is in the comment there.
+9. **A still from `capture()` is upright and mirrored like the preview** —
+   hold up a hand and check the still puts it on the same side the preview
+   did. If it is upside down, swap `.leftMirrored` for `.rightMirrored` in
+   `captureOrientation`; the full table is in the comment there. If it comes
+   out **un**-mirrored, that is not a cosmetic difference and the fix is not
+   a one-line swap: read "Handedness" above first — the report crops and the
+   measurement both read the still by image side, so an un-mirrored still
+   files each temple under the other temple's name.
 10. **Background the app and come back.** The session should stop and resume,
     and the scan should keep working.
 11. **On an iPhone without face tracking** (or any iPad), `onError` fires and

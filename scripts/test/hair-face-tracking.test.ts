@@ -487,6 +487,180 @@ test('nothing in the native module is force-unwrapped', () => {
   );
 });
 
+/* ------------------------------ handedness ----------------------------- */
+
+/*
+  Which way round the pictures are. This module is one end of a convention
+  the whole scan is built on: the preview is mirrored, so the mesh is in
+  mirrored fractions, so the rectangles measured on that mesh are laid onto
+  a still that has to be mirrored the same way — and `region-crops.ts` cuts
+  `leftTemple` from the image-LEFT of the still while `measure/regions.ts`
+  gives `leftTemple` a negative u, which is image-left too. Both because of
+  one expression in the Swift.
+
+  A HALF-FLIP IS THE FAILURE. Un-mirroring the still and leaving the mesh
+  alone, or flipping one of `capture()` / `sampleFrame()` and not the other,
+  swaps the sides of the record with no error anywhere — and on a symmetric
+  head it looks perfectly right while it does it.
+
+  So what is held here is NOT "there is one mirroring". There are FOUR, in
+  three files, and an earlier version of this test asserted the opposite by
+  looking only at the file that happens to contain none of them:
+
+    1  HairFaceTrackingView.swift  `mirrorTransform`, scaleX: -1   the preview
+    2  HairFaceTrackingView.swift  `1 - projected.x / width`  ×2    the points
+    3  HairFaceGeometry.swift      `yaw: -yawEye`, roll's sense     the angles
+    4  HairFaceTrackingView.swift  `captureOrientation`, …Mirrored  still+sample
+
+  What is held is that the count and the sites do not drift. A flip added,
+  moved or deleted in any of the three files fails here, which is the only
+  signal a laptop can give about a difference no screenshot would show.
+  `atan2(-dx, dy)` in HairFaceOutline.init is deliberately NOT on the list:
+  it is the ring's clockwise ordering in anchor space, not a flip of the
+  image. Changing the convention means changing this test, the README's
+  Handedness section and the app files it lists, in one commit.
+*/
+
+/** The view, as text: it holds three of the module's four flips. */
+function viewSwift(): string {
+  return readFileSync(
+    new URL('../../modules/hair-face-tracking/ios/HairFaceTrackingView.swift', import.meta.url),
+    'utf8',
+  );
+}
+
+/** The geometry, as text: it holds the fourth, on the angles. */
+function geometrySwift(): string {
+  return readFileSync(
+    new URL('../../modules/hair-face-tracking/ios/HairFaceGeometry.swift', import.meta.url),
+    'utf8',
+  );
+}
+
+/** Every horizontal flip the module applies, wherever it lives. */
+function horizontalFlips(swift: string): string[] {
+  const code = withoutComments(swift);
+  return [
+    ...[...code.matchAll(/CGAffineTransform\(\s*scaleX:\s*-[^)]*\)/g)].map((m) => m[0]),
+    ...[...code.matchAll(/1 - Double\(projected\.x\)[^\n]*/g)].map((m) => m[0]),
+    ...[...code.matchAll(/yaw: -\w+/g)].map((m) => m[0]),
+  ];
+}
+
+test('every orientation the still can take is a mirrored one', () => {
+  const code = withoutComments(viewSwift());
+  const body = /var captureOrientation: CGImagePropertyOrientation \{([\s\S]*?)\n  \}/.exec(code);
+  assert.ok(body, 'the view names the orientation the capture is taken at');
+  const orientations = [...body[1].matchAll(/return \.(\w+)/g)].map((m) => m[1]);
+  assert.equal(orientations.length, 4, 'one orientation per way of holding the phone');
+  for (const orientation of orientations) {
+    assert.match(orientation, /Mirrored$/, `.${orientation} is not a mirrored orientation`);
+  }
+});
+
+test('the still and the live sample take their handedness from the same one place', () => {
+  const code = withoutComments(moduleSwift());
+  const oriented = [...code.matchAll(/\.oriented\(([^)]*)\)/g)].map((m) => m[1].trim());
+  assert.deepEqual(
+    oriented,
+    ['view.captureOrientation', 'view.captureOrientation'],
+    'the photograph and the sample are turned by the view, and by nothing else',
+  );
+});
+
+test('the module applies exactly four horizontal flips, in the three known places', () => {
+  // The preview's flip and the points' flip live in the view; the angles'
+  // lives in the geometry; the still's and the sample's is the view's
+  // `captureOrientation`, checked by the test above rather than counted
+  // here. A fifth flip, or a fourth deleted, is a record whose sides no
+  // longer agree with its pictures — invisible on a symmetric head and
+  // invisible in a screenshot, so it is counted instead.
+  assert.deepEqual(
+    horizontalFlips(viewSwift()),
+    [
+      'CGAffineTransform(scaleX: -1, y: 1)',
+      '1 - Double(projected.x) / Double(size.width)',
+      '1 - Double(projected.x) / Double(size.width)',
+    ],
+    'the view mirrors the preview once and the reported x twice, and does nothing else',
+  );
+  assert.deepEqual(
+    horizontalFlips(geometrySwift()),
+    ['yaw: -yawEye'],
+    'the geometry flips yaw onto the screen and nothing else',
+  );
+  assert.deepEqual(
+    horizontalFlips(moduleSwift()),
+    [],
+    'the module file itself flips nothing: the still is turned only by captureOrientation',
+  );
+
+  // The other road to a flip is a mirrored orientation named somewhere new.
+  // In the view there are four, and they are `captureOrientation`'s cases.
+  assert.equal(
+    [...withoutComments(viewSwift()).matchAll(/Mirrored/g)].length,
+    4,
+    'a mirrored orientation outside the four captureOrientation cases',
+  );
+  assert.equal(
+    /Mirrored/.test(withoutComments(moduleSwift())),
+    false,
+    'the module names no orientation of its own; it asks the view',
+  );
+});
+
+test('the picture path scales but never reflects', () => {
+  // Every other transform on the way to a JPEG is a fit, not a flip: a
+  // negative scale in either axis there would reflect the still away from
+  // the preview it is measured against.
+  const code = withoutComments(moduleSwift());
+  assert.equal(/\.transformed\(by:\s*\.identity/.test(code), false, 'an identity that is not');
+  const scales = [...code.matchAll(/CGAffineTransform\(\s*scaleX:([^,]*),\s*y:([^)]*)\)/g)];
+  assert.ok(scales.length > 0, 'the sample square is still scaled to fit');
+  for (const scale of scales) {
+    assert.equal(scale[1].includes('-'), false, `a negative x scale: ${scale[0]}`);
+    assert.equal(scale[2].includes('-'), false, `a negative y scale: ${scale[0]}`);
+  }
+});
+
+test('the module writes the convention down, because a wrong guess costs a phase', () => {
+  const readme = readFileSync(
+    new URL('../../modules/hair-face-tracking/README.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(readme, /^## Handedness$/m, 'the README has a section on which way round it all is');
+  const from = readme.indexOf('## Handedness');
+  const rest = readme.slice(from + 1);
+  const next = rest.indexOf('\n## ');
+  const section = next === -1 ? rest : rest.slice(0, next);
+
+  for (const named of [
+    // The module's own flips, by file and line. A section that leaves these
+    // out sends the next reader to `captureOrientation` alone, which is
+    // precisely the half-flip.
+    'HairFaceTrackingView.swift:38',
+    'HairFaceTrackingView.swift:435',
+    'HairFaceGeometry.swift:383',
+    'mirrorTransform',
+    'captureOrientation',
+    // And the app files that read the still by image side.
+    'region-crops.ts',
+    'measure/regions.ts',
+    'result.ts',
+    'engine.ts',
+  ]) {
+    assert.ok(section.includes(named), `the Handedness section names ${named}`);
+  }
+
+  // The claim this section was written to retract. It was false, it read as
+  // an invitation to a one-line change, and it must not come back.
+  assert.equal(
+    /exactly one mirroring/.test(section),
+    false,
+    'the module does not have exactly one mirroring; it has four that agree',
+  );
+});
+
 test('the sample holds a slot of the AR capture pool, so it does not run below the photograph', () => {
   // `CIImage(cvPixelBuffer:)` retains one slot of the session's capture
   // pool until the render finishes with it, and the render is on the

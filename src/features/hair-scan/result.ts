@@ -3,7 +3,7 @@
  *
  * ── One data system, not two ──────────────────────────────────────────
  * The scanner keeps frames the person never sees as photographs. Here
- * those frames are curated down to at most one per angle and tagged with
+ * those frames are ordered best-first within each angle and tagged with
  * the closest of the five angles the rest of the app already knows —
  * `front`, `leftTemple`, `rightTemple`, `top`, `crown` — so a scan
  * persists as an ordinary `PhotoSession` of ordinary `Photo`s. Journey,
@@ -212,46 +212,76 @@ export function frameRank(frame: HairScanFrame, angle: Angle): number {
 }
 
 /**
- * The frames curated to at most one photograph per angle, in capture
- * order, as the store takes them.
+ * Every frame the scanner kept, as the store takes them: grouped by
+ * angle in the journal's own angle order, and BEST FIRST within each
+ * angle.
+ *
+ * ── Why every one, and not one each ───────────────────────────────────
+ * It used to keep one photograph per angle and drop the rest, which was
+ * right while the scanner only ever held one frame per region. It no
+ * longer does, and the repeats are not spares: the measurement engine's
+ * error bar for a place on the head IS the disagreement between the
+ * frames it was read in (`measure/noise.ts`). A record that kept one
+ * photograph an angle could be re-measured — `measureScan` reads all six
+ * of its places out of every frame, so four photographs were already two
+ * to four readings for most of them — but not for the crown, which only
+ * the chin-down angle shows: one photograph there is one reading, and a
+ * reading with no error bar is one `compareScans` refuses. Deleting the
+ * repeats on the way to disk would put that back, and would leave every
+ * stored figure uncheckable against the pictures it was read from.
+ *
+ * ── What that does not change ─────────────────────────────────────────
+ * Best first is the contract every existing reader was written against:
+ * `session.photos.find((p) => p.angle === 'front')` — Compare, the
+ * timeline, the coach, the assessment — still lands on the same
+ * photograph it would have had, because the best of an angle is exactly
+ * the one that used to be the only one. What changes is that the list
+ * continues past it. Readers that count photographs or draw all of them
+ * see the repeats, honestly, because the scan really did take them.
  *
  * A frame is dropped when it cannot be tagged — no angle and no readable
  * pose — rather than filed under a guess. Every photograph is marked
  * `capture: 'scan'` so the record says how it was taken.
  */
 export function scanPhotos(frames: HairScanFrame[], leftSign: 1 | -1 = 1): ScanPhotoInput[] {
-  const best = new Map<Angle, { frame: HairScanFrame; rank: number }>();
+  const byAngle = new Map<Angle, { frame: HairScanFrame; rank: number; order: number }[]>();
 
-  for (const frame of frames) {
-    if (!frame.uri || !(frame.width > 0) || !(frame.height > 0)) continue;
+  frames.forEach((frame, order) => {
+    if (!frame.uri || !(frame.width > 0) || !(frame.height > 0)) return;
     const angle = frame.angle ?? (frame.pose ? closestAngle(frame.pose, leftSign) : null);
-    if (!angle) continue;
-    const rank = frameRank(frame, angle);
-    const held = best.get(angle);
-    if (!held || rank > held.rank) best.set(angle, { frame, rank });
-  }
+    if (!angle) return;
+    const held = byAngle.get(angle);
+    const entry = { frame, rank: frameRank(frame, angle), order };
+    if (held) held.push(entry);
+    else byAngle.set(angle, [entry]);
+  });
 
   const out: ScanPhotoInput[] = [];
   for (const angle of ANGLES) {
-    const pick = best.get(angle);
-    if (!pick) continue;
-    const { frame } = pick;
-    const regions = frame.mesh ? regionRectsFor(frame.mesh, { width: frame.width, height: frame.height }) : {};
-    out.push({
-      angle,
-      uri: frame.uri,
-      thumbnailUri: frame.thumbnailUri,
-      width: frame.width,
-      height: frame.height,
-      capturedAt: frame.capturedAt,
-      quality: frame.quality,
-      coverage: frame.coverage,
-      maskTrace: frame.maskTrace,
-      pose: frame.pose,
-      capture: 'scan',
-      // Additive and absent when nothing placed them: see `Photo.regions`.
-      ...(Object.keys(regions).length > 0 ? { regions } : {}),
-    });
+    const held = byAngle.get(angle);
+    if (!held) continue;
+    // Best first, and ties to the frame that was taken first, so the
+    // order is the same every time the same scan is curated.
+    for (const { frame } of held.slice().sort((a, b) => b.rank - a.rank || a.order - b.order)) {
+      const regions = frame.mesh
+        ? regionRectsFor(frame.mesh, { width: frame.width, height: frame.height })
+        : {};
+      out.push({
+        angle,
+        uri: frame.uri,
+        thumbnailUri: frame.thumbnailUri,
+        width: frame.width,
+        height: frame.height,
+        capturedAt: frame.capturedAt,
+        quality: frame.quality,
+        coverage: frame.coverage,
+        maskTrace: frame.maskTrace,
+        pose: frame.pose,
+        capture: 'scan',
+        // Additive and absent when nothing placed them: see `Photo.regions`.
+        ...(Object.keys(regions).length > 0 ? { regions } : {}),
+      });
+    }
   }
   return out;
 }
@@ -290,6 +320,18 @@ export function scanPhotos(frames: HairScanFrame[], leftSign: 1 | -1 = 1): ScanP
  * extreme points of the two eye contours rather than from the contours'
  * names. The stills are mirrored and the two detectors name their eyes
  * differently; the extremes do not care.
+ *
+ * That the stills are mirrored is a fact about the camera end, not a
+ * choice made here. On iOS it is `captureOrientation` in
+ * `modules/hair-face-tracking/ios/HairFaceTrackingView.swift` that turns
+ * the still, and it is one of FOUR flips in that module that have to
+ * agree — `mirrorTransform` holds the preview, a `1 - x` holds the mesh,
+ * a `-yawEye` holds the angles. The whole convention, by file and line,
+ * and the list of what would have to move together if a still ever
+ * stopped being mirrored, is the "Handedness" section of that module's
+ * README. Every place in this feature that says "image-left is the
+ * person's own left" is downstream of it, which is why none of them can
+ * be flipped one at a time.
  *
  * Null when there is nothing to place: no mesh size, no still, or a
  * pose the tracker never read. Null, not a square-on default — see the

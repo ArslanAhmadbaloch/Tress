@@ -19,6 +19,7 @@ import {
   CAP_COL_THETA,
   CAP_FIT,
   CAP_FIT_DEFAULT,
+  CAP_PROFILE,
   CAP_FIT_IDENTITY,
   CAP_FIT_START,
   CAP_FRONT,
@@ -1526,4 +1527,317 @@ test('fit: a segmenter that stutters never pops the cap — a whole scan, readin
   // And it arrived at the measured shape.
   const settled = vertex(buildHeadCap(cloud.source, measured), CAP_POLE);
   assert.ok(Math.hypot(previous.x - settled.x, previous.y - settled.y) < 0.5, 'arrives');
+});
+
+/* ------------------------------ the shape -------------------------------- */
+
+/*
+  The complaint these exist for, in the owner's words: "the mesh is
+  still the dome shape... it does track, but it should be programmed to
+  adapt to the head or hair shape."
+
+  He was right, and the old code said so itself: a fit was three
+  numbers, so whatever the mask reported, what went on the head was the
+  same ellipsoid at a different size. The tests below are written so
+  that they CANNOT pass on a rescaled ellipsoid: the two masks are built
+  to have the same height, the same width and the same middle, and to
+  differ only in the shape of their skyline.
+*/
+
+/** The size half of a fit, with the shape thrown away: what a rescale can do. */
+function sizeOnly(fit: CapFit): CapFit {
+  return { lift: fit.lift, widen: fit.widen, shift: fit.shift };
+}
+
+/** The furthest any vertex of one cap stands from the same vertex of another. */
+function worstGap(a: number[], b: number[]): number {
+  let worst = 0;
+  for (let v = 0; v < CAP_POINTS; v += 1) {
+    const k = v * CAP_STRIDE;
+    const gap = Math.hypot(a[k] - b[k], a[k + 1] - b[k + 1]);
+    if (gap > worst) worst = gap;
+  }
+  return worst;
+}
+
+/**
+ * How far a drawn cap reaches from the head's middle in one direction
+ * of the picture, in points: the outline, read the way an eye reads it.
+ * Degrees from straight up, positive towards the screen's right.
+ */
+function reachAt(pts: number[], centre: Point, degrees: number): number {
+  let far = 0;
+  for (let v = 0; v < CAP_POINTS; v += 1) {
+    const k = v * CAP_STRIDE;
+    const x = pts[k] - centre.x;
+    const y = pts[k + 1] - centre.y;
+    const angle = (Math.atan2(x, -y) * 180) / Math.PI;
+    if (Math.abs(angle - degrees) > 8) continue;
+    const r = Math.hypot(x, y);
+    if (r > far) far = r;
+  }
+  return far;
+}
+
+/**
+ * A silhouette with a chosen SKYLINE: a head-sized outline whose top
+ * edge is whatever shape is handed in, and whose sides and bottom are
+ * fixed.
+ *
+ * `top(u)` is the height above the middle at across-position u, from
+ * −1 at the left edge to +1 at the right, as a share of the outline's
+ * own half-height. Both skylines below are normalised to peak at
+ * exactly 1, so the two masks are the same height, the same width and
+ * the same middle — everything `lift`, `widen` and `shift` can see —
+ * and differ only in where that height sits.
+ */
+function shapedOutline(
+  centre: Point,
+  top: (u: number) => number,
+  size: { wide: number; up: number } = { wide: 1.14, up: 1.2 },
+): { points: number[] } {
+  const halfWidth = HEAD.a * size.wide;
+  const halfHeight = HEAD.b * size.up;
+  const steps = 90;
+  const points: number[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const u = -1 + (2 * i) / steps;
+    points.push(centre.x + u * halfWidth, centre.y - halfHeight * top(u));
+  }
+  // Back along the ear line, so the outline is closed and the cap has a
+  // bottom to sit on, as a traced mask does.
+  for (let i = steps; i >= 0; i -= 1) {
+    const u = -1 + (2 * i) / steps;
+    const waist = Math.sqrt(Math.max(0, 1 - 0.5 * u * u));
+    points.push(centre.x + u * halfWidth * waist, centre.y + 0.35 * halfHeight);
+  }
+  return { points };
+}
+
+/** The shoulders both skylines share, so only their tops differ. */
+function shoulder(u: number): number {
+  const out = Math.min(1, Math.max(0, (Math.abs(u) - 0.3) / 0.7));
+  return 1 - 0.55 * Math.pow(out, 1.4);
+}
+
+function skyline(level: number, quiff: number): (u: number) => number {
+  const raw = (u: number) => level * shoulder(u) + quiff * Math.exp(-Math.pow((u - 0.5) / 0.16, 2));
+  let peak = 0;
+  for (let i = 0; i <= 200; i += 1) peak = Math.max(peak, raw(-1 + i / 100));
+  return (u: number) => raw(u) / peak;
+}
+
+/** Hair with a flat top: highest across the middle, falling away at the sides. */
+const SKYLINE_FLAT = skyline(1, 0);
+/** Hair swept up on one side: a low crown and a quiff at half-width. */
+const SKYLINE_QUIFF = skyline(0.74, 0.34);
+
+test('shape: a flat top and a quiff are not the same cap — the shape comes off the mask', () => {
+  const cloud = cloudOf('head', { yaw: 0, pitch: 0 });
+  const centre = { x: cloud.source.cx, y: cloud.source.cy };
+  const flat = fitHairCap(cloud.source, shapedOutline(centre, SKYLINE_FLAT));
+  const quiff = fitHairCap(cloud.source, shapedOutline(centre, SKYLINE_QUIFF));
+  assert.ok(flat !== null && quiff !== null, 'both masks fit');
+  assert.ok(flat.profile !== undefined && quiff.profile !== undefined, 'both carry a shape');
+
+  // THE POINT. The two masks are the same size in every way a rescale
+  // can measure, so the caps a rescale draws for them are the same cap:
+  // lift, widen and shift cannot tell a quiff from a flat top.
+  const rescaledFlat = buildHeadCap(cloud.source, sizeOnly(flat));
+  const rescaledQuiff = buildHeadCap(cloud.source, sizeOnly(quiff));
+  const blind = worstGap(rescaledFlat, rescaledQuiff);
+  assert.ok(blind < 1, `a rescale reads both masks as one cap, within ${blind.toFixed(2)} points`);
+
+  // With the shape, they are visibly different caps.
+  const drawnFlat = buildHeadCap(cloud.source, flat);
+  const drawnQuiff = buildHeadCap(cloud.source, quiff);
+  const apart = worstGap(drawnFlat, drawnQuiff);
+  assert.ok(apart > 15, `the shaped caps stand ${apart.toFixed(1)} points apart`);
+
+  // And different WHERE THE MASKS ARE, which is the whole claim. Over
+  // the middle the flat top stands higher, because the quiff's crown is
+  // low; and the quiff's cap LEANS — it reaches further on the side the
+  // quiff is on than on the side it is not — while the flat one is
+  // even. No lift or widen can lean a cap, and neither fit shifted.
+  const crown = reachAt(drawnFlat, centre, 0) - reachAt(drawnQuiff, centre, 0);
+  assert.ok(crown > 12, `the flat top stands ${crown.toFixed(1)} points higher over the crown`);
+  assert.ok(Math.abs(flat.shift) < 0.01 && Math.abs(quiff.shift) < 0.01, 'neither leans by shift');
+  const evenly = reachAt(drawnFlat, centre, 30) - reachAt(drawnFlat, centre, -30);
+  const leaning = reachAt(drawnQuiff, centre, 30) - reachAt(drawnQuiff, centre, -30);
+  assert.ok(Math.abs(evenly) < 2, `the flat cap is even, ${evenly.toFixed(1)} points`);
+  assert.ok(leaning > 15, `the quiff cap leans ${leaning.toFixed(1)} points towards the quiff`);
+
+  // Deterministic, like the size: the same mask twice is the same shape.
+  assert.deepEqual(fitHairCap(cloud.source, shapedOutline(centre, SKYLINE_QUIFF)), quiff);
+});
+
+test('shape: a mask that says nothing about a direction keeps the dome there, turned or down', () => {
+  /*
+    A wrong shape is worse than a dome, and the commonest way to be
+    wrong is to read a shape out of a mask that never covered that part
+    of the head — a turned head, a crown out of frame, a segmenter that
+    stopped at the jaw. So a silhouette covering one side of the head
+    must shape that side and leave every other direction at the dome's
+    own value, which is 1, exactly.
+
+    The dial runs clockwise from straight up: ray 0 is the crown, 6 the
+    screen's right, 12 straight down, 18 the screen's left. Everything
+    from 13 round to 23 is the half of the head this mask never reached.
+  */
+  for (const pose of [{ yaw: 30, pitch: 0 }, { yaw: -30, pitch: 0 }, { yaw: 0, pitch: -30 }]) {
+    const label = JSON.stringify(pose);
+    const cloud = cloudOf('head', pose);
+    const whole = hairOutline(pose, { up: 1.25, wide: 1.18 });
+    const edge = cloud.source.cx + 0.25 * cloud.source.width;
+    const half: number[] = [];
+    for (let i = 0; i + 1 < whole.flat.length; i += 2) {
+      if (whole.flat[i] < edge) continue;
+      half.push(whole.flat[i], whole.flat[i + 1]);
+    }
+    assert.ok(half.length >= CAP_FIT.minPoints * 2, `${label}: a piece of an outline is still an outline`);
+
+    const fit = fitHairCap(cloud.source, { points: half });
+    assert.ok(fit !== null, `${label}: a fit`);
+    const profile = fit.profile;
+    assert.ok(profile !== undefined, `${label}: a shape`);
+    assert.equal(profile.length, CAP_PROFILE.rays);
+
+    // The half the mask never reached is the dome, to the bit.
+    for (let ray = 13; ray <= 23; ray += 1) {
+      assert.equal(profile[ray], 1, `${label}: ray ${ray} took a shape from nothing`);
+    }
+    // And the half it did reach carries one.
+    const shapedRays = profile.filter((k) => Math.abs(k - 1) > 0.03).length;
+    assert.ok(shapedRays >= 4, `${label}: ${shapedRays} rays took a shape from the mask`);
+
+    // Whatever the shape does, the cap is still a cap: finite, and its
+    // base still on the eyebrows.
+    const drawn = buildHeadCap(cloud.source, fit);
+    for (const value of drawn) assert.ok(Number.isFinite(value), `${label}: finite`);
+    const drift = distanceToPolyline(baseRow(drawn), cloud.landmarkAt(ON_HEAD.brow));
+    assert.ok(drift < 0.0625 * HEAD.b, `${label}: base ${drift.toFixed(1)} off the brow`);
+  }
+});
+
+test('shape: a spike in the mask cannot grow a horn', () => {
+  /*
+    The failure mode a shape brings that a size never had: one bright
+    speck of mask in one direction, and the cap sprouts a spike. Three
+    rules stand against it — a floor and a ceiling on any one ray, no
+    ray further than `slope` from the ray beside it, and a ray believed
+    only as far as the boundary that spoke for it — and all three are
+    enforced in `clampFit`, so nothing that reaches the drawing can have
+    skipped them.
+  */
+  const cloud = cloudOf('head', { yaw: 0, pitch: 0 });
+  const centre = { x: cloud.source.cx, y: cloud.source.cy };
+  const base = shapedOutline(centre, SKYLINE_FLAT).points;
+
+  const spiked: number[][] = [base];
+  // A spike thrown out of the mask in one direction, at three sizes.
+  for (const reach of [2, 4, 12]) {
+    const points = [...base];
+    for (let i = 0; i < 6; i += 1) {
+      const angle = (-20 + i * 2) * (Math.PI / 180);
+      points.push(centre.x + reach * 150 * Math.sin(angle), centre.y - reach * 150 * Math.cos(angle));
+    }
+    spiked.push(points);
+  }
+  // And a mask that is nothing but noise, in case the trace ever lets one through.
+  const noise: number[] = [];
+  for (let i = 0; i < 200; i += 1) {
+    const t = (i * 2654435761) % 1000;
+    noise.push(centre.x + (t - 500), centre.y - ((t * 7) % 900) + 300);
+  }
+  spiked.push(noise);
+
+  let shapes = 0;
+  for (const points of spiked) {
+    const fit = fitHairCap(cloud.source, { points });
+    if (fit === null) continue;
+    const profile = fit.profile;
+    if (profile === undefined) continue;
+    shapes += 1;
+    for (let i = 0; i < profile.length; i += 1) {
+      assert.ok(
+        profile[i] >= CAP_PROFILE.in - 1e-9 && profile[i] <= CAP_PROFILE.out + 1e-9,
+        `ray ${i} at ${profile[i]}`,
+      );
+      const next = profile[(i + 1) % profile.length];
+      assert.ok(
+        Math.abs(profile[i] - next) <= CAP_PROFILE.slope + 1e-9,
+        `rays ${i} and ${(i + 1) % profile.length} stand ${Math.abs(profile[i] - next).toFixed(3)} apart`,
+      );
+    }
+    // A shape is clamped once and stays clamped: passing it round the
+    // blend and the hold cannot let it creep.
+    assert.deepEqual(blendCapFit(fit, fit, 1), fit, 'the clamp is idempotent');
+    assert.deepEqual(nextCapFit(CAP_FIT_START, fit).wanted, fit);
+    const drawn = buildHeadCap(cloud.source, fit);
+    for (const value of drawn) assert.ok(Number.isFinite(value));
+    // And what a horn would actually look like on the screen: one line
+    // of the mesh stretched away from its neighbours. Against the cap
+    // the same fit draws with no shape at all, not one ring or meridian
+    // segment even doubles.
+    const sized = buildHeadCap(cloud.source, sizeOnly(fit));
+    let worst = 0;
+    for (const line of [...CAP_RINGS, ...CAP_MERIDIANS]) {
+      for (let i = 1; i < line.length; i += 1) {
+        const a = line[i - 1] * CAP_STRIDE;
+        const b = line[i] * CAP_STRIDE;
+        const was = Math.hypot(sized[a] - sized[b], sized[a + 1] - sized[b + 1]);
+        if (was < 0.5) continue;
+        const now = Math.hypot(drawn[a] - drawn[b], drawn[a + 1] - drawn[b + 1]);
+        if (now / was > worst) worst = now / was;
+      }
+    }
+    assert.ok(worst < 2, `a segment grew ${worst.toFixed(2)} times`);
+  }
+  assert.ok(shapes >= 2, 'the rules are actually exercised');
+});
+
+test('shape: the cap grows into a shape ray by ray, and lets go of one the same way', () => {
+  const cloud = cloudOf('head', { yaw: 0, pitch: 0 });
+  const centre = { x: cloud.source.cx, y: cloud.source.cy };
+  const to = fitHairCap(cloud.source, shapedOutline(centre, SKYLINE_QUIFF));
+  assert.ok(to !== null && to.profile !== undefined);
+
+  // Halfway is halfway on every ray, not on some of them.
+  const half = blendCapFit(CAP_FIT_DEFAULT, to, 0.5);
+  assert.ok(half.profile !== undefined);
+  for (let i = 0; i < CAP_PROFILE.rays; i += 1) {
+    assert.ok(Math.abs(half.profile[i] - (1 + to.profile[i]) / 2) < 1e-9, `ray ${i} halfway`);
+  }
+
+  // Walked at the mesh's own rate the shape grows rather than pops: no
+  // vertex of the cap moves more than a couple of points in a step, and
+  // it arrives.
+  let drawn: CapFit = CAP_FIT_DEFAULT;
+  let previous = buildHeadCap(cloud.source, drawn);
+  let worst = 0;
+  for (let i = 0; i < 90; i += 1) {
+    drawn = blendCapFit(drawn, to, 1 - Math.exp(-33 / 520));
+    const now = buildHeadCap(cloud.source, drawn);
+    worst = Math.max(worst, worstGap(previous, now));
+    previous = now;
+  }
+  assert.ok(worst < 2.5, `worst step ${worst.toFixed(2)} points`);
+  assert.ok(worstGap(previous, buildHeadCap(cloud.source, to)) < 0.5, 'arrives');
+
+  // And letting go is the same easing backwards: a run of refusals ends
+  // on the standing allowance, which carries no shape at all — the
+  // dome — and the cap walks back to it rather than dropping.
+  let state = nextCapFit(CAP_FIT_START, to);
+  for (let i = 0; i < CAP_FIT.hold; i += 1) state = nextCapFit(state, null);
+  assert.deepEqual(state.wanted, CAP_FIT_DEFAULT);
+  assert.equal(state.wanted.profile, undefined, 'the standing allowance is the dome');
+  worst = 0;
+  for (let i = 0; i < 90; i += 1) {
+    drawn = blendCapFit(drawn, state.wanted, 1 - Math.exp(-33 / 520));
+    const now = buildHeadCap(cloud.source, drawn);
+    worst = Math.max(worst, worstGap(previous, now));
+    previous = now;
+  }
+  assert.ok(worst < 2.5, `worst step letting go ${worst.toFixed(2)} points`);
+  assert.equal(blendCapFit(CAP_FIT_DEFAULT, CAP_FIT_DEFAULT, 0.5).profile, undefined);
 });

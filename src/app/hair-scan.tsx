@@ -36,6 +36,24 @@
  * fills a gap in, and nothing on this path turns a figure into a
  * sentence.
  *
+ * ── Several frames a region, and where they go ────────────────────────
+ * The engine keeps two or three frames of each of the four capture
+ * regions — nine to eleven in all, where build 19 kept four. The capture
+ * regions are not the six places "read in too few frames" above is
+ * about: `measureScan` reads all six out of every frame, so build 19's
+ * four frames already gave five of the six a measured spread. The one it
+ * lost was the CROWN, which only the last step sees — one reading, no
+ * error bar, refused by `compareScans` every time. Several frames a step
+ * is what rescues it, and it deepens the other five. All of them are
+ * read by the processing pass, all
+ * of them orbit on its screen, and all of them are written to the
+ * journal by `scanPhotos`, grouped by angle with the best of each angle
+ * first — so every reader that asks a session for its front photograph
+ * still gets the picture it would have had, and the repeats sit behind
+ * it. They are written under numbered session keys below, because
+ * `persistCapture` names a file by session and angle and two
+ * photographs of one angle would otherwise be one file.
+ *
  * The engine's state lives in a ref and is reduced on every tracker frame;
  * React is told only when something it draws has changed. Every frame the
  * engine lets go of arrives as a `discard` event and its file is deleted
@@ -114,6 +132,7 @@ import { Text } from '@/components/ui/text';
 import { toPhotoReadings, type AnalysisResult } from '@/features/hair-scan/analysis';
 import { HAIR_SCAN_COPY } from '@/features/hair-scan/copy';
 import {
+  REQUIRED_REGIONS,
   SCAN_STEPS,
   canStart,
   createScanState,
@@ -164,12 +183,13 @@ import type {
   ScanStep,
   ScannerState,
 } from '@/features/hair-scan/types';
+import { scanDiagnosticsOn } from '@/lib/device-preferences';
 import { nitroAvailable } from '@/lib/native';
 import { deletePhotoFiles, persistCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { hairContent } from '@/features/content/hair-content';
 import { MIN_TOUCH_TARGET, darkColors, iconSize, motion, radius, spacing, useTheme } from '@/theme';
-import { isScanSession, type PhotoSession } from '@/types/domain';
+import { isScanSession, type Angle, type PhotoSession } from '@/types/domain';
 
 /* ------------------------------- tuning ------------------------------- */
 
@@ -316,7 +336,19 @@ type ViewModel = {
   crownDone: boolean;
   cue: ScanState['cue'];
   error: ScanState['error'];
-  frameCount: number;
+  /**
+   * How many of the four ANGLES the scan came away with — not how many
+   * photographs it kept, which is two or three times that since a region
+   * is photographed several times over.
+   *
+   * The line on the completion plate reads "N angles captured", and it
+   * was fed the frame count while the two happened to be the same
+   * number. Feeding it nine would be the screen telling somebody it had
+   * photographed nine angles of their head, which is not a thing that
+   * happened. The kept-frame count is a fact about the run and belongs
+   * in the record's `frameCount`, where it is written.
+   */
+  angleCount: number;
   /**
    * Whether Start is live. The engine owns the condition — a head being
    * followed, at any distance, at any angle, in any light — and the
@@ -342,7 +374,7 @@ function viewOf(state: ScanState): ViewModel {
     crownDone: state.targets.crown.captured,
     cue: state.cue,
     error: state.error,
-    frameCount: state.frames.length,
+    angleCount: REQUIRED_REGIONS.filter((region) => state.targets[region].captured).length,
     startReady: canStart(state),
   };
 }
@@ -592,6 +624,14 @@ function Scanner({
     only one of them right.
   */
   const [arkit, setArkit] = useState(arkitScannerAvailable);
+  /*
+    The diagnostics line, off unless somebody turned it on in Settings.
+    A fitted cap and the standing dome are hard to tell apart on a head,
+    and "it still looks like a dome" has twice been impossible to answer
+    from a photograph; this says which one the scanner actually drew.
+  */
+  const [diagnose] = useState(scanDiagnosticsOn);
+  const [fitState, setFitState] = useState<'waiting' | 'fitted' | 'refused'>('waiting');
   const onImplementation = useCallback((kind: ScannerImplementation) => {
     setArkit(kind === 'arkit');
   }, []);
@@ -673,6 +713,29 @@ function Scanner({
    * processor is alive. See the probe effect below.
    */
   const probeShot = useRef<Promise<void> | null>(null);
+  /**
+   * THE SHUTTER QUEUE. Every `takePhoto` this screen makes waits for the
+   * one before it, and the light-meter probe is the first link.
+   *
+   * The engine may now have `PENDING_PER_TARGET` capture requests out for
+   * one region at a time, which build 19 could not — and a request is a
+   * request, not a shutter. Asking the camera for two photographs at once
+   * is a thing this file already refused to do for the probe, for a
+   * reason that got stronger: on iOS `HairFaceTrackingModule.capture()`
+   * builds a `CIImage` over the AR session's own pixel buffer and holds
+   * it until `jpegRepresentation` returns, on a serial queue. Two in
+   * flight hold two slots of a pool ARKit is still filling from the
+   * camera, and the second encode queues behind the first regardless —
+   * so the concurrency buys nothing and costs the tracker its buffers.
+   *
+   * Chaining them costs nothing the engine cares about: the widened
+   * request limit is about not making a STEP wait out a whole round trip
+   * before it may ask again, and that still holds. The chain never
+   * rejects — a failed shot resolves so the next one is not stranded —
+   * and it goes away with the screen, like every other ref here; "Scan
+   * again" remounts under a new key and starts a fresh one.
+   */
+  const shutter = useRef<Promise<unknown>>(Promise.resolve());
 
   /* The one place the engine is advanced; every event is acted on here. */
   const step = useCallback(
@@ -722,14 +785,27 @@ function Scanner({
             // now rather than when the file lands: by then the head has
             // moved on. It rides on the frame to the processing screen
             // and no further.
-            const frameMesh = face === null ? null : snapshotMesh(face, previewSize.current);
-            // Almost always the shutter itself. The one exception is the
-            // ready screen's light-meter shot: if Start was pressed while
-            // it was still in flight, this waits for the camera to be
-            // free rather than asking it for two photographs at once.
+            //
+            // The hair fit goes with it. The cap on the preview is sat
+            // on this person's hair by now — it may be carrying a
+            // fringe — and a still that rebuilt the standing allowance
+            // would show a plain dome on the same head a second later.
+            const frameMesh =
+              face === null ? null : snapshotMesh(face, previewSize.current, mesh.current?.fit());
+            // One photograph at a time, always: this shot waits for the
+            // one before it, and for the ready screen's light-meter shot
+            // if that is still in flight. See `shutter`.
             const take = () => Promise.resolve(camera.current?.takePhoto());
-            const pending = probeShot.current;
-            const shot = pending ? pending.then(take) : take();
+            const free = probeShot.current
+              ? shutter.current.then(() => probeShot.current ?? undefined)
+              : shutter.current;
+            const shot = free.then(take, take);
+            // The queue advances whatever this shot did, so one failure
+            // does not strand every capture behind it.
+            shutter.current = shot.then(
+              () => undefined,
+              () => undefined,
+            );
             shot.then(
               (image) => {
                 // No camera to ask: the same nothing that happened before
@@ -1086,19 +1162,23 @@ function Scanner({
           height: sample.size,
         });
         if (!live) return;
-        mesh.current?.setHair(
+        const outline =
           mask === null
             ? null
             : hairSilhouette(mask, {
                 source: { width: sample.sourceWidth, height: sample.sourceHeight },
                 view,
-              }),
-          face,
-        );
+              });
+        mesh.current?.setHair(outline, face);
+        // Only for the diagnostics line, and only when it is switched on:
+        // a fitted cap and the standing dome look alike on a head, and
+        // this is the one place that knows which was drawn.
+        if (diagnose) setFitState(outline === null ? 'refused' : 'fitted');
       } catch {
         // A frame the camera would not give, or a model run that threw.
         // A refusal holds the cap's shape; it never collapses it.
         if (live) mesh.current?.setHair(null, face);
+        if (diagnose) setFitState('refused');
       } finally {
         // `now`, not the time it is now: the beat is measured from one
         // fit's start to the next's, so a fit that took a moment does
@@ -1128,7 +1208,7 @@ function Scanner({
     })();
 
     return stop;
-  }, [arkit, cameraLive, foreground, scanner]);
+  }, [arkit, cameraLive, foreground, scanner, diagnose]);
 
   /*
     The light meter's one still on the ready screen.
@@ -1401,8 +1481,23 @@ function Scanner({
         // list before anything is thrown, so a cancel mid-copy (which
         // deletes the working files under the copies still in flight)
         // cannot leave a journal file that nothing owns.
+        /*
+          `persistCapture` names a file `<key>_<angle>.jpg`, so a session
+          with two photographs of one angle — which every scan now has,
+          because a region is photographed two or three times over and
+          the repeats are what the measurement's error bar is made of —
+          would write both to one filename and hand the record two
+          photographs pointing at the same bytes. The first of each angle
+          keeps the plain key, so the file the journal has always had is
+          unchanged; the rest number from there.
+        */
+        const seen = new Map<Angle, number>();
         const copies = await Promise.allSettled(
-          picked.map((p) => persistCapture(p.uri, key, p.angle)),
+          picked.map((p) => {
+            const nth = seen.get(p.angle) ?? 0;
+            seen.set(p.angle, nth + 1);
+            return persistCapture(p.uri, nth === 0 ? key : `${key}-${nth + 1}`, p.angle);
+          }),
         );
         for (const copy of copies) {
           if (copy.status === 'fulfilled') stored.push(copy.value.uri, copy.value.thumbnailUri);
@@ -1719,6 +1814,13 @@ function Scanner({
                   nothing at all.
                 */}
                 <Guidance cue={cueLine} />
+                {diagnose ? (
+                  <View style={{ alignItems: 'center', paddingTop: spacing.sm }}>
+                    <Text variant="caption" style={{ color: darkColors.textOnPhoto }}>
+                      {`${arkit ? 'ARKit' : 'ML Kit'} · cap ${fitState === 'fitted' ? 'fitted to hair' : fitState === 'refused' ? 'dome (mask refused)' : 'dome (waiting)'}`}
+                    </Text>
+                  </View>
+                ) : null}
               </>
             )}
           </View>
@@ -1803,7 +1905,7 @@ function Scanner({
                 <CaptureChecklist items={captured} />
               </View>
               <Text variant="subhead" center style={{ color: darkColors.textSecondary }}>
-                {HAIR_SCAN_COPY.complete.frames(view.frameCount)}
+                {HAIR_SCAN_COPY.complete.frames(view.angleCount)}
               </Text>
             </Animated.View>
           ) : null}

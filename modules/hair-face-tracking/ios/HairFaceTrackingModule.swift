@@ -147,6 +147,44 @@ final class HairFaceTrackingRegistry {
       // main-thread read: the view, the session's current frame and the
       // interface orientation.
       //
+      // ── Handedness: read this before flipping anything ───────────────
+      // `view.captureOrientation` is a `Mirrored` variant, so the still
+      // written below is MIRRORED — the same handedness as the preview,
+      // where the person's own left is on the image's left. That is not
+      // an oversight and it is not a free choice: this module is ONE END
+      // of a convention the whole scan is built on, and the app reads the
+      // still's pixels by IMAGE SIDE.
+      //
+      // FOUR separate lines make that handedness, not one, and they are
+      // in the other two files — this one applies the fourth and decides
+      // nothing:
+      //
+      //   the preview     mirrored by `mirrorTransform`, View.swift:38,
+      //                   set on the ARSCNView at :157. NOT by ARKit: a
+      //                   front feed arrives un-mirrored.
+      //   the mesh        mirrored by `1 - projected.x / width`,
+      //                   View.swift:435 and :479 — every cx, rim and
+      //                   inner point the frame reports
+      //   yaw / roll      mirrored by `yaw: -yawEye`, Geometry.swift:383
+      //   sampleFrame     mirrored by `captureOrientation` — `hair-fit.ts`
+      //   and capture     fits the cap in the preview's own frame and
+      //                   says so, and the rectangles measured on the
+      //                   preview land on the same flesh in the still
+      //
+      // Un-mirroring this line alone does not make the record more true;
+      // it silently swaps the sides of it. `region-crops.ts` cuts
+      // `leftTemple` from the image-LEFT of the still, and
+      // `measure/regions.ts` gives `leftTemple` a negative u, which is
+      // image-left too — both because of this line. Flip it on its own
+      // and every temple is filed under the other temple's name, with no
+      // error anywhere to say so, and a symmetric head looks fine while
+      // it happens. That is the HALF-FLIP: the preview and the mesh stay
+      // mirrored by their own two lines above while the still and the
+      // sample move, and nothing in three languages notices.
+      // README.md ▸ "Handedness" lists all four flips by file and line,
+      // and what would have to move in the SAME commit for an un-mirrored
+      // still to be honest.
+      //
       // Be clear about what this does NOT do. `CIImage(cvPixelBuffer:)`
       // retains the buffer and reads it lazily, so ONE slot of the
       // session's capture pool stays held from this line until
@@ -233,7 +271,12 @@ final class HairFaceTrackingRegistry {
   /// The orientation is the view's own `captureOrientation`, so the
   /// square agrees with what the person is looking at — mirrored, turned
   /// the way the interface is. A sample that disagreed with the preview
-  /// would fit the cap to a reflection.
+  /// would fit the cap to a reflection: `FitGeometry.source` in
+  /// `hair-fit.ts` is documented as the camera picture "turned and
+  /// mirrored to match what the person is looking at", and the cap it
+  /// fits is drawn in the preview's own points. On a symmetric head a
+  /// flipped sample looks right; on a side parting it puts the parting
+  /// on the wrong side of the head, and nothing throws.
   ///
   /// ── What it refuses ────────────────────────────────────────────────
   /// No view on screen, no frame yet, a frame with no extent, or a

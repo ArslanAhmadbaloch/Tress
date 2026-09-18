@@ -2,10 +2,16 @@
  * From a mask to a silhouette the cap can be sat on.
  *
  * `head-cap.ts` knows how to stretch the dome onto a hair silhouette —
- * `fitHairCap` takes one and returns three dimensionless numbers. What it
- * has never had is a silhouette: the segmenter produces a grid of
+ * `fitHairCap` takes one and returns a size and a shape. What it has
+ * never had is a silhouette: the segmenter produces a grid of
  * confidences and the cap wants an outline in the preview's own points.
  * This file is that step, and only that step.
+ *
+ * The outline is read twice over by the fit, and the SHAPE is the
+ * reading that needs the points: the cap's dial has twenty-four rays,
+ * and a ray with nothing in it keeps the dome. So the walk below is
+ * thinned to a number of points that leaves every ray of the visible
+ * half a handful of them, not to the fewest that carry a bounding box.
  *
  *   mask (side x side confidences)
  *     -> threshold at the same 0.5 boundary the figures are counted at
@@ -136,8 +142,12 @@ export const HAIR_FIT = {
   minPoints: 16,
   /**
    * Most points kept. A 256-square region's boundary can run to a
-   * thousand pixels, and `fitHairCap` walks the silhouette six times per
-   * call — so every nth point of the walk is kept and the rest dropped.
+   * thousand pixels, and `fitHairCap` walks the silhouette eight times
+   * per call — so every nth point of the walk is kept and the rest
+   * dropped. A hundred and sixty is also what keeps the shape honest:
+   * spread over the dial's rays it is several boundary points per ray
+   * on the half of it the cap occupies, so no single pixel is a ray's
+   * whole answer.
    *
    * The extent is what the fit reads, and a stride can step over the
    * single farthest point, so the extent survives NEARLY rather than
@@ -472,11 +482,11 @@ export function hairSilhouette(mask: FitMask, geometry: FitGeometry): HairSilhou
  * How often a live fit is taken, in milliseconds.
  *
  * About three a second, and the reasoning is in `head-cap.ts`'s own note:
- * one `fitHairCap` is three walks of the face's point cloud, two dome
- * writes, eight walks of 191 vertices and six of the silhouette, and in
- * front of it sit a model run and two walks of the model's square. That
- * is fine a few times a second on the JS thread and would be ruinous per
- * frame. The shape of somebody's hair does not change between frames,
+ * one `fitHairCap` is three walks of the face's point cloud, three dome
+ * writes, eleven walks of 191 vertices and eight of the silhouette —
+ * about 80 µs measured on a laptop — and in front of it sit a model run
+ * and two walks of the model's square. That is fine a few times a
+ * second on the JS thread and would be ruinous per frame. The shape of somebody's hair does not change between frames,
  * and the cap eases towards a new fit over about half a second anyway,
  * so a faster beat would buy nothing visible.
  *

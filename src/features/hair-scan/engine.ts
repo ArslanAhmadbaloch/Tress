@@ -28,27 +28,82 @@
  * the timeout is the escape hatch, not the design. Start is live the
  * moment a head is followed: any distance, any angle, any light.
  *
- * Those four frames are the report, so they are what the engine asks
- * for: `REQUIRED_REGIONS`, one kept frame each, better ones replacing
- * worse ones while the step is still running. Nothing at all is ever
- * said about how far away to stand.
+ * Those four regions are the report, so they are what the engine asks
+ * for: `REQUIRED_REGIONS`, SEVERAL kept frames each, better ones
+ * replacing worse ones while the step is still running. Nothing at all
+ * is ever said about how far away to stand.
+ *
+ * ── Why several, and not one ─────────────────────────────────────────
+ * Build 19 kept exactly one frame per region, so a whole scan was four
+ * pictures. The owner counted them and asked for more, which is the
+ * visible half. The other half needs a distinction this feature makes
+ * badly, because two different things are called a region:
+ *
+ *   • A `ScanTarget` — this file's `REQUIRED_REGIONS` — is a CAPTURE
+ *     region: a pose the scan goes and photographs.
+ *   • `measure/regions.ts`'s `ScanRegion` is a MEASUREMENT region: one
+ *     of SIX places on a head. Four of the six share their names with
+ *     the four targets, which is the whole trap.
+ *
+ * They are not in step, because `measureScan` reads ALL SIX measurement
+ * regions out of EVERY frame, whatever target that frame was asked for.
+ * So four captured frames were never four readings. Driven through this
+ * same four-step motion at camera delays of 0–500 ms, build 19 came
+ * away with: hairline read in 4 frames (confidence 0.94), partLine 4
+ * (0.94), leftTemple 3 (0.54), rightTemple 3 (0.87), midScalp 2 (0.77)
+ * — and CROWN 1 (0.25). Five of the six already had a measured spread
+ * and were already comparable. It is the crown, and the crown alone,
+ * that had one reading, took `SINGLE_FRAME_SPREAD` — a stand-in, not a
+ * measurement — sat exactly on `UNREPEATED_CONFIDENCE`, and was refused
+ * by `compareScans` every time.
+ *
+ * So the honest statement of what several frames buy is narrower than
+ * "the measurement did not exist", and it is still worth having:
+ *
+ * 1. The crown becomes measurable at all: 1 frame → 2, confidence
+ *    0.25 → 0.72, `insufficient` → a verdict. That is the one region a
+ *    person scanning their own head most wants followed and the one the
+ *    old curation reliably lost.
+ * 2. Every other region gets more readings to disagree over, so its
+ *    error bar is measured from more of the turn (midScalp 2 → 7
+ *    frames, rightTemple 3 → 7). Note that this can LOWER a confidence
+ *    — hairline 0.94 → 0.90 — because frames taken across a wider arc
+ *    disagree more. That is the error bar working, not a regression.
+ * 3. The record and the processing screen have more than four pictures
+ *    in them, which is what the owner asked for.
+ *
+ * So a region holds up to `FRAMES_PER_REGION`, wants at least
+ * `REGION_MIN_FRAMES`, and — this is the part that keeps the error bar
+ * honest — the frames it holds have to be DIFFERENT MOMENTS. Two frames
+ * of one instant agree perfectly, which would read as a spread of zero:
+ * a measurement claiming to be exact, taken twice by accident. See
+ * `distinctMoment`.
  *
  * ── No shutter ───────────────────────────────────────────────────────
  * There is no capture action in `ScanAction` and no hold-to-fire. While
  * a step runs the engine raises `capture` requests itself whenever the
- * pose is near that step's target, the head is steady and the frame is
- * worth having. One is kept per region and every other image is named in
- * a `discard` event so the screen deletes the file.
+ * pose is near that step's target, the head is steady, the region still
+ * wants a frame and this instant is not one it already holds. Everything
+ * not kept is named in a `discard` event so the screen deletes the file.
  *
  * How many that is, honestly: `CAPTURE_INTERVAL_MS` is a floor between
- * requests, not the rate. A step asks only for its own region and
- * `targetWants` refuses a second request while one is out for it, so the
- * real pace is the camera's round trip — one request, then the next only
- * once that image has landed AND a better one is worth having
- * (`REPLACE_MARGIN`). Driven end to end that is a handful of requests
- * across the WHOLE scan, not per step: four to eight, whether the camera
- * answers instantly or takes 300 ms. Anything written about how many
- * files a scan puts on a phone has to start there.
+ * requests, and a region's own pace is the wider of that and
+ * `FRAME_GAP_MS` — a still head cannot be photographed twice for the
+ * same instant, and a turning one can, because the picture changes. A
+ * region may have `PENDING_PER_TARGET` requests in flight at once, so a
+ * step no longer waits out a whole camera round trip between frames.
+ * Driven end to end that is nine to eleven kept frames across the whole
+ * scan — measured, at camera delays of 0, 150, 300 and 500 ms: 9, 9, 10,
+ * 11 — two or three per region, and the third only while what the region
+ * holds is not yet good. Anything written about how many files a scan
+ * puts on a phone has to start there.
+ *
+ * TWO REQUESTS IN FLIGHT IS NOT TWO SHUTTERS AT ONCE. This is a request
+ * for a photograph, not the photograph: `hair-scan.tsx` queues the
+ * actual `takePhoto` calls one behind the other, because the iOS capture
+ * path holds a slot of the AR session's own pixel-buffer pool for the
+ * length of a JPEG encode and asking it for two at a time is asking it
+ * to hold two. Widening this widens how fast the engine may ASK.
  *
  * ── The ring ─────────────────────────────────────────────────────────
  * Twenty-four sectors run clockwise from the top, and they are the
@@ -68,23 +123,24 @@
  * `stage`, which is derived from the step: the three upright steps walk
  * the top half and `down` walks the bottom.
  *
- * Frames. One is kept per wanted region — four in all — filed under the
+ * Frames. Several are kept per wanted region, each filed under the
  * region it was asked for and never under the ring bin it happened to
  * land in. Those are two different things and treating them as one was
  * a bug with teeth: a hairline taken with the phone below eye level
  * shares a bin with every crown frame, and each crown in turn was thrown
  * away for losing to it, so the scan could not finish. A request is only
- * raised when the head is steady and in a pose one of the four regions
- * still wants, never more than one every 700 ms. Every image the engine
- * lets go of — outscored, replaced, answered late, or abandoned by a
- * cancel — is named in a `discard` event, so the screen can delete the
- * file. The frames stop being the engine's at the report, when they
- * belong to the journal.
+ * raised when the head is steady, in a pose the step's region still
+ * wants, and at a moment that region is not already holding. Every image
+ * the engine lets go of — outscored, replaced, answered late, or
+ * abandoned by a cancel — is named in a `discard` event, so the screen
+ * can delete the file. The frames stop being the engine's at the report,
+ * when they belong to the journal.
  *
  * Everything the engine knows is where a head is and how still it was.
  * It cannot see hair, and it never claims to.
  */
 
+import type { CapFit } from './head-cap';
 import { CONTOUR_NAMES, type Contours, type TrackedFace, type ViewSize } from './tracking';
 import type {
   CaptureRequest,
@@ -300,12 +356,37 @@ export const SECTOR_DEG = 360 / RING_SECTORS;
 /** The front plus twelve slices of the ring. Bin 0 is the front. */
 export const RING_BINS = 12;
 /**
- * How many frames the scan ever holds: one for each wanted region.
+ * How many frames one region may hold, and the fewest it wants.
  *
- * Arithmetic, not a policy. The store is keyed by region, there are four
- * regions, so there is no cap to enforce and nothing is ever evicted.
+ * `REGION_MIN_FRAMES` is two because two is the fewest readings that can
+ * disagree with one another, and the disagreement IS the measurement's
+ * error bar (`measure/noise.ts`: `REPEATED_FRAMES` is the same two, and
+ * a measurement region below it is capped at `UNREPEATED_CONFIDENCE` and
+ * refused by `compareScans`). A step is not satisfied until its capture
+ * region has them.
+ *
+ * The two counts are not the same count — `measureScan` reads all six
+ * measurement regions out of every frame, so two frames a target is
+ * seven-odd readings for the regions that face the lens throughout and
+ * two for the crown, which only the last step sees. Two here is what it
+ * takes to get the CROWN over `REPEATED_FRAMES`; the rest were already
+ * over it at build 19. See the header.
+ *
+ * `FRAMES_PER_REGION` is the ceiling, and the third frame is only asked
+ * for while the region's poorest is short of `GOOD_QUALITY` — so a clean
+ * scan costs two shutters a region and a scrappy one costs three.
  */
-export const MAX_FRAMES = REQUIRED_REGIONS.length;
+export const REGION_MIN_FRAMES = 2;
+export const FRAMES_PER_REGION = 3;
+
+/**
+ * How many frames the scan ever holds.
+ *
+ * Arithmetic, not a policy. The store is keyed by region, each region
+ * caps its own list, so this is the product and nothing is ever evicted
+ * across regions.
+ */
+export const MAX_FRAMES = REQUIRED_REGIONS.length * FRAMES_PER_REGION;
 
 /**
  * Degrees of turn that count as the side fully seen.
@@ -396,16 +477,55 @@ export const LIGHT_MIN = 0.3;
 export const LIGHT_UNKNOWN = 0.7;
 
 /**
- * The floor between two capture requests. NOT the rate: a step asks only
- * for its own region and `targetWants` refuses a second request while one
- * is out for it, so what actually paces the shutter is the camera's round
- * trip and the `REPLACE_MARGIN` a second frame has to beat. Measured end
- * to end, a whole scan raises four to eight requests, not that many a step.
- * Every image but the best of each region is discarded as it lands.
+ * The floor between two capture requests, and how many of them one
+ * region may have in flight at once.
+ *
+ * Neither is the rate. A region's real pace is the wider of this floor
+ * and `FRAME_GAP_MS`, because a request for a moment the region already
+ * holds is not raised at all (`newMoment`) — there is no point writing a
+ * file only to discard it. So a head sitting still is photographed about
+ * every `FRAME_GAP_MS`, and a head turning every `CAPTURE_INTERVAL_MS`,
+ * which is what a turn deserves: the picture is changing.
+ *
+ * `PENDING_PER_TARGET` is the widening build 20 needed. Before it, a
+ * region refused a second request while one was out, so the shutter was
+ * paced by the camera's whole round trip and a step could only ever come
+ * away with one picture. Two in flight lets a turn be photographed twice
+ * on its way through without the scan taking any longer.
+ *
+ * It is a limit on OUTSTANDING REQUESTS, not on concurrent shutters.
+ * `hair-scan.tsx` chains its `takePhoto` calls so the camera is only
+ * ever asked for one photograph at a time — on iOS each capture holds a
+ * slot of the AR session's pixel-buffer pool until its JPEG encode
+ * finishes, and two at once would hold two. Raise this and the engine
+ * asks sooner; the camera still answers in order.
  */
-export const CAPTURE_INTERVAL_MS = 350;
+export const CAPTURE_INTERVAL_MS = 300;
 export const MAX_PENDING = 2;
-/** A bin at or above this quality is not asked for again. */
+export const PENDING_PER_TARGET = 2;
+
+/**
+ * When two frames of one region count as two moments rather than one.
+ *
+ * This is the guard on the error bar. `measure/noise.ts` reads a
+ * region's spread as how far its frames disagreed, so two frames of the
+ * SAME instant would disagree by nothing and publish a spread of zero —
+ * a false error bar, and worse than none, because a zero spread lets any
+ * difference next month clear the noise floor. Two frames count as two
+ * moments when they are `FRAME_GAP_MS` apart in the clock OR
+ * `FRAME_TURN_DEG` apart in pose; anything closer than both is the same
+ * instant photographed twice, and the better picture of it is kept.
+ *
+ * `FRAME_GAP_MS` is deliberately wider than `CAPTURE_INTERVAL_MS`: the
+ * interval is what the camera may be asked at, this is what actually
+ * counts as new. Three degrees is about a tenth of the turn a step asks
+ * for — plainly a different picture of the head, and well above the
+ * degree or so a smoothed reading drifts by while somebody holds still.
+ */
+export const FRAME_GAP_MS = 400;
+export const FRAME_TURN_DEG = 3;
+
+/** A region whose poorest frame is at or above this quality is not asked for a better one. */
 export const GOOD_QUALITY = 0.8;
 /** A replacement must beat the frame it replaces by this much to be worth a shutter. */
 export const REPLACE_MARGIN = 0.1;
@@ -500,9 +620,10 @@ export const STEP_SETTLE_MS = 400;
     case to reason about rather than the exception. It is sound on its
     own merits, not on the tie: "hold still" is only reached at all while
     a frame is actually WANTED here (`holdWanted && state.hold !== null`,
-    and `targetWants` declines a replacement for a good frame already
-    held), the ask lasts `NUDGE_SAY_MS` and not the step, and the turn is
-    the only one of the two that can finish the step.
+    and `targetWants` declines once the region holds two good pictures,
+    as does `newMoment` for an instant it already has), the ask lasts
+    `NUDGE_SAY_MS` and not the step, and the turn is the only one of the
+    two that can finish the step.
 
   And one more says how long the asking LASTS. `NUDGE_SAY_MS` is the ask:
   a beat, long enough to read a four-word line twice at the edge of the
@@ -574,7 +695,7 @@ export const SETTLE_MS = 1500;
 /* ------------------------------ state -------------------------------- */
 
 function freshTarget(): TargetProgress {
-  return { captured: false, quality: 0, frameId: null, reach: 0 };
+  return { captured: false, quality: 0, weakest: 0, frameIds: [], reach: 0 };
 }
 
 export function createTargets(): Record<ScanTarget, TargetProgress> {
@@ -979,8 +1100,10 @@ export function stepProgress(state: ScanState): number {
   const held = state.steps[step];
   if (held.done) return 1;
   const pose = target.reach <= 0 ? 1 : clamp01(held.reach / target.reach);
-  const captured = state.targets[REGION_OF_STEP[step]].captured ? 1 : 0;
-  return clamp01(STEP_POSE_SHARE * pose + (1 - STEP_POSE_SHARE) * captured);
+  // The pictures, plural: the step wants `REGION_MIN_FRAMES` of them, so
+  // the first one fills half of this share and the second the rest.
+  const kept = clamp01(state.targets[REGION_OF_STEP[step]].frameIds.length / REGION_MIN_FRAMES);
+  return clamp01(STEP_POSE_SHARE * pose + (1 - STEP_POSE_SHARE) * kept);
 }
 
 /** Whether the head has come as far as this step asks. */
@@ -993,11 +1116,17 @@ export function stepReached(state: ScanState, step: ScanStep): boolean {
  * that it should settle for a worse picture rather than none.
  *
  * It is false for the whole of a scan that goes as asked — the moment the
- * step's region is captured it is false again — and the only thing it
- * loosens is how steady the hand has to be. See `STABLE_MIN`.
+ * step's region has the frames it wants it is false again — and the only
+ * thing it loosens is how steady the hand has to be. See `STABLE_MIN`.
+ *
+ * It reads the region's whole list rather than `captured`, because a
+ * region with one frame and no second is exactly the state this exists
+ * for: a shaky hand that got one picture and would otherwise sit out the
+ * rest of the step waiting for a steadiness that is not coming, and hand
+ * over a region the measurement engine can never put an error bar on.
  */
 export function stepRelaxed(state: ScanState, at: number, step: ScanStep = state.step): boolean {
-  if (state.targets[REGION_OF_STEP[step]].captured) return false;
+  if (state.targets[REGION_OF_STEP[step]].frameIds.length >= REGION_MIN_FRAMES) return false;
   // Held the pose a moment with nothing to show for it: the picture in
   // front of the lens right now is the one this step went for, and a
   // steadier one can still replace it while the step runs.
@@ -1066,10 +1195,19 @@ export function steadyEnough(state: ScanState, stability: number, at: number): b
 }
 
 /**
- * Whether a step has everything it went for: the pose reached, a frame
- * held for its region, and the settle beat spent — unless the frame is
- * already as good as the scan asks for, in which case there is nothing
- * to wait for and the step hands over at once.
+ * Whether a step has everything it went for: the pose reached,
+ * `REGION_MIN_FRAMES` held for its region, and the settle beat spent —
+ * unless they are already as good as the scan asks for, in which case
+ * there is nothing to wait for and the step hands over at once.
+ *
+ * The frame COUNT is the part build 20 added. A step that handed over on
+ * its first good picture left the `down` step with a single frame, and
+ * the crown is only in shot on that step, so the crown was the one
+ * measurement region with no error bar and the one `compareScans`
+ * refused (see the header for the measured figures; the other five
+ * regions were already repeated). It costs about `FRAME_GAP_MS` a step —
+ * the second frame arrives while the first settle beat is still running
+ * — and the timeouts are unchanged.
  *
  * The beat is measured from the LATER of arriving and holding a frame,
  * which matters now that a step hands over well short of the angle it
@@ -1086,8 +1224,8 @@ export function steadyEnough(state: ScanState, stability: number, at: number): b
 export function stepSatisfied(state: ScanState, at: number, step: ScanStep = state.step): boolean {
   if (!stepReached(state, step)) return false;
   const region = state.targets[REGION_OF_STEP[step]];
-  if (!region.captured) return false;
-  if (region.quality >= GOOD_QUALITY) return true;
+  if (region.frameIds.length < REGION_MIN_FRAMES) return false;
+  if (region.weakest >= GOOD_QUALITY) return true;
   const held = state.steps[step];
   const since = Math.max(held.reachedAt ?? at, held.firstFrameAt ?? at);
   return at - since >= STEP_SETTLE_MS;
@@ -1099,13 +1237,84 @@ export function stepExpired(state: ScanState, at: number): boolean {
   return at - state.stepStartedAt >= STEP_TIMEOUT_MS[state.step];
 }
 
-/** Whether a frame of this quality would be worth taking for a region. */
+/**
+ * Whether a frame of this quality would be worth taking for a region.
+ *
+ * Three rules, in order, and the first is the one that changed in build
+ * 20:
+ *
+ * 1. UNTIL THE REGION HAS `REGION_MIN_FRAMES`, IT WANTS ONE, whatever it
+ *    would score. A second frame is not a nicer picture — it is what
+ *    lets a measurement region that is only in shot on ONE step (the
+ *    crown) have an error bar at all, and without one `compareScans`
+ *    refuses that region for the life of the journal. Quality decides
+ *    which frames are KEPT, never whether the measurement gets to exist.
+ * 2. A THIRD IS ASKED FOR ONLY WHILE THE REGION IS SHORT OF GOOD. Two
+ *    good pictures are enough; three shutters for a region already well
+ *    photographed is a file on somebody's phone for nothing.
+ * 3. A FULL REGION WANTS ONLY A BETTER PICTURE THAN ITS POOREST, by
+ *    `REPLACE_MARGIN` — the same bargain as before, now measured against
+ *    the weakest of the list rather than the only one in it.
+ *
+ * In-flight requests count towards the list, so a region cannot ask for
+ * five frames while its first two are still in the air.
+ */
 export function targetWants(state: ScanState, target: ScanTarget, quality: number): boolean {
-  if (state.pending.some((p) => p.target === target)) return false;
+  const flight = state.pending.reduce((n, p) => (p.target === target ? n + 1 : n), 0);
+  if (flight >= PENDING_PER_TARGET) return false;
   const held = state.targets[target];
-  if (!held.captured) return true;
-  if (held.quality >= GOOD_QUALITY) return false;
-  return quality >= held.quality + REPLACE_MARGIN;
+  const counted = held.frameIds.length + flight;
+  if (counted < REGION_MIN_FRAMES) return true;
+  if (held.weakest >= GOOD_QUALITY) return false;
+  if (counted < FRAMES_PER_REGION) return true;
+  return quality >= held.weakest + REPLACE_MARGIN;
+}
+
+/**
+ * Whether two frames of one region stand for two different moments.
+ *
+ * Far enough apart in time, or far enough apart in pose: either makes
+ * them two readings that can honestly disagree. Closer than both and
+ * they are one instant photographed twice — see `FRAME_GAP_MS` for why
+ * that is worse than having only one.
+ *
+ * An unreadable pose is treated as the same moment rather than a new
+ * one: the safe side of this test is the one that keeps a false spread
+ * out of the measurement.
+ */
+export function distinctMoment(
+  a: Pick<ScanFrame, 'requestedAt' | 'yaw' | 'pitch'>,
+  b: Pick<ScanFrame, 'requestedAt' | 'yaw' | 'pitch'>,
+): boolean {
+  if (Math.abs(a.requestedAt - b.requestedAt) >= FRAME_GAP_MS) return true;
+  const moved = Math.hypot(a.yaw - b.yaw, a.pitch - b.pitch);
+  return Number.isFinite(moved) && moved >= FRAME_TURN_DEG;
+}
+
+/**
+ * Whether asking for a frame right now would be asking for a moment the
+ * region already has — kept, or still in the air.
+ *
+ * Checked before the request rather than after the image lands, so the
+ * camera is not asked for a photograph the curation would only delete.
+ * The pending requests are included because two shutters fired half a
+ * beat apart at a motionless head are the same instant twice, however
+ * the files happen to land.
+ */
+export function newMoment(
+  state: ScanState,
+  target: ScanTarget,
+  pose: Pick<ScanFrame, 'requestedAt' | 'yaw' | 'pitch'>,
+): boolean {
+  for (const frame of state.frames) {
+    if (frame.target === target && !distinctMoment(frame, pose)) return false;
+  }
+  for (const request of state.pending) {
+    if (request.target !== target) continue;
+    const held = { requestedAt: request.at, yaw: request.yaw, pitch: request.pitch };
+    if (!distinctMoment(held, pose)) return false;
+  }
+  return true;
 }
 
 /* ----------------------------- framing ------------------------------- */
@@ -1707,14 +1916,16 @@ function tickScanning(state: ScanState, action: Extract<ScanAction, { type: 'tic
     const quality = frameQuality(face, lighting, target);
     const wants = targetWants(next, target, quality);
     const steady = steadyEnough(next, face.stability, at);
-    if (wants && !steady) {
+    // Not a picture of a moment this region already holds: see `newMoment`.
+    const fresh = newMoment(next, target, { requestedAt: at, yaw: face.yaw, pitch: face.pitch });
+    if (wants && fresh && !steady) {
       holdWanted = true;
       if (next.hold === null || next.hold.bin !== bin) next = { ...next, hold: { bin, since: at } };
     } else {
       next = { ...next, hold: null };
     }
     const throttled = next.lastRequestAt !== null && at - next.lastRequestAt < CAPTURE_INTERVAL_MS;
-    if (wants && !throttled && steady && next.pending.length < MAX_PENDING) {
+    if (wants && fresh && !throttled && steady && next.pending.length < MAX_PENDING) {
       const request: CaptureRequest = {
         id: `c${next.requestCount + 1}`,
         bin,
@@ -1806,13 +2017,14 @@ function scanningCue(
     both improve the picture of a temple that is still half turned away,
     and neither brings the temple round. "Hold still" is reached only
     while a frame is genuinely wanted here — `holdWanted` is false once
-    `targetWants` declines a replacement — so what this outranks is a
-    request that is still open, for `NUDGE_SAY_MS` and no longer.
+    `targetWants` declines, and once this instant is one the region
+    already holds — so what this outranks is a request that is still
+    open, for `NUDGE_SAY_MS` and no longer.
 
     It is NOT true that the step has always relaxed by the time this
     fires. `NUDGE_AFTER_SHARE` is `STEP_RELAX_SHARE`, which settles the
-    case of a step still chasing its first frame, but `stepRelaxed` is
-    false at its first line once the region HAS a frame — and the whole
+    case of a step still chasing its frames, but `stepRelaxed` is false
+    at its first line once the region has its two — and the whole
     point of the nudge is that it says nothing about that. See
     `NUDGE_AFTER_SHARE` for the band where the two part company.
   */
@@ -1836,20 +2048,26 @@ function recredit(state: ScanState, at: number, events: ScanEvent[]): ScanState 
   let targets = state.targets;
   let changed = false;
   for (const region of REQUIRED_REGIONS) {
-    let best: ScanFrame | null = null;
-    for (const frame of state.frames) {
-      if (frame.target === region && (best === null || frame.quality > best.quality)) best = frame;
-    }
+    const kept = regionFrames(state, region);
     const held = targets[region];
-    const captured = best !== null;
-    const quality = best?.quality ?? 0;
-    const frameId = best?.id ?? null;
-    if (held.captured === captured && held.quality === quality && held.frameId === frameId) continue;
+    const captured = kept.length > 0;
+    const quality = kept[0]?.quality ?? 0;
+    const weakest = kept[kept.length - 1]?.quality ?? 0;
+    const frameIds = kept.map((f) => f.id);
+    if (
+      held.captured === captured &&
+      held.quality === quality &&
+      held.weakest === weakest &&
+      held.frameIds.length === frameIds.length &&
+      held.frameIds.every((id, i) => id === frameIds[i])
+    ) {
+      continue;
+    }
     if (!changed) {
       targets = { ...targets };
       changed = true;
     }
-    targets[region] = { captured, quality, frameId, reach: captured ? 1 : held.reach };
+    targets[region] = { captured, quality, weakest, frameIds, reach: captured ? 1 : held.reach };
   }
   if (!changed) return state;
   let next: ScanState = { ...state, targets };
@@ -1906,6 +2124,9 @@ function landFrame(
     yaw: request.yaw,
     pitch: request.pitch,
     quality: request.quality,
+    // The instant the pose was read, which is what tells two frames of
+    // one region apart; `capturedAt` is a camera round trip later.
+    requestedAt: request.at,
     capturedAt: at,
     // The mesh belongs to its own frame: a replacement brings its own,
     // and the frame it replaces takes the old one away with it.
@@ -1916,25 +2137,36 @@ function landFrame(
     if (images.length > 0) events.push({ type: 'discard', images, reason });
   };
   /*
-    A frame competes only with the frame for its own region.
+    A frame competes only with the frames for its own region, and within
+    that region only with the ones it could be mistaken for.
 
-    It used to compete with whatever shared its ring bin, and a bin is
-    not a region: the hairline of anybody holding the phone below eye
-    level sits in the same bin as every crown frame, so each crown in
-    turn lost to it and was discarded, and the scan ran to the timeout
-    with the one picture the owner most wanted missing. The requirements
-    are keyed by region, so the store is too.
+    Two rules, and they are different questions. IS THIS A MOMENT THE
+    REGION ALREADY HAS? Then only the better picture of it is kept:
+    holding both would hand the measurement engine two readings that
+    agree by construction and a spread of zero. IS THE REGION FULL? Then
+    the new frame has to beat the poorest one there.
+
+    A frame competing across regions was the build-18 bug: a bin is not a
+    region, the hairline of anybody holding the phone below eye level
+    sits in the same bin as every crown frame, so each crown in turn lost
+    to it and was discarded and the scan ran to the timeout with the one
+    picture the owner most wanted missing. The requirements are keyed by
+    region, so the store is too.
   */
-  const existing = state.frames.find((f) => f.target === frame.target);
+  const kept = state.frames.filter((f) => f.target === frame.target);
+  const twin = kept.find((f) => !distinctMoment(f, frame)) ?? null;
+  const full = kept.length >= FRAMES_PER_REGION;
+  const loser =
+    twin ?? (full ? kept.reduce((a, b) => (b.quality < a.quality ? b : a)) : null);
   let frames: ScanFrame[];
-  if (existing) {
-    if (existing.quality >= frame.quality) {
+  if (loser !== null) {
+    if (loser.quality >= frame.quality) {
       discard([frame], 'outscored');
       const settled = settle(creditStep({ ...state, pending }, frame.target, at, false), at);
       return { state: settled.state, events: [...events, ...settled.events] };
     }
-    frames = state.frames.map((f) => (f.target === frame.target ? frame : f));
-    discard([existing], 'replaced');
+    frames = state.frames.map((f) => (f.id === loser.id ? frame : f));
+    discard([loser], 'replaced');
   } else {
     frames = [...state.frames, frame];
   }
@@ -1944,7 +2176,7 @@ function landFrame(
     at,
     true,
   );
-  events.push({ type: 'frame', frame, replaced: existing !== undefined });
+  events.push({ type: 'frame', frame, replaced: loser !== null });
   pushMilestone(next, events, 'firstFrame');
   // The frame set has changed, so what the scan has of each region has
   // changed with it — and this may be the one that ends the scan.
@@ -1975,13 +2207,33 @@ function settle(state: ScanState, at: number): ScanReduction {
 
 /**
  * The kept frames in the order the scan asked for them: hairline, left
- * temple, right temple, crown. That is the order the report reads them
- * in and the order the processing screen flies them home in, and it no
- * longer depends on which ring bin a head happened to be in.
+ * temple, right temple, crown, and within each region the order they
+ * were taken in. That is the order the report reads them in and the
+ * order the processing screen flies them home in, and it no longer
+ * depends on which ring bin a head happened to be in.
+ *
+ * Every kept frame is here, repeats included — eight to twelve of them
+ * on a driven scan. The processing screen orbits this list, so what the
+ * person watches being read is what was actually read.
  */
 export function orderedFrames(state: ScanState): ScanFrame[] {
   const rank = (frame: ScanFrame): number => REQUIRED_REGIONS.indexOf(frame.target);
-  return state.frames.slice().sort((a, b) => rank(a) - rank(b) || a.capturedAt - b.capturedAt);
+  return state.frames.slice().sort((a, b) => rank(a) - rank(b) || a.requestedAt - b.requestedAt);
+}
+
+/**
+ * Everything one region is holding, best first, ties to the earlier
+ * frame so the order is stable while a scan runs.
+ *
+ * This is the order `TargetProgress.frameIds` is kept in, and it is the
+ * one place the ranking is written: best first means `frameIds[0]` is
+ * the picture the report leads with, and the last is the one a better
+ * frame would push out.
+ */
+export function regionFrames(state: ScanState, target: ScanTarget): ScanFrame[] {
+  return state.frames
+    .filter((f) => f.target === target)
+    .sort((a, b) => b.quality - a.quality || a.requestedAt - b.requestedAt);
 }
 
 /**
@@ -1990,7 +2242,7 @@ export function orderedFrames(state: ScanState): ScanFrame[] {
  * before it got one — the best of what there is.
  */
 export function primaryFrame(state: ScanState): ScanFrame | null {
-  const hairline = state.frames.find((f) => f.target === 'hairline');
+  const hairline = regionFrames(state, 'hairline')[0];
   if (hairline) return hairline;
   let best: ScanFrame | null = null;
   for (const f of state.frames) if (best === null || f.quality > best.quality) best = f;
@@ -2010,12 +2262,20 @@ export function canStart(state: ScanState): boolean {
   return state.scanner === 'ready' && state.status === 'ready';
 }
 
-/** The frames the report is built from, in the order the person took them. */
+/**
+ * The best frame of each region: the four pictures the report leads
+ * with, in the order the person took them.
+ *
+ * One per region, as it has always been — a region's repeats are behind
+ * it in `orderedFrames` and in `TargetProgress.frameIds`, and they are
+ * for the measurement rather than for the four hero images. A region
+ * with nothing is simply absent, which is how a short scan says so.
+ */
 export function requiredFrames(state: ScanState): ScanFrame[] {
   const out: ScanFrame[] = [];
   for (const region of REQUIRED_REGIONS) {
-    const id = state.targets[region].frameId;
-    const frame = id === null ? undefined : state.frames.find((f) => f.id === id);
+    const id = state.targets[region].frameIds[0];
+    const frame = id === undefined ? undefined : state.frames.find((f) => f.id === id);
     if (frame) out.push(frame);
   }
   return out;
@@ -2071,8 +2331,14 @@ export function coverFit(content: Size, box: Size): CoverFit {
  * has no size yet: a fraction of nothing is not a place. The head's
  * angles ride along when the tracker had a finite reading, so the cap
  * drawn on the still can turn as the live one did.
+ *
+ * `fit` is the hair fit the live cap was wearing at this shutter, from
+ * the mesh's own handle. It rides along for the same reason the angles
+ * do: the still should show the cap the camera drew, fringe and all,
+ * not a dome rebuilt from the standing allowance. Left out on a build
+ * with no segmenter, which is exactly what it was before this existed.
  */
-export function snapshotMesh(face: TrackedFace, view: ViewSize): FrameMesh | null {
+export function snapshotMesh(face: TrackedFace, view: ViewSize, fit?: CapFit): FrameMesh | null {
   if (!(view.width > 0) || !(view.height > 0)) return null;
   const contours: Contours = {};
   for (const name of CONTOUR_NAMES) {
@@ -2091,6 +2357,7 @@ export function snapshotMesh(face: TrackedFace, view: ViewSize): FrameMesh | nul
     contours,
     viewAspect: view.width / view.height,
     ...(pose === null ? {} : { pose }),
+    ...(fit === undefined ? {} : { fit }),
   };
 }
 
@@ -2137,6 +2404,9 @@ export function meshInBox(mesh: FrameMesh, still: Size, box: Size): MeshFace {
     contours,
     // Angles are the head's, not the box's: they pass through untouched.
     ...(mesh.pose === undefined ? {} : { pose: mesh.pose }),
+    // And so does the fit: it scales the cap about its own centre, in
+    // multiples of itself, so there is nothing in it to map into a box.
+    ...(mesh.fit === undefined ? {} : { fit: mesh.fit }),
   };
 }
 

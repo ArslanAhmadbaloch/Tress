@@ -44,7 +44,12 @@ import {
 } from '@/features/hair-scan/hair-fit';
 import {
   CAP_FIT_DEFAULT,
+  CAP_POINTS,
+  CAP_PROFILE,
+  CAP_STRIDE,
+  buildHeadCap,
   fitHairCap,
+  type CapFit,
   type CapSource,
   type HairSilhouette,
 } from '@/features/hair-scan/head-cap';
@@ -497,6 +502,107 @@ test('a taller head of hair lifts the cap further than a shorter one', () => {
   assert.ok(loose);
   assert.ok(loose.lift > tight.lift, `${loose.lift} should clear ${tight.lift}`);
   assert.ok(loose.widen > tight.widen, `${loose.widen} should clear ${tight.widen}`);
+});
+
+/*
+  And the point of the whole chain, from pixels to vertices: the cap
+  that comes out the end has to take its SHAPE from the mask and not
+  just its size.
+
+  These two masks are the same height, the same width and the same
+  middle — everything a rescaled dome can see — and differ only in where
+  the hair stands up. If the mesh drawn for them is the same mesh, the
+  mask may as well not have been read.
+*/
+
+/**
+ * The sides both skylines share: past a third of the way out, the two
+ * masks are the same outline to the pixel, so they are the same width
+ * at every height the fit measures a width at.
+ */
+function sides(u: number): number {
+  const out = Math.min(1, Math.max(0, (Math.abs(u) - 0.3) / 0.7));
+  return 1 - 0.55 * Math.pow(out, 1.4);
+}
+
+/**
+ * A skyline: `dip` is how far the crown sinks in the middle, as a share
+ * of the head's height. At 0 it is a flat top; at a quarter it is hair
+ * parted and lying down over the crown with the volume either side.
+ * Both stand exactly as tall as each other — they meet the shared sides
+ * at full height — so nothing about their SIZE differs.
+ */
+function skyline(dip: number): (u: number) => number {
+  return (u: number) => {
+    const a = Math.abs(u);
+    if (a >= 0.3) return sides(u);
+    return 1 - dip * (1 - Math.pow(a / 0.3, 2));
+  };
+}
+
+/** A mask of hair with a chosen skyline: what the segmenter hands back. */
+function skylineMask(side: number, shape: Ellipse, top: (u: number) => number): FitMask {
+  const data = new Float32Array(side * side);
+  for (let x = 0; x < side; x += 1) {
+    const u = ((x + 0.5) / side - shape.cx) / shape.rx;
+    if (Math.abs(u) > 1) continue;
+    const above = shape.cy - shape.ry * top(u);
+    const below = shape.cy + shape.ry * 0.6 * Math.sqrt(Math.max(0, 1 - u * u));
+    for (let y = 0; y < side; y += 1) {
+      const v = (y + 0.5) / side;
+      data[y * side + x] = v >= above && v <= below ? 0.92 : 0.02;
+    }
+  }
+  return { width: side, height: side, data };
+}
+
+const HEAD_SHAPE: Ellipse = { cx: 0.5, cy: 0.45, rx: 0.20, ry: 0.30 };
+
+/** The size half of a fit, with the shape thrown away: what a rescale can do. */
+function sizeOnly(fit: CapFit): CapFit {
+  return { lift: fit.lift, widen: fit.widen, shift: fit.shift };
+}
+
+/** The furthest any vertex of one cap stands from the same vertex of another. */
+function worstGap(a: number[], b: number[]): number {
+  let worst = 0;
+  for (let v = 0; v < CAP_POINTS; v += 1) {
+    const k = v * CAP_STRIDE;
+    const gap = Math.hypot(a[k] - b[k], a[k + 1] - b[k + 1]);
+    if (gap > worst) worst = gap;
+  }
+  return worst;
+}
+
+test('a flat top and a parted crown come out of the chain as different meshes', () => {
+  const flatMask = skylineMask(128, HEAD_SHAPE, skyline(0));
+  const partedMask = skylineMask(128, HEAD_SHAPE, skyline(0.25));
+  const flatHair = hairSilhouette(flatMask, GEOMETRY);
+  const partedHair = hairSilhouette(partedMask, GEOMETRY);
+  assert.ok(flatHair && partedHair, 'both masks trace');
+
+  // The two masks stand the same height and the same width: whatever
+  // tells them apart, it is not their size.
+  const flatBox = extent(flatHair);
+  const partedBox = extent(partedHair);
+  assert.ok(Math.abs(flatBox.minY - partedBox.minY) < 4, 'the same top');
+  assert.ok(Math.abs(flatBox.maxX - flatBox.minX - (partedBox.maxX - partedBox.minX)) < 4, 'the same width');
+
+  const flat = fitHairCap(face(), flatHair, CAP_FIT_DEFAULT);
+  const parted = fitHairCap(face(), partedHair, CAP_FIT_DEFAULT);
+  assert.ok(flat && parted, 'both fit');
+  assert.ok(flat.profile !== undefined, 'the flat top carries a shape');
+  assert.ok(parted.profile !== undefined, 'the parted crown carries a shape');
+  assert.equal(parted.profile.length, CAP_PROFILE.rays);
+
+  // A rescaled dome cannot tell them apart. The shaped cap can.
+  const rescaled = worstGap(
+    buildHeadCap(face(), sizeOnly(flat)),
+    buildHeadCap(face(), sizeOnly(parted)),
+  );
+  const shaped = worstGap(buildHeadCap(face(), flat), buildHeadCap(face(), parted));
+  assert.ok(rescaled < 1, `a rescale draws one cap for both, within ${rescaled.toFixed(2)} points`);
+  assert.ok(shaped > 10, `the shaped caps stand ${shaped.toFixed(1)} points apart`);
 });
 
 /* ---------------------------- the call chain --------------------------- */

@@ -373,6 +373,7 @@ function OrbitFrameView({
         {meshFace !== null ? (
           <StaticHairMesh
             face={meshFace}
+            fit={meshFace.fit}
             width={size}
             height={size}
             strength={THUMB_MESH_STRENGTH}
