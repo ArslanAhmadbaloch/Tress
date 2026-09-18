@@ -1,5 +1,6 @@
 /**
- * The hair scan: one continuous turn in front of the camera.
+ * The hair scan: two beats in front of the camera — turn the head left
+ * and right, then lower it and turn again.
  *
  * This screen orchestrates and draws almost nothing itself. The engine
  * decides what is happening; the tracker smooths the detector; the chrome,
@@ -16,6 +17,14 @@
  * hardware back, a navigation reset — cancels the engine on unmount and
  * deletes the same files. Nothing leaves the device. "Scan again" remounts
  * the scanner under a new key, so nothing carries over between runs.
+ *
+ * ── One choreography, two trackers ────────────────────────────────────
+ * On an iPhone with a TrueDepth camera the preview is ARKit's own view
+ * and the head is followed in 3D; on Android it is VisionCamera with ML
+ * Kit. That choice is made entirely inside `ScannerCamera` — this screen
+ * is handed the same `RawFace` either way, runs the same engine, asks for
+ * the same four regions and writes the same record, so the report, the
+ * plan and the hairstyles are identical on both.
  */
 
 import { useCameraPermissions } from 'expo-camera';
@@ -44,7 +53,6 @@ import {
   TopBar,
   emptyCoverage,
   scanRingBoxFor,
-  type StatusTone,
 } from '@/components/hair-scan';
 import { HairMesh, type HairMeshHandle, type MeshTone } from '@/components/hair-scan/hair-mesh';
 import { LightingPill, useLightingProbe } from '@/components/hair-scan/lighting-probe';
@@ -52,16 +60,23 @@ import { Processing, type ProcessingFrame } from '@/components/hair-scan/process
 import { HairScanReport } from '@/components/hair-scan/report';
 import {
   ScannerCamera,
+  arkitScannerAvailable,
   scannerTrackingPossible,
   type ScannerCameraHandle,
+  type ScannerImplementation,
 } from '@/components/hair-scan/scanner-camera';
+import {
+  scanPhaseFor,
+  scanPhaseIcon,
+  scanPhaseTone,
+} from '@/components/hair-scan/status-pill';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { toPhotoReadings, type AnalysisResult } from '@/features/hair-scan/analysis';
 import { HAIR_SCAN_COPY } from '@/features/hair-scan/copy';
 import {
-  REGION_NEEDED,
+  canStart,
   createScanState,
   orderedFrames,
   reduce,
@@ -69,7 +84,12 @@ import {
   squareOn,
 } from '@/features/hair-scan/engine';
 import { createScanHaptics } from '@/features/hair-scan/haptics';
-import { scanBlock, scanPhotos, type HairScanFrame } from '@/features/hair-scan/result';
+import {
+  ANGLE_OF_TARGET,
+  scanBlock,
+  scanPhotos,
+  type HairScanFrame,
+} from '@/features/hair-scan/result';
 import { usePremium } from '@/features/subscription/provider';
 import {
   createTracker,
@@ -84,7 +104,7 @@ import {
 import type {
   ScanAction,
   ScanEvent,
-  ScanRegion,
+  ScanStage,
   ScanState,
   ScanStatus,
   ScannerState,
@@ -93,7 +113,7 @@ import { deletePhotoFiles, persistCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { hairContent } from '@/features/content/hair-content';
 import { darkColors, iconSize, motion, radius, spacing, useTheme } from '@/theme';
-import { sessionToExtend, type Angle, type PhotoSession } from '@/types/domain';
+import { sessionToExtend, type PhotoSession } from '@/types/domain';
 
 /* ------------------------------- tuning ------------------------------- */
 
@@ -106,6 +126,21 @@ const EXPIRE_TICK_MS = 250;
  * under the oval.
  */
 const PROBE_STILL_DELAY_MS = 900;
+/**
+ * How many times the light meter's still is asked for, and how long it
+ * waits between asks.
+ *
+ * One ask was enough while VisionCamera was the only camera: its preview
+ * is live before this screen has finished its first render. ARKit is not
+ * — a face tracking session takes about a second to bring the camera up,
+ * and a `capture()` before its first frame is honestly refused. A single
+ * latched attempt then left the lighting readout blank for the whole
+ * ready screen on the one platform this build exists for. Three asks a
+ * second apart cover the slowest start seen; nothing is measured twice,
+ * because the first answer clears the need.
+ */
+const PROBE_STILL_TRIES = 3;
+const PROBE_STILL_RETRY_MS = 1000;
 /** The "Scan complete" beat, before the processing screen. */
 const COMPLETE_BEAT_MS = 1600;
 const COMPLETE_BEAT_REDUCED_MS = 600;
@@ -116,39 +151,35 @@ const MASK_ASPECT = 1.32;
 /** Where the oval's centre sits, as a share of the window's height. */
 const MASK_CENTRE_Y = 0.44;
 
-/** Which of the journal's five angles a ring region files under. `up` files nowhere. */
-const ANGLE_OF_REGION: Partial<Record<ScanRegion, Angle>> = {
-  front: 'front',
-  right: 'rightTemple',
-  rightUp: 'rightTemple',
-  rightDown: 'rightTemple',
-  left: 'leftTemple',
-  leftUp: 'leftTemple',
-  leftDown: 'leftTemple',
-  chin: 'top',
-};
-
 /* ---------------------------- view model ----------------------------- */
 
 /** What React draws. Everything else the engine knows stays in the ref. */
 type ViewModel = {
   scanner: ScannerState;
   status: ScanStatus;
+  /** Which beat of the choreography: the ring, the plate and the pill all read it. */
+  stage: ScanStage;
   cue: ScanState['cue'];
   error: ScanState['error'];
   frameCount: number;
-  /** The turn has stalled and the chin band is what is still missing. */
-  chinWanted: boolean;
+  /**
+   * Whether Start is live. The engine owns the condition — a head being
+   * followed, at any distance, at any angle, in any light — and the
+   * screen adds nothing to it. Build 17 added four things and the owner
+   * could not press the button.
+   */
+  startReady: boolean;
 };
 
 function viewOf(state: ScanState): ViewModel {
   return {
     scanner: state.scanner,
     status: state.status,
+    stage: state.stage,
     cue: state.cue,
     error: state.error,
     frameCount: state.frames.length,
-    chinWanted: state.stalled && state.regions.chin < REGION_NEEDED.chin,
+    startReady: canStart(state),
   };
 }
 
@@ -162,12 +193,6 @@ const GOOD_STATUS: ReadonlySet<ScanStatus> = new Set([
   'completing',
   'complete',
 ]);
-
-function toneOf(view: ViewModel): StatusTone {
-  if (GOOD_STATUS.has(view.status)) return 'good';
-  if (view.cue && view.cue !== 'holdStill' && view.cue !== 'perfect') return 'adjust';
-  return 'neutral';
-}
 
 /** Whether this build can follow a head: the native detector, or the simulator's drawn face. */
 function trackable(): boolean {
@@ -325,11 +350,33 @@ function Scanner({
     level: lightLevel,
     status: lightStatus,
   } = useLightingProbe();
+  /*
+    Which tracker is behind the preview. It decides nothing about the
+    choreography — that is one thing on both platforms — only how the
+    light gets measured.
+
+    Not latched, and that is the point. The first answer is this phone
+    and this build; the second, if it comes, is ARKit having failed and
+    ML Kit having taken the screen. A screen that never heard the second
+    answer would keep withholding the probe's frame output from a
+    VisionCamera session that is now running and could use it, and the
+    two components would disagree about which camera is mounted with
+    only one of them right.
+  */
+  const [arkit, setArkit] = useState(arkitScannerAvailable);
+  const onImplementation = useCallback((kind: ScannerImplementation) => {
+    setArkit(kind === 'arkit');
+  }, []);
   // The probe's frame output rides on the camera's session. Built once
   // when the bridge resolves; undefined (not a fresh empty array) before
   // that, so the camera's outputs keep their identity until there is
-  // something to add.
-  const extraOutputs = useMemo(() => (frameOutput ? [frameOutput] : undefined), [frameOutput]);
+  // something to add. On the AR path there is no VisionCamera session to
+  // attach it to, so it is not offered — a frame output hanging off no
+  // camera would sit there reporting nothing.
+  const extraOutputs = useMemo(
+    () => (arkit || !frameOutput ? undefined : [frameOutput]),
+    [arkit, frameOutput],
+  );
 
   /* ------------------------------ engine ------------------------------ */
 
@@ -359,6 +406,13 @@ function Scanner({
   const previewSize = useRef<ViewSize>({ width: 0, height: 0 });
   /** The scan's record of itself — light and tracking over the ticks — for the journal. */
   const tally = useRef({ ticks: 0, faced: 0, lightSum: 0, lightN: 0 });
+  /**
+   * The last stillness read off a frame the detector actually saw. It
+   * stands in while a pose is being held over, so a repeated reading
+   * cannot pass itself off as a head that has stopped moving. See
+   * `onFrame`.
+   */
+  const measuredStillness = useRef(0);
   /** `step`, reachable from the promises it starts. Bound in an effect below. */
   const stepRef = useRef<(action: ScanAction) => void>(() => undefined);
   /**
@@ -454,8 +508,12 @@ function Scanner({
                   id: f.id,
                   uri: f.uri,
                   region: f.region,
-                  angle: ANGLE_OF_REGION[f.region],
-                  label: HAIR_SCAN_COPY.region[f.region],
+                  // The region the engine ASKED this frame for, never the
+                  // ring bin the head happened to be in when the shutter
+                  // fired: those are two different things and only one of
+                  // them says what is in the picture.
+                  angle: ANGLE_OF_TARGET[f.target],
+                  label: HAIR_SCAN_COPY.target[f.target],
                   ...(f.mesh
                     ? { mesh: { still: { width: f.width, height: f.height }, face: f.mesh } }
                     : {}),
@@ -522,17 +580,42 @@ function Scanner({
   const [foreground, setForeground] = useState(true);
 
   const onFrame = useCallback(
-    (raw: RawFace | null, preview: ViewSize) => {
+    (raw: RawFace | null, preview: ViewSize, held: boolean) => {
       const now = Date.now();
       previewSize.current = preview;
       tracker.current = trackFrame(tracker.current, raw, now);
       const face = tracker.current.face;
       mesh.current?.setFace(face);
-      const reading = face ? toEngineReading(face, mask) : null;
+      let reading = face ? toEngineReading(face, mask) : null;
       /*
-        A head in hand, turned away. The engine is still `detecting` —
-        the scan may not start until the face is square on — but the pill
-        should not claim the phone cannot find a face it is following.
+        Stillness, when the pose is a held one.
+
+        ARKit coasts: while the head is low enough that the face is out
+        of sight — the crown beat, which is the one beat the coast exists
+        for — it repeats the last tracked pose so the ring and the mesh
+        have something to run on. A repeated box has travelled nowhere,
+        so the tracker reads perfect stillness off it within about three
+        ticks, and the engine both refuses a capture below STABLE_MIN and
+        makes stability nearly half of a frame's quality. Left alone, the
+        coast would therefore manufacture the very evidence the shutter
+        is waiting for and fire it at a head that may still be turning.
+
+        So a held frame carries forward the last stillness that was
+        actually measured, which is what the tracker itself does when the
+        detector blinks. It claims nothing new in either direction: a
+        head that was still when the face went out of sight can still
+        have its crown photographed, and one that was moving has to be
+        seen again before it can.
+      */
+      if (reading !== null) {
+        if (held) reading = { ...reading, stability: measuredStillness.current };
+        else measuredStillness.current = reading.stability;
+      }
+      /*
+        A head in hand, turned away. Nothing stops the scan starting
+        here — square on is not asked for and has not been since build 17
+        — but while the engine is still `detecting` the pill should not
+        claim the phone cannot find a face it is plainly following.
         React is told only when the answer changes; identical values
         bail out of `setState` without a render.
       */
@@ -541,7 +624,12 @@ function Scanner({
       if (engine.current.scanner === 'scanning') {
         const t = tally.current;
         t.ticks += 1;
-        if (face) t.faced += 1;
+        // The journal's "tracked" share is how much of the run the
+        // detector actually had the head, so a pose being held over —
+        // by the tracker through a blink, or by ARKit's coast — is not
+        // one of those ticks. Counting it would inflate a number whose
+        // only job is to say how well the scan went.
+        if (face && !face.held && !held) t.faced += 1;
         if (lighting !== null) {
           t.lightSum += lighting;
           t.lightN += 1;
@@ -562,8 +650,11 @@ function Scanner({
       if (expired === tracker.current) return;
       tracker.current = expired;
       mesh.current?.setFace(null);
-      // The face is gone, so the pill goes back to looking for one.
+      // The face is gone, so the pill goes back to looking for one, and
+      // the stillness measured off the head that has left the frame
+      // stands for nothing about the next one.
       setFacingAway(false);
+      measuredStillness.current = 0;
       step({ type: 'tick', at: now, face: null, lighting: gateLevel() });
     }, EXPIRE_TICK_MS);
     return () => clearInterval(timer);
@@ -581,16 +672,14 @@ function Scanner({
     a build whose frame processor is alive (`needsStill` is false there
     from the start).
 
-    Not silent yet, and the comment says so rather than the opposite.
-    `needsStill` is true whenever the lighting engine is on its stills
-    fallback, which on an Expo Go build — the build the owner walked — is
-    the expo-camera implementation, and `takePictureAsync` there is
-    called without `shutterSound: false` while `CameraView` keeps
-    `animateShutter` at its default. expo-camera defaults both to true
-    (`Camera.types.d.ts`, `@default true` on each), so that build plays
-    the system shutter and flashes the preview about a second into the
-    ready screen. Both switches live in `scanner-camera.tsx`, which this
-    lane does not own; it is in openIssues.
+    Silent, as of build 18. `needsStill` is true whenever the lighting
+    engine is on its stills fallback, which on an Expo Go build — the
+    build the owner walked — is the expo-camera implementation, and
+    expo-camera defaults both `shutterSound` and `animateShutter` to true
+    (`Camera.types.d.ts`, `@default true` on each). Build 17 therefore
+    played the system shutter and flashed the preview about a second into
+    the ready screen, at somebody who had not pressed anything. Both
+    switches are now off in `scanner-camera.tsx`.
 
     Once, per mount. A camera that refuses the shot leaves the pill as it
     was, which is the honest outcome — a reading was not taken, so none
@@ -601,16 +690,34 @@ function Scanner({
     at once on one camera can have the second rejected, and on this path
     the shot is not quick — it includes a resize.
   */
+  /*
+    The AR path is on the stills road too, and for a plainer reason than
+    a missing bridge: ARKit owns the camera, so the probe's frame output
+    has nothing to ride on and no live frame ever reaches it. The probe
+    itself cannot know that — it only sees that its bridge loaded — so
+    the screen, which chose the camera, says it.
+  */
+  const needsProbeStill = needsStill || (arkit && lightLevel === null);
   const probedLight = useRef(false);
   useEffect(() => {
-    if (!needsStill || scanner !== 'ready' || probedLight.current) return undefined;
+    if (!needsProbeStill || scanner !== 'ready' || probedLight.current) return undefined;
     probedLight.current = true;
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let left = PROBE_STILL_TRIES;
+    const again = () => {
+      left -= 1;
+      if (left > 0) timer = setTimeout(attempt, PROBE_STILL_RETRY_MS);
+    };
+    const attempt = () => {
+      timer = null;
       // The turn may have started in the meantime, and the scan's own
       // frames are the meter's input from then on.
       if (engine.current.scanner !== 'ready') return;
       const shot = camera.current?.takePhoto();
-      if (!shot) return;
+      if (!shot) {
+        again();
+        return;
+      }
       // The scan waits for the camera, not for the measurement, so the
       // promise it queues behind settles with the shutter.
       const done = shot.then(
@@ -624,15 +731,20 @@ function Scanner({
             .catch(() => undefined)
             .finally(() => deletePhotoFiles(filesOf([image])));
         },
-        () => undefined,
+        // A refusal here is almost always a camera that has not produced
+        // its first frame yet, which is a thing that fixes itself.
+        again,
       );
       probeShot.current = done;
       void done.finally(() => {
         if (probeShot.current === done) probeShot.current = null;
       });
-    }, PROBE_STILL_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [needsStill, scanner, sampleStill]);
+    };
+    timer = setTimeout(attempt, PROBE_STILL_DELAY_MS);
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [needsProbeStill, scanner, sampleStill]);
 
   const onCameraError = useCallback(() => {
     step({ type: 'fail', reason: 'cameraFailed', at: Date.now() });
@@ -694,14 +806,14 @@ function Scanner({
   // when the ring is saying everything else, or the completion plate.
   const scanning = scanner === 'scanning';
   const complete = scanner === 'complete';
-  const stalledOnChin = view.chinWanted && (view.cue === 'moveSlowly' || view.cue === 'keepGoing');
-  const cueLine = complete
-    ? null
-    : stalledOnChin
-      ? HAIR_SCAN_COPY.scanning.chin
-      : view.cue
-        ? HAIR_SCAN_COPY.cue[view.cue]
-        : null;
+  /*
+    The engine's own cue, and nothing else. It used to be second-guessed
+    here: when the turn stalled with the chin band missing, the screen
+    substituted a "lower your head" line of its own. The choreography now
+    says that itself — `lowerHead`, then `turnAgain` — so a second voice
+    over the top could only disagree with the first.
+  */
+  const cueLine = complete ? null : view.cue ? HAIR_SCAN_COPY.cue[view.cue] : null;
   const spoken = !cameraLive
     ? null
     : complete
@@ -774,7 +886,7 @@ function Scanner({
           width: f.width,
           height: f.height,
           capturedAt: new Date(f.capturedAt).toISOString(),
-          angle: ANGLE_OF_REGION[f.region],
+          angle: ANGLE_OF_TARGET[f.target],
           ...(roll !== undefined && Number.isFinite(roll)
             ? { pose: { yaw: f.yaw, pitch: f.pitch, roll } }
             : {}),
@@ -941,18 +1053,31 @@ function Scanner({
     : GOOD_STATUS.has(view.status)
       ? 'good'
       : 'neutral';
-  // The completion plate below says it once; the pill goes quiet for the beat.
+  /*
+    The pill's readout. The engine has one status for the whole capture
+    because capturing is one thing to a reducer; to a person it is two,
+    and the stage is which. `scanPhaseFor` makes that one phase, and the
+    phase carries the tone and the glyph — a turn arrow while the head
+    goes left and right, a chevron down while it is lowered — so the two
+    beats are told apart even though the copy has one word for both.
+
+    The completion plate below says it once; the pill goes quiet for the beat.
+  */
+  const phase = scanPhaseFor(view.status, scanning ? view.stage : null);
   const status =
     cameraLive && !complete
       ? {
-          tone: toneOf(view),
+          tone: scanPhaseTone(phase),
+          icon: scanPhaseIcon(phase),
           // "Looking for your face" is only true while there is no face
           // to look at. With one in hand and turned away, the pill asks
           // for the one thing that would move the scan on.
           label:
             view.status === 'detecting' && facingAway
               ? HAIR_SCAN_COPY.facingAway
-              : HAIR_SCAN_COPY.status[view.status],
+              : phase === 'turning' || phase === 'headDown' || phase === 'almost'
+                ? HAIR_SCAN_COPY.phase[phase]
+                : HAIR_SCAN_COPY.status[view.status],
         }
       : null;
 
@@ -967,6 +1092,7 @@ function Scanner({
             onFrame={onFrame}
             onError={onCameraError}
             onTrackingChanged={onTrackingChanged}
+            onImplementation={onImplementation}
             extraOutputs={extraOutputs}
             demoTracking
             sampleSource={sampleFrame}
@@ -981,6 +1107,12 @@ function Scanner({
             coverage={coverage}
             active={scanning || complete}
             complete={complete}
+            /*
+              The beat, so the dial swells as the second one opens and
+              latches what the first one lit. Omitted before Start: a ring
+              at rest is on no beat.
+            */
+            stage={scanning || complete ? view.stage : undefined}
             style={{
               position: 'absolute',
               left: mask.x + mask.width / 2 - ring.width / 2,
@@ -1033,7 +1165,14 @@ function Scanner({
                 </Text>
               </Animated.View>
             ) : (
-              <Guidance cue={cueLine} scanning={scanning} />
+              // The beat is passed rather than read off the sentence, so
+              // the change from "turn left and right" to "lower your
+              // head" rises into place instead of cross-fading.
+              <Guidance
+                cue={cueLine}
+                scanning={scanning}
+                stage={scanning ? view.stage : undefined}
+              />
             )}
             {complete ? (
               <Text variant="subhead" center style={{ color: darkColors.textSecondary }}>
@@ -1043,7 +1182,7 @@ function Scanner({
               <StartButton
                 label={HAIR_SCAN_COPY.ready.cta}
                 hint={HAIR_SCAN_COPY.ready.hint}
-                ready={scanner === 'ready' && view.status === 'ready'}
+                ready={view.startReady}
                 onPress={onStartPress}
                 onActivate={onStart}
               />

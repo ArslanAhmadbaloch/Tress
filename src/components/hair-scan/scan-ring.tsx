@@ -22,11 +22,28 @@
  * screen that masks its video to a box sizes the ring with
  * `scanRingBoxFor(mask)` and centres the two on the same point.
  *
+ * ── Two beats, one dial ────────────────────────────────────────────
+ * The scan is now two movements: the head turns left and right, then it
+ * lowers and turns again. They share this one ring, and the second beat
+ * has to read as the journey continuing rather than as a new screen.
+ * Three things say so, in order of how much of the difference they carry:
+ *
+ *   1. the dial swells once, briefly, at the moment the beat changes —
+ *      the acknowledgement that the first half is banked;
+ *   2. the resting white ticks firm up a further step, so the whole
+ *      instrument reads as further along than it did;
+ *   3. the first beat's fill is latched as a floor under every sector.
+ *
+ * The latch is belt and braces and nothing more, and it is worth saying
+ * plainly: the engine's sectors are already monotonic and it never
+ * clears them at the boundary, so nothing is emptying today and the
+ * latch changes no pixel. It holds if a later reducer decides otherwise.
+ *
  * Completion is one sweep of light around the oval and a settle, then
  * the ring holds green. Under Reduce Motion the end state simply appears.
  */
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import Animated, {
   Easing,
@@ -92,13 +109,25 @@ export function scanRingBoxFor(
   return { width: mask.width + margin * 2, height: mask.height + margin * 2 };
 }
 
-/** How visible the resting white ticks are: waiting, and while scanning. */
+/** How visible the resting white ticks are: waiting, scanning, and on the second beat. */
 const REST_FAR = 0.34;
 const REST_ACTIVE = 0.62;
+const REST_CROWN = 0.74;
+
+/** The second beat's acknowledgement: how far the dial swells, and for how long. */
+const BANK_SCALE = 1.03;
+const BANK_MS = 160;
 
 /** The completion sweep: one circuit, then a fade. */
 const SWEEP_MS = 640;
 const SWEEP_FADE_MS = 320;
+
+/**
+ * Which beat of the scan the ring is drawing. Structurally the engine's
+ * `ScanStage`: the dial does not import the engine, it only needs to
+ * know when the second beat has begun so it can latch the first.
+ */
+export type ScanRingStage = 'sweep' | 'crown';
 
 export type ScanRingProps = {
   /** Box the oval fills. A portrait oval (height > width) sits around a head. */
@@ -118,6 +147,12 @@ export type ScanRingProps = {
   active: boolean;
   /** True once every sector is captured: runs the completion sweep. */
   complete: boolean;
+  /**
+   * The beat the scan is on. Omitted before it starts. Arriving at
+   * `crown` latches whatever the first beat lit, so the second beat adds
+   * to the dial rather than replacing it.
+   */
+  stage?: ScanRingStage;
   /** Length of a resting tick, in points; a lit tick is `SCAN_RING_LIT_SCALE` times this. */
   tickLength?: number;
   /** Stroke of a tick, in points. */
@@ -191,12 +226,34 @@ export function ellipsePerimeter(a: number, b: number): number {
   return Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
 }
 
+/** How firm the white dial sits: waiting, on the first beat, on the second. */
+function restFor(live: boolean, beat: ScanRingStage | undefined): number {
+  if (!live) return REST_FAR;
+  return beat === 'crown' ? REST_CROWN : REST_ACTIVE;
+}
+
+/**
+ * How lit one sector is: the live reading, the fill the first beat left
+ * behind, and the completion settle, whichever is highest.
+ *
+ * A worklet — it is read on the UI thread once per sector per frame —
+ * and it takes no defaults, because a default that reaches a module
+ * constant does not survive the crossing.
+ */
+export function sectorLevel(live: number, held: number, settle: number): number {
+  'worklet';
+  const clamped = live < 0 ? 0 : live > 1 ? 1 : live;
+  const floor = held > settle ? held : settle;
+  return clamped > floor ? clamped : floor;
+}
+
 export function ScanRing({
   width,
   height,
   coverage,
   active,
   complete,
+  stage,
   tickLength = SCAN_RING_TICK_LENGTH,
   stroke = 2.5,
   style,
@@ -212,12 +269,28 @@ export function ScanRing({
   const sectors = useMemo(() => layoutTicks(cx, cy, a, b, tickLength), [cx, cy, a, b, tickLength]);
   const perimeter = useMemo(() => ellipsePerimeter(a, b), [a, b]);
 
-  /* The white dial firming up when the machine is live. */
-  const rest = useSharedValue(active ? REST_ACTIVE : REST_FAR);
+  /* The white dial firming up when the machine is live, and again on the second beat. */
+  const rest = useSharedValue(restFor(active, stage));
   useEffect(() => {
-    const target = active ? REST_ACTIVE : REST_FAR;
+    const target = restFor(active, stage);
     rest.set(reduceMotion ? target : withTiming(target, { duration: motion.duration.slow }));
-  }, [active, reduceMotion, rest]);
+  }, [active, stage, reduceMotion, rest]);
+
+  /*
+   * What the first beat left on the dial. Latched the moment the second
+   * beat begins — one copy of 24 numbers, once per scan — and cleared
+   * whenever the ring goes back to the first beat, which is a scan
+   * starting over rather than continuing. Belt and braces: see the note
+   * at the top of the file about what this does and does not change.
+   */
+  const held = useSharedValue<number[]>(emptyCoverage());
+  useEffect(() => {
+    if (stage !== 'crown') {
+      held.set(emptyCoverage());
+      return;
+    }
+    held.set(coverage.get().map((level) => (level < 0 ? 0 : level > 1 ? 1 : level)));
+  }, [stage, coverage, held]);
 
   /* Completion: every sector held green, one sweep of light, a settle. */
   const settle = useSharedValue(complete ? 1 : 0);
@@ -252,6 +325,28 @@ export function ScanRing({
       ),
     );
   }, [complete, reduceMotion, settle, sweepT, sweepOpacity, pulse]);
+
+  /*
+   * The second beat arriving: one short swell of the whole dial, so the
+   * change of movement is something the eye catches from the corner of
+   * itself while the head is turning. It shares the completion's value —
+   * the two can never overlap, one ends the scan and the other is in the
+   * middle of it — and it is skipped entirely under Reduce Motion, where
+   * the firmer resting ticks carry the beat change on their own. It runs
+   * on the *change* into the second beat, never on a mount that starts
+   * there: the instruction sheet's third tile is a ring standing still
+   * on `crown`, and a tile that twitched as the sheet opened would be a
+   * drawing pretending to be alive.
+   */
+  const beatWas = useRef(stage);
+  useEffect(() => {
+    const from = beatWas.current;
+    beatWas.current = stage;
+    if (stage !== 'crown' || from === 'crown' || complete || reduceMotion) return;
+    pulse.set(
+      withSequence(withTiming(BANK_SCALE, { duration: BANK_MS }), withSpring(1, motion.spring.gentle)),
+    );
+  }, [stage, complete, reduceMotion, pulse]);
 
   const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.get() }] }));
   const restProps = useAnimatedProps(() => ({ opacity: rest.get() }));
@@ -293,6 +388,7 @@ export function ScanRing({
             ticks={ticks}
             stroke={stroke}
             coverage={coverage}
+            held={held}
             settle={settle}
           />
         ))}
@@ -334,20 +430,20 @@ function Sector({
   ticks,
   stroke,
   coverage,
+  held,
   settle,
 }: {
   index: number;
   ticks: Tick[];
   stroke: number;
   coverage: SharedValue<number[]>;
+  /** What the first beat left lit here, latched when the second began. */
+  held: SharedValue<number[]>;
   settle: SharedValue<number>;
 }) {
-  const animated = useAnimatedProps(() => {
-    const raw = coverage.get()[index] ?? 0;
-    const level = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-    const held = settle.get();
-    return { opacity: level > held ? level : held };
-  });
+  const animated = useAnimatedProps(() => ({
+    opacity: sectorLevel(coverage.get()[index] ?? 0, held.get()[index] ?? 0, settle.get()),
+  }));
 
   return (
     <AnimatedG animatedProps={animated}>

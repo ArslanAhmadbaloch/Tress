@@ -1,0 +1,7 @@
+{
+  "name": "hair-face-tracking",
+  "version": "1.0.0",
+  "description": "ARKit face tracking for the Tress hair scan. iOS only; every other platform resolves to an unavailable stub.",
+  "main": "index.ts",
+  "private": true
+}

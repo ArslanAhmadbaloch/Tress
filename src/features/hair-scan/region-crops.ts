@@ -25,6 +25,33 @@
  * turned one alike. `leftTemple` is therefore always the image-left
  * corner beside the face box, and `rightTemple` the image-right one.
  *
+ * ── Two detectors, two boxes ──────────────────────────────────────────
+ * This is the one place where the platforms are NOT the same, and an
+ * earlier draft of this comment claimed they were. They are not.
+ *
+ * On Android the face box and the eyebrow contours both come from ML
+ * Kit, and the box runs from about the brow to the chin. On an iPhone
+ * the box is the extent of ARKit's face rim, and `modules/hair-face-
+ * tracking/src/points.ts` is explicit about where that rim starts: ARKit's
+ * face geometry is a mask reaching up to the UPPER FOREHEAD, so slot 0
+ * of the rim is the top of the forehead, not the brow and not the top of
+ * the head. The ARKit box top therefore sits higher on a head than the
+ * ML Kit one — by roughly the height of a forehead. There are no ML Kit
+ * contours on that path either, so `browLine` finds none and the
+ * hairline band closes on the proportional brow below.
+ *
+ * Every rectangle here is measured from the box top, so every rectangle
+ * sits a little higher on an iPhone than on an Android phone: the
+ * hairline band reaches further into the hair, and the temple boxes sit
+ * nearer the temples' upper end. Both are still the place they are
+ * named — a hairline band that starts above the hairline still contains
+ * it — and one record is still written either way, which is what keeps
+ * the report platform-blind. What cannot be claimed is that the numbers
+ * below were fitted to both: `CROP_GEOMETRY.hairline.above` was chosen
+ * against an ML Kit box, and nobody has yet held an iPhone up and looked
+ * at where the band lands. That check is in this build's deviceOnly list,
+ * and this comment is not to be softened until somebody has done it.
+ *
  * ── The fallback ──────────────────────────────────────────────────────
  * A photograph with no stored regions — a frame the tracker had no face
  * for, a build without the detector, a photograph from before regions
@@ -37,14 +64,40 @@
 
 import type { Photo, PhotoRegion, PhotoRegionRect } from '@/types/domain';
 
-import { meshInBox } from './engine';
-import type { FrameMesh, MeshFace, Size } from './types';
+import { REQUIRED_REGIONS, meshInBox } from './engine';
+import type { FrameMesh, MeshFace, ScanTarget, Size } from './types';
 
 /** A rectangle in fractions of the image; `PhotoRegionRect` under its report name. */
 export type RegionRect = PhotoRegionRect;
 
+/**
+ * The four places the scan itself sets out to photograph, in the order
+ * the choreography reaches them: the front hairline and both temples
+ * while the head turns, then the crown once it is lowered.
+ *
+ * It is the engine's own list of wanted regions rather than a second
+ * copy of it — every `ScanTarget` is also a `PhotoRegion`, and the day
+ * that stops being true this assignment is a compile error rather than a
+ * report quietly cropping a place the scan never went to.
+ */
+export const SCAN_REGIONS: readonly PhotoRegion[] = REQUIRED_REGIONS;
+
+/**
+ * A place a crop can be taken: every region the scan photographs, plus
+ * the journal's own `top`, which is what a crown frame is filed under
+ * (see `ANGLE_OF_TARGET` in result.ts).
+ *
+ * Written as the scan's own list plus one rather than as five strings,
+ * so the report's places and the scan's places cannot drift apart: this
+ * type is the return type of `faceRegionRects` below, and that function
+ * builds a rectangle for every member, so adding a `ScanTarget` the
+ * geometry has no rectangle for is a compile error in production code
+ * rather than a row the report renders empty.
+ */
+export type ReportRegion = ScanTarget | 'top';
+
 /** The five places the report crops, in the order the rows show them. */
-export const REPORT_REGIONS: readonly PhotoRegion[] = ['hairline', 'leftTemple', 'rightTemple', 'crown', 'top'];
+export const REPORT_REGIONS: readonly ReportRegion[] = [...REQUIRED_REGIONS, 'top'];
 
 /**
  * A crop the report draws: which image, how big it is, and the rectangle
@@ -121,7 +174,7 @@ function browLine(face: MeshFace): number | null {
  *
  * Empty when the face has no size — a box of zero width places nothing.
  */
-export function faceRegionRects(face: MeshFace, box: Size): Partial<Record<PhotoRegion, RegionRect>> {
+export function faceRegionRects(face: MeshFace, box: Size): Partial<Record<ReportRegion, RegionRect>> {
   if (!(face.width > 0) || !(face.height > 0) || !(box.width > 0) || !(box.height > 0)) return {};
 
   const { cx, cy, width, height } = face;
@@ -159,7 +212,26 @@ export function faceRegionRects(face: MeshFace, box: Size): Partial<Record<Photo
     h: g.top.height * height,
   });
 
-  return { hairline, leftTemple, rightTemple, top: topBand, crown: topBand };
+  /*
+    Every place the report can crop, named one by one and typed as a
+    whole record rather than a partial one: a region added to the scan
+    with no rectangle here stops the build, which is the only way a list
+    in one file and a geometry in another stay the same list.
+
+    `crown` and `top` are deliberately the same band. A crown frame is
+    the head tipped down and photographed from the front, so the top of
+    the head IS what is in the upper part of the picture; the journal
+    keeps two names for it because `crown` there means the back of a
+    head, which this scan never sees.
+  */
+  const rects: Record<ReportRegion, RegionRect> = {
+    hairline,
+    leftTemple,
+    rightTemple,
+    crown: topBand,
+    top: topBand,
+  };
+  return rects;
 }
 
 /**
@@ -171,7 +243,7 @@ export function faceRegionRects(face: MeshFace, box: Size): Partial<Record<Photo
  * wireframe by — so the report's crops and the mesh on the still agree.
  * Empty when the mesh or the still has no size.
  */
-export function regionRectsFor(mesh: FrameMesh, still: Size): Partial<Record<PhotoRegion, RegionRect>> {
+export function regionRectsFor(mesh: FrameMesh, still: Size): Partial<Record<ReportRegion, RegionRect>> {
   if (!(mesh.bounds.width > 0) || !(mesh.bounds.height > 0)) return {};
   if (!(still.width > 0) || !(still.height > 0)) return {};
   if (!(mesh.viewAspect > 0) || !Number.isFinite(mesh.viewAspect)) return {};

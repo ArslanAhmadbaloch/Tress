@@ -2,13 +2,24 @@
  * The instruction sheet — three steps, one scan.
  *
  * A pale sheet rising over the darkened ground before the camera opens.
- * It says three things and stops: take glasses off and find light, hold
- * the head straight and press Start, then turn slowly until the ring
- * closes. Each row carries a portrait thumbnail of the scanner in that
- * state — drawn from the scanner's own parts until frames captured on a
- * device replace them (see `instruction-thumbs.tsx`) — with its number
- * on a dark disc at the tile's corner, so the eye reads the three as one
- * sequence rather than as a list of requirements.
+ * It says three things and stops, and the three are the scan's own
+ * shape: take the glasses off and find light; press Start and turn the
+ * head slowly left and right; then lower the head and turn again. The
+ * words are the scan copy's — this file never writes its own — and each
+ * row carries a portrait thumbnail of the scanner in that state, drawn
+ * from the scanner's own parts until frames captured on a device replace
+ * them (see `instruction-thumbs.tsx`), with its number on a dark disc at
+ * the tile's corner, so the eye reads the three as one sequence rather
+ * than as a list of requirements.
+ *
+ * Two slots wait for real device material: `thumbnails` for stills, and
+ * `footage` for the short silent loops the owner will film. The stills
+ * are live — hand one over and it replaces that row's drawing. The
+ * footage is a shape, not a feature: it reaches the tile and stops
+ * there, because this build has no video player in it (see the note in
+ * `instruction-thumbs.tsx` for the few lines that turn it on). A step
+ * left out of either keeps its drawing, so the three can be swapped in
+ * one at a time as they are captured.
  *
  * It rises on the sheet spring the rest of the app uses — settled rather
  * than bounced — and leaves the same way. Under Reduce Motion it appears.
@@ -46,6 +57,17 @@ export type InstructionThumbnails = Partial<
   Record<InstructionStep, NonNullable<InstructionThumbProps['image']>>
 >;
 
+/**
+ * Short silent loops of the scanner, one per step, filmed on a device.
+ * Carried through to the tiles now so the footage has somewhere to
+ * arrive; the tile's own note says what still has to be added before one
+ * plays, and until then a step with footage and no still keeps its
+ * drawing.
+ */
+export type InstructionFootage = Partial<
+  Record<InstructionStep, NonNullable<InstructionThumbProps['video']>>
+>;
+
 export type InstructionSheetProps = {
   /** Mounted while true; the sheet slides out when it turns false. */
   visible: boolean;
@@ -53,6 +75,8 @@ export type InstructionSheetProps = {
   onClose: () => void;
   /** See `InstructionThumbnails`. Omit to draw every tile. */
   thumbnails?: InstructionThumbnails;
+  /** See `InstructionFootage`. Omit until the loops are filmed. */
+  footage?: InstructionFootage;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -66,6 +90,7 @@ export function InstructionSheet({
   onContinue,
   onClose,
   thumbnails,
+  footage,
   style,
 }: InstructionSheetProps) {
   const { colors } = useTheme();
@@ -136,7 +161,11 @@ export function InstructionSheet({
                 accessibilityLabel={`${step + 1}. ${title}. ${body}`}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
                 <View style={{ marginLeft: spacing.sm }}>
-                  <InstructionThumb step={step} image={thumbnails?.[step]} />
+                  <InstructionThumb
+                    step={step}
+                    image={thumbnails?.[step]}
+                    video={footage?.[step]}
+                  />
                   <View
                     style={{
                       position: 'absolute',

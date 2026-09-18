@@ -4,11 +4,12 @@
  * It is what makes the scan read as an instrument rather than a camera.
  * Thin translucent lines — meridians from the crown down to the eyebrow
  * line, latitude rings between, wrapping past the temples to the ears —
- * following the person at frame rate, lit by a beam that sweeps the
- * dome while the scan runs. There is nothing on the face: the eyes, the
- * nose and the mouth are left alone, because the scan is not looking at
- * them. Never a filter: nothing here is opaque, nothing is coloured like
- * a costume, and the lines are a hair wide.
+ * following the person at frame rate, lit by a scan line that sweeps up
+ * and down the dome while the scan runs and by flicks that twinkle over
+ * it. There is nothing on the face: the eyes, the nose and the mouth
+ * are left alone, because the scan is not looking at them. Never a
+ * filter: nothing here is opaque, nothing is coloured like a costume,
+ * and the lines are a hair wide.
  *
  * ── How it moves ──────────────────────────────────────────────────────
  * Faces arrive on the JS thread at the detector's rate, fifteen to
@@ -21,9 +22,19 @@
  * happens per frame, and the screen above never re-renders for a face.
  *
  * The cap turns with the head. Every vertex carries how much it faces
- * the camera, so as the head turns the near side is drawn full and the
- * side that has turned away fades: the temple facing the phone is where
- * the eye goes, which is where the scan is looking.
+ * the camera, and that is what gives the flat drawing its depth: lines
+ * square to the phone are drawn wider and brighter, lines at the edge
+ * of the head are thinner, and what has turned away is barely there at
+ * all. So the temple facing the phone is where the eye goes, which is
+ * where the scan is looking.
+ *
+ * ── The lights ────────────────────────────────────────────────────────
+ * Two things move over the cap while the scan runs. The scan line is a
+ * soft band around a bright core that sweeps from the brow to the crown
+ * and back, read between the cap's own rings so it bends with the head
+ * rather than crossing the screen. The twinkles are star-like flicks
+ * that light on one vertex, fade, and light on another; they are dimmed
+ * by facing, so they gather on the side of the head the phone sees.
  *
  * ── The fill ──────────────────────────────────────────────────────────
  * The screen hands over the engine's coverage — the same twenty-four
@@ -34,22 +45,23 @@
  * the ring. It is a picture of where the head has been pointed, not of
  * anything on the head.
  *
- * Reduce Motion takes the glide, the beam and the lit points away and
- * leaves the cap where the head is. Following a head is tracking, not
+ * Reduce Motion takes the glide, the scan line and the lit points away
+ * and leaves the cap where the head is. Following a head is tracking, not
  * animation; it stays. So does the fill: it is state, as the ring's is.
  *
  * ── The still ─────────────────────────────────────────────────────────
  * `StaticHairMesh`, at the bottom, is the same cap held on a
  * photograph: built once from a face already laid out in the picture's
  * box (see `meshInBox` in the engine), drawn as plain paths with no
- * glide, no beam and nothing to follow. It is what the processing
+ * glide, no scan line and nothing to follow. It is what the processing
  * screen puts over the captured still, so the instrument the camera
  * showed is the one the pass is seen to work on.
  *
  * ── What it is not ────────────────────────────────────────────────────
- * The cap is geometry extrapolated from the face oval and the brow. It
- * is where the scan looks, not a measurement of what is there. The mesh
- * knows where the head is; it does not know what is on it.
+ * The cap is geometry: lofted from a tracked 3D face where the phone
+ * has one, extrapolated from the face oval and the brow where it does
+ * not. It is where the scan looks, not a measurement of what is there.
+ * The mesh knows where the head is; it does not know what is on it.
  */
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, type Ref } from 'react';
@@ -81,10 +93,12 @@ import {
   CAP_SECTOR_OF,
   CAP_SITES,
   CAP_STRIDE,
+  CAP_VERTICES,
   buildHeadCap,
   capIndex,
+  type CapMesh,
 } from '@/features/hair-scan/head-cap';
-import type { TrackedFace } from '@/features/hair-scan/tracking';
+import type { FaceSource, TrackedFace } from '@/features/hair-scan/tracking';
 import type { MeshFace } from '@/features/hair-scan/types';
 import { darkColors, motion, useTheme } from '@/theme';
 
@@ -99,7 +113,7 @@ const AnimatedG = Animated.createAnimatedComponent(G);
  *   good     — a breath of sage: the head is where the scan wants it.
  *   complete — the same sage, held: the scan has what it needs. The
  *              screen turns `scanning` off at the same moment, which is
- *              what stops the beam.
+ *              what stops the scan line.
  */
 export type MeshTone = 'neutral' | 'good' | 'complete';
 
@@ -113,7 +127,7 @@ export type HairMeshHandle = {
 
 export type HairMeshProps = {
   ref?: Ref<HairMeshHandle>;
-  /** Runs the scan effects: the beam over the cap and the lit points on the hairline. */
+  /** Runs the scan effects: the line sweeping the cap, the twinkles and the lit points. */
   scanning: boolean;
   tone?: MeshTone;
   /**
@@ -132,7 +146,7 @@ const GLIDE_TAU_MS = 48;
 /** Closer than this, in points, and the glide snaps and goes quiet. */
 const SNAP_EPS = 0.05;
 
-/** One sweep of the beam, brow to crown, before it turns back. */
+/** One sweep of the scan line, brow to crown, before it turns back. */
 const BEAM_MS = 2400;
 
 /** How long each lit point takes to bloom and fade. */
@@ -147,9 +161,17 @@ const POINT_COUNT = 6;
  */
 const BLOOM = { core: { min: 1.2, max: 4.2 }, halo: { min: 3, max: 12, opacity: 0.28 } };
 
-/** The finer flecks that drift over the cap while the scan looks: a fast twinkle. */
-const SPECKLE_MS = 900;
-const SPECKLE = { r: 1.1, floor: 0.3 };
+/**
+ * The twinkles: small star-like flicks that light for a moment on one
+ * vertex of the cap, fade, and light again somewhere else. Several are
+ * alive at once, each on its own clock, and each is dimmed by how much
+ * its vertex faces the camera — so they gather on the side of the head
+ * the phone can see and nothing sparkles round the back.
+ */
+const TWINKLE_COUNT = 10;
+const TWINKLE_MS = 1150;
+/** A flick's arms: the long pair across, the short pair on the diagonal. */
+const TWINKLE = { arm: 4.2, cross: 0.42, width: 1 };
 
 /**
  * Line weights and lights, by region. The cap is dense — a cell is a few
@@ -159,15 +181,20 @@ const SPECKLE = { r: 1.1, floor: 0.3 };
  * that has turned away is the faintest.
  */
 const GRID = { width: 0.7, opacity: 0.4 };
-const BAND = { width: 0.85, opacity: 0.6 };
-const FAR = { width: 0.6, opacity: 0.14 };
+const NEAR = { width: 0.85, opacity: 0.6 };
+const BAND = { width: 0.95, opacity: 0.75 };
+const FAR = { width: 0.55, opacity: 0.12 };
 /** The fill: three steps of the accent as a sector's coverage climbs. */
 const TINT = { width: 0.9, opacity: [0.45, 0.7, 0.95] as const, steps: [0.2, 0.55, 0.9] as const };
+/** The scan line: a soft band around a bright core, three strokes of one path. */
 const BEAM_CORE = { width: 1.6, opacity: 0.85 };
-const BEAM_GLOW = { width: 11, opacity: 0.2 };
+const BEAM_BAND = { width: 4.5, opacity: 0.32 };
+const BEAM_GLOW = { width: 13, opacity: 0.18 };
 
 /** A line whose ends face the camera less than this, on average, has turned away. */
 const FAR_FACING = 0.03;
+/** A line whose ends face the camera more than this is drawn as the near side. */
+const NEAR_FACING = 0.5;
 
 /** How far towards sage the lines go when the tone is good. All the way reads as a costume. */
 const TONE_MIX = 0.65;
@@ -177,60 +204,33 @@ const TONE_MIX = 0.65;
 const ZERO: number[] = new Array<number>(CAP_LENGTH).fill(0);
 
 const POINT_SLOTS = Array.from({ length: POINT_COUNT }, (_, i) => i);
+const TWINKLE_SLOTS = Array.from({ length: TWINKLE_COUNT }, (_, i) => i);
 
 /**
  * The paths a cap is drawn as, by index into the array the builder
- * returns: what faces away, the grid, the band, and the three steps of
- * the fill.
+ * returns: what faces away, the grid, the side of the dome turned
+ * towards the phone, the hairline band, and the three steps of the fill.
+ *
+ * ── What a frame costs ────────────────────────────────────────────────
+ * The cap is 191 vertices: ten rings of nineteen, and a pole. Its rings
+ * are 10 × 18 = 180 segments and its meridians 19 × 10 = 190, so 370
+ * segments are walked once per drawn frame and appended to whichever of
+ * these seven strings each belongs in — the same walk, over the same
+ * count, as before the near side, the twinkles and the scan line
+ * arrived; none of them added a segment. Runs
+ * in the same bucket share a subpath, so a ring crosses into a new one
+ * only where the drawing actually changes — a handful of extra `M`s per
+ * ring, not one per segment. The whole cap is therefore seven long
+ * paths, the scan line one more (three strokes of it), and the lights
+ * on top are ten flicks and six blooms: thirty-two animated nodes, the
+ * same count this drew before the near side and the twinkles arrived.
  */
 const PATH_FAR = 0;
 const PATH_GRID = 1;
-const PATH_BAND = 2;
-const PATH_TINT = 3;
+const PATH_NEAR = 2;
+const PATH_BAND = 3;
+const PATH_TINT = 4;
 const PATH_COUNT = PATH_TINT + TINT.steps.length;
-
-/**
- * Where the flecks sit: a fixed scatter over the cap's interior, each
- * one a fraction of the way across a cell so it lands between the lines,
- * with its own phase so they twinkle out of step. Fixed, so the pattern
- * is the same on every phone and there is nothing random on the UI thread.
- */
-type Speckle = {
-  /** The cell's four corners as offsets into the flat cap, worked out here, not on the UI thread. */
-  a: number;
-  b: number;
-  c: number;
-  d: number;
-  u: number;
-  v: number;
-  phase: number;
-};
-
-const SPECKLES: Speckle[] = (() => {
-  const out: Speckle[] = [];
-  const count = 12;
-  // The interior: rows above the band, columns that face the camera square on.
-  const firstRow = 2;
-  const lastRow = CAP.rows - 2;
-  const firstCol = CAP.templeCols + 1;
-  const lastCol = CAP.cols - CAP.templeCols - 2;
-  for (let i = 0; i < count; i += 1) {
-    // Low-discrepancy scatter: the golden ratio walks the rows, a second
-    // irrational the columns, so the flecks spread rather than cluster.
-    const row = firstRow + Math.floor(((i * 0.618034) % 1) * (lastRow - firstRow));
-    const col = firstCol + Math.floor(((i * 0.414214) % 1) * (lastCol - firstCol));
-    out.push({
-      a: capIndex(row, col) * CAP_STRIDE,
-      b: capIndex(row, col + 1) * CAP_STRIDE,
-      c: capIndex(row + 1, col) * CAP_STRIDE,
-      d: capIndex(row + 1, col + 1) * CAP_STRIDE,
-      u: (i * 0.7548777) % 1,
-      v: (i * 0.5698403) % 1,
-      phase: (i * 0.3247) % 1,
-    });
-  }
-  return out;
-})();
 
 /* --------------------------- path building (UI) -------------------------- */
 
@@ -258,7 +258,8 @@ function pathOf(pts: number[], cover: number[] | null, mean: number, a: number, 
   for (let step = TINT.steps.length - 1; step >= 0; step -= 1) {
     if (tint >= TINT.steps[step]) return PATH_TINT + step;
   }
-  return CAP_BAND[a] && CAP_BAND[b] ? PATH_BAND : PATH_GRID;
+  if (CAP_BAND[a] && CAP_BAND[b]) return PATH_BAND;
+  return facing > NEAR_FACING ? PATH_NEAR : PATH_GRID;
 }
 
 /**
@@ -331,6 +332,22 @@ function beamPath(pts: number[], position: number): string {
     open = true;
   }
   return d;
+}
+
+/**
+ * One flick: a four-pointed star drawn as two crossing strokes, the
+ * long pair across and the short pair on the diagonal, so it reads as a
+ * twinkle rather than a dot. Four subpaths, eight points.
+ */
+function starPath(x: number, y: number, arm: number): string {
+  'worklet';
+  const d = arm * TWINKLE.cross;
+  return (
+    'M' + num(x - arm) + ' ' + num(y) + 'L' + num(x + arm) + ' ' + num(y) +
+    'M' + num(x) + ' ' + num(y - arm) + 'L' + num(x) + ' ' + num(y + arm) +
+    'M' + num(x - d) + ' ' + num(y - d) + 'L' + num(x + d) + ' ' + num(y + d) +
+    'M' + num(x - d) + ' ' + num(y + d) + 'L' + num(x + d) + ' ' + num(y - d)
+  );
 }
 
 /* ------------------------------- component ------------------------------- */
@@ -468,6 +485,7 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
 
   const far = useAnimatedProps(() => ({ d: paths.get()[PATH_FAR], stroke: stroke.get() }));
   const grid = useAnimatedProps(() => ({ d: paths.get()[PATH_GRID], stroke: stroke.get() }));
+  const near = useAnimatedProps(() => ({ d: paths.get()[PATH_NEAR], stroke: stroke.get() }));
   const band = useAnimatedProps(() => ({ d: paths.get()[PATH_BAND], stroke: stroke.get() }));
   const tint0 = useAnimatedProps(() => ({ d: paths.get()[PATH_TINT] }));
   const tint1 = useAnimatedProps(() => ({ d: paths.get()[PATH_TINT + 1] }));
@@ -478,6 +496,10 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
   const beamCore = useAnimatedProps(() => ({
     d: beamD.get(),
     opacity: BEAM_CORE.opacity * beamStrength.get(),
+  }));
+  const beamBand = useAnimatedProps(() => ({
+    d: beamD.get(),
+    opacity: BEAM_BAND.opacity * beamStrength.get(),
   }));
   const beamGlow = useAnimatedProps(() => ({
     d: beamD.get(),
@@ -504,6 +526,14 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
           fill="none"
           strokeWidth={GRID.width}
           strokeOpacity={GRID.opacity}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <AnimatedPath
+          animatedProps={near}
+          fill="none"
+          strokeWidth={NEAR.width}
+          strokeOpacity={NEAR.opacity}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
@@ -551,6 +581,14 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
           strokeLinejoin="round"
         />
         <AnimatedPath
+          animatedProps={beamBand}
+          fill="none"
+          stroke={sage}
+          strokeWidth={BEAM_BAND.width}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <AnimatedPath
           animatedProps={beamCore}
           fill="none"
           stroke={white}
@@ -558,10 +596,10 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-        {SPECKLES.map((speckle, i) => (
-          <SpecklePoint
-            key={i}
-            speckle={speckle}
+        {TWINKLE_SLOTS.map((slot) => (
+          <TwinklePoint
+            key={slot}
+            slot={slot}
             current={current}
             clock={clock}
             strength={beamStrength}
@@ -636,28 +674,38 @@ function AnalysisPoint({ slot, current, clock, strength, color }: PointProps & {
 }
 
 /**
- * One fleck over the cap: a tiny point between the lines that twinkles
- * while the scan looks, placed by bilinear interpolation inside its cell
- * so it rides the dome with the cap, and dimmed with the cell as it
- * turns away.
+ * One twinkle: a star-like flick that lights on a vertex of the cap for
+ * a moment, fades, and lights again on another.
+ *
+ * Every slot walks the same fixed sequence of vertices at its own
+ * offset, so several are alive at once and the pattern is the same on
+ * every phone — nothing random runs on the UI thread. A vertex that has
+ * turned away from the camera is dark, which is what gathers the flicks
+ * on the side of the head the phone can see.
  */
-function SpecklePoint({ speckle, current, clock, strength, color }: PointProps & { speckle: Speckle }) {
+function TwinklePoint({ slot, current, clock, strength, color }: PointProps & { slot: number }) {
   const props = useAnimatedProps(() => {
     const pts = current.get();
-    const { a, b, c, d, u, v } = speckle;
-    const top = { x: pts[a] + (pts[b] - pts[a]) * u, y: pts[a + 1] + (pts[b + 1] - pts[a + 1]) * u };
-    const bottom = { x: pts[c] + (pts[d] - pts[c]) * u, y: pts[c + 1] + (pts[d + 1] - pts[c + 1]) * u };
-    const facing = Math.max(0, Math.min(1, ((pts[a + 2] + pts[d + 2]) / 2) * 2));
-    const phase = (clock.get() / SPECKLE_MS + speckle.phase) % 1;
-    const twinkle = Math.sin(Math.PI * phase);
+    const t = clock.get() + (slot * TWINKLE_MS) / TWINKLE_COUNT;
+    const generation = Math.floor(t / TWINKLE_MS);
+    const phase = (t - generation * TWINKLE_MS) / TWINKLE_MS;
+    const v = CAP_VERTICES[(generation * 37 + slot * 61) % CAP_VERTICES.length] * CAP_STRIDE;
+    const facing = Math.max(0, Math.min(1, pts[v + 2] * 1.8));
+    const lit = Math.sin(Math.PI * phase);
     return {
-      cx: top.x + (bottom.x - top.x) * v,
-      cy: top.y + (bottom.y - top.y) * v,
-      r: SPECKLE.r,
-      opacity: (SPECKLE.floor + (1 - SPECKLE.floor) * twinkle * twinkle) * strength.get() * facing,
+      d: starPath(pts[v], pts[v + 1], TWINKLE.arm * (0.45 + 0.55 * lit)),
+      opacity: lit * lit * facing * strength.get(),
     };
   });
-  return <AnimatedCircle animatedProps={props} fill={color} />;
+  return (
+    <AnimatedPath
+      animatedProps={props}
+      fill="none"
+      stroke={color}
+      strokeWidth={TWINKLE.width}
+      strokeLinecap="round"
+    />
+  );
 }
 
 /* ------------------------------ the still ------------------------------- */
@@ -684,9 +732,27 @@ const STILL_SITES: readonly number[] = (() => {
   return out;
 })();
 
+/**
+ * A face laid out in a still's own box, and — when the frame that took
+ * the still had one — the tracked 3D mesh it had at the shutter.
+ *
+ * The mesh matters because the two roads the cap is built from do not
+ * put a head in the same place. A phone that tracks in 3D draws the live
+ * cap off its anchor; if the still it hands on carries only contours,
+ * the processing screen and the report hero draw a cap lofted from an
+ * oval instead, and the owner sees two different meshes on one head in
+ * one walk through the scan. Carrying the mesh through keeps them one
+ * shape. The still's points must be in the same box the face is in.
+ */
+export type StaticMeshFace = MeshFace & {
+  mesh?: CapMesh;
+  hasMesh?: boolean;
+  source?: FaceSource;
+};
+
 export type StaticHairMeshProps = {
   /** The face, already in the points of the box this is drawn in. */
-  face: MeshFace;
+  face: StaticMeshFace;
   width: number;
   height: number;
   tone?: MeshTone;
@@ -706,13 +772,15 @@ export type StaticHairMeshProps = {
 /**
  * The cap held on a still.
  *
- * Built once per face and drawn as plain paths: no glide, no beam, no
- * tracking, no fill. A still that carries the head's angles from its
+ * Built once per face and drawn as plain paths: no glide, no scan line,
+ * no tracking, no fill. A still that carries the head's angles from its
  * shutter gets a cap turned the same way, so a frame taken from the
  * side shows a cap seen from the side; one without them is square on.
- * It always draws on a photograph inside the dark instrument, so its
- * colours come from `darkColors` whichever appearance the app is in, as
- * the processing screen's do.
+ * A still that carries the tracked mesh from its shutter as well gets
+ * the same cap the camera drew, rather than one lofted from an oval —
+ * see `StaticMeshFace`. It always draws on a photograph inside the dark
+ * instrument, so its colours come from `darkColors` whichever appearance
+ * the app is in, as the processing screen's do.
  */
 export function StaticHairMesh({
   face,
@@ -731,12 +799,15 @@ export function StaticHairMesh({
 
   const paths = useMemo(() => {
     const pts = buildHeadCap(
-      face.pose === undefined ? face : { ...face, yaw: face.pose.yaw, pitch: face.pose.pitch },
+      face.pose === undefined
+        ? face
+        : { ...face, yaw: face.pose.yaw, pitch: face.pose.pitch, roll: face.pose.roll },
     );
     const built = capPaths(pts, null);
     return {
       far: built[PATH_FAR],
       grid: built[PATH_GRID],
+      near: built[PATH_NEAR],
       band: built[PATH_BAND],
       sites: STILL_SITES.map((site) => ({
         x: pts[site * CAP_STRIDE] ?? 0,
@@ -783,6 +854,15 @@ export function StaticHairMesh({
         stroke={stroke}
         strokeWidth={GRID.width}
         strokeOpacity={GRID.opacity * strength}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d={paths.near}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={NEAR.width}
+        strokeOpacity={NEAR.opacity * strength}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

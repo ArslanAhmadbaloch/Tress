@@ -17,6 +17,14 @@
  * lattice the hair-mesh component draws — from that tracked face, so the
  * layout of every point is fixed and testable here, away from the SVG.
  *
+ * Two detectors feed it. Android's ML Kit is the one just described, and
+ * everything above was written for it. iPhone's ARKit face anchor is a
+ * different animal: a 3D mesh and a head pose solved from depth at 60
+ * fps, already steady, which arrives with a `source` of `arkit` and is
+ * passed through almost untouched — smoothing something that does not
+ * jitter buys nothing and costs lag, and lag is what makes a mesh slide
+ * over a face instead of sitting on it.
+ *
  * Everything here is pure. No camera, no React, no native module: a
  * reading in, a reading out, and the tests can run it on a laptop.
  *
@@ -56,6 +64,33 @@ export type Contours = Partial<Record<ContourName, Point[]>>;
 export type ViewSize = { width: number; height: number };
 
 /**
+ * Where a reading came from.
+ *
+ * - `arkit`: iPhone's TrueDepth face anchor, a real 3D mesh and head pose
+ *   at 60 fps. Already stable, so the filter below barely touches it.
+ * - `mlkit`: Android's 2D detector — a box, three angles and contours.
+ *   Jittery, and everything in this file was written for it.
+ * - `sample`: the drawn stand-in for a machine with no camera.
+ */
+export type FaceSource = 'arkit' | 'mlkit' | 'sample';
+
+/**
+ * A 3D face mesh as the native module delivers it.
+ *
+ * `points` is x, y, x, y … as fractions of the rendered view, in the
+ * module's own fixed vertex order, so the count and the order are the
+ * same on every frame and the drawing side can glide between two of
+ * them. `facing` carries one number per point: 1 when that part of the
+ * head is square to the camera, 0 when it is edge-on, below 0 when it
+ * has turned away — which is how a cap drawn from these points knows
+ * which of its lines are round the back and should fade.
+ */
+export type FaceMesh = {
+  readonly points: readonly number[];
+  readonly facing: readonly number[];
+};
+
+/**
  * One detector frame, straight from the camera, in preview points.
  *
  * Structurally a superset of the capture screen's `FaceObservation`, so
@@ -74,6 +109,13 @@ export type RawFace = {
   roll: number;
   /** Absent on a build whose detector runs without contours. */
   contours?: Contours;
+  /**
+   * Which detector this came from. Absent is read as `mlkit`: the
+   * cautious answer, since it is the one the filter smooths hardest.
+   */
+  source?: FaceSource;
+  /** The 3D mesh, when the source has one. ML Kit never does. */
+  mesh?: FaceMesh;
   /** When it was seen, in milliseconds. */
   at: number;
 };
@@ -91,6 +133,12 @@ export type TrackedFace = {
   contours: Contours;
   /** Whether the FACE contour is real rather than a box turned into an oval. */
   hasContours: boolean;
+  /** Which detector produced this reading. */
+  source: FaceSource;
+  /** The smoothed 3D mesh, in the same shape and order the source delivered. */
+  mesh?: FaceMesh;
+  /** Whether there is a real 3D mesh to build a head from. */
+  hasMesh: boolean;
   /** 0 moving, 1 still: position and size only — a deliberate turn is not instability. */
   stability: number;
   /** How fast the head is turning, in degrees per second, signed. */
@@ -124,6 +172,18 @@ export type TrackerOptions = {
   windowMs: number;
   /** Centre movement, in face widths per second, at which stability reaches zero. */
   paceRef: number;
+  /**
+   * The share taken per frame from an ARKit reading, position, angles and
+   * mesh alike, with no dead band at all.
+   *
+   * ARKit's anchor is solved from depth at 60 fps and does not jitter the
+   * way a 2D detector's box does, so smoothing it is all cost and no
+   * benefit: every bit of filtering is lag, and lag is exactly what makes
+   * a mesh look like a sticker sliding over a face. Near enough to 1 to
+   * be a pass-through, short of 1 so a single bad solve cannot snap the
+   * whole head across the screen.
+   */
+  arkitAlpha: number;
 };
 
 export const DEFAULT_TRACKER_OPTIONS: TrackerOptions = {
@@ -137,6 +197,7 @@ export const DEFAULT_TRACKER_OPTIONS: TrackerOptions = {
   angleDeadBand: 0.35,
   windowMs: 360,
   paceRef: 0.9,
+  arkitAlpha: 0.9,
 };
 
 /** One remembered position, for judging stillness. */
@@ -226,6 +287,36 @@ function smoothContours(
 }
 
 /**
+ * Smooths one mesh against the last.
+ *
+ * The points are view fractions, not pixels, so the dead band that keeps
+ * a contour still would be meaningless here — and is not wanted anyway:
+ * the mesh's whole job is to sit on the head through a turn, and a band
+ * is a lag. A mesh that changes its vertex count has changed topology
+ * and is taken exactly as it comes.
+ */
+export function smoothMesh(prev: FaceMesh | undefined, next: FaceMesh, alpha: number): FaceMesh {
+  if (!prev || prev.points.length !== next.points.length) {
+    return { points: next.points.slice(), facing: next.facing.slice() };
+  }
+  const points = new Array<number>(next.points.length);
+  for (let i = 0; i < next.points.length; i += 1) {
+    points[i] = follow(prev.points[i], next.points[i], alpha, 0);
+  }
+  const facing = new Array<number>(next.facing.length);
+  const before = prev.facing.length === next.facing.length ? prev.facing : null;
+  for (let i = 0; i < next.facing.length; i += 1) {
+    facing[i] = before === null ? next.facing[i] : follow(before[i], next.facing[i], alpha, 0);
+  }
+  return { points, facing };
+}
+
+/** A mesh with points in it, or undefined: an empty one is not a head. */
+function meshOrNone(mesh: FaceMesh | undefined): FaceMesh | undefined {
+  return mesh && mesh.points.length >= 6 ? mesh : undefined;
+}
+
+/**
  * Stillness, from the recent path of the face centre and its size.
  *
  * Measured as a pace — face widths per second — so the number means the
@@ -302,6 +393,9 @@ export function trackFrame(
 
   const prev = state.face;
 
+  const source: FaceSource = raw.source ?? 'mlkit';
+  const rawMesh = meshOrNone(raw.mesh);
+
   // A face arriving from nothing is taken where it is. Smoothing it out
   // of a stale position would fly the mesh across the screen.
   if (prev === null) {
@@ -309,6 +403,7 @@ export function trackFrame(
     const samples: MotionSample[] = [
       { cx: raw.cx, cy: raw.cy, width: raw.width, yaw: raw.yaw, at: now },
     ];
+    const mesh = rawMesh === undefined ? undefined : smoothMesh(undefined, rawMesh, 1);
     return {
       ...state,
       emptyFrames: 0,
@@ -323,6 +418,9 @@ export function trackFrame(
         roll: raw.roll,
         contours,
         hasContours: (contours.FACE?.length ?? 0) > 0,
+        source,
+        ...(mesh === undefined ? {} : { mesh }),
+        hasMesh: mesh !== undefined,
         stability: 0,
         yawRate: 0,
         held: false,
@@ -335,17 +433,25 @@ export function trackFrame(
   const scale = prev.width > 0 ? prev.width : Math.max(1, raw.width);
   const motion =
     Math.hypot(raw.cx - prev.cx, raw.cy - prev.cy) / scale + Math.abs(raw.width - prev.width) / scale;
-  const alpha = adaptiveAlpha(motion, options);
-  const band = options.deadBand * scale;
+  // ARKit is trusted: one share for everything, no dead band. Anything
+  // else is followed by how much it moved, and held inside its band.
+  const arkit = source === 'arkit';
+  const alpha = arkit ? options.arkitAlpha : adaptiveAlpha(motion, options);
+  const band = arkit ? 0 : options.deadBand * scale;
+  const angleAlpha = arkit ? options.arkitAlpha : options.angleAlpha;
+  const angleBand = arkit ? 0 : options.angleDeadBand;
 
   const cx = follow(prev.cx, raw.cx, alpha, band);
   const cy = follow(prev.cy, raw.cy, alpha, band);
   const width = follow(prev.width, raw.width, alpha, band);
   const height = follow(prev.height, raw.height, alpha, band);
-  const yaw = follow(prev.yaw, raw.yaw, options.angleAlpha, options.angleDeadBand);
-  const pitch = follow(prev.pitch, raw.pitch, options.angleAlpha, options.angleDeadBand);
-  const roll = follow(prev.roll, raw.roll, options.angleAlpha, options.angleDeadBand);
+  const yaw = follow(prev.yaw, raw.yaw, angleAlpha, angleBand);
+  const pitch = follow(prev.pitch, raw.pitch, angleAlpha, angleBand);
+  const roll = follow(prev.roll, raw.roll, angleAlpha, angleBand);
   const contours = smoothContours(prev.contours, raw.contours, alpha, band);
+  // A source that stops sending a mesh (a lost anchor) loses it here
+  // rather than keeping a stale head glued to a moving face.
+  const mesh = rawMesh === undefined ? undefined : smoothMesh(prev.mesh, rawMesh, alpha);
 
   // Stillness is judged on the smoothed reading — what is drawn — so the
   // detector's own jitter, already taken out above, is not counted as a
@@ -370,6 +476,9 @@ export function trackFrame(
       roll,
       contours,
       hasContours: (contours.FACE?.length ?? 0) > 0,
+      source,
+      ...(mesh === undefined ? {} : { mesh }),
+      hasMesh: mesh !== undefined,
       stability: stabilityOf(samples, options),
       yawRate: yawRateOf(samples),
       held: false,
@@ -389,9 +498,11 @@ export type Rect = { x: number; y: number; width: number; height: number };
  * guidance frame — the square the ring is drawn in — so a `bounds` of
  * `{x: 0.25, y: 0.2, width: 0.5, height: 0.6}` is a face centred and a
  * little high on any screen, and `size` is the face's width as a share
- * of that frame's width, which is what "too close" and "too far" are
- * judged on. Structurally the engine's `FaceReading`; kept as its own
- * shape so this module depends on nothing but numbers.
+ * of that frame's width. Nothing judges that figure: there is no near
+ * and no far in this scan and nobody is ever asked to move, so `size`
+ * is carried for the record and for drawing, and for nothing else.
+ * Structurally the engine's `FaceReading`; kept as its own shape so this
+ * module depends on nothing but numbers.
  */
 export type EngineReading = {
   bounds: Rect;
@@ -1015,6 +1126,89 @@ export function syntheticContours(
 }
 
 /**
+ * The shape of the drawn stand-in mesh: rows from the crown down to the
+ * chin, columns all the way round. Nothing reads these counts as a fact
+ * about a head — the native module has its own, larger, fixed order —
+ * but they are fixed here so successive sample frames can be smoothed
+ * and glided between exactly as a real one is.
+ */
+export const SYNTHETIC_MESH = { rows: 13, cols: 16 } as const;
+
+/** How much bigger than the face box the whole head is, across and down. */
+const SYNTHETIC_HEAD = { wide: 1.12, tall: 1.5, rise: 0.2 } as const;
+
+/**
+ * A DRAWN 3D head for a machine with no camera.
+ *
+ * An ellipsoid in the head's own axes, turned by the three angles and
+ * projected straight down the view axis, so the sample mesh turns with
+ * the sample face and its back half reports a negative `facing` the way
+ * ARKit's does. It is geometry with a face box for a scale, and it is
+ * not a measurement of anything: only the sample camera ever shows it.
+ */
+export function syntheticMesh(
+  view: ViewSize,
+  cx: number,
+  cy: number,
+  width: number,
+  height: number,
+  yaw: number,
+  pitch: number,
+  roll: number,
+): FaceMesh {
+  const a = (width * SYNTHETIC_HEAD.wide) / 2;
+  const b = (height * SYNTHETIC_HEAD.tall) / 2;
+  const depth = a * 1.1;
+  const originY = cy - SYNTHETIC_HEAD.rise * height;
+  const rad = Math.PI / 180;
+  const cy1 = Math.cos(yaw * rad);
+  const sy1 = Math.sin(yaw * rad);
+  const cp = Math.cos(pitch * rad);
+  const sp = Math.sin(pitch * rad);
+  const cr = Math.cos(roll * rad);
+  const sr = Math.sin(roll * rad);
+
+  // Yaw about the vertical, then pitch about the head's own right, then
+  // roll in the plane of the screen — the order the angles are read in.
+  const turn = (x: number, y: number, z: number): [number, number, number] => {
+    const x1 = x * cy1 + z * sy1;
+    const z1 = -x * sy1 + z * cy1;
+    const y2 = y * cp - z1 * sp;
+    const z2 = y * sp + z1 * cp;
+    return [x1 * cr - y2 * sr, x1 * sr + y2 * cr, z2];
+  };
+
+  const { rows, cols } = SYNTHETIC_MESH;
+  const points = new Array<number>(rows * cols * 2);
+  const facing = new Array<number>(rows * cols);
+  let i = 0;
+  for (let row = 0; row < rows; row += 1) {
+    const phi = (Math.PI * row) / (rows - 1);
+    const sinPhi = Math.sin(phi);
+    const cosPhi = Math.cos(phi);
+    for (let col = 0; col < cols; col += 1) {
+      const theta = (2 * Math.PI * col) / cols;
+      // Projected straight down the view axis, so the depth is dropped.
+      const [x, y] = turn(a * sinPhi * Math.sin(theta), -b * cosPhi, depth * sinPhi * Math.cos(theta));
+      const [nx, ny, nz] = turn(
+        (sinPhi * Math.sin(theta)) / a,
+        -cosPhi / b,
+        (sinPhi * Math.cos(theta)) / depth,
+      );
+      const len = Math.hypot(nx, ny, nz) || 1;
+      points[i * 2] = (cx + x) / (view.width || 1);
+      points[i * 2 + 1] = (originY + y) / (view.height || 1);
+      facing[i] = nz / len;
+      i += 1;
+    }
+  }
+  return { points, facing };
+}
+
+/** One full rehearsal of the scan's choreography by the drawn stand-in. */
+export const SAMPLE_LOOP_MS = 24_000;
+
+/**
  * A stand-in reading for a preview with no camera behind it: a drawn face
  * in the upper middle of the view, swaying and turning gently so the
  * tracking and the mesh have something to do.
@@ -1032,17 +1226,25 @@ export function syntheticFace(view: ViewSize, t: number, at: number = t): RawFac
   const cx = view.width / 2 + Math.sin(t / 1300) * view.width * 0.015;
   const cy = view.height * 0.42 + Math.sin(t / 1900) * view.height * 0.008;
   const roll = Math.sin(t / 2300) * 4;
+  // The stand-in rehearses the scan's own choreography on a loop: twelve
+  // seconds turning left and right with the chin level, then twelve with
+  // the head lowered, turning again. So a simulator run reaches all four
+  // regions the way a person does, instead of sitting square on forever.
+  const phase = t % SAMPLE_LOOP_MS;
+  const down = phase >= SAMPLE_LOOP_MS / 2;
+  const yaw = Math.sin((2 * Math.PI * phase) / (SAMPLE_LOOP_MS / 2)) * 28;
+  const pitch = down ? -22 + Math.sin(t / 900) * 2 : Math.sin(t / 3100) * 3;
   return {
     cx,
     cy,
     width,
     height,
-    // Inside the 8° front lock at every phase, so the stand-in's Start is
-    // live the way a person facing a phone is; the sway is still visible.
-    yaw: Math.sin(t / 2600) * 6,
-    pitch: Math.sin(t / 3100) * 3,
+    yaw,
+    pitch,
     roll,
     contours: syntheticContours(cx, cy, width, height, roll),
+    source: 'sample',
+    mesh: syntheticMesh(view, cx, cy, width, height, yaw, pitch, roll),
     at,
   };
 }

@@ -55,9 +55,41 @@ import {
 
 import { regionRectsFor } from './region-crops';
 import { HAIR_SCAN_REPORT_COPY as COPY, deg, pct } from './report-copy';
-import type { FrameMesh } from './types';
+import type { FrameMesh, ScanTarget } from './types';
 
 /* ------------------------------- the frames ------------------------------ */
+
+/**
+ * Which of the journal's five angles each of the scan's four wanted
+ * regions is filed under.
+ *
+ * The scan sets out to photograph the front hairline, both temples and
+ * the crown; the journal has known five angles since long before the
+ * scanner existed, and Journey, Timeline and Compare all read those. So
+ * the four land on four of the five, and the fifth — `crown`, which the
+ * journal means as *the back of the head* and labels "Back" — is left to
+ * the guided capture that can actually walk behind somebody.
+ *
+ * The crown frame is the one that needs saying out loud. It is taken
+ * with the chin down and the phone in front, so what is in the picture
+ * is the TOP of the head: `top` is the angle that describes it, and the
+ * report's crown row already reads the top frame for exactly that reason
+ * (`frameForRegion` in report-model.ts). Filing it under the journal's
+ * `crown` would claim a photograph of the back of somebody's head that
+ * nobody took.
+ *
+ * This is also the fix for a record bug: the screen used to derive a
+ * frame's angle from the ring bin the head happened to be in, so a
+ * hairline taken with the phone below eye level was written into the
+ * journal as a left temple. The angle now comes from what the engine
+ * asked the frame for.
+ */
+export const ANGLE_OF_TARGET: Record<ScanTarget, Angle> = {
+  hairline: 'front',
+  leftTemple: 'leftTemple',
+  rightTemple: 'rightTemple',
+  crown: 'top',
+};
 
 /** The head's angles when a frame was kept, in degrees. */
 export type ScanPose = { yaw: number; pitch: number; roll: number };

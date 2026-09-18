@@ -33,28 +33,74 @@ export type ScannerState =
 export type ScanStatus =
   /** The camera is coming up; no reading has arrived yet. */
   | 'initializing'
-  /** Readings arrive, but the head is not framed and steady. */
+  /** No reading with a head in it has arrived yet. */
   | 'detecting'
-  /** Framed, lit and steady: the scan may start. */
+  /** A head is being followed: the scan may start, wherever that head is. */
   | 'ready'
   /** The ring is filling and frames are being taken. */
   | 'capturing'
-  /** Coverage is sufficient (or time is up); waiting for in-flight frames. */
+  /** Every wanted region is captured (or time is up); waiting for in-flight frames. */
   | 'completing'
   | 'complete';
 
-/** The one line of guidance shown at a time. */
+/**
+ * The two halves of the scan, in the order a person does them.
+ *
+ * `sweep` is the head turning left and right with the chin level: that
+ * is where the front hairline and both temples are seen. `crown` is the
+ * head lowered and then turned again, which is the only way a phone held
+ * in front of somebody ever sees the top of their head.
+ */
+export type ScanStage = 'sweep' | 'crown';
+
+/**
+ * The four regions the report is built from. Named for the part of the
+ * head a frame shows, not for anything about the hair on it.
+ */
+export type ScanTarget = 'hairline' | 'leftTemple' | 'rightTemple' | 'crown';
+
+/**
+ * What the scan has of one region.
+ *
+ * `reach` is how far towards the pose that region wants the head has ever
+ * come, 0–1, and only ever rises: it is what the progress figure is made
+ * of, so progress cannot fall when somebody turns back through the middle.
+ */
+export type TargetProgress = {
+  captured: boolean;
+  /** The quality of the kept frame, or 0. */
+  quality: number;
+  /** The id of the kept frame, or null. */
+  frameId: string | null;
+  /** 0–1, monotonic: how near the head has come to this region's pose. */
+  reach: number;
+};
+
+/**
+ * The one line of guidance shown at a time.
+ *
+ * There is deliberately no cue for distance. Build 17 asked people to
+ * move back until their arm was at full stretch, and the scan never
+ * armed; the ring and the mesh scale to the head instead, so how far
+ * away somebody holds the phone is their business.
+ */
 export type GuidanceCue =
   | 'centreFace'
-  | 'closer'
-  | 'back'
   | 'holdStill'
   | 'perfect'
   | 'moveSlowly'
   | 'slowDown'
   | 'backInFrame'
   | 'brighter'
-  | 'keepGoing';
+  | 'keepGoing'
+  /** Stage one: turn the head left and right. */
+  | 'turnLeftRight'
+  /** Stage two, before the chin is down. */
+  | 'lowerHead'
+  /** Stage two, with the chin down: turn again. */
+  | 'turnAgain'
+  /** The last region is being taken. */
+  | 'almost';
 
 /**
  * One smoothed face reading from the tracker.
@@ -107,9 +153,24 @@ export type CapturedImage = {
 /** The engine asking the camera for one frame, right now. */
 export type CaptureRequest = {
   id: string;
-  /** 0 is the front; 1–12 walk clockwise round the ring from the top. */
+  /**
+   * Where the head was pointing on the ring: 0 the front, 1–12 clockwise
+   * from the top. A fact about the pose, used to draw the ring — never
+   * to decide what the picture is of. Two different regions routinely
+   * share a bin.
+   */
   bin: number;
+  /**
+   * How the frame is labelled: the ring region its `target` stands for,
+   * which is what the screen turns into the journal's angle.
+   */
   region: ScanRegion;
+  /**
+   * Which of the four wanted regions this frame is for. Every request the
+   * engine raises is for one of them — the scan asks for nothing else —
+   * and it is what the journal files the photograph under.
+   */
+  target: ScanTarget;
   /** The ring sector the head was pointing at, or null for the front. */
   sector: number | null;
   yaw: number;
@@ -177,6 +238,8 @@ export type ScanFrame = CapturedImage & {
   id: string;
   bin: number;
   region: ScanRegion;
+  /** The wanted region this frame was asked for: what the report files it under. */
+  target: ScanTarget;
   sector: number | null;
   yaw: number;
   pitch: number;
@@ -211,20 +274,23 @@ export type ScanMilestone =
   | 'quarter'
   | 'half'
   | 'threeQuarters'
-  | 'rightDone'
-  | 'leftDone'
-  | 'chinDone';
+  | 'hairlineDone'
+  | 'leftTempleDone'
+  | 'rightTempleDone'
+  | 'crownDone';
 
 /**
  * Why the engine let go of an image.
  *
- * - `outscored`: it landed for a bin whose kept frame was already better.
- * - `replaced`: a better frame landed for its bin.
- * - `evicted`: the ring held more than `MAX_FRAMES` and this was the weakest.
+ * - `outscored`: it landed for a region whose kept frame was already better.
+ * - `replaced`: a better frame landed for its region.
  * - `late`: it answered a request the engine had stopped waiting for.
  * - `abandoned`: the scan was cancelled or restarted before the report.
+ *
+ * There is no `evicted` any more: the store holds one frame per wanted
+ * region and there are four regions, so nothing is ever crowded out.
  */
-export type DiscardReason = 'outscored' | 'replaced' | 'evicted' | 'late' | 'abandoned';
+export type DiscardReason = 'outscored' | 'replaced' | 'late' | 'abandoned';
 
 /**
  * What one reduction wants the outside world to do.
@@ -242,6 +308,8 @@ export type DiscardReason = 'outscored' | 'replaced' | 'evicted' | 'late' | 'aba
  */
 export type ScanEvent =
   | { type: 'state'; from: ScannerState; to: ScannerState }
+  /** The choreography moved on: stage one's regions are all in. */
+  | { type: 'stage'; from: ScanStage; to: ScanStage }
   | { type: 'cue'; cue: GuidanceCue | null }
   | { type: 'capture'; request: CaptureRequest }
   | { type: 'frame'; frame: ScanFrame; replaced: boolean }
@@ -286,18 +354,31 @@ export type RegionScores = {
 export type ScanState = {
   scanner: ScannerState;
   status: ScanStatus;
+  /** Which half of the choreography is being asked for. */
+  stage: ScanStage;
+  /** What the scan has of each of the four wanted regions. */
+  targets: Record<ScanTarget, TargetProgress>;
+  /** When stage one began, so a sweep nobody can finish still reaches the crown. */
+  stageStartedAt: number | null;
   cue: GuidanceCue | null;
   permission: 'unknown' | 'granted' | 'denied';
   error: ScanErrorReason | null;
 
   /** 24 sector fills, 0–1, clockwise from the top of the ring. Monotonic. */
   sectors: number[];
-  /** 0–1, weighted over the required regions. Monotonic; 1 exactly at sufficiency. */
+  /**
+   * 0–1 across both stages, and 1 exactly when all four regions have
+   * been captured. Approaching a region moves the figure; only the
+   * photograph finishes it, so a scan that ran out of time with a region
+   * missing can never read as complete — in the ring, in the record, or
+   * in the report. Monotonic.
+   */
   completion: number;
+  /** The ring's own reading, by quadrant. What the ring draws, not what ends the scan. */
   regions: RegionScores;
   /** The head has been seen square to the camera, framed and steady. */
   frontLocked: boolean;
-  /** Curated frames, at most `MAX_FRAMES`, one per bin. */
+  /** Curated frames: one per wanted region, so at most `MAX_FRAMES` — four. */
   frames: ScanFrame[];
   /** Requests the camera has not answered yet. */
   pending: CaptureRequest[];

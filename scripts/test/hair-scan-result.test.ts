@@ -13,8 +13,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { regionRectsFor } from '@/features/hair-scan/region-crops';
+import { REQUIRED_REGIONS } from '@/features/hair-scan/engine';
 import {
+  REPORT_REGIONS,
+  SCAN_REGIONS,
+  cropFor,
+  faceRegionRects,
+  regionRectsFor,
+} from '@/features/hair-scan/region-crops';
+import {
+  ANGLE_OF_TARGET,
   FRONT_PITCH_MAX,
   FRONT_YAW_MAX,
   TOP_PITCH,
@@ -36,6 +44,7 @@ import {
 } from '@/features/hair-scan/result';
 import {
   ANGLES,
+  ANGLE_LABELS,
   EMPTY_DATA,
   SCHEMA_VERSION,
   migrateStoredData,
@@ -107,6 +116,99 @@ function measuredSet(): PhotoSession {
 const cards = (s: PhotoSession) => buildHairScanResult(s).analysis;
 
 /* ------------------------------ the angles ----------------------------- */
+
+test('ANGLE_OF_TARGET: each of the four wanted regions files under its own journal angle', () => {
+  // Every region the scan goes for has somewhere to go, and no two share
+  // a slot: four photographs in, four photographs on the record.
+  assert.deepEqual([...REQUIRED_REGIONS].sort(), Object.keys(ANGLE_OF_TARGET).sort());
+  const filed = REQUIRED_REGIONS.map((r) => ANGLE_OF_TARGET[r]);
+  assert.equal(new Set(filed).size, REQUIRED_REGIONS.length, 'two regions share an angle');
+  for (const angle of filed) assert.ok(ANGLES.includes(angle), `${angle} is not a journal angle`);
+
+  assert.equal(ANGLE_OF_TARGET.hairline, 'front');
+  assert.equal(ANGLE_OF_TARGET.leftTemple, 'leftTemple');
+  assert.equal(ANGLE_OF_TARGET.rightTemple, 'rightTemple');
+});
+
+test('ANGLE_OF_TARGET: the crown frame is the top of the head, never the back of it', () => {
+  /*
+    The crown is photographed with the chin down and the phone in front,
+    so what is in the picture is the top of the head. The journal's
+    `crown` means the BACK — it is labelled "Back" — and filing the scan's
+    frame there would put a photograph nobody took on the record. `top`
+    is the honest slot, and the report's crown row reads the top frame
+    for exactly that reason.
+  */
+  assert.equal(ANGLE_OF_TARGET.crown, 'top');
+  assert.equal(ANGLE_LABELS.crown, 'Back');
+  assert.notEqual(ANGLE_OF_TARGET.crown, 'crown');
+});
+
+test('the four regions the scan photographs are the four the report crops', () => {
+  // One list, held in two places by an assignment rather than by luck:
+  // every ScanTarget is a PhotoRegion, so the crops module can name the
+  // scan's own regions without re-typing them.
+  assert.deepEqual([...SCAN_REGIONS], [...REQUIRED_REGIONS]);
+  // And the report's list is that same list plus the journal's `top` —
+  // spelled as a derivation, not as five strings that happen to agree.
+  // The two used to be independent lists checked only by this test.
+  assert.deepEqual([...REPORT_REGIONS], [...REQUIRED_REGIONS, 'top']);
+});
+
+test('every place the report can crop is a place the geometry actually places', () => {
+  /*
+    The gap this closes: a region could be named in one file and have no
+    rectangle in another, and the report would render a row with an
+    image and no picture on it. `faceRegionRects` now returns a whole
+    record of `ReportRegion`, so the compiler refuses a missing one —
+    this is the runtime half of the same statement, and it is the
+    production function being asked, not a copy of the list.
+  */
+  const rects = faceRegionRects(
+    { cx: 200, cy: 260, width: 180, height: 240, contours: {} },
+    { width: 400, height: 600 },
+  );
+  for (const region of REPORT_REGIONS) {
+    const rect = rects[region];
+    assert.ok(rect, `${region} has no rectangle`);
+    assert.ok(rect.w > 0 && rect.h > 0, `${region} is not a rectangle`);
+  }
+  // The crown and the top are one band by design: a crown frame is the
+  // head tipped down and photographed from the front, so the top of the
+  // head is what is in the upper part of that picture.
+  assert.deepEqual(rects.crown, rects.top);
+});
+
+test('a whole scan lands as four photographs, each carrying a rectangle for all four regions', () => {
+  const mesh = {
+    bounds: { x: 0.27, y: 0.12, width: 0.46, height: 0.6 },
+    contours: {},
+    viewAspect: 9 / 16,
+  };
+  // What the screen hands `scanPhotos` after a complete run: one frame
+  // per wanted region, each filed by what the engine asked it for.
+  const photos = scanPhotos(
+    REQUIRED_REGIONS.map((region) =>
+      frame({ uri: `file:///${region}.jpg`, angle: ANGLE_OF_TARGET[region], quality: GOOD, mesh }),
+    ),
+  );
+
+  assert.equal(photos.length, REQUIRED_REGIONS.length);
+  assert.deepEqual(
+    photos.map((p) => p.angle).sort(),
+    REQUIRED_REGIONS.map((r) => ANGLE_OF_TARGET[r]).sort(),
+  );
+
+  // And each one can be cropped to any of the four places the report
+  // names, from a rectangle that was placed rather than guessed.
+  for (const p of photos) {
+    for (const region of SCAN_REGIONS) {
+      const crop = cropFor({ uri: p.uri, width: p.width, height: p.height, regions: p.regions }, region);
+      assert.ok(!crop.approximate, `${p.angle}: ${region} fell back to the centred crop`);
+      assert.ok(crop.rect.w > 0 && crop.rect.h > 0, `${p.angle}: ${region} is not a rectangle`);
+    }
+  }
+});
 
 test('closestAngle: a small turn is the front, a larger one a side, a nod down the top', () => {
   assert.equal(closestAngle({ yaw: 0, pitch: 0, roll: 0 }), 'front');

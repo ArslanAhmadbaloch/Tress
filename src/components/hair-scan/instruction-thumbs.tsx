@@ -1,13 +1,21 @@
 /**
  * The instruction sheet's thumbnails — the scanner, in miniature.
  *
- * Each row of the sheet shows the state of the scanner the row is about:
- * a head with glasses on, softly struck through; the ring at rest around
- * a straight head with the Start disc waiting beneath; and the ring with
- * every sector lit. Until frames from a real phone exist these are drawn
- * from the scanner's own parts — the second and third tiles hold the real
+ * Each row of the sheet shows the state of the scanner the row is about,
+ * and the three states are the three the scan actually has now:
+ *
+ *   1. a head with glasses on, softly struck through;
+ *   2. the ring at rest, the Start disc waiting beneath it, and an arc
+ *      swinging through the head with an arrowhead at each end — the
+ *      first beat, turning left and right;
+ *   3. the head tipped down with the crown toward the camera, the ring
+ *      lit all the way round it and the crown itself marked — the second
+ *      beat, where the top of the head is read.
+ *
+ * Until frames from a real phone exist these are drawn from the
+ * scanner's own parts: the second and third tiles hold the real
  * `ScanRing`, sized down, so the dial the person is about to fill is the
- * dial they have already seen — around a neutral silhouette rather than a
+ * dial they have already seen, around a neutral silhouette rather than a
  * photograph nobody took.
  *
  * Nothing moves. The ring reads its coverage from a shared value that is
@@ -60,6 +68,9 @@ const RING_TICK = 3;
 const RING_STROKE = 1;
 const RING_MARGIN = scanRingMargin(RING_TICK);
 
+/** How a head sits in a tile. */
+type HeadPose = 'straight' | 'down';
+
 export type InstructionThumbProps = {
   step: InstructionStep;
   /**
@@ -106,9 +117,9 @@ export function InstructionThumb({ step, image }: InstructionThumbProps) {
       ) : step === 0 ? (
         <GlassesOffThumb />
       ) : step === 1 ? (
-        <RingThumb lit={false} turned={false} />
+        <RingThumb lit={false} pose="straight" />
       ) : (
-        <RingThumb lit turned />
+        <RingThumb lit pose="down" />
       )}
     </View>
   );
@@ -117,37 +128,56 @@ export function InstructionThumb({ step, image }: InstructionThumbProps) {
 /* --------------------------------- head ---------------------------------- */
 
 /**
- * A neutral head and shoulders, drawn once for every tile. `turned` slides
- * the head a little to the side and narrows it, the way a head reads
- * three-quarters on, so the last tile shows a person mid-turn rather than
- * the same face as the second.
+ * A neutral head and shoulders, drawn once for every tile.
+ *
+ * `straight` is a head square to the camera. `down` is the same head
+ * tipped forward: wider than it is tall, sitting lower on a shorter
+ * neck, with the face gone from the near side — what the camera sees
+ * when the crown is turned toward it, which is the second beat.
  */
 function Silhouette({
   cx,
   cy,
-  turned,
+  pose,
   opacity,
 }: {
   cx: number;
   cy: number;
-  turned: boolean;
+  pose: HeadPose;
   opacity: number;
 }) {
-  const headRx = turned ? 10 : 12;
-  const headCx = turned ? cx + 3 : cx;
+  const down = pose === 'down';
+  const headCy = down ? cy - 2 : cy - 6;
+  const headRx = down ? 13 : 12;
+  const headRy = down ? 12 : 15;
+  const shoulderTop = down ? cy + 14 : cy + 12;
   return (
     <>
       <Ellipse
-        cx={headCx}
-        cy={cy - 6}
+        cx={cx}
+        cy={headCy}
         rx={headRx}
-        ry={15}
+        ry={headRy}
         fill={darkColors.textOnPhoto}
         fillOpacity={opacity}
       />
+      {/*
+        On a tipped head the face has gone away from the camera: one soft
+        arc across the lower half is as much of it as is left to see.
+      */}
+      {down ? (
+        <Path
+          d={`M ${cx - 11} ${headCy + 5} Q ${cx} ${headCy + 12}, ${cx + 11} ${headCy + 5}`}
+          stroke={darkColors.background}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          fill="none"
+          opacity={0.7}
+        />
+      ) : null}
       {/* Shoulders: a wide arc rising from the bottom of the window. */}
       <Path
-        d={`M ${cx - 26} ${cy + 40} C ${cx - 26} ${cy + 18}, ${cx - 12} ${cy + 12}, ${cx} ${cy + 12} C ${cx + 12} ${cy + 12}, ${cx + 26} ${cy + 18}, ${cx + 26} ${cy + 40} Z`}
+        d={`M ${cx - 26} ${cy + 40} C ${cx - 26} ${shoulderTop + 6}, ${cx - 12} ${shoulderTop}, ${cx} ${shoulderTop} C ${cx + 12} ${shoulderTop}, ${cx + 26} ${shoulderTop + 6}, ${cx + 26} ${cy + 40} Z`}
         fill={darkColors.textOnPhoto}
         fillOpacity={opacity * 0.4}
       />
@@ -169,7 +199,7 @@ function GlassesOffThumb() {
   const gap = 7;
   return (
     <Svg width={INSTRUCTION_THUMB_WIDTH} height={INSTRUCTION_THUMB_HEIGHT}>
-      <Silhouette cx={cx} cy={cy} turned={false} opacity={0.85} />
+      <Silhouette cx={cx} cy={cy} pose="straight" opacity={0.85} />
       {/* The glasses, in the ground colour so they cut into the face. */}
       <Circle
         cx={cx - gap}
@@ -229,15 +259,87 @@ function GlassesOffThumb() {
   );
 }
 
+/* ------------------------------- the turn arc ------------------------------- */
+
+/**
+ * The left-and-right arc: one curve passing behind the head with an
+ * arrowhead at each end, so the tile says "this way, and back again"
+ * without a word. Drawn before the head so the head sits on top of it,
+ * which is what makes it read as a turn rather than as a halo.
+ *
+ * The arrowheads are two short strokes at each tip, set against the
+ * curve's own direction there — hand-placed rather than computed,
+ * because the curve never changes.
+ */
+function TurnArc({ cx, cy }: { cx: number; cy: number }) {
+  const left = cx - 18;
+  const right = cx + 18;
+  const y = cy - 4;
+  const apex = cy - 30;
+  return (
+    <G>
+      <Path
+        d={`M ${left} ${y} Q ${cx} ${apex}, ${right} ${y}`}
+        stroke={darkColors.success}
+        strokeWidth={2}
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Left tip, pointing down and out. */}
+      <Line
+        x1={left}
+        y1={y}
+        x2={left + 5}
+        y2={y - 1}
+        stroke={darkColors.success}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Line
+        x1={left}
+        y1={y}
+        x2={left + 1}
+        y2={y - 5}
+        stroke={darkColors.success}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      {/* Right tip, mirrored. */}
+      <Line
+        x1={right}
+        y1={y}
+        x2={right - 5}
+        y2={y - 1}
+        stroke={darkColors.success}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Line
+        x1={right}
+        y1={y}
+        x2={right - 1}
+        y2={y - 5}
+        stroke={darkColors.success}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </G>
+  );
+}
+
 /* --------------------------- steps 2 and 3: the ring --------------------------- */
 
 /**
- * The real ring, sized down, around a head. At rest the dial is quiet
- * white and the Start disc waits beneath; lit, every sector's coverage
- * is written as 1 and the ring holds green with no sweep, because the
- * sheet is a picture of the end state, not a re-run of reaching it.
+ * The real ring, sized down, around a head.
+ *
+ * At rest the dial is quiet white, the Start disc waits beneath it and
+ * the turn arc swings through the head: the first beat, before anything
+ * has been captured. Lit, every sector's coverage is written as 1, the
+ * head is tipped forward and the crown is marked — the second beat, at
+ * its end. There is no sweep in either: the sheet is a picture of a
+ * state, not a re-run of reaching it.
  */
-function RingThumb({ lit, turned }: { lit: boolean; turned: boolean }) {
+function RingThumb({ lit, pose }: { lit: boolean; pose: HeadPose }) {
   const coverage = useSharedValue(
     lit ? Array.from({ length: SCAN_SECTORS }, () => 1) : emptyCoverage(),
   );
@@ -245,7 +347,7 @@ function RingThumb({ lit, turned }: { lit: boolean; turned: boolean }) {
   const ringTop = lit ? (INSTRUCTION_THUMB_HEIGHT - RING_H) / 2 : 2;
   const cy = ringTop + RING_H / 2;
   /* Two tiles share one sheet, so each clip path carries its own id. */
-  const clipId = lit ? 'scan-thumb-window-lit' : 'scan-thumb-window-rest';
+  const clipId = `scan-thumb-window-${pose}`;
 
   return (
     <View style={{ width: INSTRUCTION_THUMB_WIDTH, height: INSTRUCTION_THUMB_HEIGHT }}>
@@ -267,7 +369,22 @@ function RingThumb({ lit, turned }: { lit: boolean; turned: boolean }) {
           fill={darkColors.surfaceElevated}
         />
         <G clipPath={`url(#${clipId})`}>
-          <Silhouette cx={cx} cy={cy} turned={turned} opacity={0.8} />
+          {pose === 'straight' ? <TurnArc cx={cx} cy={cy} /> : null}
+          <Silhouette cx={cx} cy={cy} pose={pose} opacity={0.8} />
+          {/*
+            The crown, marked: one arc over the top of the tipped head,
+            in the dial's own green, so the third row says where the
+            second beat is looking.
+          */}
+          {pose === 'down' ? (
+            <Path
+              d={`M ${cx - 13} ${cy - 3} Q ${cx} ${cy - 20}, ${cx + 13} ${cy - 3}`}
+              stroke={darkColors.success}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              fill="none"
+            />
+          ) : null}
         </G>
         {lit ? null : (
           <>
@@ -296,6 +413,7 @@ function RingThumb({ lit, turned }: { lit: boolean; turned: boolean }) {
         coverage={coverage}
         active={lit}
         complete={false}
+        stage={lit ? 'crown' : 'sweep'}
         tickLength={RING_TICK}
         stroke={RING_STROKE}
         style={{ position: 'absolute', left: (INSTRUCTION_THUMB_WIDTH - RING_W) / 2, top: ringTop }}

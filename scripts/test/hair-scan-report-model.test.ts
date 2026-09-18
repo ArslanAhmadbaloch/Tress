@@ -336,6 +336,14 @@ test('model: rows belong to tabs, carry a crop from the frame they describe, and
   assert.equal(temples.icon, 'temple');
   assert.equal(temples.region, 'leftTemple');
   assert.equal(temples.crop?.uri, 'file:///leftTemple.jpg');
+  /*
+    BOTH temples, not one. The scan asks for four photographs and the
+    report used to show three of them: the temples row cut its crop from
+    whichever side happened to exist and, when both did, always from the
+    left — so the right temple was photographed, measured, filed and
+    never shown. A row about two places carries two pictures.
+  */
+  assert.equal(temples.crop2?.uri, 'file:///rightTemple.jpg');
   assert.equal(temples.regionLabel, COPY.regions.temples);
   assert.equal(crown.tab, 'crown');
   assert.equal(crown.icon, 'crown');

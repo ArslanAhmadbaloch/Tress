@@ -37,11 +37,14 @@ import {
   featureOffset,
   follow,
   haloOf,
+  SAMPLE_LOOP_MS,
+  SYNTHETIC_MESH,
   ovalFromBounds,
   squash,
   stabilityOf,
   syntheticContours,
   syntheticFace,
+  syntheticMesh,
   toEngineReading,
   trackFrame,
   type Contours,
@@ -709,4 +712,120 @@ test('syntheticFace is deterministic, inside the view, and sways rather than jum
     const { pts } = buildLattice(state.face);
     for (const v of pts) assert.ok(Number.isFinite(v));
   }
+});
+
+/* ------------------------------ two sources --------------------------- */
+
+/** A mesh of `n` points on a line, at the fractions given. */
+function mesh(n: number, shift = 0): { points: number[]; facing: number[] } {
+  const points: number[] = [];
+  const facing: number[] = [];
+  for (let i = 0; i < n; i += 1) {
+    points.push(0.3 + i / (n * 10) + shift, 0.4 + i / (n * 20) + shift);
+    facing.push(1 - i / n);
+  }
+  return { points, facing };
+}
+
+test('source: absent is read as ML Kit, and the reading says which detector it came from', () => {
+  const plain = run([face(), face()]).readings[1];
+  assert.equal(plain?.source, 'mlkit', 'the cautious default: the jittery one');
+  assert.equal(plain?.hasMesh, false);
+  assert.equal(plain?.mesh, undefined);
+  const sample = trackFrame(createTracker(), syntheticFace(VIEW, 0), 0).face;
+  assert.equal(sample?.source, 'sample');
+  const arkit = trackFrame(createTracker(), { ...face(), source: 'arkit', mesh: mesh(40) }, 0).face;
+  assert.equal(arkit?.source, 'arkit');
+  assert.equal(arkit?.hasMesh, true);
+});
+
+test('source: ARKit is passed through, ML Kit is smoothed hard', () => {
+  // The same movement, told by each detector. ARKit's anchor does not
+  // jitter, so filtering it is pure lag; ML Kit's does, so it is held.
+  const step = (source: 'arkit' | 'mlkit') => {
+    const first = trackFrame(createTracker(), { ...face(), source }, 0);
+    const moved = { ...face({ cx: 199, yaw: 6 }), source };
+    return trackFrame(first, moved, FRAME_MS).face!;
+  };
+  const arkit = step('arkit');
+  const mlkit = step('mlkit');
+  assert.ok(arkit.cx > mlkit.cx + 2, `arkit ${arkit.cx} vs mlkit ${mlkit.cx}`);
+  assert.ok(arkit.yaw > mlkit.yaw + 3, `arkit ${arkit.yaw}° vs mlkit ${mlkit.yaw}°`);
+  assert.ok(arkit.cx > 198 && arkit.yaw > 5, 'near enough to a pass-through');
+  // And a movement smaller than the dead band, which ML Kit refuses to
+  // follow at all, still reaches the drawing on ARKit.
+  const held = trackFrame(trackFrame(createTracker(), { ...face(), source: 'mlkit' }, 0), { ...face({ cx: 196 }), source: 'mlkit' }, FRAME_MS).face!;
+  assert.equal(held.cx, 195, 'ML Kit holds a pixel of jitter');
+  const followed = trackFrame(trackFrame(createTracker(), { ...face(), source: 'arkit' }, 0), { ...face({ cx: 196 }), source: 'arkit' }, FRAME_MS).face!;
+  assert.ok(followed.cx > 195.5, 'ARKit follows it');
+});
+
+test('mesh: the same vertex order is smoothed point by point, and a new one is taken whole', () => {
+  let state = trackFrame(createTracker(), { ...face(), source: 'mlkit', mesh: mesh(40) }, 0);
+  const first = state.face!;
+  assert.equal(first.mesh?.points.length, 80);
+  assert.equal(first.mesh?.facing.length, 40);
+  assert.deepEqual([...first.mesh!.points], mesh(40).points, 'the first is taken where it is');
+
+  state = trackFrame(state, { ...face(), source: 'mlkit', mesh: mesh(40, 0.1) }, FRAME_MS);
+  const moved = state.face!;
+  for (let i = 0; i < moved.mesh!.points.length; i += 1) {
+    const from = mesh(40).points[i];
+    const to = mesh(40, 0.1).points[i];
+    const at = moved.mesh!.points[i];
+    assert.ok(at > from && at < to, `point ${i} was not eased from ${from} to ${to}`);
+  }
+
+  // A different vertex count is a different mesh: there is nothing to smooth against.
+  state = trackFrame(state, { ...face(), source: 'mlkit', mesh: mesh(12) }, FRAME_MS * 2);
+  assert.deepEqual([...state.face!.mesh!.points], mesh(12).points);
+
+  // A source that stops sending one loses it, rather than keeping a stale head.
+  state = trackFrame(state, { ...face(), source: 'mlkit' }, FRAME_MS * 3);
+  assert.equal(state.face!.hasMesh, false);
+  assert.equal(state.face!.mesh, undefined);
+});
+
+test('mesh: ARKit’s mesh is followed almost exactly, so it does not slide over the head', () => {
+  let state = trackFrame(createTracker(), { ...face(), source: 'arkit', mesh: mesh(40) }, 0);
+  state = trackFrame(state, { ...face(), source: 'arkit', mesh: mesh(40, 0.1) }, FRAME_MS);
+  const at = state.face!.mesh!.points[0];
+  const to = mesh(40, 0.1).points[0];
+  assert.ok(Math.abs(at - to) < 0.011, `${at} lags ${to}`);
+});
+
+test('syntheticMesh draws a whole head that turns, with the far side facing away', () => {
+  const { rows, cols } = SYNTHETIC_MESH;
+  const front = syntheticMesh(VIEW, 195, 340, 180, 236, 0, 0, 0);
+  assert.equal(front.points.length, rows * cols * 2);
+  assert.equal(front.facing.length, rows * cols);
+  for (const v of [...front.points, ...front.facing]) assert.ok(Number.isFinite(v));
+  assert.ok(front.facing.some((f) => f > 0.8), 'some of it faces the camera');
+  assert.ok(front.facing.some((f) => f < -0.8), 'and some of it is round the back');
+
+  // It is a head, not a face: it reaches above the face box's own top.
+  const ys = front.points.filter((_, i) => i % 2 === 1);
+  assert.ok(Math.min(...ys) * VIEW.height < 340 - 236 / 2, 'the cranium stands above the face');
+
+  // Turned, the same vertex is somewhere else, and the count never changes.
+  const turned = syntheticMesh(VIEW, 195, 340, 180, 236, 30, 0, 0);
+  assert.equal(turned.points.length, front.points.length);
+  // A vertex off the pole, where a turn actually moves something.
+  const k = (Math.floor(rows / 2) * cols + 3) * 2;
+  assert.ok(Math.abs(turned.points[k] - front.points[k]) > 1e-3, 'the mesh turned with the head');
+});
+
+test('the drawn stand-in rehearses the whole choreography, so a simulator run reaches every region', () => {
+  let seenLeft = false;
+  let seenRight = false;
+  let seenCrown = false;
+  for (let t = 0; t <= SAMPLE_LOOP_MS; t += 100) {
+    const raw = syntheticFace(VIEW, t);
+    assert.ok(raw.mesh && raw.mesh.points.length > 0, 'the stand-in carries a mesh');
+    if (raw.yaw <= -18) seenLeft = true;
+    if (raw.yaw >= 18) seenRight = true;
+    if (raw.pitch <= -15) seenCrown = true;
+  }
+  assert.ok(seenLeft && seenRight, 'it turns both ways');
+  assert.ok(seenCrown, 'and lowers its head');
 });

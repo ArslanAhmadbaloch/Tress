@@ -11,7 +11,7 @@
  * exclaims, nothing forecasts, and nothing hurries anyone.
  */
 
-import type { GuidanceCue, ScanErrorReason, ScanRegion, ScanStatus } from './types';
+import type { GuidanceCue, ScanErrorReason, ScanRegion, ScanStatus, ScanTarget } from './types';
 
 export const HAIR_SCAN_COPY = {
   instructions: {
@@ -23,11 +23,8 @@ export const HAIR_SCAN_COPY = {
      */
     steps: [
       { title: 'Take glasses off', body: 'And find a well-lit spot' },
-      { title: 'Keep your head straight', body: 'And press Start' },
-      {
-        title: 'Turn slowly, all the way round',
-        body: 'Tress captures the angles as the ring fills',
-      },
+      { title: 'Press Start, then turn your head', body: 'Slowly to the left, then to the right' },
+      { title: 'Lower your head and turn again', body: 'That is how the top of your head is seen' },
     ],
     privacy: 'Your images stay on this device.',
     cta: 'Continue',
@@ -40,26 +37,36 @@ export const HAIR_SCAN_COPY = {
     openSettings: 'Open Settings',
   },
   ready: {
-    hint: 'Line your face up inside the ring',
+    hint: 'Hold the phone however suits you, then press Start',
     cta: 'Start',
     help: 'How the scan works',
     close: 'Close scan',
   },
+  /**
+   * The one line under the ring.
+   *
+   * Nothing here asks anybody to move closer or further away. Build 17
+   * did, and the owner's verdict was that it meant holding the phone at
+   * arm's stretch and waiting; the scan works at whatever distance the
+   * person is comfortable holding a phone, so it says nothing about it.
+   */
   cue: {
     centreFace: 'Center your face',
-    closer: 'Move slightly closer',
-    back: 'Move slightly back',
-    perfect: 'Perfect',
+    perfect: 'Ready when you are',
     holdStill: 'Hold still',
     moveSlowly: 'Move your head slowly',
     slowDown: 'Slow down',
     backInFrame: 'Let’s get you back in frame',
     brighter: 'Find a brighter spot',
     keepGoing: 'Keep going',
+    turnLeftRight: 'Turn your head slowly left and right',
+    lowerHead: 'Lower your head',
+    turnAgain: 'Turn slowly, as you did before',
+    almost: 'Nearly done',
   } satisfies Record<GuidanceCue, string>,
   scanning: {
-    hint: 'Turn slowly to complete the ring',
-    chin: 'Now tip your chin down a little',
+    hint: 'Turn slowly — the ring fills as you go',
+    chin: 'Lower your head, then turn again',
   },
   /**
    * What the machine is doing, in the top bar's pill. One state, one
@@ -74,12 +81,34 @@ export const HAIR_SCAN_COPY = {
   status: {
     initializing: 'Starting camera',
     detecting: 'Looking for your face',
-    // The cue line already says "Perfect"; the pill says what the machine is.
-    ready: 'Lined up',
+    // Not "lined up": there is nothing to line up with any more. The
+    // pill says the machine is following a head and will start when
+    // asked, wherever that head happens to be.
+    ready: 'Ready to start',
     capturing: 'Scanning',
     completing: 'Almost there',
     complete: 'Scan complete',
   } satisfies Record<ScanStatus, string>,
+  /**
+   * The pill's readout while a scan is running.
+   *
+   * The engine has one status for the whole capture, because capturing is
+   * one thing to a reducer. To the person holding the phone it is two
+   * beats — the head goes left and right, then it goes down — and a pill
+   * that says the same word through both is telling them nothing about
+   * where they are. `scanPhaseFor` decides which beat; these are its
+   * words, and they live here with every other sentence the scanner says
+   * so the honesty sweep reads them.
+   *
+   * They describe the head and nothing else. `searching` and `tracking`
+   * are left out on purpose: those beats keep `status.detecting` and
+   * `status.ready`, which already say the right thing.
+   */
+  phase: {
+    turning: 'Turning',
+    headDown: 'Head down',
+    almost: 'Almost there',
+  },
   /** Shown in place of `status.detecting` while a followed head is turned away. */
   facingAway: 'Face the camera',
   lighting: {
@@ -110,6 +139,13 @@ export const HAIR_SCAN_COPY = {
     frameReviewed: 'Reviewed',
     onDevice: 'Everything runs on this device.',
   },
+  /** The four regions the scan sets out to photograph, as the report names them. */
+  target: {
+    hairline: 'Front hairline',
+    leftTemple: 'Left temple',
+    rightTemple: 'Right temple',
+    crown: 'Crown',
+  } satisfies Record<ScanTarget, string>,
   region: {
     front: 'Front',
     up: 'Chin up',

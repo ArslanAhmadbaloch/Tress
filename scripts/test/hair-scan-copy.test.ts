@@ -63,12 +63,15 @@ test('hair scan copy: nothing hurries anybody or speaks as a person', () => {
 test('hair scan copy: the owner’s wording is used verbatim', () => {
   const c = HAIR_SCAN_COPY;
   assert.equal(c.instructions.title, 'Scan Instructions');
+  // The owner's three steps after build 17, in his order: glasses and
+  // light, press Start and turn left and right, then lower the head and
+  // turn again. Nothing about where to stand.
   assert.deepEqual(
     c.instructions.steps.map((s) => `${s.title} — ${s.body}`),
     [
       'Take glasses off — And find a well-lit spot',
-      'Keep your head straight — And press Start',
-      'Turn slowly, all the way round — Tress captures the angles as the ring fills',
+      'Press Start, then turn your head — Slowly to the left, then to the right',
+      'Lower your head and turn again — That is how the top of your head is seen',
     ],
   );
   assert.equal(c.instructions.cta, 'Continue');
@@ -79,15 +82,17 @@ test('hair scan copy: the owner’s wording is used verbatim', () => {
   );
   assert.deepEqual(c.cue, {
     centreFace: 'Center your face',
-    closer: 'Move slightly closer',
-    back: 'Move slightly back',
-    perfect: 'Perfect',
+    perfect: 'Ready when you are',
     holdStill: 'Hold still',
     moveSlowly: 'Move your head slowly',
     slowDown: 'Slow down',
     backInFrame: 'Let’s get you back in frame',
     brighter: 'Find a brighter spot',
     keepGoing: 'Keep going',
+    turnLeftRight: 'Turn your head slowly left and right',
+    lowerHead: 'Lower your head',
+    turnAgain: 'Turn slowly, as you did before',
+    almost: 'Nearly done',
   });
   assert.deepEqual(c.processing.stages, [
     'Analysing your scan…',
@@ -98,6 +103,50 @@ test('hair scan copy: the owner’s wording is used verbatim', () => {
   ]);
   assert.equal(c.complete.title, 'Scan complete');
   assert.equal(c.status.complete, 'Scan complete');
+});
+
+test('hair scan copy: nothing anywhere asks anybody to move closer or further away', () => {
+  // The owner on build 17: "move slightly back is bad — it is a hard
+  // stretch of the hand until it says hold still". The scan works at
+  // whatever distance a phone is comfortably held, so it says nothing.
+  const text = sentences.join(' ').toLowerCase();
+  for (const phrase of [
+    'move closer',
+    'move slightly closer',
+    'move back',
+    'move slightly back',
+    'step back',
+    'further away',
+    'arm’s length',
+    'closer to the camera',
+  ]) {
+    assert.ok(!text.includes(phrase), `the scan must not say "${phrase}"`);
+  }
+  assert.ok(!('closer' in HAIR_SCAN_COPY.cue), 'the closer cue is gone');
+  assert.ok(!('back' in HAIR_SCAN_COPY.cue), 'and so is the back cue');
+});
+
+test('hair scan copy: the cues walk through the owner’s choreography', () => {
+  const c = HAIR_SCAN_COPY.cue;
+  // Stage one, stage two, and the line before the end.
+  assert.equal(c.turnLeftRight, 'Turn your head slowly left and right');
+  assert.equal(c.lowerHead, 'Lower your head');
+  assert.equal(c.turnAgain, 'Turn slowly, as you did before');
+  assert.equal(c.almost, 'Nearly done');
+  // Each is an instruction to a person, and none of them is a verdict.
+  for (const line of [c.turnLeftRight, c.lowerHead, c.turnAgain]) {
+    assert.ok(!/your hair|scalp|density|thinning/i.test(line), line);
+  }
+  // The four regions the report is built from are named plainly.
+  assert.deepEqual(HAIR_SCAN_COPY.target, {
+    hairline: 'Front hairline',
+    leftTemple: 'Left temple',
+    rightTemple: 'Right temple',
+    crown: 'Crown',
+  });
+  for (const label of Object.values(HAIR_SCAN_COPY.target)) {
+    assert.ok(sentences.includes(label), `${label} reaches the sweep`);
+  }
 });
 
 test('hair scan copy: a head that is followed but turned is asked to turn, not searched for', () => {
@@ -120,4 +169,25 @@ test('hair scan copy: images are said to stay on the device only where that is t
   assert.ok(HAIR_SCAN_COPY.report.onDevice.includes('not uploaded'));
   const text = sentences.join(' ').toLowerCase();
   assert.ok(!text.includes('cloud') && !text.includes('server'), 'nothing names a remote');
+});
+
+test('hair scan copy: the two beats of the capture do not read as the same beat', () => {
+  /*
+    The engine has one status for the whole capture, so the pill said
+    "Scanning" through both halves of the choreography: while the head
+    turned left and right, and while it was lowered for the crown. A
+    readout that cannot change is a readout that says nothing about where
+    the person is in a scan they are being asked to follow.
+
+    The words describe the head's position and nothing else. That is the
+    only thing this pill is allowed to know.
+  */
+  const { turning, headDown, almost } = HAIR_SCAN_COPY.phase;
+  assert.equal(turning, 'Turning');
+  assert.equal(headDown, 'Head down');
+  assert.notEqual(turning, headDown);
+  for (const line of [turning, headDown, almost]) {
+    assert.ok(sentences.includes(line), `${line} reaches the sweep`);
+    assert.ok(line.length <= 16, `${line} has to fit a pill`);
+  }
 });

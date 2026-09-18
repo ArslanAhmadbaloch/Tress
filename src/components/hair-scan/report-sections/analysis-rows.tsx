@@ -57,17 +57,25 @@ function Mark({ measured, label }: { measured: boolean; label: string }) {
   );
 }
 
+/** Half the crop column, so a row with two pictures keeps the row's width. */
+const PAIR_GAP = 4;
+const PAIR_CROP = (ROW_CROP - PAIR_GAP) / 2;
+
 export function AnalysisRowView({
   row,
   photo,
+  photo2,
   marks,
 }: {
   row: AnalysisRow;
   /** The photograph the row's crop is cut from, for the mask. */
   photo: Pick<Photo, 'maskTrace' | 'width' | 'height'> | null;
+  /** The second photograph, when the row shows a pair — the temples do. */
+  photo2?: Pick<Photo, 'maskTrace' | 'width' | 'height'> | null;
   marks: { measured: string; kept: string };
 }) {
   const { colors, spacing, radius } = useTheme();
+  const second = row.crop2 ?? null;
 
   return (
     <View
@@ -75,7 +83,29 @@ export function AnalysisRowView({
       accessibilityLabel={`${row.regionLabel}. ${row.headline}${row.locked ? '' : ` ${row.body}`}`}
       style={{ flexDirection: 'row', gap: spacing.lg, alignItems: 'flex-start', paddingVertical: spacing.xl }}>
       <View style={{ width: ROW_CROP, alignItems: 'flex-start' }}>
-        {row.crop ? (
+        {row.crop && second ? (
+          /*
+            Both temples, side by side and half the width each, because
+            the scan photographs both and a report that shows one of them
+            is a report of a scan that did not happen. Together they
+            occupy the same column a single crop does, so no other row
+            moves.
+          */
+          <View style={{ flexDirection: 'row', gap: PAIR_GAP }}>
+            <RegionCrop
+              crop={row.crop}
+              photo={photo}
+              size={PAIR_CROP}
+              label={UI.a11y.cropLabel(row.regionLabel)}
+            />
+            <RegionCrop
+              crop={second}
+              photo={photo2 ?? null}
+              size={PAIR_CROP}
+              label={UI.a11y.cropLabel(row.regionLabel)}
+            />
+          </View>
+        ) : row.crop ? (
           <RegionCrop crop={row.crop} photo={photo} label={UI.a11y.cropLabel(row.regionLabel)} />
         ) : (
           <View
@@ -134,7 +164,12 @@ export function AnalysisRows({
       {rows.map((row, i) => (
         <View key={row.id}>
           {i > 0 ? <Separator /> : null}
-          <AnalysisRowView row={row} marks={marks} photo={row.crop ? photoFor(row.crop.uri) : null} />
+          <AnalysisRowView
+            row={row}
+            marks={marks}
+            photo={row.crop ? photoFor(row.crop.uri) : null}
+            photo2={row.crop2 ? photoFor(row.crop2.uri) : null}
+          />
         </View>
       ))}
       {anyLocked ? <LockCta onPress={onSeeFull} style={{ marginTop: spacing.sm }} /> : null}

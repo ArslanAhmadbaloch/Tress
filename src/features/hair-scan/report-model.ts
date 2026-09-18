@@ -114,6 +114,13 @@ export type AnalysisRow = {
   body: string;
   crop: ReportCrop | null;
   /**
+   * A second picture for a row that is about two places rather than one.
+   * Only the temples row sets it, and only when the scan actually took
+   * both: the scan asks for both temples, so a report that shows one of
+   * them is showing half of what was photographed.
+   */
+  crop2?: ReportCrop | null;
+  /**
    * True only when the on-device segmenter's hair-area reading is behind
    * a figure on this row. Light and focus words alone do not earn it, and
    * the light row never carries it: the "Measured" mark means the mask
@@ -366,6 +373,10 @@ function templesRow(session: PhotoSession): Omit<AnalysisRow, 'locked'> {
 
   const lead = left ?? (right as Photo);
   const crop = cropFor(lead, left ? 'leftTemple' : 'rightTemple');
+  // When both were taken, both are shown. `crop` is the left one and
+  // `crop2` the right, in that order, so the pair reads the way the row
+  // is captioned.
+  const crop2 = left && right ? cropFor(right, 'rightTemple') : null;
 
   const turnL = left?.pose && Number.isFinite(left.pose.yaw) ? deg(left.pose.yaw) : null;
   const turnR = right?.pose && Number.isFinite(right.pose.yaw) ? deg(right.pose.yaw) : null;
@@ -399,6 +410,7 @@ function templesRow(session: PhotoSession): Omit<AnalysisRow, 'locked'> {
       headline: COPY.temples.both(l, r),
       body: [balance, turns].filter((s): s is string => s !== null).join(' '),
       crop,
+      crop2,
       measured: true,
     };
   }
@@ -412,6 +424,7 @@ function templesRow(session: PhotoSession): Omit<AnalysisRow, 'locked'> {
     headline: COPY.temples.kept,
     body: body.filter((s): s is string => s !== null).join(' '),
     crop,
+    crop2,
     measured: false,
   };
 }
@@ -546,7 +559,21 @@ function strengthCards(data: AppData, session: PhotoSession): StrengthCard[] {
   }
 
   const completion = session.scan?.completion;
-  if (typeof completion === 'number' && completion >= FULL_TURN_AT) {
+  /*
+    The figure alone is not enough to say the turn reached everything.
+    Three of the four regions are worth 0.75 on their own and the
+    approach to the fourth is worth up to another 0.1875, so a scan that
+    never photographed the crown can read 0.8 — and this card would then
+    say the turn "reached the parts of the head the scan asks for" about
+    a part it never saw. So the pictures have to be there as well as the
+    number.
+  */
+  const everyRegion =
+    front !== undefined &&
+    byAngle(session, 'leftTemple') !== undefined &&
+    byAngle(session, 'rightTemple') !== undefined &&
+    (byAngle(session, 'top') ?? byAngle(session, 'crown')) !== undefined;
+  if (typeof completion === 'number' && completion >= FULL_TURN_AT && everyRegion) {
     cards.push({ id: 'coverage', icon: 'coverage', title: COPY.strengths.coverage.title, body: COPY.strengths.coverage.body(pct(completion)) });
   } else if (front && byAngle(session, 'leftTemple') && byAngle(session, 'rightTemple')) {
     cards.push({ id: 'coverage', icon: 'coverage', title: COPY.strengths.coverage.sidesTitle, body: COPY.strengths.coverage.sidesBody });

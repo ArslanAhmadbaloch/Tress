@@ -2,9 +2,14 @@
  * The hair scan's camera: a live front preview that reports a face, with
  * its contours, on every frame it can.
  *
- * Three implementations sit behind one component, exactly as they do for
+ * Four implementations sit behind one component, exactly as three did for
  * the capture screen's TrackedCamera — the pattern is copied rather than
  * shared because this one asks the detector for something different.
+ *
+ *   ARKit, on an iPhone with a TrueDepth camera. A real 3D face anchor
+ *   and head pose at 60 fps, solved from depth, which stays glued to the
+ *   head through a turn that a 2D detector can only guess at. The AR view
+ *   IS the preview and its stills come out of the live AR frame.
  *
  *   VisionCamera + ML Kit, contours on. The one the app ships with. The
  *   detector runs as a native camera output, so frames go from the sensor
@@ -24,6 +29,13 @@
  *   face so the mesh and the tracking can be watched on a machine with no
  *   camera. That face is not a reading of anything, and the camera that
  *   produces it is the one that burns "sample" into every frame.
+ *
+ * ── The one architectural rule ─────────────────────────────────────────
+ * ARKit and VisionCamera cannot share the front camera. Whichever one is
+ * chosen below is mounted ALONE: never both, not even for a frame while
+ * one is being swapped for the other. That is why the choice is made
+ * before anything mounts and why ARKit's failure path replaces the
+ * implementation outright rather than layering a fallback under it.
  *
  * ── Loading the native side ────────────────────────────────────────────
  * VisionCamera touches native code the moment its module is evaluated, so
@@ -58,8 +70,20 @@ import {
   type ComponentType,
   type ReactNode,
   type Ref,
+  type RefObject,
 } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+
+import {
+  HairFaceTrackingView,
+  capture as captureArFrame,
+  isFaceFrame,
+  isFaceLost,
+  isFaceTrackingAvailable,
+  isTracking as arkitIsTracking,
+  toRawFace as arkitFaceToRaw,
+  type FaceEvent,
+} from '../../../modules/hair-face-tracking';
 
 import { SampleCamera, sampleCameraActive } from '@/components/capture/sample-camera';
 import type { TrackedCameraHandle } from '@/components/capture/types';
@@ -71,7 +95,7 @@ import {
   type ViewSize,
 } from '@/features/hair-scan/tracking';
 import { nitroAvailable } from '@/lib/native';
-import { shrinkCapture } from '@/lib/photo-storage';
+import { deletePhotoFiles, shrinkCapture } from '@/lib/photo-storage';
 
 /** A captured frame, already brought down to storage size. */
 export type ScannerPhoto = {
@@ -92,8 +116,27 @@ export type ScannerCameraHandle = {
  * Called for every processed frame with the most prominent face, or null
  * when there is none, and the size of the preview the coordinates are
  * in. It runs on the JS thread at up to camera rate: keep it cheap.
+ *
+ * `held` is true when the pose is a real reading that has stopped being
+ * refreshed rather than a fresh one — ARKit's coast, which repeats the
+ * last tracked pose while the head is low enough that the face is out of
+ * sight. The pose is honest and worth drawing; what it is NOT is
+ * evidence that the head stayed where it was, and a caller that judges
+ * stillness has to know the difference. Only the AR path ever sets it:
+ * ML Kit either sees a face or reports none.
  */
-export type ScannerFrameHandler = (face: RawFace | null, view: ViewSize) => void;
+export type ScannerFrameHandler = (face: RawFace | null, view: ViewSize, held: boolean) => void;
+
+/**
+ * Which of the four cameras is actually behind the preview.
+ *
+ * Reported because the choice is made here and one thing above needs it:
+ * the lighting probe's frame output can only ride on a VisionCamera
+ * session, and ARKit owns the lens on the AR path. It is reported again
+ * if ARKit fails and ML Kit takes over, so the screen and this component
+ * never disagree about which camera is mounted.
+ */
+export type ScannerImplementation = 'arkit' | 'mlkit' | 'sample' | 'preview';
 
 export type ScannerCameraProps = {
   ref?: Ref<ScannerCameraHandle>;
@@ -110,6 +153,14 @@ export type ScannerCameraProps = {
    * here means this camera will never report a face.
    */
   onTrackingChanged?: (tracking: boolean) => void;
+  /**
+   * Which camera is mounted. Fires as soon as the answer is known and
+   * again whenever it changes — the one change that happens in practice
+   * is ARKit failing and VisionCamera taking the screen. Not fired while
+   * the VisionCamera module is still loading, because "not yet" is not an
+   * implementation.
+   */
+  onImplementation?: (kind: ScannerImplementation) => void;
   /**
    * Further native outputs for the VisionCamera implementation — the
    * lighting probe's frame output, for one. Read only by that
@@ -173,16 +224,48 @@ function loadVisionScanner(): Promise<VisionScanner | null> {
 }
 
 /**
- * Whether this build can be expected to follow a head. Synchronous and
- * conservative: true means the native runtime is present and this is a
- * real device, not that the module has finished loading.
+ * Whether this phone tracks a face in 3D: an iPhone with a TrueDepth
+ * camera, running a build that contains the local ARKit module.
+ *
+ * False on Android always — the module's own check answers on
+ * `Platform.OS` before it touches anything native — and false on the
+ * simulator, which has no sensor to point at a face and shows a drawn
+ * one instead.
+ *
+ * What it does NOT answer is whether the AR view itself resolved: the
+ * hardware can support face tracking in a build whose native view
+ * manager will not load, and the module renders nothing at all in that
+ * state. `ArkitScannerCamera`'s watchdog is what catches it, because the
+ * only way to know is to ask the running session for a frame.
  */
-export function scannerTrackingPossible(): boolean {
-  return nitroAvailable() && !sampleCameraActive();
+export function arkitScannerAvailable(): boolean {
+  return isFaceTrackingAvailable() && !sampleCameraActive();
 }
 
-/** Smallest face worth reporting, as a fraction of frame width. */
-const MIN_FACE_SIZE = 0.2;
+/**
+ * Whether this build can be expected to follow a head. Synchronous and
+ * conservative: true means a tracker's native side is present and this is
+ * a real device, not that a module has finished loading.
+ */
+export function scannerTrackingPossible(): boolean {
+  if (sampleCameraActive()) return false;
+  return arkitScannerAvailable() || nitroAvailable();
+}
+
+/**
+ * Smallest face worth reporting, as a fraction of frame width.
+ *
+ * ML Kit's own default, and deliberately back at it. This was 0.2, which
+ * is a distance gate one layer below the engine: a face smaller than a
+ * fifth of the frame was never reported at all, so the scan stayed on
+ * "Looking for your face" with Start dead and nothing on screen saying
+ * why — which is the exact failure build 17 was rejected for. The engine
+ * now promises Start arms at any distance, and a promise the detector can
+ * quietly break is not a promise. The cost of the lower figure is that
+ * ML Kit considers smaller candidates on each frame; the benefit is that
+ * nobody is ever again silently required to bring the phone nearer.
+ */
+const MIN_FACE_SIZE = 0.1;
 
 /**
  * How long to wait for the device list before opening the camera anyway.
@@ -194,7 +277,16 @@ function toUri(path: string): string {
   return path.startsWith('file://') ? path : `file://${path}`;
 }
 
-/** The detector's face, reduced to plain numbers and plain points. */
+/**
+ * The detector's face, reduced to plain numbers and plain points.
+ *
+ * `source` is stamped here rather than left to default: the tracker
+ * smooths an ML Kit reading hard and an ARKit one barely at all, and a
+ * reading that arrives without saying where it came from gets the hard
+ * filter. That is the safe way round — a smoothed ARKit pose only lags —
+ * but a silent default is not a thing to rely on in the file that knows
+ * the answer.
+ */
 function toRawFace(face: DetectedFace, at: number): RawFace {
   const { x, y, width, height } = face.bounds;
   let contours: Contours | undefined;
@@ -216,6 +308,7 @@ function toRawFace(face: DetectedFace, at: number): RawFace {
     pitch: face.pitchAngle,
     roll: face.rollAngle,
     contours,
+    source: 'mlkit',
     at,
   };
 }
@@ -388,6 +481,169 @@ function buildVisionScanner(vc: VisionCameraModule, fd: FaceDetectorModule): Vis
   return Gate;
 }
 
+/* ------------------------------- ARKit --------------------------------- */
+
+/**
+ * How long the AR view has to say *something* — a face, a loss, an error
+ * — before it is asked outright whether it is alive.
+ *
+ * Generous on purpose. ARKit takes about a second to bring the session
+ * up, and the check below is only reached when nothing at all has
+ * arrived in four seconds, which on the ready screen means either the
+ * camera is pointing at a ceiling or there is nothing behind this
+ * component at all.
+ */
+const ARKIT_SIGNAL_MS = 4000;
+
+/**
+ * The AR preview, wearing the same interface as the other three.
+ *
+ * It renders the module's own view and nothing else: ARKit owns the front
+ * camera while its session runs, so there is no preview to put it over
+ * and no second camera to run beside it. Stills come out of the live AR
+ * frame through `capture()` and are shrunk exactly as VisionCamera's are,
+ * so everything downstream — the mesh on the still, the region
+ * rectangles, the journal — takes the same shape of file on both
+ * platforms.
+ *
+ * The view's size arrives as a ref from the parent, which is the one
+ * thing measuring the preview. The native side speaks in fractions of
+ * the rendered view and `RawFace` wants the box in preview points; the
+ * module's `toRawFace` is the conversion, and it is the module's rather
+ * than this file's so a test can hold it.
+ */
+function ArkitScannerCamera({
+  ref,
+  active,
+  view,
+  onFrame,
+  onError,
+}: {
+  ref?: Ref<ScannerCameraHandle>;
+  active: boolean;
+  view: RefObject<ViewSize>;
+  onFrame: (face: RawFace | null, held: boolean) => void;
+  onError: (error: Error) => void;
+}) {
+  const onFrameRef = useRef(onFrame);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onFrameRef.current = onFrame;
+    onErrorRef.current = onError;
+  }, [onFrame, onError]);
+
+  /** Whether the native side has said anything at all yet. See the watchdog below. */
+  const signalled = useRef(false);
+
+  useImperativeHandle(
+    ref,
+    (): ScannerCameraHandle => ({
+      async takePhoto() {
+        const frame = await captureArFrame();
+        // The module writes a full-size JPEG into the cache; everything
+        // above this holds storage-size files only, as it does for the
+        // VisionCamera path.
+        return shrinkCapture(frame.uri);
+      },
+    }),
+    [],
+  );
+
+  const handleFace = useCallback(
+    (event: { nativeEvent: FaceEvent }) => {
+      signalled.current = true;
+      const face = event.nativeEvent;
+      if (isFaceLost(face)) {
+        onFrameRef.current(null, false);
+        return;
+      }
+      // Anything that is neither a frame nor a loss is a payload this
+      // build does not understand. Reporting it as "no face" would be a
+      // lie about the camera; it is dropped instead.
+      if (!isFaceFrame(face)) return;
+      const raw = arkitFaceToRaw(face, view.current);
+      // The view has not been laid out yet: a fraction of nothing is not
+      // a place, and the module says so by answering null.
+      if (raw === null) return;
+      /*
+        A coasted frame — the last tracked pose, repeated while the head
+        is low enough that ARKit is looking at a scalp — is passed on,
+        because that is the whole point of the coast: the crown stage
+        asks for the pose the camera can no longer read, and a stream
+        that fell silent there would leave the ring and the mesh with
+        nothing to run on.
+
+        It is passed on WITH THE FLAG, though, and that part is not
+        decoration. A repeated box has travelled nowhere, so the tracker
+        would compute perfect stillness from it within three ticks — and
+        the engine both gates the shutter on stillness and makes it
+        nearly half of a frame's quality score. A held pose is evidence
+        of where the head was, never evidence that it stayed there, and
+        the screen substitutes the last stillness that was actually
+        measured rather than letting a repeat manufacture one.
+      */
+      onFrameRef.current(raw, !arkitIsTracking(face));
+    },
+    [view],
+  );
+
+  const handleError = useCallback((event: { nativeEvent: { message: string } }) => {
+    signalled.current = true;
+    onErrorRef.current(new Error(event.nativeEvent.message));
+  }, []);
+
+  /*
+    The liveness watchdog.
+
+    `isFaceTrackingAvailable()` answers for the hardware and the binary;
+    it cannot answer for the view. The module falls back to a component
+    that renders nothing if the native view manager will not resolve, and
+    that component draws no preview, sends no face and reports no error —
+    a black screen with a Start button that never arms, which is exactly
+    the symptom this whole rework exists to end, arrived at from the
+    other side. The native side is also silent, legitimately, whenever
+    the session is up and no face has come into view.
+
+    `capture()` is what tells those two apart, and it is the only thing
+    that can: it resolves from a live AR frame and rejects when no view
+    is on screen or the session has delivered nothing. So after four
+    quiet seconds the camera is asked for a picture. One that arrives is
+    proof the preview is real — the file is deleted at once and the
+    question is never asked again. One that is refused is reported as a
+    camera failure, and ML Kit takes the screen.
+  */
+  useEffect(() => {
+    if (!active) return undefined;
+    let live = true;
+    const timer = setTimeout(() => {
+      if (signalled.current) return;
+      captureArFrame().then(
+        (frame) => {
+          signalled.current = true;
+          deletePhotoFiles([frame.uri]);
+        },
+        () => {
+          if (!live) return;
+          onErrorRef.current(new Error('The face tracking camera delivered no frames.'));
+        },
+      );
+    }, ARKIT_SIGNAL_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [active]);
+
+  return (
+    <HairFaceTrackingView
+      style={StyleSheet.absoluteFill}
+      paused={!active}
+      onFace={handleFace}
+      onError={handleError}
+    />
+  );
+}
+
 /* ---------------------------- the component ---------------------------- */
 
 type VisionState = VisionScanner | null | 'pending';
@@ -403,15 +659,27 @@ export function ScannerCamera({
   onFrame,
   onError,
   onTrackingChanged,
+  onImplementation,
   extraOutputs,
   sampleSource,
   demoTracking = false,
 }: ScannerCameraProps) {
   const [vision, setVision] = useState<VisionState>(initialVisionState);
   const [visionFailed, setVisionFailed] = useState(false);
+  /*
+    Whether the AR session is the one running. Latched at mount, because
+    the answer is a fact about the phone and the build; it goes false only
+    if ARKit reports a failure, and then VisionCamera takes the screen —
+    the two are never mounted together.
+  */
+  const [arkitPossible] = useState(arkitScannerAvailable);
+  const [arkitFailed, setArkitFailed] = useState(false);
+  const arkit = arkitPossible && !arkitFailed;
 
   useEffect(() => {
-    if (vision !== 'pending') return undefined;
+    // The VisionCamera module is not loaded at all on the AR path: it is
+    // the camera this screen has decided not to open.
+    if (arkit || vision !== 'pending') return undefined;
     let live = true;
     loadVisionScanner().then((scanner) => {
       if (live) setVision(scanner);
@@ -419,19 +687,40 @@ export function ScannerCamera({
     return () => {
       live = false;
     };
-  }, [vision]);
+  }, [arkit, vision]);
 
   const sample = sampleCameraActive();
-  const scanner = visionFailed || sample || vision === 'pending' ? null : vision;
-  const tracking = scanner !== null || (sample && demoTracking);
+  const scanner = arkit || visionFailed || sample || vision === 'pending' ? null : vision;
+  const tracking = arkit || scanner !== null || (sample && demoTracking);
 
   useEffect(() => {
     // Not answered while the module is loading: `tracking` is false then
     // only because nothing has mounted yet, and a screen that fails on a
     // false answer would fail every scan on a phone that can track.
-    if (vision === 'pending') return;
+    if (!arkit && vision === 'pending') return;
     onTrackingChanged?.(tracking);
-  }, [tracking, vision, onTrackingChanged]);
+  }, [arkit, tracking, vision, onTrackingChanged]);
+
+  /*
+    Which camera ended up on screen. Unanswered while the module loads —
+    for the same reason as above — and answered again the moment ARKit
+    hands the screen over, so nothing upstream is left addressing a
+    camera that is no longer mounted.
+  */
+  const implementation: ScannerImplementation | null = arkit
+    ? 'arkit'
+    : sample
+      ? 'sample'
+      : scanner !== null
+        ? 'mlkit'
+        : vision === 'pending'
+          ? null
+          : 'preview';
+
+  useEffect(() => {
+    if (implementation === null) return;
+    onImplementation?.(implementation);
+  }, [implementation, onImplementation]);
 
   // Per-frame data reaches the memoised native camera through refs only.
   const onFrameRef = useRef(onFrame);
@@ -447,8 +736,13 @@ export function ScannerCamera({
     viewRef.current = { width, height };
   }, []);
 
-  const emitFrame = useCallback((face: RawFace | null) => {
-    onFrameRef.current(face, viewRef.current);
+  /*
+    `held` is false unless the caller says otherwise, and only the AR
+    path ever does: ML Kit, the sample face and the plain preview each
+    either have a reading or have none, with nothing in between to hold.
+  */
+  const emitFrame = useCallback((face: RawFace | null, held = false) => {
+    onFrameRef.current(face, viewRef.current, held);
   }, []);
 
   const handleVisionError = useCallback((error: Error) => {
@@ -457,8 +751,29 @@ export function ScannerCamera({
     onErrorRef.current?.(error);
   }, []);
 
+  /*
+    ARKit could not start — an iPhone whose hardware answered `isSupported`
+    and then refused the session, or an interruption it could not recover
+    from. The AR view goes, ML Kit takes the screen, and the scan runs the
+    same choreography on the simpler tracker. The screen is not told:
+    nothing failed for the person, and the fallback is a camera.
+  */
+  const handleArkitError = useCallback(() => {
+    setArkitFailed(true);
+  }, []);
+
   let camera: ReactNode;
-  if (sample) {
+  if (arkit) {
+    camera = (
+      <ArkitScannerCamera
+        ref={ref}
+        active={active}
+        view={viewRef}
+        onFrame={emitFrame}
+        onError={handleArkitError}
+      />
+    );
+  } else if (sample) {
     camera = (
       <SampleScannerCamera
         ref={ref}
@@ -511,7 +826,14 @@ function ExpoScannerCamera({ ref, active }: { ref?: Ref<ScannerCameraHandle>; ac
         if (!camera.current) throw new Error('Camera is not ready');
         // `skipProcessing` is deliberately off: on Android it can hand
         // back an unrotated or empty frame.
-        const photo = await camera.current.takePictureAsync({ quality: 0.9 });
+        //
+        // `shutterSound: false` because this implementation takes the
+        // light meter's reading on the ready screen, a second after the
+        // camera appears and before anybody has pressed anything —
+        // expo-camera defaults it to true, so build 17 clicked at
+        // somebody who had not asked for a photograph. The preview's
+        // matching flash is off at the view below.
+        const photo = await camera.current.takePictureAsync({ quality: 0.9, shutterSound: false });
         if (!photo) throw new Error('Camera returned no photo');
         return shrinkCapture(photo.uri);
       },
@@ -529,6 +851,10 @@ function ExpoScannerCamera({ ref, active }: { ref?: Ref<ScannerCameraHandle>; ac
       // The file is mirrored to match the preview, as every stored
       // photograph in the app is. See tracked-camera.tsx.
       mirror={true}
+      // No white flash over the preview: the one shot this camera takes
+      // unprompted is the light meter's, and a flash for a photograph
+      // nobody asked for reads as a bug. See takePictureAsync above.
+      animateShutter={false}
     />
   );
 }
