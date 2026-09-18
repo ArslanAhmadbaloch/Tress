@@ -20,6 +20,18 @@ export const PHOTO_COPY = {
     title: 'Add to your journey',
     /** Why there are two doors, without selling either. */
     subtitle: 'Two ways to add a picture today.',
+    /*
+      The badge on each card says what it costs, because finding out at
+      the paywall after choosing is the version of this that wastes
+      somebody's time. The scan's badge is the free-baseline rule read
+      back plainly; the camera's is the truth that it is never gated.
+    */
+    badge: {
+      firstFree: 'First one free',
+      premium: 'Premium',
+      unlimited: 'Unlimited',
+      free: 'Always free',
+    },
     scan: {
       label: 'Hair Scan',
       description: 'A guided scan that reads your hairline, temples and crown',
@@ -28,7 +40,6 @@ export const PHOTO_COPY = {
       label: 'Photo',
       description: 'Just take a picture and keep it with the others',
     },
-    cancel: 'Not now',
     close: 'Close',
   },
   camera: {

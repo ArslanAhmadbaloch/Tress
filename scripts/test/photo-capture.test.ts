@@ -318,9 +318,11 @@ test('the chooser respects reduced motion', () => {
 
 test('the chooser can be scrolled, so a fixed sheet height cannot hide the way out', () => {
   assert.ok(CHOOSER_SCREEN.includes('ScrollView'), 'Text does not cap Dynamic Type');
+  // The way out is the round close button under the two cards; what
+  // matters is that it scrolls with them rather than sitting outside.
   assert.ok(
-    CHOOSER_SCREEN.indexOf('ScrollView') < CHOOSER_SCREEN.indexOf('copy.cancel'),
-    'the cancel control is inside it',
+    CHOOSER_SCREEN.indexOf('ScrollView') < CHOOSER_SCREEN.lastIndexOf('copy.close'),
+    'the close control is inside it',
   );
 });
 

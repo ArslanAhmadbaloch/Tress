@@ -7,236 +7,225 @@
  * That is still true. This is not a choice between two scanners; it is a
  * choice between scanning and not scanning. The owner's call: "the plus
  * button at the centre will have 2 features, scanner and camera to take
- * photos like simple photos. Just an option for if they don't choose
- * scanner to save their photos."
+ * photos like simple photos."
  *
- * So: two rows, no default, no persuasion. The guided scan is named
- * first because it is the one that produces a reading; the plain camera
- * is named second and described as exactly what it is.
+ * ── Why it looks like this ────────────────────────────────────────────
+ * Two cards side by side over a blurred view of whatever was showing,
+ * each carrying a picture, a badge and a sentence. The owner asked for
+ * the shape after seeing it elsewhere, and it earns its keep: a person
+ * choosing between a guided scan and a snapshot is choosing between two
+ * *experiences*, and a picture says which is which faster than a row of
+ * text. The badge says what each costs, because learning that at the
+ * paywall — after choosing — is the version of this that wastes time.
  *
  * ── Why it replaces itself rather than pushing ────────────────────────
  * Both destinations end by leaving: the scanner's report replaces itself
  * with the journal, and the plain camera replaces itself with the update
  * it just saved. If this screen were still underneath, that replace
- * would pop the destination and strand the person on a chooser sheet
- * they had already answered. A chooser is a fork in the road, not a
- * place to come back to, so it hands the stack over instead of sitting
- * in it.
+ * would pop the destination and strand the person on a chooser they had
+ * already answered.
  *
- * Presented as a sheet over whatever was showing — see the route note in
- * this lane's hand-off; it is registered in _layout.tsx, which belongs
- * to the integration agent. The detent asked for there is a pair
- * (`[0.5, 1]`) rather than one fixed height, and everything below the
- * header scrolls: `Text` does not cap Dynamic Type, and at the largest
- * accessibility sizes a single short detent would put "Not now" off the
- * bottom of a sheet with no way to scroll to it.
+ * The blur is the system's own, so it matches whatever is behind it, and
+ * a scrim underneath keeps the white cards legible over a bright screen
+ * as well as a dark one. Everything below the title scrolls: `Text` does
+ * not cap Dynamic Type, and at the largest accessibility sizes two cards
+ * and a close button are taller than a phone.
  */
 
+import { BlurView } from 'expo-blur';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { Platform, ScrollView, View } from 'react-native';
-import Animated, { FadeInDown, useReducedMotion } from 'react-native-reanimated';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeInUp, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon, type IconName } from '@/components/ui/icon';
+import { Icon } from '@/components/ui/icon';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
+import { hairContent } from '@/features/content/hair-content';
 import { PHOTO_COPY } from '@/features/photo/copy';
-import { MIN_TOUCH_TARGET, motion, useTheme } from '@/theme';
+import { usePremium } from '@/features/subscription/provider';
+import { useAppStore } from '@/store/app-store';
+import { MIN_TOUCH_TARGET, iconSize, motion, radius, shadow, spacing, useTheme } from '@/theme';
+import { isScanSession } from '@/types/domain';
 
-/** The round plate each row's glyph sits on. */
-const GLYPH_PLATE = 46;
-/** The close control in the header. */
-const CLOSE_SIZE = 34;
+/** The picture on a card, square, so the two read as a pair. */
+const CARD_IMAGE = 116;
 
 export default function NewScreen() {
-  const { colors, spacing, radius } = useTheme();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
+  const { data } = useAppStore();
+  const { isPremium } = usePremium();
   const copy = PHOTO_COPY.chooser;
 
   /*
-    The rows arrive one after the other rather than all at once, which is
-    the app's grammar for a short list that has just appeared. Reduced
-    motion removes the entrance entirely: the rows are simply there.
+    The scan's badge is the free-baseline rule, read back before the
+    choice instead of after it: the first scan is free to everybody, and
+    the screen that enforces that reads the same question — has a scan
+    been taken — so the badge cannot drift from what the scanner does.
   */
-  const entering = (index: number) =>
-    reduceMotion ? undefined : FadeInDown.delay(60 + index * 70).duration(motion.duration.slow);
+  const hasScanned = data.sessions.some(isScanSession);
+  const scanBadge = isPremium
+    ? copy.badge.unlimited
+    : hasScanned
+      ? copy.badge.premium
+      : copy.badge.firstFree;
+
+  const content = hairContent(data.profile?.gender);
+  const close = () => router.back();
 
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: colors.background,
-        /*
-          A sheet on iOS already clears the status bar; on Android the
-          same presentation is full screen, so the inset has to be paid
-          for. profile-photo.tsx makes the same allowance.
-        */
-        paddingTop: Platform.OS === 'ios' ? spacing.lg : insets.top + spacing.sm,
-        paddingHorizontal: spacing.xxl,
-      }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: spacing.xs,
-        }}>
-        <Text variant="title3" accessibilityRole="header">
-          {copy.title}
-        </Text>
-        <PressableScale
-          hitSlop={8}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel={copy.close}
-          style={{
-            width: CLOSE_SIZE,
-            height: CLOSE_SIZE,
-            borderRadius: CLOSE_SIZE / 2,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.fill,
-          }}>
-          <Icon name="close" size={15} color={colors.textSecondary} />
-        </PressableScale>
-      </View>
-
+    <View style={{ flex: 1 }}>
+      <BlurView intensity={40} tint="systemChromeMaterial" style={StyleSheet.absoluteFill} />
       {/*
-        Everything below the header scrolls.
-
-        A sheet is a fixed height — this one asks for a detent a little
-        under half the screen — and `Text` deliberately does not cap
-        Dynamic Type, so at the largest accessibility sizes the two rows,
-        the privacy line and "Not now" are taller than the sheet. Without
-        this the cancel control would be off the bottom with no way to
-        reach it. `flexGrow: 1` keeps the spacer working at ordinary
-        sizes, so the layout is unchanged for almost everybody and
-        rescued for the rest. profile-photo.tsx, the model for the inset
-        handling above, scrolls for the same reason.
+        The scrim. The blur alone leaves a bright screen bright, and a
+        white card on a white blur has no edge; this puts a consistent
+        ground under both cards whatever was showing.
       */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={copy.close}
+        onPress={close}
+        style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]}
+      />
+
       <ScrollView
-        showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           flexGrow: 1,
+          justifyContent: 'flex-end',
+          paddingHorizontal: spacing.lg,
           paddingBottom: insets.bottom + spacing.xl,
-        }}>
-        <Text variant="footnote" color="textSecondary">
-          {copy.subtitle}
-        </Text>
+          paddingTop: insets.top + spacing.xl,
+        }}
+        showsVerticalScrollIndicator={false}>
+        <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(motion.duration.base)}>
+          <Text variant="title2" center accessibilityRole="header" style={{ marginBottom: spacing.xs }}>
+            {copy.title}
+          </Text>
+          <Text variant="subhead" center color="textSecondary" style={{ marginBottom: spacing.xl }}>
+            {copy.subtitle}
+          </Text>
+        </Animated.View>
 
-        <View style={{ gap: spacing.md, marginTop: spacing.xl }}>
-          <Animated.View entering={entering(0)}>
-            <ChooserRow
-              glyph="target"
-              label={copy.scan.label}
-              description={copy.scan.description}
-              /*
-                Literal hrefs on purpose: the quality gate reads
-                navigation out of the source, and a target behind a
-                variable is a target it cannot see.
-              */
-              onPress={() => router.replace('/hair-scan')}
-            />
-          </Animated.View>
-
-          <Animated.View entering={entering(1)}>
-            <ChooserRow
-              glyph="camera"
-              label={copy.photo.label}
-              description={copy.photo.description}
-              onPress={() => router.replace('/photo')}
-            />
-          </Animated.View>
+        <View style={{ flexDirection: 'row', gap: spacing.md }}>
+          <Choice
+            badge={scanBadge}
+            image={content.angles.front.example}
+            label={copy.scan.label}
+            description={copy.scan.description}
+            delay={0}
+            onPress={() => router.replace('/hair-scan')}
+          />
+          <Choice
+            badge={copy.badge.free}
+            image={content.portrait}
+            label={copy.photo.label}
+            description={copy.photo.description}
+            delay={60}
+            onPress={() => router.replace('/photo')}
+          />
         </View>
 
-        <View style={{ flex: 1, minHeight: spacing.xl }} />
-
-        <Text variant="caption" color="textTertiary" center style={{ marginBottom: spacing.md }}>
+        <Text variant="footnote" center color="textTertiary" style={{ marginTop: spacing.lg }}>
           {PHOTO_COPY.privacy}
         </Text>
 
-        <PressableScale
-          onPress={() => router.back()}
-          scaleTo={0.985}
-          accessibilityRole="button"
-          accessibilityLabel={copy.cancel}
-          style={{
-            minHeight: MIN_TOUCH_TARGET,
-            paddingVertical: spacing.xs,
-            borderRadius: radius.pill,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-          <Text variant="headline" color="textSecondary">
-            {copy.cancel}
-          </Text>
-        </PressableScale>
+        <View style={{ alignItems: 'center', marginTop: spacing.xl }}>
+          <PressableScale
+            onPress={close}
+            accessibilityRole="button"
+            accessibilityLabel={copy.close}
+            style={{
+              width: MIN_TOUCH_TARGET,
+              height: MIN_TOUCH_TARGET,
+              borderRadius: radius.pill,
+              backgroundColor: colors.surface,
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...shadow.soft,
+            }}>
+            <Icon name="close" size={iconSize.md} color={colors.text} />
+          </PressableScale>
+        </View>
       </ScrollView>
     </View>
   );
 }
 
 /**
- * One door. A glyph on a soft accent plate, the name, the sentence that
- * says what is behind it, and a chevron — the same row the rest of the
- * app uses to mean "this leads somewhere".
+ * One door: a badge saying what it costs, a picture of what it is, its
+ * name and one sentence. The two cards share every measurement so
+ * neither reads as the recommended one — the choice is the person's.
  */
-function ChooserRow({
-  glyph,
+function Choice({
+  badge,
+  image,
   label,
   description,
+  delay,
   onPress,
 }: {
-  glyph: IconName;
+  badge: string;
+  image: number;
   label: string;
   description: string;
+  delay: number;
   onPress: () => void;
 }) {
-  const { colors, spacing, radius, shadow } = useTheme();
+  const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
 
   return (
-    <PressableScale
-      onPress={onPress}
-      scaleTo={0.985}
-      haptic="light"
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={description}
-      style={[
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.lg,
-          minHeight: MIN_TOUCH_TARGET + spacing.xxl,
-          paddingVertical: spacing.lg,
-          paddingHorizontal: spacing.xl,
-          borderRadius: radius.card,
-          backgroundColor: colors.surface,
-        },
-        shadow.soft,
-      ]}>
-      <View
+    <Animated.View
+      style={{ flex: 1 }}
+      entering={reduceMotion ? undefined : FadeInUp.delay(delay).duration(motion.duration.base)}>
+      <PressableScale
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}. ${description}. ${badge}.`}
         style={{
-          width: GLYPH_PLATE,
-          height: GLYPH_PLATE,
-          borderRadius: GLYPH_PLATE / 2,
+          backgroundColor: colors.surface,
+          borderRadius: radius.xl,
+          paddingVertical: spacing.lg,
+          paddingHorizontal: spacing.md,
           alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.accentSoft,
+          ...shadow.lifted,
         }}>
-        <Icon name={glyph} size={20} color={colors.accent} />
-      </View>
+        <View
+          style={{
+            backgroundColor: colors.accentSoft,
+            borderRadius: radius.pill,
+            paddingVertical: spacing.xxs,
+            paddingHorizontal: spacing.md,
+            marginBottom: spacing.md,
+          }}>
+          <Text variant="caption" color="accent">
+            {badge}
+          </Text>
+        </View>
 
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text variant="headline">{label}</Text>
-        <Text variant="footnote" color="textSecondary">
+        <Image
+          source={image}
+          style={{
+            width: CARD_IMAGE,
+            height: CARD_IMAGE,
+            borderRadius: radius.lg,
+            marginBottom: spacing.md,
+          }}
+          contentFit="cover"
+          accessible={false}
+        />
+
+        <Text variant="headline" center style={{ marginBottom: spacing.xxs }}>
+          {label}
+        </Text>
+        <Text variant="footnote" center color="textSecondary">
           {description}
         </Text>
-      </View>
-
-      <Icon name="chevronRight" size={14} color={colors.textTertiary} />
-    </PressableScale>
+      </PressableScale>
+    </Animated.View>
   );
 }

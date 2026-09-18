@@ -195,9 +195,14 @@ function Navigation() {
         <Stack.Screen
           name="new"
           options={{
-            presentation: 'formSheet',
-            sheetAllowedDetents: [0.5, 1],
-            sheetGrabberVisible: true,
+            /*
+              A transparent modal rather than a sheet: the chooser is two
+              cards over a blurred view of whatever was showing, so the
+              screen behind has to stay visible to be blurred. A form
+              sheet would paint over it.
+            */
+            presentation: 'transparentModal',
+            animation: 'fade',
             headerShown: false,
           }}
         />
