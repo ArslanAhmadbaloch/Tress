@@ -53,11 +53,20 @@
  *     (`CapFit`) and it eases in, so the mesh grows onto the hair
  *     instead of stepping at the segmenter's rate.
  *
- * Nothing calls `setHair` yet — see the note on the handle — so today
- * every phone draws the allowance. The scan works either way, and a
- * refusal never collapses the cap back onto the skull: `nextCapFit`
- * holds the shape through a bad frame and lets go only after a run of
- * them.
+ * `setHair` is called, and where from matters enough to write down:
+ * `src/app/hair-scan.tsx` runs a slow loop — about three beats a second,
+ * never per frame — that asks the ARKit module for a small square of the
+ * live frame, runs the bundled segmenter on those bytes, turns the mask
+ * into an outline in the preview's own points (`hair-fit.ts`) and hands
+ * it here with the face it was sampled against. That road exists only on
+ * an iPhone whose binary has both the AR sampler and the TFLite runtime
+ * in it. Android, Expo Go, the simulator and an older iPhone never reach
+ * it and draw the standing allowance, which is a supported way to run
+ * and is the only thing that changes about the scan on those phones.
+ *
+ * The scan works either way, and a refusal never collapses the cap back
+ * onto the skull: `nextCapFit` holds the shape through a bad frame and
+ * lets go only after a run of them.
  *
  * ── The fill ──────────────────────────────────────────────────────────
  * The screen hands over what has been captured and each line of the cap
@@ -184,18 +193,27 @@ export type HairMeshHandle = {
    * ── How often ─────────────────────────────────────────────────────
    * Not per frame, and not casually. `fitHairCap` walks the whole point
    * cloud three times before it starts (see its own note), and the
-   * segmenter in front of it is 30-245 ms of Hermes on old hardware.
-   * The cheap and honest cadence for this repo is ONCE PER CAPTURED
-   * FRAME — four times in the whole scan — because the shape of
-   * somebody's hair does not change between frames and the fit eases in
-   * over half a second anyway.
+   * segmenter in front of it is 30-245 ms of Hermes on old hardware. The
+   * live caller runs at `FIT_INTERVAL_MS` — about three beats a second —
+   * and drops a beat outright rather than queueing one behind a fit that
+   * has not finished, because the shape of somebody's hair does not
+   * change between frames and the fit eases in over half a second
+   * anyway. `dueForFit` in `hair-fit.ts` is that rule, written once.
+   *
+   * "About three a second" is the measured cadence, not the intended
+   * one: the loop shipped once at half that, because the beat was timed
+   * from the END of each fit rather than its start, and no test ran the
+   * rule against a tick train. One does now
+   * (`scripts/test/hair-fit.test.ts`), at several fit durations, and it
+   * fails on the discipline that halved it.
    *
    * ── Null, and refusals ────────────────────────────────────────────
    * Null means "this reading had nothing in it", NOT "there is no
    * hair": the cap holds the shape it has and only lets go after
    * `CAP_FIT.hold` refusals in a row. Never calling this at all is a
-   * supported way to run — every phone without a segmenter does, and
-   * that is every phone today — and draws the standing allowance.
+   * supported way to run — every phone without both the AR frame
+   * sampler and the TFLite runtime does — and draws the standing
+   * allowance for the whole scan.
    *
    * It is a drawing instruction and nothing else: no number it produces
    * is shown, stored or compared.

@@ -31,6 +31,11 @@ import {
   LEVEL_PITCH_DEG,
   LOST_MS,
   MAX_FRAMES,
+  NUDGE_AFTER_SHARE,
+  NUDGE_GAIN_REACH,
+  NUDGE_PLATEAU_MS,
+  NUDGE_SAY_MS,
+  NUDGE_STARTED_SHARE,
   PITCH_DOWN_FULL_DEG,
   REACH_CEILING,
   REGION_NEEDED,
@@ -43,6 +48,7 @@ import {
   SETTLE_MS,
   STALL_MS,
   STEP_OF_REGION,
+  STEP_RELAX_SHARE,
   STEP_SETTLE_MS,
   STEP_TARGETS,
   STABLE_MIN,
@@ -53,6 +59,7 @@ import {
   SWEEP_PITCH_UP_LIMIT_DEG,
   TEMPLE_FULL_DEG,
   TEMPLE_YAW_DEG,
+  TURN_FURTHER_CUE,
   TURN_HANDOVER_DEG,
   TURN_REACH,
   TURN_YAW_DEG,
@@ -67,6 +74,7 @@ import {
   frameQuality,
   headDirection,
   isSufficient,
+  isTurnFurtherCue,
   journeyProgress,
   meshInBox,
   orderedFrames,
@@ -80,12 +88,14 @@ import {
   stageOfStep,
   stepProgress,
   stepReach,
+  stepReached,
   stepRelaxed,
   stepWantsFrame,
   stepsDone,
   targetFit,
   targetReach,
   targetWants,
+  turnFurtherWanted,
 } from '@/features/hair-scan/engine';
 import { faceRegionRects } from '@/features/hair-scan/region-crops';
 import { ANGLE_OF_TARGET } from '@/features/hair-scan/result';
@@ -741,6 +751,322 @@ test('choreography: a modest turn reaches the target rather than the timeout', (
   const timeouts = SCAN_STEPS.reduce((sum, step) => sum + STEP_TIMEOUT_MS[step], 0);
   assert.ok(elapsed <= 12_000, `${elapsed} ms for a 20° turner`);
   assert.ok(elapsed < timeouts / 2, 'nowhere near the timeouts');
+});
+
+/*
+  ── The shallow turn ───────────────────────────────────────────────────
+
+  The fourth coat of the same bug, and the one the timeouts could not
+  cover. A turn step hands over at `TURN_HANDOVER_DEG`; somebody who
+  turns twelve degrees and stops reaches neither turn target, both steps
+  run their whole timers, the down step follows, and twenty-odd seconds
+  later the scan has the hairline alone and has said nothing about it.
+
+  The owner's instruction was not to lower the bar again: it was to ASK
+  FOR MORE TURN. So the step now notices that the turn has stopped — a
+  plateau, well short, with a third of the step gone — and says so, in the
+  direction it already asked for. It is guidance and only guidance: the
+  step still ends when it ends, and the report still says which regions
+  it actually held.
+*/
+test('nudge: a turn that stops short is asked for more, in the direction the step asked for', () => {
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  assert.equal(d.state.step, 'right');
+  assert.equal(d.state.cue, null);
+
+  // Twelve degrees, arrived at in half a second and then held.
+  d = walk(d, 1200, path(SQUARE, { yaw: 12, pitch: 0 }, 600));
+  assert.equal(d.state.cue, null, 'a turn that might still be coming is left alone');
+  assert.equal(turnFurtherWanted(d.state, d.now), false);
+
+  /*
+    Held. The step has given them its opening — `NUDGE_AFTER_SHARE` of
+    its own time, which is the same share it waits before it will settle
+    for a worse picture — and a second has gone by without the head
+    coming any further. Measured from `stepStartedAt` rather than from a
+    walk of round numbers, because the opening is the rule and the clock
+    arithmetic is not.
+  */
+  const into = () => d.now - (d.state.stepStartedAt ?? d.now);
+  d = walk(d, NUDGE_AFTER_SHARE * STEP_TIMEOUT_MS.right - into() + 200, () =>
+    face({ yaw: 12, stability: 0.95 }),
+  );
+  assert.equal(turnFurtherWanted(d.state, d.now), true);
+  assert.equal(d.state.cue, 'turnFurtherRight', 'and it names the way the head is already going');
+  assert.equal(d.state.cue, TURN_FURTHER_CUE.right);
+  assert.ok(isTurnFurtherCue(d.state.cue));
+  const inStep = into();
+  assert.ok(inStep >= NUDGE_AFTER_SHARE * STEP_TIMEOUT_MS.right, `${inStep} ms into the step`);
+  assert.ok(inStep < STEP_TIMEOUT_MS.right, 'while there is still time to act on it');
+  assert.ok(stepRelaxed(d.state, d.now), 'and never before the step has eased off on stillness');
+
+  // And it blocks nothing: the step ends when it would have ended.
+  d = walk(d, STEP_TIMEOUT_MS.right - into() + 100, () => face({ yaw: 12, stability: 0.95 }));
+  assert.equal(d.state.step, 'left', 'the nudge is not a gate');
+
+  // The same again the other way, and the next step asks in its own words.
+  d = walk(d, 1200, path({ yaw: 12, pitch: 0 }, { yaw: -12, pitch: 0 }, 600));
+  d = walk(d, NUDGE_AFTER_SHARE * STEP_TIMEOUT_MS.left - into() + 200, () =>
+    face({ yaw: -12, stability: 0.95 }),
+  );
+  assert.equal(d.state.cue, 'turnFurtherLeft', 'and the next step asks for its own direction');
+
+  // The rest of that scan: a nod as shallow as the turns, worded for a chin.
+  d = walk(d, STEP_TIMEOUT_MS.left - into() + 100, () => face({ yaw: -12, stability: 0.95 }));
+  assert.equal(d.state.step, 'down');
+  d = walk(d, 1200, path({ yaw: -12, pitch: 0 }, { yaw: 0, pitch: -12 }, 600));
+  d = walk(d, NUDGE_AFTER_SHARE * STEP_TIMEOUT_MS.down - into() + 200, () =>
+    face({ pitch: -12, stability: 0.95 }),
+  );
+  assert.equal(d.state.cue, 'turnFurtherDown');
+  d = walk(d, STEP_TIMEOUT_MS.down, () => face({ pitch: -12, stability: 0.95 }));
+
+  // It finishes, honestly, with what it actually has — and in the budget.
+  assert.equal(d.state.scanner, 'complete');
+  assert.equal(d.state.completeReason, 'timeout', 'one region is not coverage');
+  assert.ok(d.state.completion < 1, 'and the figure cannot say otherwise');
+  assert.deepEqual(
+    requiredFrames(d.state).map((f) => f.target),
+    ['hairline'],
+    'the shallow turn keeps the hairline, and the report says so',
+  );
+  const elapsed = (d.state.completedAt ?? d.now) - (d.state.startedAt ?? d.now);
+  assert.ok(elapsed <= FORCED_FINISH_MS, `${elapsed} ms is past the backstop`);
+
+  /*
+    Three corrections across the whole scan, one per step that asks for a
+    movement, each in that step's own direction and none of them invented.
+    A step may ask twice — this person turned a little further and stopped
+    again, which is a new plateau and worth asking about — but never more
+    than that, because asking a third time is nagging.
+  */
+  const said = of(d.events, 'cue')
+    .map((e) => e.cue)
+    .filter(isTurnFurtherCue);
+  assert.deepEqual(
+    said.filter((cue, i) => said.indexOf(cue) === i),
+    ['turnFurtherRight', 'turnFurtherLeft', 'turnFurtherDown'],
+  );
+  for (const cue of said) {
+    assert.ok(said.filter((c) => c === cue).length <= 2, `${cue} was said too often`);
+  }
+});
+
+test('nudge: a turn that arrives never sees it, and neither does a turn still coming', () => {
+  // The scan as it is meant to go: 28° each way and a 25° nod.
+  const clean = drive(scanning());
+  assert.equal(clean.state.completeReason, 'coverage');
+  assert.deepEqual(of(clean.events, 'cue').map((e) => e.cue).filter(isTurnFurtherCue), []);
+
+  // And a 25° turner, who is short of the aim but past the hand-over.
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  d = walk(d, 3000, path(SQUARE, { yaw: 25, pitch: 0 }, 1500));
+  assert.equal(d.state.step, 'left', 'a 25° turn is a turn');
+  assert.deepEqual(of(d.events, 'cue').map((e) => e.cue).filter(isTurnFurtherCue), []);
+
+  // A turn that takes six seconds to make is still a turn being made: it
+  // gains ground the whole way, so there is no plateau to notice.
+  let slow = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  slow = walk(slow, 6200, path(SQUARE, { yaw: TURN_HANDOVER_DEG, pitch: 0 }, 6000));
+  assert.deepEqual(of(slow.events, 'cue').map((e) => e.cue).filter(isTurnFurtherCue), []);
+  assert.equal(slow.state.step, 'left', 'and it got there inside its own time');
+});
+
+test('nudge: the front step never asks anybody to look straighter', () => {
+  // Square on has nowhere further to go, and a person looking at their
+  // own phone being told to look straighter is build 17's gate in a hat.
+  const held18 = () => face({ yaw: 18, stability: 0.95 });
+  let d = walk(scanning(), 2600, held18);
+  assert.equal(d.state.step, 'front', 'held short of the front window on purpose');
+  assert.ok(!stepReached(d.state, 'front'), 'and genuinely short of it');
+  assert.equal(TURN_FURTHER_CUE.front, null);
+  assert.equal(turnFurtherWanted(d.state, d.now, 'front'), false);
+  assert.equal(d.state.cue, null);
+
+  // Through the whole of the front step's own time, still nothing said.
+  d = walk(d, STEP_TIMEOUT_MS.front - 2_600 + 200, held18);
+  assert.equal(d.state.step, 'right', 'the front step hands over as it always did');
+  assert.deepEqual(of(d.events, 'cue').map((e) => e.cue).filter(isTurnFurtherCue), []);
+
+  /*
+    And the same head at the same 18°, once the step it is in IS a turn:
+    now there is somewhere to go and the scan says so. That contrast is
+    the rule — the nudge asks for more of a movement the step asked for,
+    and `front` asks for no movement at all.
+  */
+  const into = () => d.now - (d.state.stepStartedAt ?? d.now);
+  d = walk(d, NUDGE_AFTER_SHARE * STEP_TIMEOUT_MS.right - into() + 200, held18);
+  assert.equal(d.state.cue, 'turnFurtherRight');
+});
+
+test('nudge: a reading that creeps upward by hundredths has stopped, and is asked', () => {
+  /*
+    The plateau has a floor under it (`NUDGE_GAIN_REACH`) because a
+    smoothed reading climbs by hundredths of a degree while a head sits
+    perfectly still. Without it, the creep would read as movement and
+    somebody who had plainly stopped would never be asked.
+  */
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  const creep = path(SQUARE, { yaw: 12, pitch: 0 }, 400);
+  d = walk(d, 1000, creep);
+  const gain = NUDGE_GAIN_REACH * TURN_YAW_DEG * 0.5;
+  d = walk(d, 2600, (t) => face({ yaw: 12 + (gain * Math.min(t, 2600)) / 2600, stability: 0.95 }));
+  assert.ok(d.state.steps.right.reach > 12 / TURN_YAW_DEG, 'the reading did climb');
+  assert.equal(d.state.cue, 'turnFurtherRight', 'and climbing that slowly is not turning');
+  const held = d.state.steps.right;
+  assert.ok(
+    held.gainedAt === null || d.now - held.gainedAt >= NUDGE_PLATEAU_MS,
+    'the plateau is measured from the last real movement',
+  );
+});
+
+test('nudge: a head that never set off is never told to keep turning', () => {
+  /*
+    The nudge asks for MORE of something. Somebody sitting square on
+    through a whole turn step has not stopped short of anything, and a
+    phone that can see they never started telling them to "keep turning"
+    is a phone describing a movement that did not happen. Their step's own
+    title and the arrow ask them, as they always did.
+  */
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  assert.equal(d.state.step, 'right');
+  const into = () => d.now - (d.state.stepStartedAt ?? d.now);
+  d = walk(d, STEP_TIMEOUT_MS.right - into() - 200, () => face({ stability: 0.95 }));
+  assert.equal(d.state.step, 'right', 'still inside the step it never started');
+  assert.equal(d.state.steps.right.gainedAt, null, 'no movement, so no plateau to time from');
+  assert.equal(turnFurtherWanted(d.state, d.now), false);
+  assert.deepEqual(of(d.events, 'cue').map((e) => e.cue).filter(isTurnFurtherCue), []);
+
+  /*
+    And the same for a head that drifts. `NUDGE_STARTED_SHARE` of the way
+    to the hand-over is about 4.8° of turn — above the couple of degrees a
+    head wanders by while it is being held still, and far below the twelve
+    the owner's case turns — so a drift is not a short turn either.
+  */
+  d = walk(d, STEP_TIMEOUT_MS.right - into() + 100, () => face({ stability: 0.95 }));
+  assert.equal(d.state.step, 'left', 'and the step ended as it always did');
+  const drift = NUDGE_STARTED_SHARE * TURN_HANDOVER_DEG;
+  assert.ok(drift > 3 && drift < 12, `${drift}° is the floor under "started"`);
+  d = walk(d, STEP_TIMEOUT_MS.left - into() - 200, () => face({ yaw: -3, stability: 0.95 }));
+  assert.ok(d.state.steps.left.gainedAt !== null, 'the reading did move');
+  assert.ok(d.state.steps.left.reach < NUDGE_STARTED_SHARE * STEP_TARGETS.left.reach);
+  assert.equal(turnFurtherWanted(d.state, d.now), false, 'three degrees is not a turn that stopped');
+  assert.deepEqual(of(d.events, 'cue').map((e) => e.cue).filter(isTurnFurtherCue), []);
+
+  // Nothing of this is a gate: the scan runs on and ends on its own time.
+  d = toEnd(d, () => face({ stability: 0.95 }));
+  assert.notEqual(d.state.status, 'capturing', 'the steps ran themselves out');
+  assert.notEqual(d.state.scanner, 'error', 'and a person who did not move is not a failure');
+  const elapsed = d.now - (d.state.startedAt ?? d.now);
+  assert.ok(elapsed <= FORCED_FINISH_MS, `${elapsed} ms is past the backstop`);
+});
+
+test('nudge: the ask is a beat, and the plate goes back to the light after it', () => {
+  /*
+    The nudge outranks "find a brighter spot" — which is right while it is
+    asking and wrong for the rest of a step. A sticky ask would bury the
+    lighting line for fifteen seconds of a twenty-two second scan, and
+    poor light is exactly what makes the shallow frames such a scan keeps
+    worse. So it asks for `NUDGE_SAY_MS` and then stands down.
+  */
+  const dark = 0.15;
+  const hold = () => face({ yaw: 12, stability: 0.95 });
+  let d = walkIn(scanning(), 900, () => face({ stability: 0.95 }), dark);
+  assert.equal(d.state.step, 'right');
+  assert.equal(d.state.cue, 'brighter', 'the room was dark before the turn stopped');
+
+  d = walkIn(d, 1200, path(SQUARE, { yaw: 12, pitch: 0 }, 600), dark);
+  const into = () => d.now - (d.state.stepStartedAt ?? d.now);
+  d = walkIn(d, NUDGE_AFTER_SHARE * STEP_TIMEOUT_MS.right - into() + 200, hold, dark);
+  assert.equal(d.state.cue, 'turnFurtherRight', 'the turn comes first while it is being asked for');
+
+  // A beat later the ask is done, and the light is worth saying again.
+  d = walkIn(d, NUDGE_SAY_MS, hold, dark);
+  assert.equal(turnFurtherWanted(d.state, d.now), false, 'the ask is a beat, not a banner');
+  assert.equal(d.state.cue, 'brighter', 'and the lighting is not buried for the rest of the step');
+
+  // Standing still is asked about once: it does not come back by itself.
+  d = walkIn(d, STEP_TIMEOUT_MS.right - into() - 200, hold, dark);
+  assert.equal(d.state.cue, 'brighter');
+  const said = of(d.events, 'cue').map((e) => e.cue).filter(isTurnFurtherCue);
+  assert.deepEqual(said, ['turnFurtherRight'], 'one plateau, one ask');
+});
+
+test('nudge: it waits out the step\'s opening, and speaks in the captured band', () => {
+  /*
+    This test used to assert that `stepRelaxed` holds on every tick the
+    nudge speaks, and it passed for a reason its own fixture supplied: at
+    yaw 12° the temple can never be captured, so `stepRelaxed`'s FIRST
+    line — `if (state.targets[…].captured) return false` — was never
+    reached. Driven at 18° it fails, because capture opens at
+    `CAPTURE_REACH` of the target (about 13.3°) while the hand-over is at
+    19°: the region gets a frame, the turn is still short, and the nudge
+    speaks with `stepRelaxed` false. That band IS the shallow turn the
+    nudge exists for, so it is what this test drives.
+
+    What is actually true, and pinned here: the nudge waits out the step's
+    opening, it is bounded to a beat, and it does speak in the band where
+    a poor frame has already been taken.
+  */
+  assert.ok(
+    NUDGE_AFTER_SHARE >= STEP_RELAX_SHARE,
+    'the nudge may not fire before a step still chasing its first frame has relaxed',
+  );
+
+  const shallow = (yaw: number) => {
+    let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+    d = walk(d, 1200, path(SQUARE, { yaw, pitch: 0 }, 600));
+    const pose = face({ yaw, stability: 0.95 });
+    const start = d.now;
+    // Read while the step is still `right`: after the loop the state has
+    // moved on to `left` and its `stepStartedAt` with it.
+    const stepStartedAt = d.state.stepStartedAt;
+    let first: number | null = null;
+    let last: number | null = null;
+    let captured = false;
+    for (let t = 33; t <= STEP_TIMEOUT_MS.right && d.state.step === 'right'; t += 33) {
+      d = dispatch(d, { type: 'tick', at: start + t, face: pose, lighting: 0.8 });
+      for (const request of [...d.state.pending]) {
+        d = dispatch(d, {
+          type: 'captured',
+          requestId: request.id,
+          image: { ...image, uri: `file:///${request.id}.jpg` },
+          at: d.now,
+        });
+      }
+      if (held(d.state, 'leftTemple').captured) captured = true;
+      if (!isTurnFurtherCue(d.state.cue)) continue;
+      if (first === null) first = d.now;
+      last = d.now;
+    }
+    return { first, last, captured, stepStartedAt };
+  };
+
+  // 18°: past the capture threshold, short of the hand-over. The region
+  // HAS a frame and the nudge still asks for the turn that would replace
+  // it — the case the old fixture could not reach.
+  const deep = shallow(18);
+  assert.ok(deep.captured, 'the fixture really does reach the captured band');
+  assert.ok(deep.first !== null, 'and the shallow turn is still asked about once a frame is held');
+
+  // 12°: nothing captured, the plain short turn. Asked about too.
+  const shy = shallow(12);
+  assert.equal(shy.captured, false, 'at 12° the temple is never captured');
+  assert.ok(shy.first !== null, 'the plain short turn is asked about');
+
+  // Both wait out the opening, and both are a beat rather than a banner.
+  for (const [name, run] of [['18°', deep], ['12°', shy]] as const) {
+    const { first, last, stepStartedAt } = run;
+    assert.ok(first !== null && last !== null && stepStartedAt !== null);
+    assert.ok(
+      first - stepStartedAt >= NUDGE_AFTER_SHARE * STEP_TIMEOUT_MS.right,
+      `${name}: the nudge spoke before the step's opening was over`,
+    );
+    assert.ok(
+      last - first <= NUDGE_SAY_MS,
+      `${name}: the ask ran ${last - first} ms, longer than the ${NUDGE_SAY_MS} ms beat`,
+    );
+  }
 });
 
 test('choreography: an unsteady hand costs picture quality, never the whole scan', () => {

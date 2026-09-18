@@ -75,13 +75,22 @@ export const HAIR_SCAN_COPY = {
   /**
    * The corrective line, when there is one.
    *
-   * What to do with your head is the step's own instruction above; these
-   * five are only for when a reading cannot be used, and for most of a
-   * good scan none of them is shown. Nothing here asks anybody to move
-   * closer or further away. Build 17 did, and the owner's verdict was
-   * that it meant holding the phone at arm's stretch and waiting; the
+   * What to do with your head is the step's own instruction above; the
+   * first five are only for when a reading cannot be used, and for most
+   * of a good scan none of them is shown. Nothing here asks anybody to
+   * move closer or further away. Build 17 did, and the owner's verdict
+   * was that it meant holding the phone at arm's stretch and waiting; the
    * scan works at whatever distance the person is comfortable holding a
    * phone, so it says nothing about it.
+   *
+   * The last three are the nudge for a turn that stopped short. They are
+   * written to be read PERIPHERALLY, by somebody who is mid-turn with the
+   * phone at the edge of their vision, so they are four or five words and
+   * they repeat the direction the step already asked for. None of them
+   * counts anything: no degrees, no percentage, no "not far enough". The
+   * scan cannot see how far somebody can turn their neck, and a person
+   * who stopped early has not done anything wrong — they were never told
+   * how far was far enough, which is the whole reason these exist.
    */
   cue: {
     faceCamera: 'Center your face',
@@ -89,6 +98,9 @@ export const HAIR_SCAN_COPY = {
     tooFast: 'Slow down',
     lost: 'Let’s get you back in frame',
     brighter: 'Find a brighter spot',
+    turnFurtherRight: 'Keep turning to your right',
+    turnFurtherLeft: 'Keep turning to your left',
+    turnFurtherDown: 'A little further down',
   } satisfies Record<ScanCue, string>,
   /**
    * The line under the video when nothing needs correcting, for the

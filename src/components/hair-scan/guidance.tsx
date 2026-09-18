@@ -6,9 +6,22 @@
  * this plate one job, and it is the smaller and more important one —
  * saying the handful of things that are true regardless of which step
  * somebody is on. Come back to the camera. Hold still. Slower. Find a
- * brighter spot. Five corrections in all, and they are the engine's to
- * decide; the screen turns the engine's cue into a sentence from the
- * scan copy and hands it over finished.
+ * brighter spot. And, when a turn has plainly stopped short of what the
+ * step hands over at, the one line that asks for more of it: keep turning
+ * to your right. They are the engine's to decide; the screen turns the
+ * engine's cue into a sentence from the scan copy and hands it over
+ * finished.
+ *
+ * The nudge is guidance and not a gate. The plate says it, the arrow
+ * above asks harder for exactly as long as it stands — the screen hands
+ * the arrow the same cue this plate is showing, so the words and the
+ * arrow are one ask rather than a sentence with a shrug behind it — and
+ * if the turn never comes the step ends exactly as it would have, with
+ * the report saying honestly which regions it held. It is also a beat
+ * rather than a banner: the engine stands it down after a moment, which
+ * is what leaves room for the plate to go back to saying the room is
+ * dark. Nothing on this plate has ever been able to stop a scan, and this
+ * line is no exception.
  *
  * With nothing to correct, the plate is not there. It used to carry the
  * running instruction as well, which meant it was always on screen and

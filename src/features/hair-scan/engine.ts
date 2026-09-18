@@ -437,6 +437,112 @@ export const CAPTURE_REACH = 0.7;
  */
 export const STEP_SETTLE_MS = 400;
 
+/*
+  ── The shallow turn ───────────────────────────────────────────────────
+
+  A turn step hands over at `TURN_HANDOVER_DEG`. Somebody who turns a
+  little less than that — and plenty of people do, once, because nobody
+  has told them how far is far enough — reaches neither turn target.
+  Both steps run their whole timers, the `down` step follows, and about
+  twenty-two seconds later the scan has the hairline and an explanation
+  of nothing. That is the failure this build is here to end, and the
+  owner was explicit about which way to end it: ASK FOR MORE TURN, rather
+  than lower the bar again and keep the poor frame.
+
+  Four numbers say when asking is fair, and all four have to be true at
+  once, because each on its own would catch somebody who is simply still
+  moving — or somebody who has not moved at all, which is a different
+  person needing a different sentence:
+
+  - `NUDGE_STARTED_SHARE` — the head has actually come some way: a
+    quarter of the distance to the hand-over, which is about 4.8° in
+    either step. (A quarter of `TURN_HANDOVER_DEG` and a quarter of
+    `DOWN_HANDOVER_DEG`, and those are both 19°: the share is applied to
+    a step's `reach`, whose scale is its own full angle, so the two
+    scales cancel and turn and nod come out at the same 4.75°.)
+    It is what makes "keep turning" and "a little further" true
+    sentences. Below it nothing has begun, and a phone telling somebody
+    to keep doing a thing they have not started is a phone that is not
+    watching; the step's own title and the arrow ask them, as they always
+    did. Above the couple of degrees a head drifts by while it is held
+    still, so a still head is never mistaken for a short turn.
+  - `NUDGE_PLATEAU_MS` — the best the step has seen has not improved for
+    a second. A second is long enough that it is a decision and short
+    enough to be worth saying: a turn that is still coming gains several
+    degrees in that time.
+  - `NUDGE_GAIN_REACH` — what counts as an improvement at all, measured
+    from the last place the head actually got to (`gainedReach`) rather
+    than from the frame before. A smoothed reading creeps up by hundredths
+    while a head sits perfectly still, so without a floor under "improved"
+    the plateau would never be reached by anybody; and measured frame to
+    frame instead, a six-second turn gains a thousandth at a time and the
+    slowest turn in the world would read as a dead stop. Three hundredths
+    of a step's own scale is about 0.8° of turn: below that, nothing is
+    happening.
+  - `NUDGE_AFTER_SHARE` — enough of the step's own time has gone. Before
+    that, a person may simply not have started; the arrow and the title
+    have earned the right to be tried first. It is `STEP_RELAX_SHARE`
+    itself, and tied to it rather than merely near it, so that a step
+    still chasing its first frame has already given way on how steady the
+    hand has to be before this can speak over the stillness line. Set an
+    eighth lower — which it was, at a third — and there is most of a
+    second in every step where the screen asks for more turn while
+    quietly withholding the correction that is actually blocking the
+    frame.
+
+    THE TIE IS NOT AN INVARIANT, and the older comment here claimed it
+    was. `stepRelaxed` returns false at its FIRST line once the step's
+    region has a frame, and this nudge deliberately says nothing about
+    whether the region has one — so from about 13.3° (`CAPTURE_REACH` of
+    the target) up to the 19° hand-over, the region is captured, the turn
+    is still short, and the nudge can speak while `stepRelaxed` is false.
+    That band is precisely the shallow turn this exists for, so it is the
+    case to reason about rather than the exception. It is sound on its
+    own merits, not on the tie: "hold still" is only reached at all while
+    a frame is actually WANTED here (`holdWanted && state.hold !== null`,
+    and `targetWants` declines a replacement for a good frame already
+    held), the ask lasts `NUDGE_SAY_MS` and not the step, and the turn is
+    the only one of the two that can finish the step.
+
+  And one more says how long the asking LASTS. `NUDGE_SAY_MS` is the ask:
+  a beat, long enough to read a four-word line twice at the edge of the
+  eye, and then the plate is free again. The nudge is not a banner that
+  owns the rest of a step — a sticky one would sit on top of "find a
+  brighter spot" for fifteen seconds of a twenty-two second scan, and
+  poor light is exactly what makes the shallow frames such a scan keeps
+  worse. If the head moves and stops again, that is a new plateau and a
+  new ask; standing still is asked about once.
+
+  It is guidance and nothing else: no gate, no extra timer, no effect on
+  `stepSatisfied`, `stepExpired` or anything the scan keeps. If the turn
+  still does not come, the step ends exactly as it does today and the
+  report says honestly which regions it held.
+*/
+export const NUDGE_PLATEAU_MS = 1_000;
+export const NUDGE_GAIN_REACH = 0.03;
+export const NUDGE_STARTED_SHARE = 0.25;
+export const NUDGE_AFTER_SHARE = STEP_RELAX_SHARE;
+export const NUDGE_SAY_MS = 2_500;
+
+/**
+ * The corrective line each step asks with when the turn stops short, and
+ * null for the one step that never asks. `front` is not a turn: there is
+ * nowhere further to go from square on, and a person looking straight at
+ * their phone being told to look straighter is the build-17 gate wearing
+ * a new hat.
+ */
+export const TURN_FURTHER_CUE: Record<ScanStep, ScanCue | null> = {
+  front: null,
+  right: 'turnFurtherRight',
+  left: 'turnFurtherLeft',
+  down: 'turnFurtherDown',
+};
+
+/** Whether a cue is the ask-for-more-turn nudge, whichever way it points. */
+export function isTurnFurtherCue(cue: ScanCue | null): boolean {
+  return cue === 'turnFurtherRight' || cue === 'turnFurtherLeft' || cue === 'turnFurtherDown';
+}
+
 /**
  * The longest each step may run before it hands over with whatever it
  * holds. Nobody is ever trapped, and nobody is ever asked twice.
@@ -481,7 +587,15 @@ export function createTargets(): Record<ScanTarget, TargetProgress> {
 }
 
 function freshStep(): StepProgress {
-  return { reach: 0, frames: 0, firstFrameAt: null, reachedAt: null, done: false };
+  return {
+    reach: 0,
+    frames: 0,
+    firstFrameAt: null,
+    reachedAt: null,
+    gainedAt: null,
+    gainedReach: 0,
+    done: false,
+  };
 }
 
 export function createSteps(): Record<ScanStep, StepProgress> {
@@ -891,6 +1005,59 @@ export function stepRelaxed(state: ScanState, at: number, step: ScanStep = state
   if (arrived !== null && at - arrived >= STEP_ARRIVED_GRACE_MS) return true;
   if (state.stepStartedAt === null) return false;
   return at - state.stepStartedAt >= STEP_RELAX_SHARE * STEP_TIMEOUT_MS[step];
+}
+
+/**
+ * Whether this step should ask for more turn: the shallow turn, caught
+ * while there is still time to do something about it.
+ *
+ * Everything it reads is already in the step: the best the head has come
+ * (`reach`, monotonic), when that last improved (`gainedAt`), and how
+ * long the step has been running. Five things have to hold together, and
+ * the wording of each matters more than the number in it:
+ *
+ * 1. THE STEP ASKS FOR A TURN AT ALL. `front` never nudges — see
+ *    `TURN_FURTHER_CUE`.
+ * 2. THE TURN IS SHORT. The head has not come as far as the step hands
+ *    over at. A step that has arrived is finished with, not nagged.
+ * 3. THE TURN STARTED. There is a real movement behind the plateau —
+ *    `gainedAt` is set and the head is at least `NUDGE_STARTED_SHARE` of
+ *    the way to the hand-over. Somebody who has not moved at all has not
+ *    stopped short of anything, and "keep turning" would be the phone
+ *    describing a turn that never happened. It is the condition that
+ *    keeps the other three from collapsing into a plain timer.
+ * 4. IT HAS STOPPED. The best reach has not improved by `NUDGE_GAIN_REACH`
+ *    for `NUDGE_PLATEAU_MS`. A turn still in progress is left alone,
+ *    which is the whole difference between a nudge and a nag.
+ * 5. THE STEP HAS GIVEN THEM A MOMENT, AND THE ASK IS A BEAT. Past
+ *    `NUDGE_AFTER_SHARE` of the step's own time — the title and the arrow
+ *    get the opening to themselves — and for `NUDGE_SAY_MS` after that,
+ *    not for the rest of the step. The window is measured from the later
+ *    of the two, so the ask is the same length whichever condition was
+ *    the last to come true.
+ *
+ * It says nothing about whether the region has a frame. A step holding a
+ * shallow temple is exactly the case the owner named — a poor frame kept
+ * rather than a fuller turn asked for — so having one is no reason to
+ * stay quiet.
+ *
+ * Nothing downstream may gate on this. It picks a sentence; that is all.
+ */
+export function turnFurtherWanted(state: ScanState, at: number, step: ScanStep = state.step): boolean {
+  if (TURN_FURTHER_CUE[step] === null) return false;
+  const held = state.steps[step];
+  if (held.done) return false;
+  if (stepReached(state, step)) return false;
+  if (state.stepStartedAt === null) return false;
+  // A plateau is only a plateau if something came before it: the head has
+  // to have actually got somewhere, and the wait is timed from there.
+  if (held.gainedAt === null) return false;
+  if (held.reach < NUDGE_STARTED_SHARE * STEP_TARGETS[step].reach) return false;
+  const ready = Math.max(
+    held.gainedAt + NUDGE_PLATEAU_MS,
+    state.stepStartedAt + NUDGE_AFTER_SHARE * STEP_TIMEOUT_MS[step],
+  );
+  return at >= ready && at < ready + NUDGE_SAY_MS;
 }
 
 /** How steady a head has to be right now for a frame to be asked for. */
@@ -1496,7 +1663,23 @@ function tickScanning(state: ScanState, action: Extract<ScanAction, { type: 'tic
       // taken on the way to it.
       const arrived = reach >= STEP_TARGETS[next.step].reach - 1e-9;
       const reachedAt = held.reachedAt === null && arrived ? at : held.reachedAt;
-      next = { ...next, steps: { ...next.steps, [next.step]: { ...held, reach, reachedAt } } };
+      // And a gain worth calling a movement is the anchor for the nudge:
+      // further than the head last actually got to, not further than the
+      // frame before. Measured frame to frame, a slow turn creeps by
+      // thousandths and would read as a head that had stopped.
+      // `gained` rather than `moved`: the loop above has a `moved` of its
+      // own and the two are different things — that one is "some region
+      // came nearer", this one is "the head itself actually got further".
+      const gained = reach >= held.gainedReach + NUDGE_GAIN_REACH;
+      const gainedAt = gained ? at : held.gainedAt;
+      const gainedReach = gained ? reach : held.gainedReach;
+      next = {
+        ...next,
+        steps: {
+          ...next.steps,
+          [next.step]: { ...held, reach, reachedAt, gainedAt, gainedReach },
+        },
+      };
     }
   }
 
@@ -1591,6 +1774,11 @@ function pushMilestone(state: ScanState, events: ScanEvent[], milestone: ScanMil
  * from the two-beat build: the choreography is no longer taught one cue
  * at a time in a place that also has to say "hold still".
  *
+ * The one line here that does touch the choreography is the nudge, and it
+ * only ever says MORE of what the title already said — see
+ * `turnFurtherWanted`, which is where the judgement is made. It asks; it
+ * decides nothing.
+ *
  * Nothing in here asks anybody to move closer or further away, and
  * nothing in here is a verdict. Lighting comes last of the five because
  * it is the one condition that can hold for a whole scan: a dark frame is
@@ -1611,6 +1799,24 @@ function scanningCue(
   if (!framing.readable) return 'faceCamera';
   if (framing.offFrame) return 'faceCamera';
   if (state.slowDownUntil > at) return 'tooFast';
+  /*
+    The shallow turn, above "hold still" and "find a brighter spot" on
+    purpose — and only for a beat. The turn is the only one of the three
+    that can actually finish the step: a steadier hand and a brighter room
+    both improve the picture of a temple that is still half turned away,
+    and neither brings the temple round. "Hold still" is reached only
+    while a frame is genuinely wanted here — `holdWanted` is false once
+    `targetWants` declines a replacement — so what this outranks is a
+    request that is still open, for `NUDGE_SAY_MS` and no longer.
+
+    It is NOT true that the step has always relaxed by the time this
+    fires. `NUDGE_AFTER_SHARE` is `STEP_RELAX_SHARE`, which settles the
+    case of a step still chasing its first frame, but `stepRelaxed` is
+    false at its first line once the region HAS a frame — and the whole
+    point of the nudge is that it says nothing about that. See
+    `NUDGE_AFTER_SHARE` for the band where the two part company.
+  */
+  if (turnFurtherWanted(state, at)) return TURN_FURTHER_CUE[state.step];
   if (holdWanted && state.hold !== null && at - state.hold.since >= HOLD_HINT_MS) return 'holdStill';
   if (!litEnough(lighting)) return 'brighter';
   return null;

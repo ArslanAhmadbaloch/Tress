@@ -20,12 +20,22 @@ import type { ComponentType } from 'react';
 import { Platform } from 'react-native';
 
 import { resolveAvailability } from './points';
+import { SAMPLE_SIZE, clampSampleSize, normaliseSample, type FrameSample } from './sample';
 import type { CaptureResult, HairFaceTrackingViewProps } from './types';
 
-/** The Swift module's surface, as JavaScript sees it. */
+/**
+ * The Swift module's surface, as JavaScript sees it.
+ *
+ * `sampleFrame` is optional on purpose. A development client built before
+ * this function existed is a real thing to be running against — the
+ * JavaScript reloads and the binary does not — and asking a native module
+ * for a function it does not have is a crash rather than a rejection. So
+ * it is asked for, and its absence is an answer.
+ */
 type NativeHairFaceTracking = {
   isAvailable: () => boolean;
   capture: () => Promise<CaptureResult>;
+  sampleFrame?: (size: number) => Promise<unknown>;
 };
 
 const MODULE_NAME = 'HairFaceTracking';
@@ -73,6 +83,44 @@ export async function capture(): Promise<CaptureResult> {
     throw new Error('Face tracking is not available in this build.');
   }
   return await native.capture();
+}
+
+/**
+ * Whether this build can hand back a square of the live frame.
+ *
+ * Asked separately from `isFaceTrackingAvailable()` because the two can
+ * disagree: an iPhone that tracks a face perfectly well, running a
+ * development client built before `sampleFrame` existed, answers true to
+ * the first and false to this. A caller that skipped this check would
+ * reach for a function that is not there.
+ */
+export function canSampleFrame(): boolean {
+  const native = nativeModule();
+  return native !== null && typeof native.sampleFrame === 'function';
+}
+
+/**
+ * A small square of the AR frame on screen right now, as raw bytes.
+ *
+ * No file is written and nothing is kept: the bytes come back, are read,
+ * and are dropped. Nothing leaves the device, here or anywhere below it.
+ *
+ * Rejects rather than resolving something empty — no view on screen, no
+ * frame yet, a sample already in flight, or a payload this build cannot
+ * read. Every one of those is a refusal the caller should treat as "this
+ * reading had nothing in it", not as "there is no hair".
+ */
+export async function sampleFrame(size: number = SAMPLE_SIZE): Promise<FrameSample> {
+  const native = nativeModule();
+  if (!native || typeof native.sampleFrame !== 'function') {
+    throw new Error('This build cannot sample the camera frame.');
+  }
+  const raw = await native.sampleFrame(clampSampleSize(size));
+  const sample = normaliseSample(raw);
+  if (sample === null) {
+    throw new Error('The camera returned a frame this build cannot read.');
+  }
+  return sample;
 }
 
 /**

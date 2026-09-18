@@ -16,14 +16,33 @@
  * into the shape `src/features/hair-scan/tracking.ts` reads, scaled into
  * the preview's own points and stamped `source: 'arkit'`. README.md has
  * the whole wiring in a dozen lines.
+ *
+ * `sampleFrame` is the other half of the AR session a screen can reach:
+ * a small square of the live frame as raw bytes, for anything that needs
+ * pixels rather than a pose. It writes no file and keeps nothing. Ask
+ * `canSampleFrame()` first — an iPhone that tracks a face can still be
+ * running a binary built before that function existed.
  */
 
 export {
   HairFaceTrackingView,
+  canSampleFrame,
   capture,
   isFaceTrackingAvailable,
   nativeModule,
+  sampleFrame,
 } from './src/native';
+
+export {
+  SAMPLE_CHANNELS,
+  SAMPLE_MAX,
+  SAMPLE_MIN,
+  SAMPLE_SIZE,
+  clampSampleSize,
+  normaliseSample,
+} from './src/sample';
+
+export type { FrameSample } from './src/sample';
 
 export {
   BROW_START,

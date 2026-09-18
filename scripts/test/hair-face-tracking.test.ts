@@ -8,7 +8,11 @@
  * converted by `toRawFace` really is something the scan's own tracker
  * accepts — that last one runs the app's `trackFrame` over it, so the two
  * halves of the contract are checked against each other rather than
- * against a description of each other.
+ * against a description of each other. The frame sampler is here on the
+ * same terms: the Swift that renders the square cannot run, so what is
+ * held is the boundary it hands the square across — a buffer that is not
+ * the square it claims to be is refused rather than read as noise, and
+ * the sides the two languages clamp to are read off both files.
  *
  * Deliberately imports only the pure files of the module. `src/native.ts`
  * reaches for React Native and would not survive `node --test`, which is
@@ -39,6 +43,14 @@ import {
   ringAngle,
 } from '../../modules/hair-face-tracking/src/points';
 import { toRawFace } from '../../modules/hair-face-tracking/src/raw-face';
+import {
+  SAMPLE_CHANNELS,
+  SAMPLE_MAX,
+  SAMPLE_MIN,
+  SAMPLE_SIZE,
+  clampSampleSize,
+  normaliseSample,
+} from '../../modules/hair-face-tracking/src/sample';
 import type { FaceFrame } from '../../modules/hair-face-tracking/src/types';
 import { createTracker, trackFrame } from '../../src/features/hair-scan/tracking';
 import type { RawFace } from '../../src/features/hair-scan/tracking';
@@ -285,6 +297,10 @@ test('the module exports what the app codes against, read off the source', () =>
   for (const required of [
     'isFaceTrackingAvailable',
     'capture',
+    'sampleFrame',
+    'canSampleFrame',
+    'normaliseSample',
+    'FrameSample',
     'HairFaceTrackingView',
     'isFaceFrame',
     'isFaceLost',
@@ -339,6 +355,155 @@ test('the module documents that it never sees the crown', () => {
     /mask, not a head/i.test(points),
     'the drawing side has to be told the geometry stops at the forehead',
   );
+});
+
+/* --------------------------- the frame sample -------------------------- */
+
+/** One square of bytes, the shape the native side sends. */
+function sample(side = SAMPLE_MIN, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    data: new Uint8Array(side * side * SAMPLE_CHANNELS),
+    size: side,
+    sourceWidth: 720,
+    sourceHeight: 1280,
+    ...overrides,
+  };
+}
+
+test('a square of bytes comes through with the picture it was squashed out of', () => {
+  const read = normaliseSample(sample(64));
+  assert.ok(read);
+  assert.equal(read.size, 64);
+  assert.equal(read.sourceWidth, 720);
+  assert.equal(read.sourceHeight, 1280);
+  assert.equal(read.data.length, 64 * 64 * 4);
+});
+
+test('an ArrayBuffer and a plain array are read as the bytes they are', () => {
+  const square = SAMPLE_MIN * SAMPLE_MIN * SAMPLE_CHANNELS;
+  const bytes = new Uint8Array(square);
+  const fromBuffer = normaliseSample(sample(SAMPLE_MIN, { data: bytes.buffer }));
+  assert.equal(fromBuffer?.data.length, square);
+  const fromArray = normaliseSample(sample(SAMPLE_MIN, { data: Array.from(bytes) }));
+  assert.equal(fromArray?.data.length, square);
+});
+
+test('a buffer that is not the square it claims to be is refused, not read as noise', () => {
+  // The whole reason this function exists: read anyway and the outline
+  // lands somewhere the head is not, with nothing to say so.
+  const square = SAMPLE_MIN * SAMPLE_MIN;
+  assert.equal(normaliseSample(sample(SAMPLE_MIN, { data: new Uint8Array(square * 3) })), null);
+  assert.equal(normaliseSample(sample(SAMPLE_MIN, { data: new Uint8Array(square * 4 + 1) })), null);
+});
+
+test('a payload missing any of its three numbers is refused', () => {
+  for (const missing of ['size', 'sourceWidth', 'sourceHeight']) {
+    const payload = sample();
+    delete payload[missing];
+    assert.equal(normaliseSample(payload), null, missing);
+  }
+  assert.equal(normaliseSample(sample(SAMPLE_MIN, { sourceWidth: 0 })), null);
+  assert.equal(normaliseSample(sample(SAMPLE_MIN, { sourceHeight: Number.NaN })), null);
+  assert.equal(normaliseSample(sample(SAMPLE_MIN, { data: 'bytes' })), null);
+  assert.equal(normaliseSample(null), null);
+  assert.equal(normaliseSample('nothing'), null);
+});
+
+test('a square outside the sides the native side renders is refused', () => {
+  assert.equal(normaliseSample(sample(SAMPLE_MIN - 1)), null);
+  assert.equal(normaliseSample(sample(SAMPLE_MAX + 1)), null);
+  assert.ok(normaliseSample(sample(SAMPLE_MIN)));
+  assert.ok(normaliseSample(sample(SAMPLE_SIZE)));
+});
+
+test('the side asked for is held inside what the native side accepts', () => {
+  assert.equal(clampSampleSize(SAMPLE_SIZE), SAMPLE_SIZE);
+  assert.equal(clampSampleSize(4), SAMPLE_MIN);
+  assert.equal(clampSampleSize(4096), SAMPLE_MAX);
+  assert.equal(clampSampleSize(Number.NaN), SAMPLE_SIZE);
+  assert.equal(clampSampleSize(255.6), 256);
+});
+
+test('the sizes the JavaScript clamps to are the sizes the Swift clamps to', () => {
+  const swift = readFileSync(
+    new URL('../../modules/hair-face-tracking/ios/HairFaceTrackingModule.swift', import.meta.url),
+    'utf8',
+  );
+  const min = /sampleMin\s*=\s*(\d+)/.exec(swift);
+  const max = /sampleMax\s*=\s*(\d+)/.exec(swift);
+  assert.ok(min, 'the Swift names its own floor');
+  assert.ok(max, 'and its own ceiling');
+  assert.equal(Number(min[1]), SAMPLE_MIN);
+  assert.equal(Number(max[1]), SAMPLE_MAX);
+});
+
+/** The Swift module, as text: it cannot be compiled here, so it is read. */
+function moduleSwift(): string {
+  return readFileSync(
+    new URL('../../modules/hair-face-tracking/ios/HairFaceTrackingModule.swift', import.meta.url),
+    'utf8',
+  );
+}
+
+/** One function's body, from its `func` line to the end of the file. */
+function swiftFrom(marker: string): string {
+  const swift = moduleSwift();
+  const from = swift.indexOf(marker);
+  assert.ok(from > 0, `${marker} is there to read`);
+  return swift.slice(from);
+}
+
+/** Source with its `///` and `//` lines dropped, so prose cannot satisfy a check. */
+function withoutComments(swift: string): string {
+  return swift
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+}
+
+test('the native sampler writes no file and keeps no picture', () => {
+  const body = swiftFrom('func sampleFrame(');
+  assert.ok(!body.includes('data.write(to:'), 'a live sample is not a photograph on disk');
+  assert.ok(!body.includes('jpegRepresentation'), 'and it is not encoded either');
+  assert.ok(body.includes('samplingNow'), 'a sample already in flight is refused rather than queued');
+});
+
+test('nothing in the native module is force-unwrapped', () => {
+  // A crash in here takes the scan down mid-turn, on somebody's phone,
+  // with the camera open. There is no honest way to recover from one, so
+  // the rule is that there is nothing to recover from: every optional is
+  // a `guard let`, and `promise.reject` is the failure. Checked over the
+  // code rather than the comments, because a `///` line is allowed to
+  // write `try!` while explaining why it is not used.
+  const code = withoutComments(moduleSwift());
+  for (const unsafe of ['try!', 'as!', ')!', ']!', '!.', '! .']) {
+    assert.ok(!code.includes(unsafe), `HairFaceTrackingModule.swift force-unwraps: ${unsafe}`);
+  }
+  // `foo!` on a plain identifier, which the list above cannot see.
+  assert.equal(
+    /[A-Za-z0-9_]!(?![=~])/.exec(code),
+    null,
+    'an identifier is force-unwrapped somewhere in the module',
+  );
+});
+
+test('the sample holds a slot of the AR capture pool, so it does not run below the photograph', () => {
+  // `CIImage(cvPixelBuffer:)` retains one slot of the session's capture
+  // pool until the render finishes with it, and the render is on the
+  // sampling queue — so that queue is holding something ARKit needs,
+  // about three times a second, for the whole scan. At the lowest
+  // priority in the file that is a priority inversion waiting for a
+  // thermally throttled phone, and the symptom is the face tracker
+  // stuttering. Both queues that hold a pool slot run in the same band.
+  const code = withoutComments(moduleSwift());
+  const sampling = /label: "app\.tress\.hair-face-tracking\.sample",?\s*\n?\s*qos: \.(\w+)/.exec(
+    code,
+  );
+  assert.ok(sampling, 'the sampling queue names its own priority');
+  assert.equal(sampling[1], 'userInitiated');
+  const capture = /label: "app\.tress\.hair-face-tracking\.capture", qos: \.(\w+)/.exec(code);
+  assert.ok(capture, 'and so does the capture queue');
+  assert.equal(capture[1], 'userInitiated');
 });
 
 /* ------------------------- into the app's tracker ---------------------- */

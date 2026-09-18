@@ -587,6 +587,69 @@ test('chrome: insistence makes the arrow keener, never louder', () => {
   assert.ok(!/withRepeat\([\s\S]{0,120}opacity/.test(source), 'nothing here flashes');
 });
 
+test('chrome: asked for more turn, the arrow asks harder — bigger, quicker, further', () => {
+  /*
+    The shallow turn. Somebody comes ten degrees, stops, and the step
+    cannot hand over; the engine says so in words on the plate, and the
+    arrow's job is to be impossible to miss at the edge of the eye of a
+    person whose head is already turned. So it takes the keenest
+    insistence there is whatever urgency it was handed, runs at the fast
+    gear, grows, and travels further — and none of that is a gate, a
+    colour change or a count.
+  */
+  const source = read('steps/turn-arrow.tsx');
+  const number = (name: string) => {
+    const found = new RegExp(`export const ${name} = ([\\d.]+);`).exec(source);
+    assert.ok(found, `the arrow no longer declares ${name}`);
+    return Number(found[1]);
+  };
+  assert.ok(number('NUDGE_SCALE') > 1, 'the nudge is a bigger arrow');
+  assert.ok(number('NUDGE_SCALE') <= 1.2, 'and still the same arrow, not a lunge');
+  assert.ok(number('NUDGE_DRIFT') > 1, 'the nudge travels further');
+  assert.ok(number('NUDGE_DRIFT') <= 2, 'and still leaves and returns to zero');
+  // The prop exists, is optional, and cannot outlive the step's arrival.
+  const props = /export type TurnArrowProps = \{([\s\S]*?)\n\};/.exec(source);
+  assert.ok(props, 'the arrow no longer declares its props');
+  assert.ok(/\n {2}nudge\?: boolean;/.test(props[1]), 'the nudge is an optional prop');
+  assert.ok(
+    source.includes('const asking = nudge === true && settled !== true;'),
+    'an arrow still insisting after the turn arrived is the app not watching',
+  );
+  // It reaches the two things insistence is made of: the gear and the floor.
+  assert.ok(
+    source.includes('sweepGear(asking ? 1 : urgency)'),
+    'the nudge runs the light at the fast gear',
+  );
+  assert.ok(
+    source.includes('const next = asking ? 1 : unit(urgency);'),
+    'the nudge sits the chevrons at the keenest floor there is',
+  );
+  /*
+    And the screen actually passes it. A prop nothing hands a value to is
+    a prop that does not exist on a phone: `asking` would be false for the
+    life of the app, the scale, the drift and the gear would never move,
+    and the person who stopped at twelve degrees would get words and a
+    calm arrow. The first build of this shipped exactly that, and no
+    assertion here caught it, because they all read this file alone.
+  */
+  const screen = readFileSync('src/app/hair-scan.tsx', 'utf8');
+  const call = /<TurnArrow[\s\S]*?\/>/.exec(screen);
+  assert.ok(call, 'the screen no longer renders the arrow');
+  assert.ok(
+    /nudge=\{isTurnFurtherCue\(view\.cue\)\}/.test(call[0]),
+    'the screen must hand the arrow the engine’s ask, or the nudge is dead code on device',
+  );
+  assert.ok(
+    screen.includes('isTurnFurtherCue'),
+    'and it reads the ask off the engine rather than deciding one of its own',
+  );
+
+  // And it is still an arrow: no red, no flash, no words, no counting.
+  const code = codeOf('steps/turn-arrow.tsx');
+  assert.ok(!code.includes('danger'), 'a person who has not turned far enough is not in error');
+  assert.ok(!/withRepeat\([\s\S]{0,120}opacity/.test(code), 'nothing here flashes');
+});
+
 test('chrome: the run stops on the spot, is never left running, and never starts still', () => {
   const source = read('steps/turn-arrow.tsx');
   assert.ok(source.includes('cancelAnimation(phase)'), 'the run has to be stoppable on the spot');
@@ -692,15 +755,29 @@ test('chrome: the cue line is corrective only, and shows nothing when there is n
     source.includes('export type CorrectiveCue = ScanCue;'),
     'the plate’s idea of the corrections is the engine’s own list, not a copy of it',
   );
-  // And that list is corrective throughout: nothing in it is an
-  // instruction for a step, and nothing in it is about distance.
+  /*
+    And that list is corrective throughout: nothing in it is about
+    distance, and the only thing in it that touches the choreography is
+    the nudge — which says MORE of what the step's own title already
+    said, in the direction it said it, and which carries that direction
+    in its name because the plate is handed a finished sentence.
+  */
   const cues = /export type ScanCue =([\s\S]*?);\n/.exec(
     readFileSync('src/features/hair-scan/types.ts', 'utf8'),
   );
   assert.ok(cues, 'the engine no longer declares its cues');
   assert.deepEqual(
     [...cues[1].matchAll(/'(\w+)'/g)].map((m) => m[1]).sort(),
-    ['brighter', 'faceCamera', 'holdStill', 'lost', 'tooFast'],
+    [
+      'brighter',
+      'faceCamera',
+      'holdStill',
+      'lost',
+      'tooFast',
+      'turnFurtherDown',
+      'turnFurtherLeft',
+      'turnFurtherRight',
+    ],
     'a cue that is an instruction belongs in the step header, not on this plate',
   );
   assert.ok(source.includes('{cue ? ('), 'no correction, no plate');

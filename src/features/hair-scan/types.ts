@@ -100,6 +100,25 @@ export type StepProgress = {
    * the way there.
    */
   reachedAt: number | null;
+  /**
+   * When `reach` last climbed by an amount worth calling a movement, and
+   * what it stood at then; null and 0 while the step has yet to see one.
+   *
+   * It is what tells a HOLD from a PAUSE: a head that stopped ten degrees
+   * short and has not come any further for a second has made a decision,
+   * and `turnFurtherWanted` reads exactly that. The pair is needed rather
+   * than a timestamp alone because `reach` is a running maximum: measured
+   * against it, a six-second turn gains a thousandth per frame and never
+   * clears the margin, so the slowest turn in the world would read as a
+   * dead stop. `gainedReach` is the last place the head actually got to,
+   * and `NUDGE_GAIN_REACH` is how much further counts as having moved.
+   *
+   * While it is null the step has seen no movement at all, and nothing is
+   * asked for: a head that never set off has not stopped short of
+   * anything, and the wait is timed from a real movement or not at all.
+   */
+  gainedAt: number | null;
+  gainedReach: number;
   /** True once the step has handed over to the next one. */
   done: boolean;
 };
@@ -109,14 +128,26 @@ export type StepProgress = {
  *
  * What to DO with your head is the step's own instruction now — a title
  * and one line, held at the top of the screen for as long as the step
- * runs — so this union carries only the five things that can go wrong
- * with a reading, and it is null the rest of the time. Nothing here
- * teaches the choreography, and nothing here is a verdict.
+ * runs — so this union carries only the things that can go wrong with a
+ * reading, and it is null the rest of the time. Nothing here teaches the
+ * choreography, and nothing here is a verdict.
  *
  * There is deliberately no cue for distance. Build 17 asked people to
  * move back until their arm was at full stretch, and the scan never
  * armed; the mesh and the brackets scale to the head instead, so how far
  * away somebody holds the phone is their business.
+ *
+ * The last three are the one exception to "nothing here teaches the
+ * choreography", and they are the exception on purpose. A turn step
+ * hands over at `TURN_HANDOVER_DEG`; somebody who turns a little less
+ * than that reaches neither turn target, both steps run their whole
+ * timers, and the scan quietly comes away with the hairline alone. The
+ * answer is not to lower the bar and keep the poor frame: it is to ASK
+ * FOR MORE TURN, in the direction the step already asked for. They carry
+ * that direction in their names, because the plate is handed a finished
+ * sentence and a sentence cannot be looked up by a cue that does not say
+ * which way. They correct nothing else, they gate nothing, and if the
+ * turn still does not come the step ends exactly as it does today.
  */
 export type ScanCue =
   /** No head can be read, or the one being read is leaving the picture. */
@@ -128,7 +159,13 @@ export type ScanCue =
   /** The head has gone out of the picture altogether. */
   | 'lost'
   /** The room is dark enough to be worth mentioning. */
-  | 'brighter';
+  | 'brighter'
+  /** The `right` step has stopped short of the turn it hands over at. */
+  | 'turnFurtherRight'
+  /** The `left` step has stopped short of the turn it hands over at. */
+  | 'turnFurtherLeft'
+  /** The `down` step has stopped short of the nod it hands over at. */
+  | 'turnFurtherDown';
 
 /**
  * The two halves of the scan as the older screens still read them.

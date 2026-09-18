@@ -7,6 +7,22 @@
  * store listing, the website and the Play data-safety form all promise it
  * does not do.
  *
+ * Two roads reach the same model. `measureMask` and `measureCoverage`
+ * take a photograph's file, resize it through ImageManipulator and
+ * measure what the scan kept — that is where every figure the app shows
+ * comes from, and it is unchanged. `segmentFrame` takes bytes that are
+ * already in memory at the size they were sampled, runs the same model,
+ * and hands back the mask alone; its one caller is the live mesh, which
+ * needs to know where hair is so a wireframe can be drawn on it. Nothing
+ * on the second road is stored, compared or shown.
+ *
+ * One interpreter serves both, so both go through `runModel` and queue
+ * rather than interleaving inside it — see the note there for the one
+ * moment in a scan when they really do overlap.
+ *
+ * Neither road reaches the network, and neither has ever been given the
+ * chance to: the model is a file in the binary.
+ *
  * Shapes are read from the model rather than hardcoded. MediaPipe has
  * published this segmenter at more than one input size, and a constant
  * that silently disagrees with the file produces a mask full of noise
@@ -56,6 +72,68 @@ export async function segmenter(): Promise<TensorflowModel> {
     });
   }
   return loading;
+}
+
+/**
+ * One model run at a time, whichever road asked for it.
+ *
+ * There is exactly one interpreter — `cached` above is the whole point
+ * of this file's first paragraph — and two callers that can reach it at
+ * the same moment. The live mesh's beat runs for the length of the scan;
+ * the analysis of the kept photographs starts the instant the scan
+ * reaches `processing`. The screen stops the beat there, but stopping a
+ * timer does not stop a `segmentFrame` that is already inside
+ * `model.run`, so for one beat's width the two overlap.
+ *
+ * What that costs is not a crash but a reading. `model.run` copies the
+ * caller's buffer into the interpreter's own input tensor and then runs
+ * it; two calls interleaving inside one interpreter can have the second
+ * copy land before the first has read, and the figures the app SHOWS
+ * come out of the still road. A measurement taken from another road's
+ * frame would look entirely reasonable and be fiction — the same failure
+ * the long note on `inputTensor` describes, arriving by a different
+ * door.
+ *
+ * So every run goes through here and they queue. The chain is kept alive
+ * through failures (a rejected run must not wedge every later one), and
+ * it costs a promise hop per call on a path that already awaits native
+ * work. The live road is the one that waits, and waiting is what it is
+ * built for: its caller drops a beat it cannot take on time.
+ */
+let modelQueue: Promise<void> = Promise.resolve();
+
+/**
+ * How long one run may take before the queue gives up on it.
+ *
+ * The interpreter is native and a run that never settles would wedge
+ * every later one behind it — including the one that builds the report
+ * somebody is waiting on. Six seconds is far longer than a 512-square
+ * run has ever taken (6-16 ms in Node, and the file's own Hermes
+ * multiplier does not reach a second), so this fires for a hang and
+ * never for slowness.
+ */
+const RUN_TIMEOUT_MS = 6000;
+
+async function runModel(model: TensorflowModel, input: Float32Array): Promise<Float32Array> {
+  const mine = modelQueue.then(async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        model.run([input.buffer as ArrayBuffer]),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('segmenter run timed out')), RUN_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
+  });
+  modelQueue = mine.then(
+    () => undefined,
+    () => undefined,
+  );
+  const [out] = await mine;
+  return new Float32Array(out);
 }
 
 /** Input side length the loaded model expects, from its own tensor shape. */
@@ -165,6 +243,125 @@ async function inputTensor(
   }
 }
 
+/* ------------------------- the live-frame road ------------------------- */
+
+/**
+ * A square of RGBA pixels already in memory — no file, no decode.
+ *
+ * `width` and `height` are the buffer's own, which the AR sampler makes
+ * square; the resample below does not require that, so a non-square
+ * buffer is handled rather than refused.
+ */
+export type RawFrame = {
+  /** RGBA, row-major, four bytes per pixel. */
+  data: Uint8Array;
+  width: number;
+  height: number;
+};
+
+/**
+ * The model's input tensor, sampled out of a buffer already in memory.
+ *
+ * ── The same invariant, kept the same way ─────────────────────────────
+ * `inputTensor` above squashes a photograph into the model's square with
+ * a scale on each axis and no crop, so a point in the mask maps back
+ * onto the picture by a ratio and nothing else. This does exactly that,
+ * with nearest-neighbour sampling instead of ImageManipulator: the
+ * sampler upstream has already squashed the camera frame into a square,
+ * and this squashes that square into the model's. Two scales composed
+ * are still a scale. No crop, no offset, no rotation, at either step.
+ *
+ * ── Why nearest neighbour ─────────────────────────────────────────────
+ * The buffer is smaller than the model's side, so this is an upsample,
+ * and an upsample invents nothing whichever filter is used. Bilinear
+ * would spend three or four times the arithmetic making the invented
+ * pixels smoother, three times a second, on the thread the scan's own
+ * React updates run on. The mask it produces is a wireframe's shape, not
+ * a figure; smoothness there buys nothing anybody can see.
+ *
+ * ── The fourth channel ────────────────────────────────────────────────
+ * Same as the still road, and for the same documented reason: this is a
+ * video model whose fourth input plane is the mask it produced for the
+ * previous frame, and every plane beyond RGB is left at zero because
+ * nothing here keeps a previous one. The length still has to match the
+ * tensor exactly — see the long note on `inputTensor` for what happens
+ * when it does not, which is not an error but a reading of whatever was
+ * left in the interpreter's memory.
+ */
+function resampleTensor(
+  frame: RawFrame,
+  side: number,
+  channels: number,
+): Float32Array | null {
+  const { data, width, height } = frame;
+  if (!(width > 0) || !(height > 0) || !(side > 0)) return null;
+  if (data.length < width * height * 4) return null;
+
+  const tensor = new Float32Array(side * side * channels);
+  for (let y = 0; y < side; y += 1) {
+    const sy = Math.min(height - 1, Math.floor(((y + 0.5) * height) / side));
+    const row = sy * width * 4;
+    for (let x = 0; x < side; x += 1) {
+      const sx = Math.min(width - 1, Math.floor(((x + 0.5) * width) / side));
+      const i = row + sx * 4;
+      const o = (y * side + x) * channels;
+      tensor[o] = data[i] / 255;
+      tensor[o + 1] = data[i + 1] / 255;
+      tensor[o + 2] = data[i + 2] / 255;
+    }
+  }
+  return tensor;
+}
+
+/**
+ * The hair mask for one live frame, from bytes that never touched the
+ * filesystem.
+ *
+ * ── What this is for, and what it is not ──────────────────────────────
+ * One caller: the hair scan's mesh, which needs to know where the hair
+ * is so the wireframe cap can be sat on it rather than on the skull. It
+ * returns the mask and nothing else — no coverage figure, no outline, no
+ * stored trace — because nothing on this road is a measurement of
+ * anybody. The measured figures come from `measureMask` on a kept
+ * photograph, and that road is untouched: same resize, same decode, same
+ * trace, same numbers.
+ *
+ * ── What it costs ─────────────────────────────────────────────────────
+ * `model.run` is native and asynchronous. Everything either side of it
+ * is plain JavaScript on the thread that called it: the resample above
+ * walks the model's whole square once, and `hairChannel` walks it again.
+ * At the model's 512 that is 262,144 pixels twice. Measured in Node on
+ * this Mac at about 2 ms for the resample and 1 ms for the channel pick,
+ * which the rest of this file's notes put at 5-15x in Hermes on the
+ * oldest hardware the app supports. It is called a few times a second,
+ * never per frame, and the caller is expected to drop a call that
+ * arrives while the last one is still running.
+ *
+ * Null whenever the model cannot run or the buffer is not a picture:
+ * callers hold the shape their cap already has rather than collapsing
+ * it, because "we could not look" is not "there is no hair".
+ */
+export async function segmentFrame(frame: RawFrame): Promise<MaskImage | null> {
+  try {
+    const model = await segmenter();
+    const side = inputSide(model);
+    const channels = inputChannels(model);
+
+    const input = resampleTensor(frame, side, channels);
+    if (!input) return null;
+
+    // The interpreter will not tell us if this is wrong; see the note at
+    // the same line on the still road.
+    if (input.length !== side * side * channels) return null;
+
+    const output = await runModel(model, input);
+    const classes = Math.max(1, Math.round(output.length / (side * side)));
+    return hairChannel(output, side, classes);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * What one photograph measured: the figures, and the shape they came from.
  *
@@ -247,8 +444,7 @@ export async function measureMask(uri: string): Promise<MaskMeasurement | null> 
     const expected = side * side * channels;
     if (input.length !== expected) return null;
 
-    const [out] = await model.run([input.buffer as ArrayBuffer]);
-    const output = new Float32Array(out);
+    const output = await runModel(model, input);
 
     // Classes per pixel, from the output tensor rather than assumed.
     const classes = Math.max(1, Math.round(output.length / (side * side)));

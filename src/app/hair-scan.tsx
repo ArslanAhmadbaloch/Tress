@@ -70,6 +70,12 @@ import Animated, { FadeIn, useReducedMotion, useSharedValue } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
+import {
+  SAMPLE_SIZE,
+  canSampleFrame,
+  sampleFrame as sampleArFrame,
+} from '../../modules/hair-face-tracking';
+
 import { sampleCameraActive } from '@/components/capture/sample-camera';
 import {
   CaptureChecklist,
@@ -111,6 +117,7 @@ import {
   SCAN_STEPS,
   canStart,
   createScanState,
+  isTurnFurtherCue,
   orderedFrames,
   reduce,
   snapshotMesh,
@@ -118,6 +125,13 @@ import {
   stepProgress,
   stepReached,
 } from '@/features/hair-scan/engine';
+import {
+  FIT_CLOCK_START,
+  FIT_TICK_MS,
+  dueForFit,
+  hairSilhouette,
+  type FitClock,
+} from '@/features/hair-scan/hair-fit';
 import { createScanHaptics } from '@/features/hair-scan/haptics';
 import { CAP_REGIONS } from '@/features/hair-scan/head-cap';
 import { compareScans } from '@/features/hair-scan/measure';
@@ -150,6 +164,7 @@ import type {
   ScanStep,
   ScannerState,
 } from '@/features/hair-scan/types';
+import { nitroAvailable } from '@/lib/native';
 import { deletePhotoFiles, persistCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { hairContent } from '@/features/content/hair-content';
@@ -157,6 +172,16 @@ import { MIN_TOUCH_TARGET, darkColors, iconSize, motion, radius, spacing, useThe
 import { isScanSession, type PhotoSession } from '@/types/domain';
 
 /* ------------------------------- tuning ------------------------------- */
+
+/**
+ * The segmenter's live entry point, as a type.
+ *
+ * Written as a type query rather than imported, because importing the
+ * module here would pull the TFLite native module into every build that
+ * opens this screen. The value is loaded lazily, behind `nitroAvailable`,
+ * in the fit loop below.
+ */
+type SegmentFrame = typeof import('@/features/assessment/hair-segmenter').segmentFrame;
 
 /** How often the tracker is asked whether its last face has gone stale. */
 const EXPIRE_TICK_MS = 250;
@@ -935,6 +960,176 @@ function Scanner({
     return () => clearInterval(timer);
   }, [cameraLive, gateLevel, step]);
 
+  /* ------------------------ the cap on the hair ----------------------- */
+
+  /**
+   * Whether a fit is running, and when the last one finished. The rule
+   * that reads it is `dueForFit`, which is pure and tested; this holds
+   * only the state it reads.
+   */
+  const fitClock = useRef<FitClock>(FIT_CLOCK_START);
+
+  /*
+    Sitting the mesh on the hair, live.
+
+    ── The chain, end to end ──────────────────────────────────────────
+    `sampleArFrame` renders a 256-square of the AR frame on screen into raw
+    RGBA bytes and hands them over with the size of the picture they came
+    from. `segmentFrame` runs the bundled MediaPipe hair segmenter on
+    those bytes — no file is written, nothing is decoded off disk, and
+    nothing leaves the phone. `hairSilhouette` thresholds the mask, takes
+    its largest connected region, walks that region's boundary and maps
+    it into the preview's own points. `setHair` hands the outline to the
+    mesh with the face it was sampled against, and `fitHairCap` inside
+    the mesh turns the two into the three numbers the dome is stretched
+    by. The cap then eases onto that shape over about half a second.
+
+    ── Which phones run it ────────────────────────────────────────────
+    Only the AR path, and only where every part of it exists: an iPhone
+    with a TrueDepth camera (`arkit`), a binary whose native module has
+    `sampleFrame` in it (`canSampleFrame` asks), and a binary with the Nitro
+    runtime the TFLite model needs (`nitroAvailable`). Android, Expo Go,
+    the simulator, an older iPhone and a development client built before
+    any of this keep the standing dome — the same cap they draw today,
+    with nothing else about the scan changed. Android keeps the dome this
+    phase; nothing here has an Android half.
+
+    ── The beat, and what happens when it slips ───────────────────────
+    A fit is taken at most every `FIT_INTERVAL_MS` — about three a
+    second — and never while the last one is still running: `dueForFit`
+    says so. The clock is stamped when a fit STARTS, so the beat is the
+    interval whenever a fit fits inside one and the fit's own duration
+    when it does not; a fit that overruns therefore spreads the beat out
+    rather than stacking one behind it, and a fit that does not overrun
+    does not slow the beat down at all. Stamping on COMPLETION instead —
+    which is what this did once — measures the interval from the wrong
+    end and quietly halves the rate: every second tick lands inside the
+    interval and is refused. The timer ticks at `FIT_TICK_MS`, half the
+    beat, so its own jitter cannot cost a whole one. A skipped beat
+    costs nothing — the cap is already wearing a shape and hair does not
+    change between frames.
+
+    ── Nothing is asked for before it can be used ─────────────────────
+    The outline has to arrive in the PREVIEW's points, and the preview's
+    size is only known once the camera has delivered a frame. Until then
+    `hairSilhouette` would refuse every mask, so the beat would pay a
+    native render and a whole model run per tick to throw the answer
+    away. The size is therefore checked before the sample is asked for,
+    and the clock is left alone so the first real frame is fitted at
+    once rather than an interval later.
+
+    ── The face, grabbed before the sample ────────────────────────────
+    `fitHairCap` reads a width across the picture, which a few degrees of
+    stale yaw corrupts, so the fit has to be measured against the head as
+    it was WHEN THE FRAME WAS TAKEN. The tracked face is therefore read
+    before the sample is asked for, not after the mask comes back.
+
+    ── Refusals ───────────────────────────────────────────────────────
+    A sample that could not be taken, a model that would not run, a mask
+    with nothing honest in it: each is `setHair(null, …)`, which HOLDS
+    the shape the cap is wearing. Only a long run of them eases the cap
+    back to the standing allowance. None of it is a statement about
+    anybody's hair, and no number any of it computes is shown, stored or
+    compared.
+  */
+  useEffect(() => {
+    // `foreground` is what the camera itself runs on: with the app behind
+    // something else the AR session is down, every sample would be
+    // refused, and a run of refusals is what eventually lets the cap go.
+    if (!arkit || !cameraLive || !foreground) return undefined;
+    if (!canSampleFrame() || !nitroAvailable()) return undefined;
+
+    let live = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let segment: SegmentFrame | null = null;
+
+    const stop = (): void => {
+      live = false;
+      if (timer !== null) clearInterval(timer);
+      timer = null;
+    };
+
+    /*
+      How long the cap keeps re-fitting on the ready screen.
+
+      The loop is worth its cost while the head is moving — that is the
+      scan. On the ready screen the head is being lined up, not turned,
+      and a phone parked there would otherwise render an AR frame and run
+      the segmenter three times a second for as long as somebody left it
+      sitting: a hot phone and a flat battery for a cap that has already
+      settled. So the ready screen gets enough beats to fit the hair and
+      then holds the last one; pressing Start begins the scan and the
+      loop runs again for as long as the scan does.
+    */
+    const READY_FIT_BUDGET_MS = 12000;
+    const startedAt = Date.now();
+
+    const fit = async (): Promise<void> => {
+      const now = Date.now();
+      if (scanner === 'ready' && now - startedAt > READY_FIT_BUDGET_MS) return;
+      if (segment === null || !dueForFit(fitClock.current, now)) return;
+      // The head as it is at the moment the frame is asked for.
+      const face = tracker.current.face;
+      if (face === null) return;
+      // And the preview it will be drawn into. No size yet means no
+      // frame has arrived, so the fit could only be refused: costing a
+      // native render and a model run to learn that is the one waste
+      // this loop can see coming.
+      const view = previewSize.current;
+      if (!(view.width > 0) || !(view.height > 0)) return;
+      fitClock.current = { busy: true, at: now };
+      try {
+        const sample = await sampleArFrame(SAMPLE_SIZE);
+        const mask = await segment({
+          data: sample.data,
+          width: sample.size,
+          height: sample.size,
+        });
+        if (!live) return;
+        mesh.current?.setHair(
+          mask === null
+            ? null
+            : hairSilhouette(mask, {
+                source: { width: sample.sourceWidth, height: sample.sourceHeight },
+                view,
+              }),
+          face,
+        );
+      } catch {
+        // A frame the camera would not give, or a model run that threw.
+        // A refusal holds the cap's shape; it never collapses it.
+        if (live) mesh.current?.setHair(null, face);
+      } finally {
+        // `now`, not the time it is now: the beat is measured from one
+        // fit's start to the next's, so a fit that took a moment does
+        // not push the next one past the following tick. See `FitClock`.
+        fitClock.current = { busy: false, at: now };
+      }
+    };
+
+    void (async () => {
+      try {
+        // Never a static import: the segmenter reaches the TFLite native
+        // module, and Metro reports a late module's load failure as fatal
+        // rather than throwing it. `nitroAvailable()` above is the
+        // question that has to be asked first — see `lib/native`.
+        const model = await import('@/features/assessment/hair-segmenter');
+        if (!live) return;
+        segment = model.segmentFrame;
+      } catch {
+        // A binary built without the model. The dome is what this phone
+        // draws, which is what every phone drew before this existed.
+        stop();
+        return;
+      }
+      timer = setInterval(() => {
+        void fit();
+      }, FIT_TICK_MS);
+    })();
+
+    return stop;
+  }, [arkit, cameraLive, foreground, scanner]);
+
   /*
     The light meter's one still on the ready screen.
 
@@ -1445,6 +1640,14 @@ function Scanner({
             <TurnArrow
               direction={arrow}
               urgency={view.urgency}
+              /*
+                And when the engine is asking for more turn, the arrow
+                asks with it: the plate's words and the arrow are one
+                ask, not a sentence with a shrug behind it. Read off the
+                cue rather than kept here, so the two can never disagree
+                about whether the ask is on.
+              */
+              nudge={isTurnFurtherCue(view.cue)}
               settled={view.reached}
               style={{
                 position: 'absolute',

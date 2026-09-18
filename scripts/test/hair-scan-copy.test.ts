@@ -80,14 +80,22 @@ test('hair scan copy: the owner’s wording is used verbatim', () => {
     c.permission.body,
     'Tress uses your camera to capture your hair and scalp during your scan.',
   );
-  // The five corrections, and only those: what to DO is the step's own
-  // instruction, held above for as long as the step runs.
+  /*
+    The five corrections and the three nudges, and only those. What to DO
+    is the step's own instruction, held above for as long as the step
+    runs; the nudges are the one thing the plate says about the
+    choreography, and all they say is MORE of what the title already
+    asked for, in the direction it asked for it.
+  */
   assert.deepEqual(c.cue, {
     faceCamera: 'Center your face',
     holdStill: 'Hold still',
     tooFast: 'Slow down',
     lost: 'Let’s get you back in frame',
     brighter: 'Find a brighter spot',
+    turnFurtherRight: 'Keep turning to your right',
+    turnFurtherLeft: 'Keep turning to your left',
+    turnFurtherDown: 'A little further down',
   });
   assert.deepEqual(c.processing.stages, [
     'Analysing your scan…',
@@ -183,6 +191,49 @@ test('hair scan copy: the four steps are the owner’s words, in his order', () 
   });
   for (const label of Object.values(HAIR_SCAN_COPY.target)) {
     assert.ok(sentences.includes(label), `${label} reaches the sweep`);
+  }
+});
+
+test('hair scan copy: the shallow turn is asked for more, never told it fell short', () => {
+  /*
+    The failure this wording exists for: somebody turns a little less than
+    the step hands over at, both turn steps run their whole timers, and
+    twenty-two seconds later the scan has the hairline and nothing else,
+    with nothing said. The owner's instruction was to ask for more turn
+    rather than lower the bar and keep the poor frame — so these three
+    lines ask, in the direction the step already named, and they are the
+    whole of what the scan says about it.
+  */
+  const nudges = [
+    HAIR_SCAN_COPY.cue.turnFurtherRight,
+    HAIR_SCAN_COPY.cue.turnFurtherLeft,
+    HAIR_SCAN_COPY.cue.turnFurtherDown,
+  ];
+  for (const line of nudges) {
+    assert.ok(sentences.includes(line), `${line} reaches the sweep`);
+    // Read peripherally, mid-turn, with the phone at the edge of the eye.
+    assert.ok(line.length <= 28, `"${line}" is too long to catch mid-turn`);
+    assert.ok(line.split(' ').length <= 5, `"${line}" is too many words to catch mid-turn`);
+    // No number the code did not compute, and no number it did: the scan
+    // cannot see how far a neck turns, so it never says how far.
+    assert.ok(!/\d|°|percent|%|degree/i.test(line), `"${line}" counts something`);
+    // Not a verdict, not a scold, not a failure.
+    assert.ok(
+      !/not far enough|too (little|shallow|short)|fail|try harder|wrong|again/i.test(line),
+      `"${line}" tells somebody off`,
+    );
+    assert.ok(!line.includes('!'), `"${line}" exclaims`);
+  }
+  // Each names the way the HEAD goes, which is the step's own direction.
+  assert.ok(/right/i.test(HAIR_SCAN_COPY.cue.turnFurtherRight));
+  assert.ok(/left/i.test(HAIR_SCAN_COPY.cue.turnFurtherLeft));
+  assert.ok(/down/i.test(HAIR_SCAN_COPY.cue.turnFurtherDown));
+  // And the chin's is worded for a chin: nothing about turning sideways.
+  assert.ok(!/turn|right|left/i.test(HAIR_SCAN_COPY.cue.turnFurtherDown));
+  // Still nothing about where to stand, on the one line most tempted to.
+  const text = nudges.join(' ').toLowerCase();
+  for (const phrase of ['further away', 'move back', 'closer', 'step back']) {
+    assert.ok(!text.includes(phrase), `the nudge must not say "${phrase}"`);
   }
 });
 
