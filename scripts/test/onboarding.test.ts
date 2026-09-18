@@ -70,10 +70,14 @@ import {
 import {
   EMPTY_DATA,
   HAIR_GOAL_LABELS,
+  HAIR_WEARING_LABELS,
   INGREDIENT_REACTION_LABELS,
+  journeyHairWearing,
+  migrateJourney,
   withAnswer,
   type AppData,
   type Gender,
+  type Journey,
 } from '@/types/domain';
 
 import { ADVICE, FLATTERY, HAIR_CLAIMS, URGENCY, assertHonest } from './honesty-words';
@@ -596,6 +600,7 @@ test('funnel: the steps run in the reference order, with no progress bar to coun
     'age',
     'gender',
     'hairType',
+    'hairWearing',
     'scalpType',
     'scalpSensitivity',
     'interstitial',
@@ -788,7 +793,7 @@ test('funnel: a killed app comes back one step past the furthest answer on recor
   assert.equal(profileName(null), '');
   const placeholder = withAnswer(EMPTY_DATA, { journey: { hairType: 'wavy' } }, FRESH);
   assert.equal(placeholder.profile?.displayName, 'You');
-  assert.equal(resumeIndex(steps, placeholder), indexOf(steps, 'scalpType'), 'an answer without a name still resumes');
+  assert.equal(resumeIndex(steps, placeholder), indexOf(steps, 'hairWearing'), 'an answer without a name still resumes');
 });
 
 test('funnel: the questions ask what the person knows, the options are their words, and nothing promises', () => {
@@ -937,4 +942,69 @@ test('funnel: the mascot says who it is and keeps a record; it claims no experti
   assert.equal(greet(interstitial.title, 'Sam'), interstitialTitle('Sam'));
   assert.equal(greet(interstitial.title, ''), interstitialTitle(''));
   assert.equal(greet(interstitial.title, undefined), interstitialTitle(''));
+});
+
+/* --------------------------- how they wear it ---------------------------- */
+
+/*
+  The one funnel answer with a job on the measurement side.
+
+  `src/features/hair-scan/measure/part-line.ts` looks for a parting in a
+  segmentation mask, and the honest thing about that search is that it
+  finds nothing on most heads. Asking the person first is what keeps a
+  null result an answer rather than a failure — and what keeps the app
+  from reading a shadow on a close-cropped head as a middle part.
+
+  So: the question exists, it is a choice among the six ways people
+  actually describe it, it lands where the detector will read it, and it
+  survives the round trip through storage. Nothing here is a reading.
+*/
+
+test('funnel: the wearing question offers the six ways people describe it, beside the hair-type question', () => {
+  const wearing = QUESTIONS.find((q) => q.id === 'hairWearing');
+  assert.ok(wearing, 'the funnel asks how they wear their hair');
+  assert.equal(indexOf(FUNNEL_STEPS, 'hairWearing'), indexOf(FUNNEL_STEPS, 'hairType') + 1);
+  assert.deepEqual(
+    optionsOf(wearing, 'female').map((o) => o.value),
+    ['middlePart', 'sidePart', 'noDefinedPart', 'pulledBack', 'shortAllOver', 'other'],
+  );
+  assert.deepEqual(
+    optionsOf(wearing, 'male').map((o) => o.label),
+    ['Middle part', 'Side part', 'No defined part', 'Pulled back', 'Short all over', 'Other'],
+  );
+  // Every row is one of the record's own words, so the answer reads back as itself.
+  for (const option of optionsOf(wearing, 'female')) {
+    assert.equal(option.label, HAIR_WEARING_LABELS[option.value as keyof typeof HAIR_WEARING_LABELS]);
+  }
+  // A habit, not a finding: the three ways out are rows of their own, not a skip.
+  assert.equal(wearing.multi, false);
+  assert.equal(wearing.skip, undefined);
+  assert.equal(wearing.emptyAs, undefined);
+});
+
+test('funnel: how they wear it round-trips, and an answer the app never offered reads as unanswered', () => {
+  const wearing = QUESTIONS.find((q) => q.id === 'hairWearing')!;
+  const chosen = withAnswer(EMPTY_DATA, answerPatch(wearing, ['sidePart']), FRESH);
+  assert.equal(chosen.journey?.hairWearing, 'sidePart');
+  assert.deepEqual(answerOf(wearing, chosen), ['sidePart']);
+  assert.equal(journeyHairWearing({ hairWearing: 'sidePart' }), 'sidePart');
+
+  // Absent is unanswered — never "they have no parting".
+  assert.equal(journeyHairWearing({}), undefined);
+  assert.equal(answerOf(wearing, EMPTY_DATA), null);
+
+  // A value from a build that offered a different list is dropped rather
+  // than carried to a label table that would have no word for it.
+  assert.equal(
+    journeyHairWearing({ hairWearing: 'mohawk' as never }),
+    undefined,
+    'a value the app never offered is not a choice somebody made',
+  );
+  const stale = { hairWearing: 'mohawk' } as unknown as Journey;
+  assert.ok(!('hairWearing' in migrateJourney(stale)), 'and the migration drops it on the way in');
+
+  // Additive: a journey saved before the question existed comes out with
+  // no new keys, which is what lets the loader keep its schema version.
+  const old = { hairType: 'wavy' } as unknown as Journey;
+  assert.ok(!('hairWearing' in migrateJourney(old)), 'an older journey gains nothing it never had');
 });

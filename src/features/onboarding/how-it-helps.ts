@@ -67,12 +67,14 @@ export const HELP_BEATS: HelpBeat[] = [
  *
  * The middle one used to read "Photos uploaded". On a screen with no
  * other mention of the network that reads as "this app sends nothing",
- * and the app does send something: scan a product and its barcode
- * digits go to Open Beauty Facts. What the code does support is the
- * narrower statement — the app has no upload path for a photograph. A
- * picture leaves when the person hands it to a share sheet themselves,
- * or with a device backup they have turned on. So the label says whose
- * uploads it is counting.
+ * and the app does send something — at the time, a scanned barcode went
+ * to a cosmetics database; that screen and that request have since been
+ * retired, and what is left is the purchase check on iPhone and a photo
+ * address a retired scan may have left behind. Either way the narrower
+ * statement is the one the code supports: the app has no upload path for
+ * a photograph. A picture leaves when the person hands it to a share
+ * sheet themselves, or with a device backup they have turned on. So the
+ * label says whose uploads it is counting.
  *
  * The privacy screen is where the rest of it is set out; this is a
  * figure on an onboarding card and is not trying to be that document.

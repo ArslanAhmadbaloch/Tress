@@ -59,7 +59,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Tress uses the camera to take the photographs you keep in your journal and to read product barcodes. Photographs are saved on this device and never uploaded.",
+          "cameraPermission": "Tress uses the camera to take the photographs you keep in your journal. Photographs are saved on this device and never uploaded.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }

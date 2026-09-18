@@ -170,25 +170,44 @@ function Navigation() {
         <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
         <Stack.Screen
           name="hair-scan"
-          // The continuous hair scan — the one way a session is made. A
+          // The continuous hair scan — the guided way a session is made. A
           // live camera under a full-screen instrument, presented full
-          // screen so nothing clips the preview. The centre "+" opens it,
-          // and so does the last step of onboarding.
+          // screen so nothing clips the preview. The centre "+" chooser
+          // opens it, and so does the last step of onboarding.
           options={{
             presentation: 'fullScreenModal',
             animation: 'slide_from_bottom',
             gestureEnabled: false,
           }}
         />
+        {/*
+            The centre "+" chooser: scan, or take a plain photograph. A
+            form sheet, because it is a fork in the road rather than a
+            place — it arrives over whatever was showing and hands the
+            stack to whichever door is chosen.
+
+            Two detents rather than one. `Text` does not cap Dynamic
+            Type, so at the largest accessibility sizes the two rows, the
+            privacy line and "Not now" are taller than a half-screen
+            sheet; the screen scrolls, and the second detent lets it be
+            dragged open as well. Ascending order is required by
+            react-native-screens and checked in development. */}
         <Stack.Screen
-          name="scan-product"
-          // Full screen, like the capture session: a page sheet clips the
-          // camera preview.
+          name="new"
           options={{
-            presentation: 'fullScreenModal',
-            animation: 'slide_from_bottom',
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.5, 1],
+            sheetGrabberVisible: true,
+            headerShown: false,
           }}
         />
+        {/*
+            The plain camera. Full screen and headerless like the scan —
+            it draws its own dark chrome over a live preview, and a header
+            would sit on top of the picture. It fades rather than slides:
+            it is arrived at from the chooser by a replace, so there is no
+            push for a slide to describe. */}
+        <Stack.Screen name="photo" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen
           name="hair-report"
           // A saved scan's report, reopened from an update: the still

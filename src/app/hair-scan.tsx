@@ -113,7 +113,7 @@ import { deletePhotoFiles, persistCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { hairContent } from '@/features/content/hair-content';
 import { darkColors, iconSize, motion, radius, spacing, useTheme } from '@/theme';
-import { sessionToExtend, type PhotoSession } from '@/types/domain';
+import { isScanSession, type PhotoSession } from '@/types/domain';
 
 /* ------------------------------- tuning ------------------------------- */
 
@@ -322,10 +322,19 @@ function Scanner({
     for. A one-photograph baseline from before the scan existed that
     still lacks angles is still the baseline: completing it is the same
     free first session, not an update.
+
+    The test is "no scan has been taken yet", not "no session exists".
+    Those were the same thing while the scanner was the only way to make
+    a session; `/photo` is a second way, and it is not gated, so counting
+    every session would charge somebody for their first scan because they
+    had taken two plain photographs first — a free thing spending a free
+    thing. The `sessionToExtend` clause that used to sit here is now
+    implied rather than dropped: the only session it ever named is a
+    pre-scan baseline, which is by definition not a scan session, so it
+    still reads as unspent and completing it is still the free first
+    session.
   */
-  const [isBaseline] = useState(
-    () => data.sessions.length === 0 || sessionToExtend(data.sessions) !== null,
-  );
+  const [isBaseline] = useState(() => !data.sessions.some(isScanSession));
 
   /*
     Every route into the camera passes through this screen, so this is the

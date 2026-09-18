@@ -1,6 +1,5 @@
-import { Image } from 'expo-image';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useRef, useState } from 'react';
 import { Alert, Platform, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,7 +13,6 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { RoutineGlyph } from '@/components/ui/routine-glyphs';
 import { ProgressBar } from '@/components/ui/stat';
 import { Text } from '@/components/ui/text';
-import { takePrefill } from '@/features/products/handoff';
 import { inferRoutineIcon } from '@/features/routine/icons';
 import { toDateKey } from '@/lib/date';
 import { usePremiumGate } from '@/features/subscription/gate';
@@ -48,6 +46,20 @@ const TIMES: RoutineTimeOfDay[] = ['morning', 'evening', 'anytime'];
  * Every field is the user's own words. The app offers no treatments, no
  * doses and no presets of either — the amount field is free text, and the
  * icon is a picture chosen for scanning, nothing more.
+ *
+ * That now goes for the bottle as well. This sheet used to open a barcode
+ * reader that asked an online database what a product was; the reader and
+ * the request are gone, and what is left is two fields the person fills
+ * in. It was the only request the app's own code ever made, so a product
+ * record is now exactly as private as everything else here: written on
+ * this phone, kept on it.
+ *
+ * The reader could do two things, and both are kept. It could make a
+ * product while a task was being made — that is the form at the bottom —
+ * and it could attach one to a task that already existed, which is the
+ * bottle button on each row. Keeping only the first would have made
+ * "Remove product only" a one-way door and left every task made before
+ * this build unable ever to name a bottle.
  */
 export default function RoutineScreen() {
   const { colors, spacing, radius, typography } = useTheme();
@@ -60,6 +72,7 @@ export default function RoutineScreen() {
     archiveRoutineItem,
     advanceRoutineToday,
     detachProduct,
+    saveProduct,
   } = useAppStore();
 
   const [name, setName] = useState('');
@@ -71,6 +84,7 @@ export default function RoutineScreen() {
   // Null until the user picks one: until then the icon follows what they
   // type, so "Collagen" lands on the cup without an extra tap.
   const [chosenIcon, setChosenIcon] = useState<RoutineIcon | null>(null);
+  const nameRef = useRef<TextInput>(null);
   const detailRef = useRef<TextInput>(null);
 
   const icon = chosenIcon ?? inferRoutineIcon(`${name} ${detail}`);
@@ -86,28 +100,35 @@ export default function RoutineScreen() {
   const [adding, setAdding] = useState(false);
   const { isPremium } = usePremium();
   const gate = usePremiumGate();
-  /** The scanned or typed product this task will be, if any. */
-  const [linked, setLinked] = useState<{
-    barcode: string;
-    brand?: string;
-    source: 'openBeautyFacts' | 'manual';
-  } | null>(null);
+  /*
+    The bottle this task is, if they want to write one down.
 
-  // The scanner leaves its product here on the way out; this sheet is where
-  // the task gets built, so the form opens with the name filled in and the
-  // product linked. Nothing happens on an ordinary return.
-  useFocusEffect(
-    useCallback(() => {
-      const prefill = takePrefill();
-      if (!prefill) return;
-      setName(prefill.name);
-      setLinked({ barcode: prefill.barcode, brand: prefill.brand, source: prefill.source });
-      setAdding(true);
-    }, [setName, setLinked, setAdding]),
-  );
-  const linkedProduct = linked
-    ? data.products.find((p) => p.barcode === linked.barcode)
-    : undefined;
+    There used to be a barcode reader here and a database behind it. Both
+    are gone, and what replaced them is the half that was always the
+    person's: two fields they fill in themselves. Nothing is looked up,
+    nothing is checked against anything, and the record never leaves the
+    phone.
+  */
+  const [productOpen, setProductOpen] = useState(false);
+  const [productName, setProductName] = useState('');
+  const [productBrand, setProductBrand] = useState('');
+  const productBrandRef = useRef<TextInput>(null);
+  /*
+    Writing a bottle onto a task that already exists.
+
+    The deleted screen could do this — it listed the stack and attached
+    the record it had just made to whichever item you picked — and the
+    form above, which only makes a product while it makes a task, does
+    not. Without it a person who taps "Remove product only" on the sheet
+    below can never link that task to a bottle again, and no task made
+    before they started writing products down can ever have one. So the
+    row carries its own way in, open one at a time and closed by default:
+    a task is a task, and most of them are not a bottle.
+  */
+  const [attachId, setAttachId] = useState<string | null>(null);
+  const [attachName, setAttachName] = useState('');
+  const [attachBrand, setAttachBrand] = useState('');
+  const attachBrandRef = useRef<TextInput>(null);
 
   /** 1× → 2× → 3× → 4× → 1×, so the whole range is one control. */
   const cycleDoses = (item: RoutineItem) => {
@@ -115,10 +136,73 @@ export default function RoutineScreen() {
     updateRoutineItem(item.id, { dosesPerDay: next });
   };
 
+  /*
+    The key of a record written here.
+
+    The field on disk is still called `barcode`, because that is what it
+    was when a scanner filled it and `RoutineItem.productBarcode` points
+    at it. Nothing scans now, so the key is generated on this device and
+    prefixed, which also means it can never collide with the digits an
+    older record kept.
+  */
+  const makeProductKey = () =>
+    `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+  /**
+   * The record, written exactly as it was typed.
+   *
+   * One place makes a product, so both ways in — the add form and the
+   * row below — write the same fields in the same way: nothing tidied,
+   * nothing guessed, nothing looked up. Returns the key the task points
+   * at, or undefined when there was no name to write.
+   */
+  const writeProduct = (name: string, brand: string): string | undefined => {
+    const bottle = name.trim();
+    if (!bottle) return undefined;
+    const key = makeProductKey();
+    const label = brand.trim();
+    saveProduct({
+      barcode: key,
+      source: 'manual',
+      name: bottle,
+      ...(label ? { brand: label } : {}),
+      fetchedAt: new Date().toISOString(),
+    });
+    return key;
+  };
+
+  const openAttach = (item: RoutineItem) => {
+    setAttachId(item.id);
+    setAttachName('');
+    setAttachBrand('');
+  };
+
+  const closeAttach = () => {
+    setAttachId(null);
+    setAttachName('');
+    setAttachBrand('');
+  };
+
+  /** Writes the bottle and points an existing task at it. */
+  const attachProduct = (item: RoutineItem) => {
+    const key = writeProduct(attachName, attachBrand);
+    if (!key) return;
+    updateRoutineItem(item.id, { productBarcode: key });
+    closeAttach();
+  };
+
   const add = () => {
     const label = name.trim();
     if (!label) return;
     if (!isPremium) return;
+
+    /*
+      The record is written first so the task can point at it. Both
+      fields are theirs, kept exactly as typed: the app does not tidy a
+      brand, guess a size, or look anything up about either.
+    */
+    const productKey = writeProduct(productName, productBrand);
+
     addRoutineItem({
       label,
       detail: detail.trim() || undefined,
@@ -126,9 +210,11 @@ export default function RoutineScreen() {
       cadence: 'daily',
       timeOfDay: time,
       dosesPerDay: doses,
-      productBarcode: linked?.barcode,
+      productBarcode: productKey,
     });
-    setLinked(null);
+    setProductName('');
+    setProductBrand('');
+    setProductOpen(false);
     setName('');
     setDetail('');
     setDoses(1);
@@ -146,7 +232,8 @@ export default function RoutineScreen() {
 
   const confirmRemove = (item: RoutineItem) => {
     // A linked product gets a middle way out: drop the bottle, keep the
-    // task and everything ticked off against it.
+    // task and everything ticked off against it. The row's bottle button
+    // comes back when it has none, so this is not a one-way door.
     Alert.alert(`Remove "${item.label}"?`, 'Your past completion history is kept.', [
       { text: 'Cancel', style: 'cancel' },
       ...(item.productBarcode
@@ -190,7 +277,7 @@ export default function RoutineScreen() {
         {/*
           The shelf is the only way into /shelf. It sits here because the
           shelf reads this list back — it quotes the tasks below against
-          the product records the app has fetched — so the two screens
+          the product records the person has written down — so the two screens
           are about the same handful of bottles. It carries no action:
           the shelf arranges records and adds nothing to this list, so
           opening it from here cannot leave anything half-done.
@@ -311,6 +398,31 @@ export default function RoutineScreen() {
                           </Text>
                         </PressableScale>
 
+                        {/* Only where there is nothing to point at yet:
+                            a task with a bottle already written down has
+                            "Remove product only" on the sheet below, and
+                            this is the way back from it. */}
+                        {item.productBarcode === undefined ? (
+                          <PressableScale
+                            onPress={() =>
+                              attachId === item.id
+                                ? closeAttach()
+                                : gate('buildStack', () => openAttach(item))
+                            }
+                            haptic="light"
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityState={{ expanded: attachId === item.id }}
+                            accessibilityLabel={`Write down the product for ${item.label}`}
+                            style={{ padding: spacing.xs }}>
+                            <Icon
+                              name="bottle"
+                              size={15}
+                              color={attachId === item.id ? colors.accent : colors.textTertiary}
+                            />
+                          </PressableScale>
+                        ) : null}
+
                         <PressableScale
                           onPress={() => confirmRemove(item)}
                           haptic="none"
@@ -323,6 +435,59 @@ export default function RoutineScreen() {
                       </View>
                     }
                   />
+
+                  {attachId === item.id ? (
+                    <View
+                      style={{
+                        paddingHorizontal: spacing.lg,
+                        paddingBottom: spacing.md,
+                        gap: spacing.sm,
+                      }}>
+                      <TextInput
+                        value={attachName}
+                        onChangeText={setAttachName}
+                        placeholder="Product name, as it is on the bottle"
+                        placeholderTextColor={colors.textTertiary}
+                        returnKeyType="next"
+                        onSubmitEditing={() => attachBrandRef.current?.focus()}
+                        submitBehavior="submit"
+                        accessibilityLabel={`Product name for ${item.label}`}
+                        style={inputStyle}
+                      />
+                      <TextInput
+                        ref={attachBrandRef}
+                        value={attachBrand}
+                        onChangeText={setAttachBrand}
+                        placeholder="Brand (optional)"
+                        placeholderTextColor={colors.textTertiary}
+                        returnKeyType="done"
+                        onSubmitEditing={() => attachProduct(item)}
+                        accessibilityLabel={`Product brand for ${item.label}, optional`}
+                        style={inputStyle}
+                      />
+                      <Text variant="caption" color="textTertiary">
+                        Kept exactly as you type it, on this phone. Tress looks
+                        nothing up and checks it against nothing.
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                        <Button
+                          label="Cancel"
+                          variant="ghost"
+                          size="md"
+                          style={{ flex: 1 }}
+                          onPress={closeAttach}
+                        />
+                        <Button
+                          label="Save product"
+                          icon="bottle"
+                          size="md"
+                          style={{ flex: 1 }}
+                          disabled={attachName.trim().length === 0}
+                          onPress={() => attachProduct(item)}
+                        />
+                      </View>
+                    </View>
+                  ) : null}
                 </View>
               ))}
             </Card>
@@ -381,53 +546,87 @@ export default function RoutineScreen() {
           <>
         <SectionHeader title="Add a task" />
         <Card>
-          <Button
-            label="Scan a product"
-            icon="barcode"
-            variant="secondary"
-            size="md"
-            onPress={() => router.push('/scan-product')}
-            style={{ marginBottom: spacing.md }}
-          />
-          {linked ? (
-            // The link, not the name: the field below stays the person's to
-            // fill in, so their stack says what they call the thing.
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: spacing.sm,
-                marginBottom: spacing.sm,
-                padding: spacing.sm,
-                borderRadius: radius.md,
-                backgroundColor: colors.accentSoft,
-              }}>
-              {linkedProduct?.thumbnailUrl ? (
-                <Image
-                  source={{ uri: linkedProduct.thumbnailUrl }}
-                  style={{ width: 28, height: 28, borderRadius: 14 }}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  accessible={false}
-                />
-              ) : (
-                <Icon name="barcode" size={16} color={colors.accent} />
-              )}
-              <Text variant="footnote" color="accent" style={{ flex: 1 }} numberOfLines={1}>
-                {linked.source === 'manual' ? 'Entered by you' : 'From Open Beauty Facts'}
-                {linked.brand ? ` · ${linked.brand}` : ''}
+          {/*
+            The bottle, written down rather than read off a label.
+
+            It sits behind a toggle because most tasks are not a bottle —
+            a massage, a rinse, a tablet somebody already knows the name
+            of — and two more empty fields at the top of the form make
+            the common case look like the incomplete one. Open, it asks
+            for exactly what the person can answer: what it is called and
+            whose it is. Nothing here is validated, corrected or looked
+            up, and a record written here is only ever read back on this
+            phone.
+          */}
+          {productOpen ? (
+            <View style={{ marginBottom: spacing.md, gap: spacing.sm }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.sm,
+                }}>
+                <Icon name="bottle" size={16} color={colors.textSecondary} />
+                <Text variant="subhead" color="textSecondary" style={{ flex: 1 }}>
+                  The product, if this one is a bottle
+                </Text>
+                <PressableScale
+                  onPress={() => {
+                    setProductOpen(false);
+                    setProductName('');
+                    setProductBrand('');
+                  }}
+                  haptic="none"
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add this task without a product">
+                  <Icon name="close" size={13} color={colors.textTertiary} />
+                </PressableScale>
+              </View>
+              <TextInput
+                value={productName}
+                onChangeText={setProductName}
+                placeholder="Product name, as it is on the bottle"
+                placeholderTextColor={colors.textTertiary}
+                returnKeyType="next"
+                onSubmitEditing={() => productBrandRef.current?.focus()}
+                submitBehavior="submit"
+                accessibilityLabel="Product name, optional"
+                style={inputStyle}
+              />
+              {/* Next carries on into the task's own name, which is the
+                  next field down and the one this form cannot do
+                  without. A key labelled Next that moves nothing is a
+                  small lie about the form. */}
+              <TextInput
+                ref={productBrandRef}
+                value={productBrand}
+                onChangeText={setProductBrand}
+                placeholder="Brand (optional)"
+                placeholderTextColor={colors.textTertiary}
+                returnKeyType="next"
+                onSubmitEditing={() => nameRef.current?.focus()}
+                submitBehavior="submit"
+                accessibilityLabel="Product brand, optional"
+                style={inputStyle}
+              />
+              <Text variant="caption" color="textTertiary">
+                Kept exactly as you type it, on this phone. Tress looks
+                nothing up and checks it against nothing.
               </Text>
-              <PressableScale
-                onPress={() => setLinked(null)}
-                haptic="none"
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Remove the linked product">
-                <Icon name="close" size={13} color={colors.accent} />
-              </PressableScale>
             </View>
-          ) : null}
+          ) : (
+            <Button
+              label="Add a product"
+              icon="bottle"
+              variant="secondary"
+              size="md"
+              onPress={() => setProductOpen(true)}
+              style={{ marginBottom: spacing.md }}
+            />
+          )}
           <TextInput
+            ref={nameRef}
             value={name}
             onChangeText={setName}
             placeholder="Name, e.g. Scalp massage"

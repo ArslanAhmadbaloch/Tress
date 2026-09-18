@@ -181,7 +181,6 @@ const ALLOWED_RAW = [
   'scripts/',
   // Camera and photo viewers sit on real black, which is not a themed
   // surface: it is the absence of one.
-  'src/app/scan-product.tsx',
   'src/app/session/[id].tsx',
   'src/app/compare.tsx',
   'src/components/capture/sample-camera.tsx',

@@ -68,9 +68,14 @@ were rejected and the trade-off being accepted, under "Apple 12+ versus Play
 
  - Photographs, journal notes, routine, streaks, onboarding answers and
    scan readings live in the app's private storage on the device. Nothing
-   personal is uploaded. **In the Android build** the requests our code makes
-   are the product barcode lookup below and the product image that follows it.
-   (Two qualifiers, both load-bearing. Say "the Android build", not "the app":
+   personal is uploaded. **In the Android build a fresh install makes no
+   network request at all** — the product barcode lookup, which was the only
+   one, has been removed. An install upgraded from a build that scanned
+   barcodes is the single exception: it can still hold a product photo address
+   on that database's image server, and the three screens that draw it are
+   named below.
+   (Three qualifiers, all load-bearing. Say "a fresh install", because of the
+   leftover above. Say "the Android build", not "the app":
    the iOS build also configures RevenueCat, though no longer at launch — see
    `store/privacy-labels.md`. And say "our code": whether the bundled ML Kit
    library logs usage of its own has not been verified from this repository,
@@ -93,23 +98,20 @@ were rejected and the trade-off being accepted, under "Apple 12+ versus Play
    common layer sends no usage telemetry of its own. That has not been
    verified from this repository and no document claims it either way — see
    the verification list at the end of `store/privacy-labels.md`.*
- - **Product barcode lookups.** Scanning a product sends its barcode number to
-   Open Beauty Facts (`world.openbeautyfacts.org`) over HTTPS, as a GET with no
-   body. The request also carries a `fields` list, `Accept: application/json`
-   and a `User-Agent` of `Tress/<version> (support@tresshaircare.com)`, because
-   that service asks every client to identify itself — the app's name and
-   version and our own support address, not the person's
-   (`src/features/products/open-beauty-facts.ts:20,29,33-43,229`). No cookie,
-   no auth, no photograph, no identifier and no account go with it, and Open
-   Beauty Facts sees the device's IP address the way any web server does. The
-   product photo is then loaded from `images.openbeautyfacts.org`. A barcode is
-   not a Play data type, so the "collect or share" answer stays No.
-   `android.permission.INTERNET` is in every Expo-built manifest already and
-   needs no declaration.
-   *Do not write "and nothing else".* An earlier version of this file did, and
-   the same phrase was deleted from the privacy policy for being literally
-   false: the headers above are something else. The claim that survives every
-   check is the one made here — nothing in the request is about the person.
+ - **Product records are typed in, and the lookup is gone.** Earlier builds had
+   a barcode scanner that sent the digits to an online cosmetics database and
+   fetched the product photo it held. That screen, that module and its recorded
+   fixtures were deleted. A product is now a name and, optionally, a brand the
+   person writes on the routine sheet, kept in the app's own on-device record.
+   Nothing is looked up, and **the Open Beauty Facts / ODbL attribution is no
+   longer owed and must not be carried into any store field.**
+   One leftover, stated rather than hidden: a record written by the old scanner
+   can still hold a product photo address on that database's image server, and
+   it is still drawn — `src/components/stack-row.tsx`, rendered by Home and by
+   the routine sheet, and `src/app/session/[id].tsx`. So on an upgraded install
+   third-party product data is both stored and displayed; on a fresh install
+   there is none. It carries nothing about the person, and it is not a Play
+   data type either. The "collect or share" answer stays No.
  - Photo library: read when the person picks a picture for their card;
    the chosen file is copied into the sandbox and not transmitted.
  - No account system, so no name, email or identifiers are collected.
@@ -136,9 +138,9 @@ did. `confirmDeleteAll` in `src/app/settings.tsx` calls `clearAllPhotos()`,
 `src/lib/app-lock.ts` is reached only from the separate "Turn off the passcode?"
 alert. The passcode in secure storage, `hj.lock.enabled`, and the small device
 preferences (appearance, reminder hour, capture options, the saved entitlement
-answer) survive. So do two image caches: the `expo-image` disk cache of Open
-Beauty Facts product photos (`src/app/scan-product.tsx:474`) and any share image
-already composed into `Paths.cache` (`src/app/card.tsx:121-124`,
+answer) survive. So do two image caches: the `expo-image` disk cache, which on
+an install upgraded from a build that still scanned barcodes holds the product
+photos fetched then, and any share image already composed into `Paths.cache` (`src/app/card.tsx:121-124`,
 `src/components/session/share-sheet.tsx:236-238`) — the second of which can be
 a JPEG of the person's own progress photographs. Both sit in the OS cache
 directory, which the system may clear on its own and which goes when the app
@@ -185,9 +187,10 @@ Submitting "no collection" and then shipping billing without revising it is
 the kind of mismatch that gets an app pulled. Revise first, ship second.
 
 ## Permissions declarations
- - CAMERA: progress photographs, processed and stored on the device, and
-   reading product barcodes. The lookup request carries the decoded digits and
-   the headers described above; no image goes with it.
+ - CAMERA: progress photographs, processed and stored on the device. That is
+   now its only use — the barcode scanner that also used it is gone. The
+   camera usage string in `app.json` still mentions barcodes and is in
+   openIssues; that file is not this lane's to change.
  - USE_BIOMETRIC / USE_FINGERPRINT: optional app lock.
  - **Motion / accelerometer** (`expo-sensors`, `motionPermission` in app.json):
    **declared, never requested, and no longer read.** The `motionPermission`

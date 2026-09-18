@@ -35,35 +35,46 @@ the reviewer is comparing it against.
 
 ## What the code does with data
 
-**The outbound requests the app makes of its own accord — these are the
-ones worth knowing about, and each has a paragraph below.**
+**THE PRODUCT BARCODE LOOKUP HAS BEEN REMOVED.** It was the only HTTP call
+written in this repository. `src/features/products/open-beauty-facts.ts`,
+`src/app/scan-product.tsx` and the recorded API fixtures under
+`scripts/test/fixtures/` were deleted, and a product is now a name and a brand
+the person types on the routine sheet. Nothing is looked up, no third-party
+data is stored or displayed, and no attribution is owed to anybody. **Do not
+carry the old barcode paragraph forward into a store form.**
 
- 1. **The product barcode lookup.** `src/features/products/open-beauty-facts.ts`
-    sends a GET to
-    `https://world.openbeautyfacts.org/api/v2/product/<barcode>.json` carrying the
-    barcode digits in the path, a `fields` list, an `Accept` header and a
-    `User-Agent` of `Tress/<version> (support@tresshaircare.com)` — no body, no
-    cookie, no account, no photograph. Product photos are then loaded from
-    `https://images.openbeautyfacts.org` by `expo-image` with
-    `cachePolicy="memory-disk"`, so they land in the app's image cache. Both
-    platforms.
- 2. **The RevenueCat purchase check, iOS only — no longer at launch.** It now
-    happens when the paywall is on screen, on a purchase, on a restore, and on
-    a launch where an install that has already bought something holds a saved
-    answer that has run out of date. The section below sets out each trigger;
-    this is the one that is easy to get wrong, and the one that changed.
- 3. **Two links the person taps**, opened outside the app: the scanned
-    product's page on Open Beauty Facts (`expo-web-browser`,
-    `src/app/scan-product.tsx`) and the store's own subscription settings
-    (`Linking.openURL`, `src/components/subscription/subscription-status.tsx`).
-
-`open-beauty-facts.ts:227` is where the app's own `fetch` call sits, and it is
-the one implementation call site a grep of `src/` finds. Greps for
-`XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon` and `axios` return
-nothing under `src/`. Those are the clients worth checking in JavaScript; what
+`grep -rE "\bfetch\(|fetchImpl|XMLHttpRequest|WebSocket|EventSource|sendBeacon|axios" src`
+now returns nothing. Those are the clients worth checking in JavaScript; what
 a bundled native library does on its own account is a different question, and
-the ML Kit paragraph below is the open case. `expo-updates` is not installed,
-so there is no update check at launch. No push token is ever requested.
+the RevenueCat SDK and the ML Kit paragraph below are the open cases.
+`expo-updates` is not installed, so there is no update check at launch. No push
+token is ever requested.
+
+**What still reaches a network, and each has a paragraph below.**
+
+ 1. **The RevenueCat purchase check, iOS only — no longer at launch, and not
+    made by our code.** `react-native-purchases` is compiled into the binary
+    and its SDK opens the connection. It happens when the paywall is on screen,
+    on a purchase, on a restore, and on a launch where an install that has
+    already bought something holds a saved answer that has run out of date. The
+    section below sets out each trigger; this is the one that is easy to get
+    wrong, and the one that changed.
+ 2. **A leftover product photo address on an upgraded install.** A record
+    written by the retired scanner kept `thumbnailUrl`, an
+    `images.openbeautyfacts.org` address, and it is still drawn on three
+    screens: `src/components/stack-row.tsx` reads it and is rendered by Home
+    (`src/app/(tabs)/index.tsx`) and the routine sheet (`src/app/routine.tsx`),
+    and `src/app/session/[id].tsx` reads it directly. The report's routine
+    block is NOT one of them, despite reading a field of the same name: it
+    reads `ShelfProduct.thumbnailUrl`, which `src/features/products/shelf.ts`
+    never assigns, so its tiles are always placeholders — asserted by
+    `scripts/test/hair-scan-report-model.test.ts`. The shelf no longer reads it
+    either, nothing can write such a record any more, and a fresh install has
+    none. Remove those two readers and the app's last outbound path other than
+    the purchase check is gone.
+ 3. **One link the person taps**, opened outside the app: the store's own
+    subscription settings (`Linking.openURL`,
+    `src/components/subscription/subscription-status.tsx`).
 
 Data also leaves the phone two ways that are not requests at all: an image the
 person hands to the share sheet, and the device backup. Both have their own
@@ -105,8 +116,7 @@ per-app size cap — is not something this tree can show.
    no photograph is transmitted by our code on this path. It is also not on
    every path: `src/components/capture/tracked-camera.tsx` falls back to plain
    `expo-camera` with no detector if the VisionCamera native module is missing
-   or fails at runtime, and the barcode scanner uses `expo-camera` and runs no
-   detector at all. Say "a face detector lines the shot up" of the capture
+   or fails at runtime. Say "a face detector lines the shot up" of the capture
    screen, not of the app.
 
    What is **not** established from this tree: whether ML Kit's
@@ -203,8 +213,11 @@ That is what Apple's definitions call **Purchases (Purchase History)** and
 **On Android none of this happens yet.** `REVENUECAT_KEYS.android` is
 `null`, so `createRevenueCatBilling()` returns null before
 `Purchases.configure` is ever called and `createBilling()` falls back to
-`unconfiguredBilling`, which touches no network. In the Android build the
-requests our code makes are the barcode lookup and the product image above.
+`unconfiguredBilling`, which touches no network. In the Android build our code
+makes no request of its own except one: on an install upgraded from a build
+that scanned barcodes, the three screens listed at the top of this file still
+point `expo-image` at a leftover `images.openbeautyfacts.org` address. A fresh
+Android install makes none at all.
 The native SDK is still compiled into the Android binary; it is simply never
 initialised. The section below says what changes when that flips — and note
 that the launch behaviour it will inherit is now the new one, not the old.
@@ -223,7 +236,7 @@ three are not the same list, and an earlier version of this file said they were
 
 | Capability | Usage string | Asked for at runtime by |
 |---|---|---|
-| Camera | `app.json:58` | `useCameraPermissions`, when the capture screen or the barcode scanner opens |
+| Camera | `app.json:58` | `useCameraPermissions`, when the capture screen opens |
 | Photo library | `app.json:82` | `ImagePicker.requestMediaLibraryPermissionsAsync()`, when you pick a card picture |
 | Face ID / biometrics | `app.json:75` | the system, when `expo-local-authentication` authenticates for the app lock |
 | Notifications | **none** | `Notifications.requestPermissionsAsync()` (`src/lib/notifications.ts:79`), when you turn reminders on |
@@ -257,10 +270,10 @@ if the library has to stay for some other reason, cut the string to steadiness
 alone and say so here. `package.json` and `app.json` are not this file's to
 change, so it is in openIssues.
 
-The camera also reads product barcodes. The request that carries the decoded
-digits is described at the top of this file, headers and all; no image and
-nothing the person writes goes with it. What has to match between `app.json`
-and `src/app/privacy.tsx` is the substance — every capability the app uses is
+The camera used to read product barcodes as well, and `app.json`'s camera
+usage string still says so; that string is not this file's to change and is in
+openIssues. The scanner is gone, so the camera is the hair scan's alone. What
+has to match between `app.json` and `src/app/privacy.tsx` is the substance — every capability the app uses is
 named in the policy — not the count of plist keys.
 
 **Deletion, stated exactly.** `src/app/settings.tsx` > "Delete all my data"
@@ -270,9 +283,9 @@ calls `clearAllPhotos()` (deletes the whole `Documents/photos` directory),
 (`src/lib/app-lock.ts`), so the keychain passcode and `hj.lock.enabled`
 survive, along with the other device preferences, the saved entitlement answer
 and the RevenueCat id in UserDefaults. Two caches survive it as well, and both
-hold image bytes: the `expo-image` disk cache of Open Beauty Facts product
-photos (`cachePolicy="memory-disk"`, `src/app/scan-product.tsx:474`), and any
-share image already composed — `src/app/card.tsx:121-124` and
+hold image bytes: the `expo-image` disk cache, which on an install upgraded
+from a build that still scanned barcodes holds product photos fetched then
+(`cachePolicy="memory-disk"`), and any share image already composed — `src/app/card.tsx:121-124` and
 `src/components/session/share-sheet.tsx:236-238` write a rendered file into
 `Paths.cache` and never delete it, and the update sheet's file is a JPEG of the
 person's own progress photographs. The share files sit in `Paths.cache`, the OS
@@ -358,32 +371,30 @@ backing up the person's own phone, and an image the person hands to the share
 sheet themselves. **Not collected** is the right answer, and it is the right
 answer for those reasons, not because nothing ever leaves.
 
-**Barcode lookups add no row to the label, and here is the reasoning**, because
-"we send something to a third party and declare nothing" is exactly the pairing
-a reviewer questions:
+**Barcode lookups used to need a paragraph here and no longer do.** The app
+sent a product barcode to Open Beauty Facts and fetched the product photo that
+came back; the reasoning for why that added no row to the label is in the git
+history. The screen, the module and the request were removed, so on a fresh
+install there is now nothing to reason about: **no product data leaves the
+device, and no third-party product database is queried or attributed.** The one
+qualification, spelled out in the second bullet below, is the leftover photo
+address on an upgraded install — that address is still drawn, so "displayed" is
+not a word this file may use without it.
 
- - Apple's label enumerates data types *about the person*. A product barcode
-   is a number printed on a bottle. It is not in any of Apple's categories —
-   not Contact Info, not Identifiers (it identifies a product, not a user or a
-   device), not Usage Data, not Purchases.
- - Nothing accompanies it that would make it one. The request carries the
-   digits, a `fields` list, `Accept`, and a `User-Agent` naming the app and our
-   own support address. No cookie, no device id, no account, no photograph. Our
-   code never stores the lookup against anything that identifies the person —
-   the cached product sits in the same on-device record as everything else.
- - Open Beauty Facts sees the barcode and, as any website does, the device's IP
-   address in the ordinary course of serving the request, and the same is true
-   of the product image fetched from `images.openbeautyfacts.org`. Apple's
-   definitions do not count IP seen incidentally in transit as collection by
-   the app.
- - It is disclosed anyway, in `src/app/privacy.tsx` under "Product lookups",
-   including the IP exposure and the `User-Agent`. Disclosing more than the
-   label requires is the right direction; the label is a fixed taxonomy, the
-   policy is the place for the fuller account.
+Two consequences to carry into the store forms:
 
-**What would change this:** sending the barcode together with any identifier,
-logging lookups server-side against an install, or switching to an API that
-requires a key tied to a user. None of those is in the code today.
+ - **Drop the Open Beauty Facts / ODbL attribution** wherever a form or a page
+   still carries it. Attribution is owed while the data is used; it is not used
+   any more.
+ - A record written by the older scanner can still hold a product photo
+   address on that database's image server, and three screens draw it (listed
+   at the top of this file). It is an image request for a fresh copy of a
+   picture the person already scanned, it carries no identifier of theirs, and
+   a fresh install never makes one. It adds no row either, and it disappears
+   when those three readers go.
+
+**What would change this:** adding any lookup back, or any client that sends a
+product, a photograph or an identifier anywhere. None of that is in the code.
 
 ### Purposes
 
@@ -516,11 +527,12 @@ first build with an Android RevenueCat key.
 
  - Does your app collect or share any of the required user data types?
    **No**, for the Android build as it stands — the RevenueCat SDK is never
-   configured there, so the requests our code makes are the barcode lookup and
-   the product image that follows it, and a product barcode is not a Play data
-   type (reasoning under the Apple section above). Said that way on purpose: it
-   is a statement about the app's own code, which is what this tree can
-   establish. Whether a bundled Google library logs usage of its own is the
+   configured there and the barcode lookup has been removed, so a fresh
+   Android install makes no request at all — the one exception, an upgraded
+   install still drawing a leftover product photo from the old image server,
+   carries nothing about the person and is set out above. Said that way on
+   purpose: it is a statement about the app's own code, which is what this
+   tree can establish. Whether a bundled Google library logs usage of its own is the
    ML Kit question above, still unverified, and the proxy capture in the
    checklist is what would close it. **The shared privacy policy must agree**:
    `src/app/privacy.tsx` says in so many words that on Android the app is not
@@ -545,10 +557,12 @@ first build with an Android RevenueCat key.
  - Device or other IDs: none read, none sent.
  - App activity, app info and performance (crash logs, diagnostics): none
    collected — there is no crash or analytics SDK.
- - Barcode lookup: the barcode digits go to Open Beauty Facts over HTTPS and
-   the product's name, brand, ingredient text and photo come back. Not a
-   Play data type (no personal info, no device ID, no app activity). "Does
-   your app collect or share any of the required user data types?" stays No.
+ - Product records: typed in by the person and kept on the device. There is no
+   lookup and no product database — the barcode scanner that made one was
+   removed. The only request left in this area is the leftover product photo on
+   an install upgraded from that build (see the Android exception above); a
+   fresh install makes none. Nothing to declare either way, and no attribution
+   owed to anybody.
  - Device backup: the photo directory is `context.filesDir` and `app.json`
    sets no `android.allowBackup`, so the Expo default of `true` applies and the
    photographs and the journey record are eligible for Android Auto Backup.

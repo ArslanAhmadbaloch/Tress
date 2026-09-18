@@ -54,8 +54,13 @@ substitutions for the Android build:
     no such request from any screen, and a listing that admits a check the
     build never makes contradicts the Data safety form beside it. Delete
     from "When you open the Premium screen" through "that question is never
-    asked." — the paragraph then runs straight on into "Scanning a product
-    barcode sends the digits…", which needs no rewording.
+    asked." — and with it the sentence after, which begins "Apart from that
+    check"; on Android there is no such check to be apart from, and the
+    honest Play wording is that a fresh install makes no outbound request of
+    its own at all — the leftover product photo on an upgraded install is set
+    out in store/play-declarations.md and belongs in the policy, not the
+    listing. The paragraph then runs on into "No photograph, and nothing you
+    write, is part of any of it.", which needs no rewording.
 
     Once Android billing is live, restore the App Store wording verbatim.
     It names our subscription provider rather than a store, so unlike

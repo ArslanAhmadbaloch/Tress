@@ -23,6 +23,7 @@ const FOR_QUESTION: Record<QuestionId, QuestionExpression> = {
   age: { expression: 'smile', gaze: 'user' },
   gender: { expression: 'calm', gaze: 'user' },
   hairType: { expression: 'glance', gaze: 'question' },
+  hairWearing: { expression: 'smile', gaze: 'question' },
   scalpType: { expression: 'think', gaze: 'question' },
   scalpSensitivity: { expression: 'clench', gaze: 'user' },
   goal: { expression: 'smile', gaze: 'user' },

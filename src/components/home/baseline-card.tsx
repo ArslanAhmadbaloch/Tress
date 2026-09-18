@@ -1,12 +1,19 @@
 /**
  * "Scan your baseline" — on Home while the only session is a baseline
- * from before the Hair Scan existed.
+ * photograph rather than a scan.
  *
  * `sessionToExtend` names exactly one kind of session: a baseline taken
- * as a photograph, from the front, that still lacks angles and is the
- * only session there is. A scan baseline never qualifies — a scan keeps
- * the angles the turn reached, and nothing nags about the ones it did
- * not — so this card is only ever about that one photograph.
+ * as a photograph, that still lacks angles and is the only session there
+ * is. A scan baseline never qualifies — a scan keeps the angles the turn
+ * reached, and nothing nags about the ones it did not — so this card is
+ * only ever about that one photograph.
+ *
+ * Two kinds of session reach it now. One is a baseline from before the
+ * Hair Scan existed; the other is a picture taken minutes ago on the
+ * plain camera (`src/app/photo.tsx`), which writes an ordinary
+ * one-photograph session. So the card must not say when the photograph
+ * was taken — it cannot know — and it must handle the back of a head,
+ * which is the slot the plain camera's rear lens files under.
  *
  * What the button opens is the Hair Scan, and the scan saves a session
  * of its own beside the photograph; it does not add frames to it. The
@@ -30,14 +37,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
 import { useTheme } from '@/theme';
-import { ANGLE_LABELS, type Angle, type PhotoSession } from '@/types/domain';
-
-/**
- * The angles one scan can reach, in the order a turn meets them. A
- * front camera cannot see the back of the head, so the crown is not
- * here, and the card does not ask for it.
- */
-const SCAN_ANGLES: readonly Angle[] = ['front', 'leftTemple', 'rightTemple', 'top'];
+import { ANGLES, ANGLE_LABELS, type PhotoSession } from '@/types/domain';
 
 export function BaselineCard({
   session,
@@ -51,13 +51,22 @@ export function BaselineCard({
 }) {
   const { spacing } = useTheme();
 
-  // Angles present, not photographs: a session with two shots of the
-  // same angle still holds one angle, and the sentence names angles.
+  /*
+    Angles present, not photographs: a session with two shots of the
+    same angle still holds one angle, and the sentence names angles.
+
+    Every angle counts, including the back. An earlier version counted
+    only the four a scan reaches, which meant a baseline holding just the
+    back — which is what the plain camera's rear lens files (see
+    features/photo/session.ts) — counted as none and fell through to a
+    sentence about when the photograph was taken. That sentence was false
+    for a picture taken minutes ago. The card names the slot the journal
+    captions and says nothing about when.
+  */
   const held = new Set(session.photos.map((p) => p.angle));
-  const heldNames = SCAN_ANGLES.filter((a) => held.has(a))
-    .map((a) => ANGLE_LABELS[a])
-    .join(', ');
-  const heldCount = SCAN_ANGLES.filter((a) => held.has(a)).length;
+  const heldAngles = ANGLES.filter((a) => held.has(a));
+  const heldNames = heldAngles.map((a) => ANGLE_LABELS[a]).join(', ');
+  const heldCount = heldAngles.length;
 
   return (
     <Card style={style}>
@@ -72,7 +81,7 @@ export function BaselineCard({
       <Text variant="callout" color="textSecondary" style={{ marginTop: spacing.sm }}>
         {heldCount === 1
           ? `Your baseline is one photograph, from the ${heldNames.toLowerCase()}.`
-          : 'Your baseline was photographed before the Hair Scan existed.'}{' '}
+          : 'Your baseline is a photograph rather than a scan.'}{' '}
         A scan captures the front, both sides and the top on its own and is
         saved beside it, so the next comparison has the same angles both times.
       </Text>

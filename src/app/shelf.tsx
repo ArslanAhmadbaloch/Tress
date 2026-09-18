@@ -4,10 +4,15 @@
  * Somebody asked for product suggestions for their hair type. The app has
  * never asked anybody what their hair is like, holds no efficacy data and
  * cannot compare two bottles, so this screen does the one honest version
- * of that request: it lays out what they have already scanned, what the
- * database states about it, what their own list says, and the answers
- * they gave at the start — each under a heading that says which of those
- * three it is.
+ * of that request: it lays out the records they wrote down themselves,
+ * what their own list says, and the answers they gave at the start — each
+ * under a heading that says which of those it is.
+ *
+ * The screen used to have a fourth thing on it: what an online cosmetics
+ * database stated about a bottle whose barcode had been scanned. The
+ * scanner and the lookup behind it are gone, so the ingredient panel, the
+ * database tags and the licence footnote went with them. What is left is
+ * the part that was always the person's own.
  *
  * It is a reading surface and nothing else. There is no ordering except
  * by date, no marks out of anything, no sentence about what a formula
@@ -28,11 +33,9 @@
  * headings and labels, and the sweep reads this file's literals too.
  */
 
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { View } from 'react-native';
-import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 
 import { BackButton } from '@/components/ui/back-button';
 import { Card } from '@/components/ui/card';
@@ -45,7 +48,6 @@ import {
   SectionHeader,
   Separator,
 } from '@/components/ui/layout';
-import { PressableScale } from '@/components/ui/pressable-scale';
 import { Text } from '@/components/ui/text';
 import { buildShelf, type ShelfFact, type ShelfProduct } from '@/features/products';
 import { useAppStore } from '@/store/app-store';
@@ -71,16 +73,16 @@ export default function ShelfScreen() {
           eyebrow="Products"
           title="Your shelf,"
           titleMuted="as you recorded it."
-          subtitle="What you scanned, what the database states about it, and what you told us at the start. Nothing here is ordered by anything but a date."
+          subtitle="The products you wrote down, what your own list says, and what you told us at the start. Nothing here is ordered by anything but a date."
         />
 
         {shelf.productCount === 0 ? (
           <EmptyState
             icon="bottle"
             title="No records yet"
-            body="Scan a barcode and the record lands here: the name, the size and the ingredient list exactly as Open Beauty Facts holds them."
-            actionLabel="Scan a Product"
-            onAction={() => router.push('/scan-product')}
+            body="Add a product while you add a task to your routine, and the record lands here with the name and brand exactly as you typed them."
+            actionLabel="Back to your routine"
+            onAction={() => router.back()}
           />
         ) : (
           shelf.sections.map((section) => (
@@ -150,34 +152,23 @@ export default function ShelfScreen() {
 }
 
 /**
- * One record: the bottle as it is held, and — behind a tap — the
- * database's own words about it.
+ * One record: the bottle as it is held, and nothing more.
  *
- * The ingredient panel is closed by default and never summarised when
- * open. A count of ingredients would be the app splitting a list it has
- * promised never to split, and a "key ingredient" would be the app
- * deciding which one matters.
+ * It used to open on a tap, because there was a panel of the database's
+ * own words behind it. With the lookup gone there is nothing behind the
+ * card that is not already on its face, so it no longer pretends to
+ * open. What is drawn is the name, the brand and size as typed, and the
+ * sentences features/products/shelf.ts wrote about the record — never a
+ * sentence about what the product does.
  */
 function ProductCard({ product }: { product: ShelfProduct }) {
   const { colors, spacing, radius } = useTheme();
-  const [open, setOpen] = useState(false);
-  const reduceMotion = useReducedMotion();
 
   const subtitle = [product.brand, product.quantity].filter(Boolean).join(' · ');
 
   return (
     <Card padded={false}>
-      <PressableScale
-        onPress={() => setOpen((v) => !v)}
-        scaleTo={0.995}
-        haptic="light"
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={
-          open
-            ? `${product.name}. Hide what the database holds.`
-            : `${product.name}. Show what the database holds.`
-        }
+      <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
@@ -194,17 +185,10 @@ function ProductCard({ product }: { product: ShelfProduct }) {
             justifyContent: 'center',
             overflow: 'hidden',
           }}>
-          {product.thumbnailUrl ? (
-            <Image
-              source={{ uri: product.thumbnailUrl }}
-              style={{ width: THUMB, height: THUMB }}
-              contentFit="cover"
-              transition={reduceMotion ? 0 : 180}
-              accessibilityIgnoresInvertColors
-            />
-          ) : (
-            <Icon name="bottle" size={iconSize.sm} color={colors.textTertiary} />
-          )}
+          {/* A glyph, not a photograph. The only pictures this card ever
+              had came off the retired lookup's image server, and drawing
+              one would be the app reaching the network again. */}
+          <Icon name="bottle" size={iconSize.sm} color={colors.textTertiary} />
         </View>
 
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
@@ -217,13 +201,7 @@ function ProductCard({ product }: { product: ShelfProduct }) {
             </Text>
           ) : null}
         </View>
-
-        <Icon
-          name={open ? 'chevronDown' : 'chevronRight'}
-          size={iconSize.sm}
-          color={colors.textTertiary}
-        />
-      </PressableScale>
+      </View>
 
       <View
         style={{
@@ -237,74 +215,6 @@ function ProductCard({ product }: { product: ShelfProduct }) {
           </Text>
         ))}
       </View>
-
-      {open ? (
-        <Animated.View
-          entering={reduceMotion ? undefined : FadeIn.duration(180)}
-          style={{
-            paddingHorizontal: spacing.lg,
-            paddingBottom: spacing.lg,
-            gap: spacing.md,
-            borderTopWidth: 1,
-            borderTopColor: colors.separator,
-            paddingTop: spacing.lg,
-          }}>
-          {product.databaseNotes.length > 0 ? (
-            <View style={{ gap: spacing.sm }}>
-              {product.databaseNotesNote ? (
-                <Text variant="footnote" color="textSecondary">
-                  {product.databaseNotesNote}
-                </Text>
-              ) : null}
-              {/*
-                Neutral fill, never the accent. These are the database's
-                tags, and the app's affirmative colour around a word like
-                "Vegan" turns a listing into a badge of approval — the
-                more so because only the positive tags are shown at all.
-              */}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
-                {product.databaseNotes.map((note) => (
-                  <View
-                    key={note}
-                    style={{
-                      paddingHorizontal: spacing.md,
-                      paddingVertical: 6,
-                      borderRadius: radius.pill,
-                      backgroundColor: colors.fill,
-                    }}>
-                    <Text variant="caption" color="textSecondary">
-                      {note}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          <Text variant="footnote" color="textSecondary">
-            {product.ingredientsNote}
-          </Text>
-
-          {product.ingredientsText ? (
-            <View
-              style={{
-                padding: spacing.md,
-                borderRadius: radius.md,
-                backgroundColor: colors.backgroundSubtle,
-              }}>
-              <Text variant="caption" color="text">
-                {product.ingredientsText}
-              </Text>
-            </View>
-          ) : null}
-
-          {product.attribution ? (
-            <Text variant="caption" color="textTertiary">
-              {product.attribution}
-            </Text>
-          ) : null}
-        </Animated.View>
-      ) : null}
     </Card>
   );
 }

@@ -89,12 +89,18 @@ const EXAMPLE_COPY = {
   /**
    * Under the row when the shelf is empty and Premium is on.
    *
-   * It has to do the job the blur was doing. With nothing scanned and
-   * nothing blurred, three photographs of bottles on a shelf card are
+   * It has to do the job the blur was doing. With nothing on the shelf
+   * and nothing blurred, three photographs of bottles on a shelf card are
    * three bottles somebody could take for their own, so the line names
    * them before it says how a real one arrives.
+   *
+   * It used to say "by scanning a barcode". The barcode scanner was
+   * retired, so that sentence pointed at a screen that no longer exists;
+   * a product is written by hand on the routine sheet now, which is what
+   * this says. `scripts/test/paywall-variants.test.ts` pins the exact
+   * sentence, so it cannot drift again without something failing.
    */
-  premium: 'Examples. Add your own by scanning a barcode',
+  premium: 'Examples. Add your own on your routine',
   /** What a screen reader hears for a held example tile — an example
       first, held second: there is nothing behind the blur but the same
       photograph. */

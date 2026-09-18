@@ -31,6 +31,7 @@ import {
   HAIR_CONCERN_LABELS,
   HAIR_TYPE_DESCRIPTIONS,
   HAIR_TYPE_LABELS,
+  HAIR_WEARING_LABELS,
   HEAT_STYLING_LABELS,
   INGREDIENT_REACTION_LABELS,
   LIFE_FACTOR_LABELS,
@@ -50,6 +51,7 @@ import type {
   Gender,
   HairConcern,
   HairType,
+  HairWearing,
   HeatStyling,
   IngredientReaction,
   Journey,
@@ -125,6 +127,7 @@ export type QuestionId =
   | 'age'
   | 'gender'
   | 'hairType'
+  | 'hairWearing'
   | 'scalpType'
   | 'scalpSensitivity'
   | 'goal'
@@ -146,6 +149,7 @@ export type SaveTarget =
       record: 'journey';
       field:
         | 'hairType'
+        | 'hairWearing'
         | 'scalpType'
         | 'scalpSensitivity'
         | 'goal'
@@ -378,6 +382,32 @@ export const QUESTIONS: Question[] = [
     save: { record: 'journey', field: 'hairType' },
   },
   {
+    /*
+      Beside the hair-type question because it is the same kind of
+      question — how your hair is, in your own words — and because the
+      two are answered in one breath.
+
+      It is also the one funnel answer the measurement side of the app
+      has a use for. A parting is a bright stripe of scalp with hair
+      either side, which makes it the highest-contrast thing on a head
+      and the only one worth trying to find in a mask. Half the people
+      using this app have no parting at all, and a detector that is
+      asked to look anyway will eventually find one in a shadow. So the
+      question is asked here, of the person, rather than guessed there,
+      from the pixels — and "no defined part" or "short all over" is an
+      answer that stands, not a gap to be filled in later.
+    */
+    id: 'hairWearing',
+    kind: 'pill',
+    title: 'How do you usually wear your hair?',
+    accent: 'wear your hair',
+    subtitle: 'However it falls most days — not how it looks today.',
+    expression: 'smile',
+    multi: false,
+    options: fromLabels<HairWearing>(HAIR_WEARING_LABELS),
+    save: { record: 'journey', field: 'hairWearing' },
+  },
+  {
     id: 'scalpType',
     kind: 'row',
     title: 'How does your scalp feel between washes?',
@@ -581,6 +611,7 @@ export const FUNNEL_STEPS: FunnelStep[] = [
   question('age'),
   question('gender'),
   question('hairType'),
+  question('hairWearing'),
   question('scalpType'),
   question('scalpSensitivity'),
   { kind: 'interstitial', id: 'interstitial' },

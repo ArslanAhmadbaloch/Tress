@@ -66,7 +66,7 @@ Your membership card is yours to keep on your phone or share. Reminders are opti
 
 What the reading is, and is not. Hair coverage is an area: the share of the frame the hair mask counts as hair. It measures area, not what lies between the strands, and it is not a medical opinion. A single reading moves with haircuts, wet hair and how far you held the phone, which is why Tress files every scan under the same angles, asks for the same light, and shows you the series rather than a score.
 
-There is no account, no sign-in, and no server of ours holding your journey. Your photographs, notes, routine and readings live in the app's private storage on your own device. Some things do leave your phone, and the privacy policy describes them. When you open the Premium screen, or buy or restore a subscription, Tress asks our subscription provider whether this install has a membership — that sends a random identifier for the install, and nothing about you. If you never open it, that question is never asked. Scanning a product barcode sends the digits to Open Beauty Facts, an open database, to fetch what it lists. No photograph, and nothing you write, is part of any of that. If your phone is backed up, that backup includes your photographs, because they are files on your phone. Settings has "Delete all my data", and deleting the app takes your photographs and your journey with it.
+There is no account, no sign-in, and no server of ours holding your journey. Your photographs, notes, routine and readings live in the app's private storage on your own device. Some things do leave your phone, and the privacy policy describes them. When you open the Premium screen, or buy or restore a subscription, Tress asks our subscription provider whether this install has a membership — that sends a random identifier for the install, and nothing about you. If you never open it, that question is never asked. Apart from that check, the app's own code makes no request: the product lookup it once had was removed, so products are something you write down yourself. One leftover is worth naming — if you scanned a bottle on an older version of Tress, the picture that record kept is still loaded from where it came from. No photograph, and nothing you write, is part of any of it. If your phone is backed up, that backup includes your photographs, because they are files on your phone. Settings has "Delete all my data", and deleting the app takes your photographs and your journey with it.
 
 Tress is a documentation tool, not a medical device. It records; it does not treat, and nothing in it is medical advice. For anything clinical, speak to a qualified healthcare professional.
 
@@ -105,19 +105,18 @@ reviewer with source access reads hardest:
    `REVENUECAT_KEYS.android` is null (src/features/subscription/config.ts),
    so the Android build makes no such request at all. store/listing.md lists
    the substitution the Play listing makes for it.
- - The barcode sentence describes the request in the words a customer needs.
-   The full shape of it — the `fields` list, the `Accept` header, the
-   `User-Agent` naming the app and our support address — is in the privacy
-   policy and in store/privacy-labels.md. Do not add "and nothing else" to it
-   here; that phrase has been removed from three documents for being
-   literally false.
+ - The sentence about the removed product lookup is a fact about the current
+   build: `src/features/products/open-beauty-facts.ts` and
+   `src/app/scan-product.tsx` are gone and a grep of `src/` finds no HTTP
+   client. Do not reinstate a barcode sentence, and **do not carry the Open
+   Beauty Facts / ODbL attribution into any store field** — it is not owed
+   once the data is not used.
 
 One more, on the second paragraph. "using on-device face detection to
 line you up" describes the shipping capture screen and is true of it, but
 it is not the only path: `src/components/capture/tracked-camera.tsx` falls
 back to plain expo-camera, with the on-screen guides and no detector, if
-the VisionCamera native module is missing or fails at runtime, and the
-barcode scanner runs no detector at all. That is a degraded path, not a
+the VisionCamera native module is missing or fails at runtime. That is a degraded path, not a
 second product, so the description keeps the plain sentence — but the App
 Review notes below state the fallback, because a reviewer with source
 access will find it and an undisclosed fallback reads like a
@@ -172,7 +171,6 @@ exists; neither file should be edited without the other.
       exception — on iPhone the photographs are eligible for the backup and
       the journey record is not.
     - The permissions list omits motion.
-    - The barcode paragraph still says "and nothing else".
     - The subscription check has no section of its own, and is described as
       confirming a membership on "the App Store or Google Play" — wider than
       the code on Android, where no such request is made.
@@ -243,9 +241,10 @@ Answers as of 2026 questionnaire. One line each on why.
    app (src/app/privacy.tsx, src/app/terms.tsx). The links that do leave go
    to fixed pages the app names in full — "Manage subscription" in Settings
    hands the App Store subscriptions page to the system with
-   `Linking.openURL`, and a scanned product's "source" link opens that
-   product's page on world.openbeautyfacts.org in the system browser sheet
-   (`expo-web-browser`).
+   `Linking.openURL`. That is the only link out of the app; the product
+   "source" link that used to open a cosmetics database in a browser sheet
+   went with the barcode scanner, and `expo-web-browser` is no longer
+   reached anywhere under `src/`.
  - User-generated content shared with others: **No.** There is no feed, no
    comment, no profile anyone else can see and no server of ours, so no
    content of one person's reaches another inside Tress. There is an
@@ -325,9 +324,15 @@ Paste into the "Notes" field of App Review Information.
     readings are written to the app's private storage on the device and
     are not uploaded. No test account is needed — a fresh install reaches
     onboarding, the capture screen, the reading and the paywall, and the
-    Premium features open with a sandbox purchase. The app makes two
-    outbound requests of its own, both described below: the RevenueCat
-    purchase check and the Open Beauty Facts barcode lookup.
+    Premium features open with a sandbox purchase. On a fresh install the
+    app makes one outbound request, described below: the RevenueCat
+    purchase check, made by that SDK on iOS. The product barcode lookup
+    that used to sit beside it has been removed, and no HTTP client
+    remains anywhere under src/. One leftover exists only on an install
+    upgraded from an earlier build: a product record written by the old
+    scanner can still hold a photo address on that database's image
+    server, and three screens draw it with expo-image. A review install
+    has no such record.
 
     Reaching the paywall: launch the app, answer the onboarding questions
     (any answers), then take the single photograph the funnel ends on. The
@@ -366,14 +371,16 @@ Paste into the "Notes" field of App Review Information.
     detection is a framing aid, not a requirement: if the VisionCamera
     native module is unavailable or fails at runtime the capture screen
     falls back to expo-camera with no detector and the on-screen guides
-    alone, and the barcode scanner runs no detector at all.
+    alone.
 
-    The app's second network call of its own is the product barcode
-    lookup: a GET to world.openbeautyfacts.org carrying the barcode
-    number, a fields list, an Accept header and a User-Agent naming the
-    app, its version and our support address, with product photos from
-    images.openbeautyfacts.org. No photograph, cookie or user identifier
-    is sent.
+    Products are typed in by the person and kept on the device. An earlier
+    build scanned a barcode and looked it up in an online cosmetics
+    database; that screen and that request were removed, and nothing looks a
+    product up any longer. The one qualification is the upgraded install
+    described above: the fields that build wrote stay on the device, and a
+    product picture from that database is still drawn from its address. A
+    review install has no such record, so nothing third-party is fetched,
+    stored or displayed on it.
     The reading describes the photograph and is labelled as such in the
     app; it makes no medical claim.
 
@@ -394,8 +401,8 @@ Paste into the "Notes" field of App Review Information.
     and no google-services.json is present.
 
     Export compliance: the app uses the operating system's standard
-    encryption and no encryption of its own (HTTPS via the RevenueCat SDK
-    and the Open Beauty Facts barcode lookup), declared with
+    encryption and no encryption of its own (HTTPS via the RevenueCat SDK),
+    declared with
     ITSAppUsesNonExemptEncryption = false.
 
 ## Pre-submission checklist

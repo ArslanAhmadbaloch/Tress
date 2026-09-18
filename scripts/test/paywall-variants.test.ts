@@ -228,10 +228,11 @@ test('copy: the paywall sells nothing the app has not built', () => {
     no model, no rules table, no lookup — so it is not on the list, and
     this test is what keeps it off until one ships.
 
-    The barcode line is the near miss it has to survive: the app really
-    does scan a barcode and really does show what Open Beauty Facts holds,
-    and the difference between "here is what the database lists" and "here
-    is what you should use" is the whole of the claim.
+    The barcode line used to be the near miss it had to survive. The
+    scanner and the lookup behind it have been removed, so there is not
+    even a database to show any more: a product is a name and a brand the
+    person types on the routine sheet, and it sits inside the routine
+    line rather than having one of its own.
 
     One recommendation IS built, and it shipped this phase: the hairstyle
     catalogue in src/features/hairstyles, a readable rules table over hair
@@ -696,7 +697,6 @@ const CLAIMS: { match: RegExp; screen: string; gated: Gated }[] = [
   },
   { match: /assessment report/i, screen: 'src/app/(tabs)/report.tsx', gated: 'capture' },
   { match: /routine and stack/i, screen: 'src/app/routine.tsx', gated: 'stack' },
-  { match: /barcode/i, screen: 'src/app/scan-product.tsx', gated: 'stack' },
   { match: /kept on this device/i, screen: 'src/app/privacy.tsx', gated: 'fact' },
 ];
 
@@ -755,10 +755,18 @@ test('benefits: the gates the list leans on are really in the code', () => {
     /held=\{!isPremium\s*&&\s*i\s*>\s*0\}/,
     `${HAIRSTYLES_SCREEN} must hold the full list behind the entitlement`,
   );
-  assert.match(
-    routine,
-    /router\.push\('\/scan-product'\)/,
-    'the barcode line is sold as part of the stack, so the stack screen must be the way in',
+  /*
+    The barcode scanner is gone, and the paywall must not grow the line
+    back by accident. A product is written on the routine sheet now, so
+    the thing to hold is that nothing anywhere pushes the deleted route.
+  */
+  assert.ok(
+    !routine.includes('/scan-product'),
+    'the retired barcode screen must not be linked from the routine sheet',
+  );
+  assert.ok(
+    !existsSync(repoFile('src/app/scan-product.tsx')),
+    'the barcode screen is retired and must stay deleted',
   );
 
   // Exactly one line is allowed to be an ungated fact, and it is the one
@@ -848,14 +856,18 @@ test('benefits: the on-device scan claims area, and nothing a mask cannot see', 
   assert.match(`${scan.title} ${scan.body}`, /phone|device/i, 'say where it runs');
 });
 
-test('benefits: the barcode line credits the database rather than the app', () => {
-  const barcode = PREMIUM_BENEFITS.find((b) => /barcode/i.test(b.title));
-  assert.ok(barcode);
-  assert.match(barcode.body, /database/i, 'scan-product.tsx shows what Open Beauty Facts holds');
-  assert.ok(
-    !/recommend|suggest|best|should/i.test(barcode.body),
-    'a lookup is not advice',
-  );
+test('benefits: no line sells a barcode lookup, or anything else that was removed', () => {
+  /*
+    The lookup was the app's one network request and it is gone. A line
+    selling it would be selling a screen that no longer exists, and a line
+    naming the database would owe an attribution nothing else in the app
+    owes any more.
+  */
+  for (const b of PREMIUM_BENEFITS) {
+    const line = `${b.title} ${b.body}`;
+    assert.ok(!/barcode/i.test(line), `"${b.title}" sells a scanner that was removed`);
+    assert.ok(!/open beauty facts/i.test(line), `"${b.title}" names a database the app no longer uses`);
+  }
 });
 
 /* ------------------------------- price ------------------------------- */
@@ -996,8 +1008,19 @@ test('routine examples: the captions describe a photograph, never an effect', ()
   assert.ok(copy, 'the example captions live in one object the sweep can read');
   const lines = [...copy[1].matchAll(/'([^']*)'/g)].map((m) => m[1]);
   assert.ok(lines.includes('Example: a gentle shampoo'), 'the clear tile says it is an example');
+  /*
+    Pinned to the exact sentence, deliberately.
+
+    It used to read "Examples. Add your own by scanning a barcode" while
+    the barcode scanner was being retired, and it was pinned then because
+    a false caption on a shipped screen with nothing watching it is how it
+    got there. The screen is gone and the caption now names where a
+    product is actually written — the routine sheet — so the pin moves
+    with it rather than loosening to /add your own/. Anybody changing the
+    caption again edits this line in the same change.
+  */
   assert.ok(
-    lines.includes('Examples. Add your own by scanning a barcode'),
+    lines.includes('Examples. Add your own on your routine'),
     'with Premium the caption names the photographs as examples and says how a real bottle gets there',
   );
   /*
@@ -1006,7 +1029,7 @@ test('routine examples: the captions describe a photograph, never an effect', ()
     Premium clears the blur from all three tiles, and the caption used to
     become "Add products by scanning a barcode" — three unbranded bottles
     on a shelf card, nothing on screen calling them examples, for somebody
-    who has scanned nothing. Every caption drawn over these photographs
+    who had scanned nothing. Every caption drawn over these photographs
     now says what they are, and so does every label a screen reader hears
     for them, blurred or clear.
   */

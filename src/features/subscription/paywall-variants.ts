@@ -350,13 +350,10 @@ export function heroAccessibilityLabel(hero: PaywallHero | null, nextLabel: stri
  *                          in the code; it is not a diagnosis and the
  *                          body says what it actually does.
  *   Routine and stack      src/app/routine.tsx — adding to the stack is
- *                          gated on 'buildStack'.
- *   Barcode lookup         src/app/scan-product.tsx, reached from the
- *                          add-a-task form inside that same gate. It
- *                          asks Open Beauty Facts and shows what Open
- *                          Beauty Facts says, which is why the line
- *                          names the database rather than implying the
- *                          app knows something about the bottle.
+ *                          gated on 'buildStack'. The product a task can
+ *                          carry is written down in that same form, so
+ *                          it sits inside this line rather than getting
+ *                          one of its own.
  *   Kept on this device    the one line here that is not gated, and it
  *                          is not pretending to be: it is a fact about
  *                          what is being paid for — where the
@@ -372,10 +369,10 @@ export function heroAccessibilityLabel(hero: PaywallHero | null, nextLabel: stri
  *
  *   Product suggestions for somebody's hair type. There is no product
  *   recommendation engine in this repository — not a model, not a rules
- *   table, not a lookup — and the barcode line is the near miss it has
- *   to survive: showing what a database lists is not telling somebody
- *   what to buy. Until an engine exists and ships, it does not go on the
- *   paywall, however well it would sell.
+ *   table, not a lookup. There is not even a product database any more:
+ *   the barcode reader and the lookup behind it were removed, and what
+ *   is left is a name and a brand somebody typed. Until an engine exists
+ *   and ships, it does not go on the paywall, however well it would sell.
  *
  *   The hairstyle line is the one recommendation this screen makes, and
  *   it is the exception that proves the rule: the catalogue is in the
@@ -462,18 +459,18 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
     body: 'What you use, and how steadily you keep to it.',
   },
   {
-    icon: 'barcode',
-    title: 'Barcode product scanning',
-    body: 'Scan a bottle to see what an open database lists for it.',
-  },
-  {
     icon: 'shield',
     /*
      * The title used to read "Private by design", which is a claim about
      * the whole app made on a line that can only vouch for the
-     * photographs. The barcode lookup leaves the phone; a share sheet
-     * sends whatever you hand it. So the title now says the same thing
-     * the body does, no wider: where the files sit.
+     * photographs. It stays narrow even now that the barcode lookup is
+     * gone and a fresh install's own code opens no connection, because a
+     * share sheet still sends whatever you hand it, an upgraded install
+     * can still draw a leftover product photo from that old image
+     * server, and, on iPhone, the store subscription check is a real
+     * request to a third party made by a vendor's SDK. So
+     * the title says the same thing the body does, no wider: where the
+     * files sit.
      */
     title: 'Kept on this device',
     body: 'Your photographs are kept on this device. The app never uploads them.',
@@ -500,9 +497,9 @@ export const PREMIUM_BENEFITS: PremiumBenefit[] = [
  * gone into (compare.tsx, two dates side by side). The list they can
  * only see the top of (hairstyles.tsx holds the full list behind the
  * entitlement — that gate is what this line rests on, and the test reads
- * it). And the report the scan gate feeds. The AI reading, the routine
- * and the barcode lookup are true and stay on the ledger, but they are
- * reached through those four and would be saying the same thing twice.
+ * it). And the report the scan gate feeds. The AI reading and the
+ * routine are true and stay on the ledger, but they are reached through
+ * those four and would be saying the same thing twice.
  * ------------------------------------------------------------------ */
 
 export type PaywallHighlight = {

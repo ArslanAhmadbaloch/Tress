@@ -862,7 +862,7 @@ test('tips: the self-knowledge answers choose up to two notes, the goal the rest
 
 /* -------------------------------- routine ------------------------------- */
 
-test('routine: the shelf products, scanned ones with images, the rest counted', () => {
+test('routine: the shelf products, drawn as placeholders, the rest counted', () => {
   const first = build(firstScanNoSegmenter).routine;
   assert.deepEqual(first.products, []);
   assert.equal(first.moreCount, 0);
@@ -875,8 +875,15 @@ test('routine: the shelf products, scanned ones with images, the rest counted', 
   assert.equal(mature.moreCount, 1);
   assert.equal(mature.body, '4 products on your shelf. The scans are read against what you did, so the list is worth keeping current.');
   const shampoo = mature.products.find((p) => p.id === '5601059062534')!;
-  assert.equal(shampoo.imageUri, 'https://images.openbeautyfacts.org/x.200.jpg');
   assert.equal(shampoo.name, 'Gentle shampoo');
+  /*
+    The barcode scanner and the lookup behind it are gone. The record in
+    this fixture is a leftover from that era and still carries the address
+    of a photo on the database's image server; the shelf no longer passes
+    it on, so the tile draws its placeholder and the report makes no
+    network request to fill it. Both products read the same way now.
+  */
+  assert.equal(shampoo.imageUri, null, 'no remote product photo reaches the report');
   const typed = mature.products.find((p) => p.id === '0000000000011')!;
   assert.equal(typed.imageUri, null, 'a typed product has no picture: the screen draws a placeholder');
   // Linked products come first, as the shelf orders them.

@@ -336,6 +336,37 @@ export const HAIR_TYPE_DESCRIPTIONS: Record<HairType, string> = {
   coily: 'Tight coils or zigzag strands',
 };
 
+/**
+ * How they usually wear their hair.
+ *
+ * Their own account of a habit, like every other answer here: nothing in
+ * it is read off a photograph, and it says nothing about anybody's head.
+ *
+ * It earns its place because a parting is the one thing on a scalp with
+ * enough contrast to be worth looking for at all, and only some people
+ * have one. Somebody who says "short all over" or "no defined part" is
+ * telling the app, before it ever opens the camera, that the search
+ * would find nothing — which is the difference between a measurement
+ * that declines to speak and one that invents a line. It matters as much
+ * to a man with a side part as to a woman with a middle one.
+ */
+export type HairWearing =
+  | 'middlePart'
+  | 'sidePart'
+  | 'noDefinedPart'
+  | 'pulledBack'
+  | 'shortAllOver'
+  | 'other';
+
+export const HAIR_WEARING_LABELS: Record<HairWearing, string> = {
+  middlePart: 'Middle part',
+  sidePart: 'Side part',
+  noDefinedPart: 'No defined part',
+  pulledBack: 'Pulled back',
+  shortAllOver: 'Short all over',
+  other: 'Other',
+};
+
 /** How their scalp tends to feel between washes. */
 export type ScalpType = 'oily' | 'dry' | 'normal' | 'combination';
 
@@ -651,6 +682,8 @@ export type Journey = {
     but a record built in memory has not been through it.
   */
   hairType?: HairType;
+  /** How they say they usually wear it. Absent means unanswered. */
+  hairWearing?: HairWearing;
   scalpType?: ScalpType;
   scalpSensitivity?: ScalpSensitivity;
   concerns?: HairConcern[];
@@ -677,6 +710,7 @@ const JOURNEY_LIST_ANSWERS = {
 
 const JOURNEY_CHOICE_ANSWERS = {
   hairType: HAIR_TYPE_LABELS,
+  hairWearing: HAIR_WEARING_LABELS,
   scalpType: SCALP_TYPE_LABELS,
   scalpSensitivity: SCALP_SENSITIVITY_LABELS,
   budget: BUDGET_LABELS,
@@ -719,6 +753,22 @@ export function journeyFactors(journey: Pick<Journey, 'lifeFactors'>): LifeFacto
 
 export function journeyHairType(journey: Pick<Journey, 'hairType'>): HairType | undefined {
   return knownChoice(journey.hairType, HAIR_TYPE_LABELS);
+}
+
+/**
+ * How they said they wear it, or nothing.
+ *
+ * Read through here rather than off the field: a value the app never
+ * offered — a hand-edited blob, an answer from a build that offered a
+ * different list — comes out as unanswered rather than as a choice
+ * nobody made. Anything downstream that decides whether to look for a
+ * parting must read it this way round: absent means "we were not told",
+ * never "they have none".
+ */
+export function journeyHairWearing(
+  journey: Pick<Journey, 'hairWearing'>,
+): HairWearing | undefined {
+  return knownChoice(journey.hairWearing, HAIR_WEARING_LABELS);
 }
 
 export function journeyScalpType(journey: Pick<Journey, 'scalpType'>): ScalpType | undefined {
@@ -1284,9 +1334,12 @@ export type RoutineItem = {
    */
   dosesPerDay?: number;
   /**
-   * Barcode of the product this item is, when one was scanned or typed.
+   * Key of the product record this item is, when the person entered one.
    * Optional and additive: items made before products existed have none,
    * and absent means "no product". Resolved through `productFor`.
+   *
+   * The name is historical — it once held a scanned barcode — and is
+   * kept because it is what is on disk. See `Product.barcode`.
    */
   productBarcode?: string;
   createdAt: string;
@@ -1357,40 +1410,61 @@ export type JournalEntry = {
 
 /* ------------------------------------------------------------------ */
 
-/** Where a product record came from. A manual entry never had a lookup. */
+/**
+ * Where a product record came from.
+ *
+ * Only 'manual' can be written now: a product is something a person
+ * types on the routine sheet, and there is no lookup left to write the
+ * other value. 'openBeautyFacts' stays in the union because records
+ * written by the retired barcode scanner are still on disk, and a type
+ * that described only what the app writes today would be a type that
+ * lies about what the loader reads.
+ */
 export type ProductSource = 'openBeautyFacts' | 'manual';
 
 /**
- * A product as the database states it, or as the person typed it.
+ * A product, as the person typed it.
  *
- * Every field is verbatim from Open Beauty Facts or from the person. The
- * app adds nothing: no rating, no category of its own, no reading of the
- * ingredient list. `barcode` is the key — the canonical code the database
- * returned (it pads UPC-A to thirteen digits itself), or the scanned
- * digits for an entry the database did not know.
+ * Every field is theirs. The app adds nothing: no rating, no category of
+ * its own, no reading of an ingredient list, and — since the barcode
+ * scanner and its lookup were removed — no third party's words either.
+ * Nothing in this record is fetched, and nothing in it leaves the phone.
+ *
+ * `barcode` is the key. On a record made now it is a local id generated
+ * on this device; on one made by the retired scanner it is the digits
+ * that scanner read. The name is kept because it is the persisted field
+ * name — `RoutineItem.productBarcode` points at it, and renaming either
+ * would orphan every link already written to disk.
+ *
+ * LEGACY FIELDS. `ingredientsText`, `imageUrl`, `thumbnailUrl` and
+ * `analysisTags` were only ever written by the lookup. Nothing writes
+ * them now and the shelf no longer reads any of them, so no attribution
+ * is owed for them and no image is fetched to draw one. They stay in the
+ * type because an install upgraded from an earlier build still holds
+ * them; see the note in features/products/shelf.ts.
  */
 export type Product = {
   barcode: string;
   source: ProductSource;
-  /** As listed, or as typed. Never rewritten by the app. */
+  /** As typed. Never rewritten by the app. */
   name: string;
-  /** The raw `brands` string; the database lists several with commas. */
+  /** As typed. */
   brand?: string;
-  /** e.g. "200 ml", as printed. */
+  /** e.g. "200 ml", as printed on the bottle. */
   quantity?: string;
-  /** The ingredient text exactly as listed; absent when the record has none. */
+  /** LEGACY. Ingredient text the retired lookup stored. Never read now. */
   ingredientsText?: string;
-  /** 400px front photo (images.openbeautyfacts.org only), CC BY-SA. */
+  /** LEGACY. Remote product photo the retired lookup stored. Never read now. */
   imageUrl?: string;
-  /** 200px front photo, for rows and orbs. */
+  /** LEGACY. Remote thumbnail the retired lookup stored. Never read now. */
   thumbnailUrl?: string;
-  /**
-   * `ingredients_analysis_tags` exactly as returned, e.g. "en:palm-oil-free".
-   * Stored whole; only three definite tags are ever displayed, with the
-   * source named (see features/products/open-beauty-facts `analysisNotes`).
-   */
+  /** LEGACY. Database tags the retired lookup stored. Never read now. */
   analysisTags?: string[];
-  /** When this record was fetched, or typed. Shown on the panel; the cache never ages out. */
+  /**
+   * When this record was made: typed in, on one written now; fetched, on
+   * one the retired scanner wrote. The shelf shows it, and reads `source`
+   * to say which of the two it is rather than calling both "typed in".
+   */
   fetchedAt: string;
 };
 

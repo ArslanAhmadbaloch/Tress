@@ -1,18 +1,21 @@
 /**
- * A product is a database record cached beside the routine, and the rules
- * that keep it honest are invisible on screen: which record wins when a
- * barcode is looked up twice, that unlinking leaves the item's history
+ * A product is a record the person typed, kept beside the routine, and the
+ * rules that keep it honest are invisible on screen: which record wins when
+ * the same key is written twice, that unlinking leaves the item's history
  * alone, and that the storage version does not move for an additive
  * change. A screenshot shows a bottle either way. These pin the rules.
  *
- * No React Native here: the domain helpers, the selectors and the
- * hand-off are plain modules, which is what lets node --test load them.
+ * The hand-off this file used to cover is gone with the barcode scanner:
+ * there is no modal to carry a scanned bottle back to the routine form,
+ * because the form is where a product is written now.
+ *
+ * No React Native here: the domain helpers and the selectors are plain
+ * modules, which is what lets node --test load them.
  */
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { stagePrefill, takePrefill } from '@/features/products/handoff';
 import { productFor, productsByBarcode } from '@/store/selectors';
 import {
   EMPTY_DATA,
@@ -78,7 +81,15 @@ test('upsertProduct: replaces a record sharing its barcode, in place', () => {
   assert.equal(next[1], b2);
 });
 
-test('upsertProduct: a manual entry gives way to the database record', () => {
+test('upsertProduct: the record written last wins, whichever wrote it', () => {
+  /*
+    The lookup that used to replace a typed record with a listed one is
+    gone, and nothing writes an 'openBeautyFacts' record any more. The
+    function's rule is still worth pinning in both directions: it keys on
+    the barcode and takes the newer record whole, so a legacy record and
+    a typed one sharing a key never end up merged into a third thing that
+    neither the person nor the old scanner ever wrote.
+  */
   const typed = product('3600523379713', { source: 'manual', name: 'My shampoo' });
   const listed = product('3600523379713', { source: 'openBeautyFacts', name: 'Listed name' });
 
@@ -160,23 +171,6 @@ test('schema: a record saved before products existed still loads', () => {
   const loaded: AppData = { ...EMPTY_DATA, ...legacy };
   assert.deepEqual(loaded.products, []);
   assert.equal(loaded.schemaVersion, SCHEMA_VERSION);
-});
-
-/* -------------------------------- hand-off ----------------------------- */
-
-test('handoff: the prefill is taken once, and the last staged wins', () => {
-  assert.equal(takePrefill(), null);
-
-  const first = { barcode: '5601059062534', name: 'First', source: 'openBeautyFacts' as const };
-  stagePrefill(first);
-  assert.equal(takePrefill(), first);
-  assert.equal(takePrefill(), null, 'taking clears it');
-
-  const second = { barcode: '3600523379713', name: 'Second', source: 'manual' as const };
-  stagePrefill(first);
-  stagePrefill(second);
-  assert.equal(takePrefill(), second);
-  assert.equal(takePrefill(), null);
 });
 
 /* ----------------------------- serialisation --------------------------- */

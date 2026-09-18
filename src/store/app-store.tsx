@@ -156,10 +156,16 @@ type AppStore = {
   /** Records one more dose for today, wrapping back to none when full. */
   advanceRoutineToday: (itemId: string) => void;
   /**
-   * Caches a looked-up or typed product. Upsert by barcode: a fresh lookup
-   * replaces a stale one, and a manual entry is replaced if the database
-   * later knows the code. Products are never deleted individually — they
-   * are database records, not personal ones; resetAll clears them.
+   * Writes a product the person typed. Upsert by key, so saving the same
+   * record twice edits it rather than adding a second one. There is no
+   * lookup and no database behind this any more — the field is still
+   * called `barcode` because that is what it was and the stored shape
+   * cannot change without a schema version.
+   *
+   * Products are never deleted individually: no screen offers it, and
+   * `resetAll` is the only thing that clears them. The privacy screen
+   * says so in as many words, so if a per-record delete is ever added,
+   * that copy changes in the same breath.
    */
   saveProduct: (product: Product) => void;
   /** Unlinks an item's product. The item and its history are untouched. */
@@ -308,37 +314,59 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /*
+    Built before the updater runs, not inside it.
+
+    React only runs a `setData` updater eagerly when the provider has no
+    pending update; with one in flight it runs later, on the next render.
+    This used to assemble the session inside the updater and return a
+    closure variable, so under that second case the caller was handed
+    `null`, read it as "there is no journal", and deleted the photographs
+    it had just written. A scan could be lost that way, and a lost scan is
+    the one thing this app must never do.
+
+    So the session is built here, from the data this render can see, and
+    the updater only files it. The journey is read from the same render;
+    `isBaseline` is settled inside against `prev`, where the count is
+    authoritative, and the returned copy carries that same answer because
+    nothing else can have filed a session between these two lines.
+  */
   const addSession = useCallback(
     (photos: Omit<Photo, 'id' | 'sessionId'>[], note?: string, scan?: PhotoSessionScan) => {
-      let created: PhotoSession | null = null;
+      const journey = data.journey;
+      if (!journey) return null;
+
+      const sessionId = makeId('ses');
+      const session: PhotoSession = {
+        id: sessionId,
+        journeyId: journey.id,
+        capturedAt: new Date().toISOString(),
+        isBaseline: data.sessions.length === 0,
+        photos: photos.map((p) => ({ ...p, id: makeId('pho'), sessionId })),
+        note: note?.trim() || undefined,
+        // Spread in rather than set, so a set with no scan block stores
+        // no `scan` key at all — an absent field, not an undefined one.
+        ...(scan ? { scan } : {}),
+      };
 
       setData((prev) => {
         if (!prev.journey) return prev;
-
-        const sessionId = makeId('ses');
-        const session: PhotoSession = {
-          id: sessionId,
-          journeyId: prev.journey.id,
-          capturedAt: new Date().toISOString(),
-          isBaseline: prev.sessions.length === 0,
-          photos: photos.map((p) => ({ ...p, id: makeId('pho'), sessionId })),
-          note: note?.trim() || undefined,
-          // Spread in rather than set, so a set with no scan block stores
-          // no `scan` key at all — an absent field, not an undefined one.
-          ...(scan ? { scan } : {}),
-        };
-        created = session;
+        // The count `prev` holds is the authoritative one: settle the flag
+        // against it rather than against the render that built the session.
+        const filed = prev.sessions.length === 0 === session.isBaseline
+          ? session
+          : { ...session, isBaseline: prev.sessions.length === 0 };
 
         return {
           ...prev,
           // Newest first: every list in the app reads in this order.
-          sessions: [session, ...prev.sessions],
+          sessions: [filed, ...prev.sessions],
         };
       });
 
-      return created;
+      return session;
     },
-    [],
+    [data],
   );
 
   const extendSession = useCallback(

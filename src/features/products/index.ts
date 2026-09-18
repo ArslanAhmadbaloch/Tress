@@ -1,38 +1,16 @@
 /**
  * The products feature, in one import.
  *
- * Three things live behind this barrel and they are deliberately
- * separate: the lookup that talks to Open Beauty Facts, the in-memory
- * hand-off that carries a scanned bottle to the routine form, and the
- * shelf that arranges records already held. Nothing here fetches on
- * import, and nothing here reaches React Native, so every one of them
- * stays loadable under `node --test`.
+ * One thing lives behind this barrel now: the shelf, which arranges the
+ * product records an install holds. The barcode reader and the lookup
+ * that went with it have been removed — a record made now is something a
+ * person writes down, an upgraded install still holds the ones the
+ * scanner fetched, and the shelf says which of the two each one is.
+ * Nothing here sends any of it anywhere.
+ *
+ * Nothing here fetches, on import or ever, and nothing here reaches
+ * React Native, so it stays loadable under `node --test`.
  */
-
-export {
-  ATTRIBUTION,
-  APP_VERSION,
-  OBF_FIELDS,
-  OBF_IMAGE_ORIGIN,
-  OBF_ORIGIN,
-  OBF_TIMEOUT_MS,
-  OBF_USER_AGENT,
-  analysisNotes,
-  lookupProduct,
-  normaliseBarcode,
-  parseLookup,
-  productPageUrl,
-  productUrl,
-  trimOrUndefined,
-  type Lookup,
-  type LookupError,
-} from './open-beauty-facts';
-
-export {
-  stagePrefill,
-  takePrefill,
-  type ProductPrefill,
-} from './handoff';
 
 export {
   COMPARE_MIN,

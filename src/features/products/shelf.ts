@@ -12,32 +12,39 @@
  *
  * So this module never ranks, never rates, never endorses and never says
  * what a formula does. Every line it produces traces to exactly one of
- * three sources, and each section says on screen which one it is:
+ * two sources, and each section says on screen which one it is:
  *
- *   1. THEIR OWN RECORD — the bottles they scanned or typed, which of
- *      them are linked to something on their list, how many tasks that
- *      list holds, and when each record was made. Facts about a list,
- *      not about a head.
- *   2. THE DATABASE, QUOTED AS THE DATABASE — the ingredient text and the
- *      handful of tags Open Beauty Facts states, passed through verbatim
- *      with the attribution the licence asks for, and said to be the
- *      database's words. Never summarised, never re-read into a
- *      judgement.
- *   3. WHAT THEY TOLD US — the onboarding answers, read back in their own
- *      words, and a plain word comparison between those answers and the
- *      text on their list — or, for what they look for on a label and
- *      what they have reacted to, between those answers and the words
- *      of the database's own ingredient text and tags. A hit quotes the
- *      word as the database prints it; a miss names the words looked
- *      for. "Sulfate-free" is never said of a bottle: the database does
- *      not state it, and a list that does not print a word is only a
- *      list that does not print that word.
+ *   1. THEIR OWN RECORD — the bottles they typed in, which of them are
+ *      linked to something on their list, how many tasks that list
+ *      holds, and when each record was made. Facts about a list, not
+ *      about a head.
+ *   2. WHAT THEY TOLD US — the onboarding answers, read back in their
+ *      own words, and a plain word comparison between those answers and
+ *      the text on their list. A hit quotes the word as they wrote it;
+ *      a miss names the words looked for.
+ *
+ * ── The third source that used to be here ─────────────────────────────
+ * There was a third: a cosmetics database the app looked a barcode up
+ * in, whose ingredient text and tags were quoted verbatim under its
+ * licence. The lookup was the only network request the app's own code
+ * ever made, and it has been removed. Nothing here reads the fields it
+ * used to write — `ingredientsText`, `analysisTags`, `imageUrl`,
+ * `thumbnailUrl` — so no attribution is owed, no remote image is
+ * fetched to draw a record, and the shelf is built from stored data and
+ * nothing else. Those fields survive on `Product` only because an
+ * install upgraded from an earlier build still has them on disk.
+ *
+ * One field of that era is still read, and on purpose: `source`. A
+ * record the scanner made was fetched rather than typed, and the screen
+ * has to be able to say so — see `recordedText`. Reading it costs
+ * nothing and calling every record the person's own would be a false
+ * claim about where their data came from.
  *
  * ── What this module deliberately does NOT do ─────────────────────────
  * An earlier draft held a fixed table of four things a routine might be
  * made of — a wash, something applied, something taken, a device — and
- * reported which of them the list mentioned. Nothing in the record, the
- * database or anybody's answers says a routine is supposed to contain
+ * reported which of them the list mentioned. Nothing in the record or in
+ * anybody's answers says a routine is supposed to contain
  * those four, so the table was the app's own idea of a complete routine,
  * and every unticked row was a thing to go and buy. It is gone. The only
  * comparison left is between two things the person themselves put in:
@@ -53,13 +60,12 @@
  *
  * ── Verbatim vs authored ──────────────────────────────────────────────
  * Fields carrying somebody else's words — `name`, `brand`, `quantity`,
- * `ingredientsText`, `answers` — are copied through untouched. Fields the
- * app writes itself — every `text`, `note`, `title` and footnote, plus
- * `databaseNotes`, which are Tress's renderings of the database's tag
- * slugs — are swept by scripts/test/shelf.test.ts against the banned
- * vocabulary. Where an authored sentence has to quote somebody, the
- * quoted span is repeated in `quotes` so the sweep can lift it out and
- * judge only the app's half of the sentence.
+ * `answers` — are copied through untouched. Fields the app writes itself
+ * — every `text`, `note`, `title` and footnote — are swept by
+ * scripts/test/shelf.test.ts against the banned vocabulary. Where an
+ * authored sentence has to quote somebody, the quoted span is repeated
+ * in `quotes` so the sweep can lift it out and judge only the app's half
+ * of the sentence.
  *
  * Pure TypeScript: no React, no React Native, so `node --test` runs the
  * shipped code rather than a copy of it.
@@ -77,14 +83,9 @@ import {
   journeyProductFactors,
   journeyReactions,
   type AppData,
-  type IngredientReaction,
   type Product,
-  type ProductFactor,
-  type ProductSource,
   type RoutineItem,
 } from '@/types/domain';
-
-import { ATTRIBUTION, analysisNotes } from './open-beauty-facts';
 
 /* ------------------------------- shapes ------------------------------- */
 
@@ -118,35 +119,33 @@ export type ShelfFact = {
 /** A product record, plus what can honestly be said about it. */
 export type ShelfProduct = {
   barcode: string;
-  /** Where the record came from, carried so the screen can label it. */
-  source: ProductSource;
   /** Verbatim from the record. */
   name: string;
-  /** Verbatim. The database lists several brands comma-separated. */
+  /** Verbatim, as they typed it. */
   brand?: string;
   /** Verbatim, as printed on the bottle. */
   quantity?: string;
+  /**
+   * Never set. Kept on the shape because the report's routine block
+   * still reads it (features/hair-scan/report-model.ts) and that file
+   * belongs to another lane. The only values that ever landed here were
+   * remote addresses on the retired lookup's image server, and drawing
+   * one would be a network request — so the shelf leaves it undefined
+   * and every tile falls back to its placeholder. Delete the field, and
+   * the three screens that read the raw `Product.thumbnailUrl`, and
+   * nothing in the app can reach the network at all.
+   */
   thumbnailUrl?: string;
-  /** The database's ingredient text, unedited and unsplit. */
-  ingredientsText?: string;
-  /** `analysisNotes` — Tress's rendering of the database's own tags. */
-  databaseNotes: string[];
-  /** Whose words the tags are, and that Tress shows fewer than exist. */
-  databaseNotesNote?: string;
-  /** The licence line, on every record that came from the database. */
-  attribution?: string;
   /** Their own label for the task this bottle is linked to, if any. */
   linkedLabel?: string;
   /** Sentences about the record. Never about what the product does. */
   facts: ShelfFact[];
-  /** What the panel of ingredients is, and whose words it is in. */
-  ingredientsNote: string;
   /** True for a record with nothing on the list linked to it. */
   unlinked: boolean;
 };
 
 export type ShelfSection = {
-  id: 'onYourList' | 'scannedOnly';
+  id: 'onYourList' | 'notOnYourList';
   title: string;
   /** What is in the section and what decides the order, said on screen. */
   note: string;
@@ -226,39 +225,6 @@ const GENERIC_WORDS: ReadonlySet<string> = new Set([
   'else',
 ]);
 
-/**
- * The letters looked for in the database's ingredient text, for each
- * answer about labels that has something to look for.
- *
- * Each entry is a run of letters an ingredient name is printed with —
- * "sulfate" in "Sodium Laureth Sulfate", "paraben" inside
- * "Methylparaben", "methicone" inside "Dimethicone" — and the sentence
- * that reports one quotes the whole printed word it was found in, so
- * the reader can check it against the list on the same screen. It is a
- * statement about letters on a list and nothing more: Tress does not
- * know what any of these does, and says so under the lines. An answer
- * with no entry here — cruelty-free, essential oils, a dye, a smoothing
- * service — has nothing in a database record to be held against, and
- * the shelf says that rather than inventing a word to look for.
- *
- * Five letters or more each, so a run cannot land inside an unrelated
- * word the way "oil" lands in "boiling".
- */
-const LABEL_LETTERS: Partial<Record<ProductFactor | IngredientReaction, readonly string[]>> = {
-  sulfateFree: ['sulfate', 'sulphate'],
-  sulfates: ['sulfate', 'sulphate'],
-  fragranceFree: ['parfum', 'fragrance'],
-  fragrance: ['parfum', 'fragrance'],
-  parabenFree: ['paraben'],
-  siliconeFree: ['silicone', 'methicone', 'siloxane'],
-  alcohols: ['alcohol'],
-};
-
-/** The one answer the database states as a tag of its own. */
-const TAGGED_FACTOR: Partial<Record<ProductFactor, { tag: string; word: string }>> = {
-  vegan: { tag: 'en:vegan', word: 'vegan' },
-};
-
 /* ------------------------------ helpers ------------------------------- */
 
 /** Curly quotes, because these sentences are read rather than parsed. */
@@ -275,11 +241,11 @@ function quotedList(words: string[]): string {
 }
 
 /**
- * Newest record first, then by barcode.
+ * Newest record first, then by key.
  *
  * The date is the only thing the shelf is allowed to order by, and the
- * barcode tiebreak is there so two records fetched in the same second
- * come out in the same order every render rather than shuffling.
+ * key tiebreak is there so two records written in the same second come
+ * out in the same order every render rather than shuffling.
  */
 function byRecency(a: Product, b: Product): number {
   return b.fetchedAt.localeCompare(a.fetchedAt) || a.barcode.localeCompare(b.barcode);
@@ -404,165 +370,50 @@ function findWord(
   return undefined;
 }
 
-/**
- * The first printed word of `text` that contains `letters`, as printed.
- *
- * A word here is a run of letters between anything else — a comma, a
- * space, a slash, a digit — so "PARFUM/FRAGRANCE" yields "PARFUM" and
- * "Methylparaben" is returned whole for "paraben". Case is kept so the
- * sentence quotes the list as it is shown.
- */
-function printedWordContaining(text: string, letters: string): string | undefined {
-  for (const word of text.split(/[^A-Za-z]+/)) {
-    if (word.length > 0 && word.toLowerCase().includes(letters)) return word;
-  }
-  return undefined;
-}
-
-/** What they said about labels, as the shelf reads it: answers with nothing to say are left out. */
-type LabelAnswers = {
-  factors: ProductFactor[];
-  reactions: IngredientReaction[];
-};
-
-function labelAnswersOf(data: AppData): LabelAnswers {
-  const journey = data.journey;
-  if (!journey) return { factors: [], reactions: [] };
-  return {
-    factors: journeyProductFactors(journey).filter((f) => f !== 'noPreference'),
-    reactions: journeyReactions(journey).filter((r) => r !== 'none'),
-  };
-}
-
-/**
- * The lines about a database record and what they told us about labels.
- *
- * One per answer, on every record the database holds text for. Each
- * opens with the answer as they gave it, then states what was found:
- * the database's own tag, quoted; a printed word from its ingredient
- * list, quoted; or the letters that were looked for and not found. A
- * record with no ingredient list gets one line saying so. A typed
- * record gets nothing here — there is no database text to hold an
- * answer against, and `ingredientsNote` already says that.
- */
-function buildLabelFacts(product: Product, answers: LabelAnswers): ShelfFact[] {
-  if (product.source !== 'openBeautyFacts') return [];
-  const asked: { id: string; opener: string; label: string; key: ProductFactor | IngredientReaction; tag?: { tag: string; word: string } }[] = [
-    ...answers.factors.map((f) => ({
-      id: `${product.barcode}:factor:${f}`,
-      opener: `You said you look for ${quoted(PRODUCT_FACTOR_LABELS[f])}.`,
-      label: PRODUCT_FACTOR_LABELS[f],
-      key: f,
-      tag: TAGGED_FACTOR[f],
-    })),
-    ...answers.reactions.map((r) => ({
-      id: `${product.barcode}:reaction:${r}`,
-      opener: `You said you have reacted to ${quoted(INGREDIENT_REACTION_LABELS[r])}.`,
-      label: INGREDIENT_REACTION_LABELS[r],
-      key: r,
-    })),
-  ];
-  if (asked.length === 0) return [];
-
-  const facts: ShelfFact[] = [];
-  const text = product.ingredientsText;
-  const tags = Array.isArray(product.analysisTags) ? product.analysisTags : [];
-  const nothingToCheck: string[] = [];
-  let listNeeded = false;
-
-  for (const ask of asked) {
-    if (ask.tag) {
-      const stated = tags.includes(ask.tag.tag);
-      facts.push({
-        id: ask.id,
-        text: stated
-          ? `${ask.opener} Open Beauty Facts tags this record ${ask.tag.word}, in its own wording.`
-          : `${ask.opener} Open Beauty Facts states no ${ask.tag.word} tag for this record, which says nothing either way.`,
-        quotes: [ask.label],
-        mentioned: stated,
-      });
-      continue;
-    }
-
-    const letters = LABEL_LETTERS[ask.key];
-    if (!letters) {
-      nothingToCheck.push(ask.label);
-      continue;
-    }
-    if (text === undefined) {
-      listNeeded = true;
-      continue;
-    }
-
-    let hit: { letters: string; word: string } | undefined;
-    for (const run of letters) {
-      const word = printedWordContaining(text, run);
-      if (word !== undefined) {
-        hit = { letters: run, word };
-        break;
-      }
-    }
-
-    if (hit) {
-      const whole = hit.word.toLowerCase() === hit.letters;
-      facts.push({
-        id: ask.id,
-        text: whole
-          ? `${ask.opener} The word ${quoted(hit.word)} is printed in the ingredient list Open Beauty Facts holds for this record.`
-          : `${ask.opener} The word ${quoted(hit.word)} is printed in the ingredient list Open Beauty Facts holds for this record, and contains ${hit.letters}.`,
-        quotes: [ask.label, hit.word],
-        mentioned: true,
-      });
-    } else {
-      const looked = letters.length === 1 ? `the letters ${letters[0]}` : `the letters ${letters.join(' or ')}`;
-      facts.push({
-        id: ask.id,
-        text: `${ask.opener} Tress looked for ${looked} in the ingredient list Open Beauty Facts holds for this record and found neither a word made of them nor a word containing them.`,
-        quotes: [ask.label],
-        mentioned: false,
-      });
-    }
-  }
-
-  if (listNeeded) {
-    facts.push({
-      id: `${product.barcode}:labels:noList`,
-      text: 'Open Beauty Facts holds no ingredient list for this record, so there is no text to hold your answers about labels against.',
-      quotes: [],
-    });
-  }
-  if (nothingToCheck.length > 0) {
-    facts.push({
-      id: `${product.barcode}:labels:unchecked`,
-      text: `Nothing in the database record can be held against ${quotedList(nothingToCheck)}, so Tress says nothing about ${nothingToCheck.length === 1 ? 'it' : 'them'} here.`,
-      quotes: [...nothingToCheck],
-    });
-  }
-  if (facts.some((f) => f.mentioned !== undefined)) {
-    facts.push({
-      id: `${product.barcode}:labels:note`,
-      text: 'Those are statements about words on a list and tags in a database, not about the bottle: a list can name the same thing another way, and Tress holds no information about what anything in it does.',
-      quotes: [],
-    });
-  }
-  return facts;
-}
 
 /* ------------------------------ building ------------------------------ */
 
-function buildProduct(product: Product, linkedTo: RoutineItem | undefined, answers: LabelAnswers): ShelfProduct {
-  const fromDatabase = product.source === 'openBeautyFacts';
-  const facts: ShelfFact[] = [];
+/**
+ * Where a record came from, and when — in the words that are true of it.
+ *
+ * `source` is the one field the retired lookup wrote that this module
+ * still reads, and it is read for exactly this sentence. A record the
+ * scanner made was not written down by anybody: it was fetched, and
+ * `fetchedAt` is the moment it was fetched. Telling its owner they typed
+ * it, and dating their typing to a lookup they never saw, would be the
+ * app inventing a provenance on the one screen whose entire promise is
+ * that it invents nothing. So the branch the old code had is kept, and
+ * the sentence for an upgraded install says what actually happened.
+ *
+ * The third case is not reachable through the type and is written
+ * anyway: a hand-edited blob can hold any string, and a record whose
+ * origin the app cannot name gets a sentence that claims no origin.
+ */
+function recordedText(product: Product): string {
+  const on = formatDate(product.fetchedAt);
+  if (product.source === 'manual') return `Written down by you on ${on}.`;
+  if (product.source === 'openBeautyFacts') {
+    return `Looked up for you by an older version of Tress on ${on}. Nothing is looked up now.`;
+  }
+  return `This record was made on ${on}.`;
+}
 
-  facts.push({
-    id: `${product.barcode}:record`,
-    text: fromDatabase
-      ? `Looked up on ${formatDate(product.fetchedAt)}.`
-      : `Typed in by you on ${formatDate(product.fetchedAt)}.`,
-    quotes: [],
-  });
-
-  facts.push(
+/**
+ * One record, and the two or three sentences that can be said about it.
+ *
+ * Both sentences are about the RECORD: how it came to be there, and
+ * whether anything on their list points at it. Nothing here reads a
+ * label, quotes a database or says a word about what is in the bottle —
+ * the only things the app holds about it are what they typed and, on an
+ * upgraded install, that an older version fetched it.
+ */
+function buildProduct(product: Product, linkedTo: RoutineItem | undefined): ShelfProduct {
+  const facts: ShelfFact[] = [
+    {
+      id: `${product.barcode}:record`,
+      text: recordedText(product),
+      quotes: [],
+    },
     linkedTo
       ? {
           id: `${product.barcode}:linked`,
@@ -574,53 +425,17 @@ function buildProduct(product: Product, linkedTo: RoutineItem | undefined, answe
           text: 'Nothing on your list is linked to this record.',
           quotes: [],
         },
-  );
-
-  facts.push(...buildLabelFacts(product, answers));
-
-  const databaseNotes = fromDatabase ? analysisNotes(product.analysisTags) : [];
-
-  /*
-    Three sentences, one per state, and none of them reads the list.
-    A record with ingredients gets the panel and the source; a record
-    without gets told there is none, rather than an empty box; a record
-    somebody typed gets told plainly that nothing was looked up, so an
-    absent ingredient list never reads as a finding about the bottle.
-  */
-  const ingredientsNote = !fromDatabase
-    ? 'You typed this record in, so there is no list from the database.'
-    : product.ingredientsText
-      ? 'The ingredients as Open Beauty Facts lists them, unedited and in its order.'
-      : 'Open Beauty Facts holds no ingredient list for this record.';
+  ];
 
   const shelfProduct: ShelfProduct = {
     barcode: product.barcode,
-    source: product.source,
     name: product.name,
-    databaseNotes,
     facts,
-    ingredientsNote,
     unlinked: linkedTo === undefined,
   };
 
-  /*
-    Said every time a tag is shown, because the set of tags on screen is
-    not the set the database holds: Tress renders three of them and drops
-    the rest, and a reader who was not told that would take the three as
-    the whole of what the database states about the record.
-  */
-  if (databaseNotes.length > 0) {
-    shelfProduct.databaseNotesNote =
-      'Tags Open Beauty Facts states for this record, in its wording rather than ours. It states more tags than Tress shows, and Tress reads none of them as a verdict.';
-  }
-
   if (product.brand !== undefined) shelfProduct.brand = product.brand;
   if (product.quantity !== undefined) shelfProduct.quantity = product.quantity;
-  if (product.thumbnailUrl !== undefined) shelfProduct.thumbnailUrl = product.thumbnailUrl;
-  if (fromDatabase && product.ingredientsText !== undefined) {
-    shelfProduct.ingredientsText = product.ingredientsText;
-  }
-  if (fromDatabase) shelfProduct.attribution = ATTRIBUTION;
   if (linkedTo) shelfProduct.linkedLabel = linkedTo.label;
 
   return shelfProduct;
@@ -818,13 +633,12 @@ export function buildShelf(data: AppData): Shelf {
 
   const sorted = [...data.products].sort(byRecency);
   const onYourList: ShelfProduct[] = [];
-  const scannedOnly: ShelfProduct[] = [];
-  const labelAnswers = labelAnswersOf(data);
+  const notOnYourList: ShelfProduct[] = [];
 
   for (const product of sorted) {
     const linkedTo = linkedBy.get(product.barcode);
-    const built = buildProduct(product, linkedTo, labelAnswers);
-    (linkedTo ? onYourList : scannedOnly).push(built);
+    const built = buildProduct(product, linkedTo);
+    (linkedTo ? onYourList : notOnYourList).push(built);
   }
 
   const sections: ShelfSection[] = [];
@@ -836,12 +650,12 @@ export function buildShelf(data: AppData): Shelf {
       products: onYourList,
     });
   }
-  if (scannedOnly.length > 0) {
+  if (notOnYourList.length > 0) {
     sections.push({
-      id: 'scannedOnly',
-      title: 'Scanned, not on your list',
+      id: 'notOnYourList',
+      title: 'Not on your list',
       note: 'Records with nothing on your list linked to them. Newest record first.',
-      products: scannedOnly,
+      products: notOnYourList,
     });
   }
 
@@ -853,7 +667,7 @@ export function buildShelf(data: AppData): Shelf {
       'Counted and compared word for word from the text you typed yourself. Tress reads the words, not the bottles, and holds no information about what anything in them does.',
     answers: buildAnswers(data),
     footnotes: [
-      ATTRIBUTION,
+      'Every record here is one you typed on this phone, or one an older version of Tress looked up before that was taken out. Tress looks nothing up now, and nothing on this screen is sent anywhere by the app.',
       'Nothing on this screen is ordered by anything except the date it was recorded.',
       'Tress does not provide medical advice. Anything medical belongs with a qualified healthcare professional.',
     ],
@@ -864,11 +678,11 @@ export function buildShelf(data: AppData): Shelf {
 /**
  * Every string the app chose the wording of, for the honesty sweep.
  *
- * Verbatim fields are deliberately absent: an ingredient list is the
- * database's text, not ours, and sweeping it would fail on words the app
- * did not choose and cannot change. `databaseNotes` are the exception
- * that proves the rule — the tag slugs are the database's, but the
- * English shown for each one is Tress's, so they are swept.
+ * Verbatim fields are deliberately absent: a product name and a brand
+ * are the person's own text, and sweeping them would fail on words the
+ * app did not choose and cannot change. Where an authored sentence has
+ * to quote one, the span is repeated in `quotes` and lifted out before
+ * the rest is read.
  */
 export function shelfSentences(shelf: Shelf): ShelfFact[] {
   const sentences: ShelfFact[] = [
@@ -910,21 +724,6 @@ export function shelfSentences(shelf: Shelf): ShelfFact[] {
     sentences.push({ id: `${section.id}:note`, text: section.note, quotes: [] });
     for (const product of section.products) {
       sentences.push(...product.facts);
-      sentences.push({
-        id: `${product.barcode}:ingredientsNote`,
-        text: product.ingredientsNote,
-        quotes: [],
-      });
-      if (product.databaseNotesNote !== undefined) {
-        sentences.push({
-          id: `${product.barcode}:databaseNotesNote`,
-          text: product.databaseNotesNote,
-          quotes: [],
-        });
-      }
-      product.databaseNotes.forEach((note, i) => {
-        sentences.push({ id: `${product.barcode}:databaseNote:${i}`, text: note, quotes: [] });
-      });
     }
   }
 

@@ -354,19 +354,22 @@ const home = shell({
     inside the app &mdash; one follows your head while you turn, another measures how much of the
     frame your hair covers. The picture goes in, a few numbers come back, and the
     picture stays where it is.</p>
-    <p>Some things do leave, and the <a href="/privacy.html">privacy policy</a> takes
-    them one at a time: when you scan a product, its barcode digits go to Open Beauty
-    Facts and its picture comes back; on iPhone, opening the subscription screen &mdash;
-    the paywall &mdash; asks our subscription provider about this install, as do buying
-    and restoring, and once there is a membership to keep track of the app asks again
-    when the answer it has stored has run out of date; anything you send from the share
-    sheet goes where you send it, and an update sheet has your photographs in it; and a
-    device backup, if you have one turned on, carries the photograph files off the
+    <p>The one request written into Tress itself &mdash; a product barcode sent off to
+    be looked up &mdash; has been removed, screen and all. You write a product down
+    yourself now, and it stays where you wrote it. That is one thing gone rather than
+    everything, so here is what is left.</p>
+    <p>A few things can still leave, and the <a href="/privacy.html">privacy
+    policy</a> takes them one at a time: on iPhone, opening the subscription screen
+    &mdash; the paywall &mdash; asks our subscription provider about this install, as do
+    buying and restoring, and once there is a membership to keep track of the app asks
+    again when the answer it has stored has run out of date; anything you send from the
+    share sheet goes where you send it, and an update sheet has your photographs in it;
+    and a device backup, if you have one turned on, carries the photograph files off the
     phone.</p>
-    <p style="margin:0">No photograph and nothing you write is part of the barcode
-    lookup or the subscription check. And if you never open the subscription screen and
-    never buy, that check does not happen: an install that has not been near the price
-    is not one our subscription provider has heard of.</p>
+    <p style="margin:0">No photograph and nothing you write is part of the subscription
+    check. And if you never open the subscription screen and never buy, that check does
+    not happen: an install that has not been near the price is not one our subscription
+    provider has heard of.</p>
   </div>
 
   <h2>What it is not</h2>
@@ -393,14 +396,17 @@ const support = shell({
 
   <h2>Where is my data?</h2>
   <p>On your phone. Tress has no account and no server of ours, so there is nothing
-  for us to look up on your behalf. The app does make requests of its own, and they
-  carry no photograph and nothing you write: when you scan a product, its barcode
-  digits go to Open Beauty Facts and its picture comes back; and on iPhone, opening
-  the subscription screen &mdash; the paywall &mdash; asks our subscription provider
-  about this install, as do buying and restoring. If you never open that screen and never buy, that check does
-  not happen. What else can leave is something you set off yourself &mdash; the share
-  sheet, or a device backup &mdash; and the <a href="/privacy.html">privacy policy</a>
-  takes those one at a time.</p>
+  for us to look up on your behalf. The request the app used to make of its own &mdash;
+  a product barcode sent off to be looked up &mdash; has been removed, and products are
+  something you type in now. What still reaches out is worth naming rather than
+  counting. On iPhone, opening the subscription screen &mdash; the paywall &mdash; asks
+  our subscription provider about this install, as do buying and restoring; that carries
+  no photograph and nothing you write, and if you never open that screen and never buy,
+  it does not happen. And if you scanned a bottle on an older version of Tress, that
+  record kept the web address of the picture the old database held, and the screens that
+  draw your products still load it from there. What else can leave is something you set
+  off yourself &mdash; the share sheet, or a device backup &mdash; and the
+  <a href="/privacy.html">privacy policy</a> takes those one at a time.</p>
 
   <h2>I have changed phone</h2>
   <p>Read this before you wipe the old one. There is no cloud copy for us to restore

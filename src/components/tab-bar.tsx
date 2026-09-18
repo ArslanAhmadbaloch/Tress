@@ -8,13 +8,20 @@
  * on the system material, not a reimplementation of it.
  *
  * The centre "+" is deliberately not a tab. It is the app's primary action
- * and opens the hair scan over the top of whatever is showing, so it never
- * takes a selected state.
+ * and opens over the top of whatever is showing, so it never takes a
+ * selected state.
  *
- * One door, not a choice. There used to be a chooser behind the Plus —
- * a scan, or the five angles one at a time — and the owner's call was
- * that there is no scanner choice: the scan is the one way a session is
- * made, so the button opens it directly.
+ * ── Two doors, and why that is not the old chooser ────────────────────
+ * There used to be a chooser behind the Plus — a scan, or the five
+ * angles one at a time — and the owner's call was that there is no
+ * *scanner* choice: the scan is the one way a scan is made, so the
+ * button opened it directly. That still holds. What sits behind the
+ * Plus now is a different question, and the owner's: "the plus button at
+ * the centre will have 2 features, scanner and camera to take photos
+ * like simple photos. Just an option for if they don't choose scanner to
+ * save their photos." A guided scan or a plain picture is a choice about
+ * whether anything is measured at all, not a choice between two ways to
+ * do the same thing, so it gets a door: `/new`.
  */
 
 import * as Haptics from 'expo-haptics';
@@ -123,7 +130,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
           shadow.lifted,
         ]}>
         {TABS.slice(0, CENTRE_INDEX).map(renderTab)}
-        <CentreAction onPress={() => router.push('/hair-scan')} />
+        <CentreAction onPress={() => router.push('/new')} />
         {TABS.slice(CENTRE_INDEX).map(renderTab)}
       </GlassSurface>
     </View>
@@ -237,6 +244,10 @@ function TabItem({
  * to watch; one this slow is something you register only when you happen
  * to look, which is how an ambient cue should behave. Reduced motion
  * removes it entirely.
+ *
+ * It stays now that the Plus opens a chooser: the scan is still the first
+ * door behind it, and the sweep is a hint at the app's one instrument
+ * rather than a label on the button.
  */
 function ScanSweep({ size }: { size: number }) {
   const { colors } = useTheme();
@@ -350,8 +361,8 @@ function CentreAction({ onPress }: { onPress: () => void }) {
         haptic="none"
         scaleTo={1}
         accessibilityRole="button"
-        // Named for what it opens, which is the one thing behind it.
-        accessibilityLabel="Scan your hair">
+        // Named for what it opens: the chooser, not either door behind it.
+        accessibilityLabel="Add to your journey">
         <GlassOrb size={CENTRE_SIZE} ring={false} tone="neutral" emphasis="strong">
           <ScanSweep size={CENTRE_SIZE} />
           <PlusGlyph size={24} color={colors.text} />

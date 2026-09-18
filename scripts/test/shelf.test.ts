@@ -5,10 +5,16 @@
  * The app has no efficacy data, no clinical evidence and no population
  * data, and it has never asked anybody what their hair is like. Every
  * sentence the shelf produces therefore has to trace to the person's own
- * record, to the database quoted as the database, or to an answer they
- * gave — and the moment one of them starts ranking, endorsing, saying
- * what a formula does, or asserting that two things are the same thing,
- * these tests fail.
+ * record or to an answer they gave — and the moment one of them starts
+ * ranking, endorsing, saying what a formula does, or asserting that two
+ * things are the same thing, these tests fail.
+ *
+ * There used to be a third source: an online cosmetics database the app
+ * looked a barcode up in. The scanner and the request are gone, so the
+ * tests that pinned the quoting of that database are gone with them —
+ * replaced by tests that pin its absence, because a licence attribution
+ * left behind, or a lookup added back, is what would make this file's
+ * claim false.
  *
  * Four sweeps do that work:
  *
@@ -42,7 +48,6 @@ import {
   type Shelf,
   type ShelfFact,
 } from '@/features/products/shelf';
-import { ATTRIBUTION, parseLookup } from '@/features/products/open-beauty-facts';
 import {
   EMPTY_DATA,
   HAIR_GOAL_LABELS,
@@ -122,7 +127,7 @@ const EARLIER = '2026-08-01T09:00:00.000Z';
 function product(barcode: string, overrides: Partial<Product> = {}): Product {
   return {
     barcode,
-    source: 'openBeautyFacts',
+    source: 'manual',
     name: `Product ${barcode}`,
     fetchedAt: NOW,
     ...overrides,
@@ -160,17 +165,6 @@ function dataWith(parts: Partial<AppData> = {}): AppData {
   return { ...EMPTY_DATA, ...parts };
 }
 
-/** The real wire body for a shampoo, parsed by the shipped parser. */
-function fromDatabase(code: string): Product {
-  const body: unknown = JSON.parse(
-    readFileSync(new URL(`./fixtures/obf/${code}.json`, import.meta.url), 'utf8'),
-  );
-  const lookup = parseLookup(body, NOW);
-  assert.equal(lookup.kind, 'found');
-  if (lookup.kind !== 'found') throw new Error('unreachable');
-  return lookup.product;
-}
-
 /** The one comparison line about a given answer. */
 function told(shelf: Shelf, id: string): ShelfFact {
   const found = shelf.listNotes.find((n) => n.id === `told:${id}`);
@@ -187,7 +181,24 @@ test('an empty install has nothing to show and still says where it stands', () =
   assert.equal(shelf.sections.length, 0);
   assert.equal(shelf.listNotes.length, 0);
   assert.deepEqual(shelf.answers.watching, []);
-  assert.ok(shelf.footnotes.includes(ATTRIBUTION));
+  /*
+    The licence line that used to sit here is gone with the lookup it was
+    owed for. What replaced it says where the records come from, and it
+    has to hold for both kinds — the ones typed on this phone and the
+    ones an upgraded install still carries from the scanner — so the
+    footnote names both rather than calling every record the person's
+    own. It also stops at what the app does: "nothing is sent anywhere by
+    the app" is checkable here, where "stays on this phone" would step
+    over the device backup that src/app/privacy.tsx describes.
+  */
+  const provenance = shelf.footnotes.find((line) => /looks nothing up now/.test(line));
+  assert.ok(provenance, 'the shelf says where its records come from');
+  assert.match(provenance, /you typed on this phone/, 'the records they wrote');
+  assert.match(provenance, /older version of Tress looked up/, 'and the ones they did not');
+  assert.ok(
+    !/stays on it|never leaves|nothing leaves/i.test(provenance),
+    'the footnote must not promise more than the app controls',
+  );
   sweep(authored(shelf), 'the empty shelf');
 });
 
@@ -202,7 +213,7 @@ test('records split by whether anything on the list is linked to them', () => {
   const shelf = buildShelf(data);
   assert.deepEqual(
     shelf.sections.map((s) => s.id),
-    ['onYourList', 'scannedOnly'],
+    ['onYourList', 'notOnYourList'],
   );
   assert.deepEqual(shelf.sections[0].products.map((p) => p.barcode), [linked.barcode]);
   assert.deepEqual(shelf.sections[1].products.map((p) => p.barcode), [loose.barcode]);
@@ -220,7 +231,7 @@ test('a record linked only to an archived item is not on the list', () => {
   });
 
   const shelf = buildShelf(data);
-  assert.deepEqual(shelf.sections.map((s) => s.id), ['scannedOnly']);
+  assert.deepEqual(shelf.sections.map((s) => s.id), ['notOnYourList']);
   assert.equal(shelf.sections[0].products[0].linkedLabel, undefined);
 });
 
@@ -243,63 +254,100 @@ test('the only ordering is the date, newest first, and ties are stable', () => {
   );
 });
 
-/* ---------------------- the database, quoted as such ------------------- */
+/* ------------------- the record, and only the record ------------------- */
 
-test('what the database says is passed through verbatim, with its attribution', () => {
-  const shampoo = fromDatabase('5601059062534');
-  const shelf = buildShelf(dataWith({ products: [shampoo] }));
-  const shown = shelf.sections[0].products[0];
-
-  assert.equal(shown.name, shampoo.name);
-  assert.equal(shown.brand, shampoo.brand);
-  assert.equal(shown.quantity, shampoo.quantity);
-  assert.equal(shown.ingredientsText, shampoo.ingredientsText);
-  assert.equal(shown.thumbnailUrl, shampoo.thumbnailUrl);
-  assert.equal(shown.attribution, ATTRIBUTION);
-  assert.ok(shown.databaseNotes.length > 0);
-  // Nothing is summarised, counted or re-ordered on the way through.
-  assert.ok(shown.ingredientsText?.startsWith('Aqua, Sodium Laureth Sulfate'));
-});
-
-test('every shown tag is named as the database\'s, and as fewer than it holds', () => {
-  const shampoo = fromDatabase('5601059062534');
-  const shown = buildShelf(dataWith({ products: [shampoo] })).sections[0].products[0];
-
-  assert.ok(shown.databaseNotesNote, 'tags are never shown without saying whose they are');
-  assert.match(shown.databaseNotesNote, /Open Beauty Facts/);
-  // The screen shows three of the database's tags and drops the rest, so
-  // the note has to say the set is partial or the three read as the whole.
-  assert.match(shown.databaseNotesNote, /more tags than Tress shows/);
-});
-
-test('a record the person typed is never dressed up as a database record', () => {
+test('what is shown about a record is what the person typed, and nothing else', () => {
   const typed: Product = {
-    barcode: '0000000000007',
+    barcode: 'local_abc',
     source: 'manual',
     name: 'The green bottle',
+    brand: 'Housebrand',
+    quantity: '200 ml',
     fetchedAt: NOW,
-    // Even if a stray ingredient text were on the record, a manual entry
-    // has no database behind it and must not claim one.
-    ingredientsText: 'whatever they typed',
   };
-
   const shown = buildShelf(dataWith({ products: [typed] })).sections[0].products[0];
-  assert.equal(shown.attribution, undefined);
-  assert.equal(shown.ingredientsText, undefined);
-  assert.equal(shown.databaseNotes.length, 0);
-  assert.equal(shown.databaseNotesNote, undefined);
-  assert.match(shown.ingredientsNote, /typed this record in/);
+
+  assert.equal(shown.name, typed.name);
+  assert.equal(shown.brand, typed.brand);
+  assert.equal(shown.quantity, typed.quantity);
+  assert.match(shown.facts[0].text, /Written down by you/);
 });
 
-test('a database record with no ingredient list says so rather than showing a blank', () => {
-  const bare = product('0000000000008', { analysisTags: ['en:vegan-unknown'] });
-  const shown = buildShelf(dataWith({ products: [bare] })).sections[0].products[0];
+test('a record left over from the barcode scanner loses everything the database gave it', () => {
+  /*
+    The point of the removal, pinned. A record written by the old scanner
+    is still on disk with the database's ingredient text, its tags and the
+    address of a photo on its image server. None of the three reaches the
+    screen: no attribution is owed for text that is not shown, and no
+    image request is made for a picture that is not drawn. This is the
+    test that fails if somebody wires any of them back up without also
+    putting the licence line back.
+  */
+  const legacy: Product = {
+    barcode: '5601059062534',
+    source: 'openBeautyFacts',
+    name: 'Head and Shoulders',
+    fetchedAt: NOW,
+    ingredientsText: 'Aqua, Sodium Laureth Sulfate, Parfum',
+    analysisTags: ['en:vegan', 'en:palm-oil-free'],
+    imageUrl: 'https://images.openbeautyfacts.org/x.400.jpg',
+    thumbnailUrl: 'https://images.openbeautyfacts.org/x.200.jpg',
+  };
+  const shelf = buildShelf(dataWith({ products: [legacy] }));
+  const shown = shelf.sections[0].products[0];
 
-  assert.equal(shown.ingredientsText, undefined);
-  assert.match(shown.ingredientsNote, /no ingredient list/);
-  // Only the database's definite tags are ever shown; "unknown" is not one.
-  assert.deepEqual(shown.databaseNotes, []);
-  assert.equal(shown.databaseNotesNote, undefined);
+  assert.equal(shown.thumbnailUrl, undefined, 'no remote image address reaches the screen');
+  assert.equal(
+    JSON.stringify(shown).includes('openbeautyfacts'),
+    false,
+    'nothing about the record names the database',
+  );
+  /*
+    What it does NOT lose is where it came from. Nobody wrote this record
+    down: the scanner fetched it, and `fetchedAt` is the moment of the
+    fetch. Saying "written down by you on 15 September" to the owner of
+    an upgraded install would be the app inventing a provenance and
+    dating it to something they never did, so the sentence says what
+    happened and the person's own records keep theirs.
+  */
+  assert.match(shown.facts[0].text, /Looked up for you by an older version of Tress/);
+  assert.ok(
+    !/Written down by you/.test(shown.facts[0].text),
+    'a fetched record must not be called the person\'s own writing',
+  );
+  sweep(authored(shelf), 'a legacy record');
+});
+
+test('a record the person typed and one the scanner fetched do not get the same sentence', () => {
+  const typed = product('0000000000040', { fetchedAt: NOW });
+  const fetched = product('0000000000041', { source: 'openBeautyFacts', fetchedAt: NOW });
+  const shelf = buildShelf(dataWith({ products: [typed, fetched] }));
+  const sentenceFor = (barcode: string) => {
+    const found = shelf.sections
+      .flatMap((section) => section.products)
+      .find((prod) => prod.barcode === barcode);
+    if (!found) throw new Error(`expected a record for ${barcode}`);
+    return found.facts[0].text;
+  };
+
+  assert.match(sentenceFor(typed.barcode), /^Written down by you on /);
+  assert.match(sentenceFor(fetched.barcode), /^Looked up for you by an older version/);
+  assert.notEqual(sentenceFor(typed.barcode), sentenceFor(fetched.barcode));
+  sweep(authored(shelf), 'both provenances');
+});
+
+test('nothing the shelf produces owes an attribution to anybody', () => {
+  const shelf = buildShelf(
+    dataWith({
+      products: [product('0000000000001'), product('0000000000002', { brand: 'Housebrand' })],
+      routineItems: [item({ productBarcode: '0000000000001' })],
+      journey: journey(),
+    }),
+  );
+  const everything = JSON.stringify(shelf).toLowerCase();
+  for (const owed of ['open beauty facts', 'openbeautyfacts', 'odbl', 'open database licence', 'open database license']) {
+    assert.ok(!everything.includes(owed), `the shelf must not carry "${owed}"`);
+  }
 });
 
 /* --------------------------- their own words --------------------------- */
@@ -575,152 +623,62 @@ test('a journey saved before goals took several answers still reads back', () =>
   ]);
 });
 
-/* ------------------------ what they look for on a label ---------------- */
+/* ------------------ what they look for on a label ---------------------- */
 
-/** The facts about one record that concern their answers about labels. */
-function labelFacts(shelf: Shelf, barcode: string): ShelfFact[] {
-  const product = shelf.sections.flatMap((s) => s.products).find((p) => p.barcode === barcode);
-  if (!product) throw new Error(`expected a record for ${barcode}`);
-  return product.facts.filter((f) => f.id.includes(':factor:') || f.id.includes(':reaction:') || f.id.includes(':labels:'));
-}
-
-test('a preference is held against the printed words of the database list, hit or miss, and quotes the word as printed', () => {
-  // Head & Shoulders, from the real wire body: "Sodium Laureth Sulfate, ... Parfum, Dimethiconol, ... Benzyl Alcohol".
-  const shampoo = fromDatabase('5601059062534');
+test('an answer about labels is read back as an answer and held against nothing', () => {
+  /*
+    The shelf used to hold these answers against the database's own
+    ingredient text — "the word Sulfate is printed in the list Open Beauty
+    Facts holds for this record". There is no such list any more, so there
+    is nothing to hold them against, and the shelf says nothing about a
+    bottle on the strength of a preference. The answers are still read
+    back as chips, because they are the person's own words.
+  */
   const shelf = buildShelf(
     dataWith({
-      products: [shampoo],
+      products: [product('0000000000030', { name: 'The green bottle' })],
       journey: journey({
-        productFactors: ['sulfateFree', 'siliconeFree', 'parabenFree'],
+        productFactors: ['sulfateFree', 'siliconeFree', 'parabenFree', 'vegan'],
         ingredientReactions: ['fragrance', 'alcohols'],
       }),
     }),
   );
-  const facts = labelFacts(shelf, shampoo.barcode);
-  const byId = (suffix: string) => {
-    const found = facts.find((f) => f.id.endsWith(suffix));
-    if (!found) throw new Error(`expected ${suffix}`);
-    return found;
-  };
 
-  const sulfate = byId(':factor:sulfateFree');
-  assert.equal(sulfate.mentioned, true);
-  assert.equal(
-    sulfate.text,
-    'You said you look for “Sulfate-free”. The word “Sulfate” is printed in the ingredient list Open Beauty Facts holds for this record.',
-  );
-  assert.deepEqual(sulfate.quotes, ['Sulfate-free', 'Sulfate']);
-
-  // Letters inside a longer printed word: the whole word is quoted, and what it contains is named.
-  // ("Dimethiconol" comes first in the list but spells methicon-ol; "Dimethicone" is the first word that contains the letters.)
-  const silicone = byId(':factor:siliconeFree');
-  assert.equal(silicone.mentioned, true);
-  assert.equal(
-    silicone.text,
-    'You said you look for “Silicone-free”. The word “Dimethicone” is printed in the ingredient list Open Beauty Facts holds for this record, and contains methicone.',
-  );
-
-  // A miss names what was looked for, so an absence is as checkable as a hit — and is never called "paraben-free".
-  const paraben = byId(':factor:parabenFree');
-  assert.equal(paraben.mentioned, false);
-  assert.equal(
-    paraben.text,
-    'You said you look for “Paraben-free”. Tress looked for the letters paraben in the ingredient list Open Beauty Facts holds for this record and found neither a word made of them nor a word containing them.',
-  );
-
-  const fragrance = byId(':reaction:fragrance');
-  assert.equal(
-    fragrance.text,
-    'You said you have reacted to “Fragrance (listed as parfum)”. The word “Parfum” is printed in the ingredient list Open Beauty Facts holds for this record.',
-  );
-  assert.equal(
-    byId(':reaction:alcohols').text,
-    'You said you have reacted to “Alcohols”. The word “Alcohol” is printed in the ingredient list Open Beauty Facts holds for this record.',
-  );
-  // The funnel asked "Have you ever reacted to any of these?" with no body part, so no reaction line names one.
-  for (const fact of facts.filter((f) => f.id.includes(':reaction:'))) assert.doesNotMatch(fact.text, /scalp|skin/i, fact.text);
-
-  // The lines close by saying what they are: words on a list, not a verdict on the bottle.
-  const note = byId(':labels:note');
-  assert.match(note.text, /statements about words on a list/);
-  assert.match(note.text, /not about the bottle/);
-  assert.equal(facts[facts.length - 1].id, note.id, 'the note is last');
-
-  // Every quoted span is the person's answer or the database's own text.
-  const data = dataWith({
-    products: [shampoo],
-    journey: journey({ productFactors: ['sulfateFree', 'siliconeFree', 'parabenFree'], ingredientReactions: ['fragrance', 'alcohols'] }),
-  });
-  assert.deepEqual(unownedQuotes(facts, storedStrings(data)), []);
-  sweep(authored(shelf), 'the label lines');
-});
-
-test('a vegan preference is answered from the database\'s own tag, and the absence of a tag says nothing either way', () => {
-  const tagged = product('0000000000030', { analysisTags: ['en:palm-oil-free', 'en:vegan'], ingredientsText: 'Aqua' });
-  const yes = labelFacts(buildShelf(dataWith({ products: [tagged], journey: journey({ productFactors: ['vegan'] }) })), tagged.barcode);
-  assert.equal(yes[0].mentioned, true);
-  assert.equal(yes[0].text, 'You said you look for “Vegan”. Open Beauty Facts tags this record vegan, in its own wording.');
-
-  // The real Mixa body carries "en:vegan-status-unknown", which is not a vegan tag and is not a non-vegan one.
-  const unknown = fromDatabase('3600551119816');
-  const no = labelFacts(buildShelf(dataWith({ products: [unknown], journey: journey({ productFactors: ['vegan'] }) })), unknown.barcode);
-  assert.equal(no[0].mentioned, false);
-  assert.equal(no[0].text, 'You said you look for “Vegan”. Open Beauty Facts states no vegan tag for this record, which says nothing either way.');
-});
-
-test('an answer nothing in the database record can be held against is said to be that, not guessed at', () => {
-  const shampoo = fromDatabase('5601059062534');
-  const facts = labelFacts(
-    buildShelf(dataWith({ products: [shampoo], journey: journey({ productFactors: ['crueltyFree'], ingredientReactions: ['essentialOils', 'hairDye'] }) })),
-    shampoo.barcode,
-  );
-  assert.deepEqual(facts.map((f) => f.id), [`${shampoo.barcode}:labels:unchecked`]);
-  assert.equal(
-    facts[0].text,
-    'Nothing in the database record can be held against “Cruelty-free”, “Essential oils” and “Hair dye (PPD)”, so Tress says nothing about them here.',
-  );
-  assert.deepEqual(facts[0].quotes, ['Cruelty-free', 'Essential oils', 'Hair dye (PPD)']);
-});
-
-test('a record with no ingredient list gets one line saying so, and a typed record gets no label lines at all', () => {
-  const bare = product('0000000000031');
-  const noList = labelFacts(
-    buildShelf(dataWith({ products: [bare], journey: journey({ productFactors: ['sulfateFree', 'fragranceFree'] }) })),
-    bare.barcode,
-  );
-  assert.deepEqual(noList.map((f) => f.id), [`${bare.barcode}:labels:noList`]);
-  assert.match(noList[0].text, /no ingredient list for this record/);
-
-  const typed: Product = { barcode: '0000000000032', source: 'manual', name: 'The green bottle', fetchedAt: NOW, ingredientsText: 'sulfate' };
+  const facts = shelf.sections.flatMap((sec) => sec.products).flatMap((prod) => prod.facts);
   assert.deepEqual(
-    labelFacts(buildShelf(dataWith({ products: [typed], journey: journey({ productFactors: ['sulfateFree'] }) })), typed.barcode),
+    facts.filter((f) => /:factor:|:reaction:|:labels:/.test(f.id)),
     [],
+    'no line on a record may rest on an answer about labels',
   );
+  assert.deepEqual(shelf.answers.preferences, [
+    PRODUCT_FACTOR_LABELS.sulfateFree,
+    PRODUCT_FACTOR_LABELS.siliconeFree,
+    PRODUCT_FACTOR_LABELS.parabenFree,
+    PRODUCT_FACTOR_LABELS.vegan,
+  ]);
+  assert.deepEqual(shelf.answers.reactions, [
+    INGREDIENT_REACTION_LABELS.fragrance,
+    INGREDIENT_REACTION_LABELS.alcohols,
+  ]);
 });
 
-test('"no preferences" and "none" produce no lines, and a journey from before the questions produces none either', () => {
-  const shampoo = fromDatabase('5601059062534');
-  const none = labelFacts(
-    buildShelf(dataWith({ products: [shampoo], journey: journey({ productFactors: ['noPreference'], ingredientReactions: ['none'] }) })),
-    shampoo.barcode,
-  );
-  assert.deepEqual(none, []);
-  assert.deepEqual(labelFacts(buildShelf(dataWith({ products: [shampoo], journey: journey() })), shampoo.barcode), []);
-  assert.deepEqual(labelFacts(buildShelf(dataWith({ products: [shampoo] })), shampoo.barcode), []);
-
-  // The answers are still read back as chips, "none" included: they are answers.
+test('"no preferences" and "none" are read back as the answers they are', () => {
   const answers = buildShelf(
-    dataWith({ journey: journey({ productFactors: ['noPreference', 'vegan', 'vegan'], ingredientReactions: ['none', 'bogus' as never] }) }),
+    dataWith({
+      journey: journey({
+        productFactors: ['noPreference', 'vegan', 'vegan'],
+        ingredientReactions: ['none', 'bogus' as never],
+      }),
+    }),
   ).answers;
   assert.deepEqual(answers.preferences, ['No preferences', 'Vegan']);
   assert.deepEqual(answers.reactions, ['None']);
 });
 
 test('the shelf never calls a bottle anything-free: "free" appears only inside the person\'s own quoted answer', () => {
-  const shampoo = fromDatabase('5601059062534');
   const shelf = buildShelf(
     dataWith({
-      products: [shampoo, product('0000000000033', { analysisTags: ['en:vegan'] })],
+      products: [product('0000000000033'), product('0000000000034', { brand: 'Housebrand' })],
       journey: journey({
         productFactors: ['sulfateFree', 'siliconeFree', 'fragranceFree', 'parabenFree', 'vegan', 'crueltyFree'],
         ingredientReactions: ['sulfates', 'fragrance', 'essentialOils', 'alcohols', 'hairDye', 'smoothingTreatments'],
@@ -736,7 +694,23 @@ test('the shelf never calls a bottle anything-free: "free" appears only inside t
 
 /** A shelf holding every branch at once, including hostile user text. */
 function loadedData(): AppData {
-  const shampoo = fromDatabase('5601059062534');
+  /*
+    A record left over from the barcode scanner, database fields and all.
+    It is here so the sweeps run over the branch that reads one, and so
+    that anything the shelf might start carrying from those fields lands
+    in front of the banned vocabulary rather than beside it.
+  */
+  const legacy: Product = {
+    barcode: '5601059062534',
+    source: 'openBeautyFacts',
+    name: 'Head and Shoulders',
+    brand: 'Head & Shoulders',
+    quantity: '400 ml',
+    fetchedAt: NOW,
+    ingredientsText: 'Aqua, Sodium Laureth Sulfate, Parfum, Dimethicone',
+    analysisTags: ['en:vegan', 'en:palm-oil-free'],
+    thumbnailUrl: 'https://images.openbeautyfacts.org/x.200.jpg',
+  };
   const typed: Product = {
     barcode: '0000000000011',
     source: 'manual',
@@ -746,14 +720,14 @@ function loadedData(): AppData {
   const bare = product('0000000000012', { name: 'Unlisted bottle' });
 
   return dataWith({
-    products: [shampoo, typed, bare],
+    products: [legacy, typed, bare],
     routineItems: [
       item({
         label: 'Density serum',
         detail: 'the one that makes it thicker',
         productBarcode: typed.barcode,
       }),
-      item({ id: 'rti_2', label: 'Wash day', productBarcode: shampoo.barcode }),
+      item({ id: 'rti_2', label: 'Wash day', productBarcode: legacy.barcode }),
     ],
     journey: journey({
       trackingAreas: ['density', 'hairline'],
@@ -783,14 +757,23 @@ test('the sweep is not vacuous: the raw sentences really do carry their words', 
   assert.ok(all.includes('thinning tonic'));
 });
 
-test('the sweep sees the tags too, not only the sentences around them', () => {
-  const ids = shelfSentences(buildShelf(loadedData())).map((f) => f.id);
+test('no sentence the shelf writes names a database, and none is a database\'s', () => {
   /*
-    The English beside a tag slug — "Vegan", "Palm oil free" — is Tress's
-    wording, not the database's, so a new entry in SHOWN_TAGS reaches the
-    screen and has to reach the sweep with it.
+    The tags this test used to cover are gone. What matters now is the
+    opposite property: a fixture holding a full legacy record produces not
+    one sentence that mentions where those fields came from, because not
+    one of them is read.
   */
-  assert.ok(ids.some((id) => id.includes(':databaseNote:')));
+  const sentences = shelfSentences(buildShelf(loadedData()));
+  assert.ok(sentences.length > 0);
+  const all = sentences.map((f) => f.text).join(' ').toLowerCase();
+  for (const owed of ['open beauty facts', 'openbeautyfacts', 'odbl', 'database']) {
+    assert.ok(!all.includes(owed), `the shelf must not say "${owed}"`);
+  }
+  assert.deepEqual(
+    sentences.filter((f) => f.id.includes(':databaseNote')),
+    [],
+  );
 });
 
 /**
@@ -805,7 +788,7 @@ function storedStrings(data: AppData): string[] {
   const out: string[] = [];
 
   for (const p of data.products) {
-    out.push(p.name, p.brand ?? '', p.quantity ?? '', p.ingredientsText ?? '');
+    out.push(p.name, p.brand ?? '', p.quantity ?? '');
   }
   for (const i of data.routineItems) out.push(i.label, i.detail ?? '');
 
@@ -860,8 +843,8 @@ test('every quoted span comes from the data the shelf was built from', () => {
     'the fixture should exercise the quoting paths',
   );
   assert.ok(
-    facts.some((f) => f.id.includes(':factor:')) && facts.some((f) => f.id.includes(':reaction:')),
-    'the fixture should exercise the label lines',
+    facts.some((f) => f.id.includes(':linked')) && facts.some((f) => f.id.includes('told:')),
+    'the fixture should exercise the quoting paths on both a record and a list note',
   );
 });
 
@@ -1000,4 +983,55 @@ test('the list notes are sentences, not a checklist, and tags are not badged', (
   */
   assert.ok(!source.includes('accentSoft'), 'tags must not sit in the accent');
   assert.ok(!source.includes('accentBorder'), 'tags must not be outlined in the accent');
+});
+
+test('the products feature holds no network client, and no licence it no longer owes', () => {
+  /*
+    The whole point of retiring the barcode scanner, made checkable.
+
+    The lookup in features/products/open-beauty-facts.ts was the only
+    HTTP call written anywhere in src/, so "a product record never leaves
+    the phone" is now a property of the tree rather than a promise in a
+    comment — and this is what fails if somebody adds a fetch back to the
+    feature without also putting the licence line and the privacy section
+    back with it.
+  */
+  for (const file of [MODULE, SCREEN, 'src/features/products/index.ts']) {
+    const code = codeOf(file);
+    for (const client of ['fetch(', 'fetchImpl', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'axios']) {
+      assert.ok(!code.includes(client), `${file} must reach no network: found ${client}`);
+    }
+    assert.ok(!code.includes('http://'), `${file} must name no host`);
+    assert.ok(!code.includes('https://'), `${file} must name no host`);
+  }
+
+  /*
+    One literal is allowed through, and only one: `'openBeautyFacts'`,
+    the value of `Product.source` on a record the retired scanner wrote.
+    It is a discriminant read off disk, not copy — `recordedText` reads
+    it to say that such a record was fetched rather than typed, which is
+    the opposite of a licence claim. So it is excluded by exact match and
+    then pinned to the comparison it appears in: a prose sentence naming
+    the database, a URL, or a second use somewhere else all still fail.
+  */
+  const SOURCE_TAG = 'openBeautyFacts';
+  const module = codeOf(MODULE);
+  assert.equal(
+    module.split(`product.source === '${SOURCE_TAG}'`).length - 1,
+    1,
+    'the legacy source tag appears once, as the comparison that dates a fetched record',
+  );
+  assert.equal(
+    module.split(SOURCE_TAG).length - 1,
+    1,
+    'and nowhere else in the module',
+  );
+
+  const literals = [...literalsOf(MODULE), ...literalsOf(SCREEN)]
+    .filter((literal) => literal !== SOURCE_TAG)
+    .join(' ')
+    .toLowerCase();
+  for (const owed of ['open beauty facts', 'openbeautyfacts', 'odbl', 'open database licence', 'open database license']) {
+    assert.ok(!literals.includes(owed), `no string may still carry "${owed}"`);
+  }
 });
