@@ -187,7 +187,11 @@ type RunState = {
  * the run restarts on every render. The run is aborted if the frames
  * change or the screen goes away.
  */
-function useAnalysisRun(frames: readonly AnalysisFrame[], deps: AnalysisDeps | undefined): RunState {
+function useAnalysisRun(
+  frames: readonly AnalysisFrame[],
+  deps: AnalysisDeps | undefined,
+  capturedAt: string | undefined,
+): RunState {
   const [state, setState] = useState<RunState>({
     plan: null,
     progress: null,
@@ -201,6 +205,7 @@ function useAnalysisRun(frames: readonly AnalysisFrame[], deps: AnalysisDeps | u
     runAnalysis(frames, {
       deps,
       signal: controller.signal,
+      ...(capturedAt === undefined ? {} : { capturedAt }),
       onPlan: (plan) => {
         if (live) setState((s) => ({ ...s, plan }));
       },
@@ -224,7 +229,7 @@ function useAnalysisRun(frames: readonly AnalysisFrame[], deps: AnalysisDeps | u
       live = false;
       controller.abort();
     };
-  }, [frames, deps]);
+  }, [frames, deps, capturedAt]);
 
   return state;
 }
@@ -371,9 +376,22 @@ export type ProcessingProps = {
   onError?: (error: Error) => void;
   /** Tests and previews stand the measurements in here; the app leaves it unset. */
   deps?: AnalysisDeps;
+  /**
+   * When the scan was taken, ISO-8601. Stamped on the regional
+   * measurement so the record says when it was read rather than when the
+   * pass happened to finish. Left out, the runner stamps it with now.
+   */
+  capturedAt?: string;
 };
 
-export function Processing({ frames, onComplete, onAbsorb, onError, deps }: ProcessingProps) {
+export function Processing({
+  frames,
+  onComplete,
+  onAbsorb,
+  onError,
+  deps,
+  capturedAt,
+}: ProcessingProps) {
   const reduceMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -381,7 +399,7 @@ export function Processing({ frames, onComplete, onAbsorb, onError, deps }: Proc
   const [measuredStage, setMeasuredStage] = useState<number | null>(null);
   const stageHeight = measuredStage ?? Math.round(height * 0.55);
 
-  const run = useAnalysisRun(frames, deps);
+  const run = useAnalysisRun(frames, deps, capturedAt);
   const main = useMemo(() => pickMainFrame(frames), [frames]);
   const others = useMemo(() => frames.filter((f) => f !== main), [frames, main]);
 

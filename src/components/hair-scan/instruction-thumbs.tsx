@@ -5,21 +5,24 @@
  * and the three states are the three the scan actually has now:
  *
  *   1. a head with glasses on, softly struck through;
- *   2. the ring at rest, the Start disc waiting beneath it, and an arc
- *      swinging through the head with an arrowhead at each end — the
- *      first beat, turning left and right;
- *   3. the head tipped down with the crown toward the camera, the ring
- *      lit all the way round it and the crown itself marked — the second
- *      beat, where the top of the head is read.
+ *   2. a head straight on inside the four corner brackets, the Start
+ *      disc waiting beneath it and one arrow at the side — press Start,
+ *      look straight, then follow the arrow;
+ *   3. the same brackets round a head tipped down, the crown marked and
+ *      the arrow pointing the way — the last step.
  *
  * Until frames from a real phone exist these are drawn from the
- * scanner's own parts: the second and third tiles hold the real
- * `ScanRing`, sized down, so the dial the person is about to fill is the
- * dial they have already seen, around a neutral silhouette rather than a
- * photograph nobody took.
+ * scanner's own parts, so what a person is shown here is what they will
+ * meet a second later: brackets and an arrow, around a neutral
+ * silhouette rather than a photograph nobody took.
  *
- * Nothing moves. The ring reads its coverage from a shared value that is
- * written once, so there is no animation to gate behind Reduce Motion.
+ * These two tiles used to hold the real `ScanRing`, sized down — a dial
+ * filling by sector, which was the old two-beat choreography. That
+ * choreography is gone, and a sheet promising a dial nobody will ever
+ * see is worse than no sheet: it was the first thing on screen and the
+ * only thing on screen still describing the previous build.
+ *
+ * Nothing moves, so there is no animation to gate behind Reduce Motion.
  *
  * When real thumbnails are captured (the owner will take them from the
  * scanner on a device build), pass them as `image` and the drawing steps
@@ -47,12 +50,9 @@
 
 import { Image, type ImageSource } from 'expo-image';
 import { View } from 'react-native';
-import { useSharedValue } from 'react-native-reanimated';
 import Svg, { Circle, ClipPath, Defs, Ellipse, G, Line, Path } from 'react-native-svg';
 
 import { darkColors, radius } from '@/theme';
-
-import { SCAN_SECTORS, ScanRing, emptyCoverage, scanRingMargin } from './scan-ring';
 
 /** The three steps of the sheet, in order. */
 export type InstructionStep = 0 | 1 | 2;
@@ -61,12 +61,16 @@ export type InstructionStep = 0 | 1 | 2;
 export const INSTRUCTION_THUMB_WIDTH = 80;
 export const INSTRUCTION_THUMB_HEIGHT = 100;
 
-/** The miniature ring's box, inside the tile, and the tick that suits it. */
-const RING_W = 68;
-const RING_H = 88;
-const RING_TICK = 3;
-const RING_STROKE = 1;
-const RING_MARGIN = scanRingMargin(RING_TICK);
+/** The window the head sits in, inside the tile, and the brackets round it. */
+const WINDOW_W = 68;
+const WINDOW_H = 88;
+/** How far each bracket reaches along its two edges, and how heavy it is drawn. */
+const BRACKET_ARM = 9;
+const BRACKET_WEIGHT = 2;
+/** One chevron of the arrow: half its width, half its height, and the gap between three. */
+const CHEVRON_HALF_W = 3.5;
+const CHEVRON_HALF_H = 5;
+const CHEVRON_GAP = 5.5;
 
 /** How a head sits in a tile. */
 type HeadPose = 'straight' | 'down';
@@ -117,9 +121,9 @@ export function InstructionThumb({ step, image }: InstructionThumbProps) {
       ) : step === 0 ? (
         <GlassesOffThumb />
       ) : step === 1 ? (
-        <RingThumb lit={false} pose="straight" />
+        <FrameThumb pose="straight" />
       ) : (
-        <RingThumb lit pose="down" />
+        <FrameThumb pose="down" />
       )}
     </View>
   );
@@ -259,93 +263,111 @@ function GlassesOffThumb() {
   );
 }
 
-/* ------------------------------- the turn arc ------------------------------- */
+/* ------------------------------ the arrow ------------------------------ */
 
 /**
- * The left-and-right arc: one curve passing behind the head with an
- * arrowhead at each end, so the tile says "this way, and back again"
- * without a word. Drawn before the head so the head sits on top of it,
- * which is what makes it read as a turn rather than as a halo.
+ * The scan's own arrow, in miniature: three chevrons pointing the way
+ * the head is being asked to move.
  *
- * The arrowheads are two short strokes at each tip, set against the
- * curve's own direction there — hand-placed rather than computed,
- * because the curve never changes.
+ * The same three the scanner draws over the live video, drawn here at a
+ * tile's size and standing still — the sheet is a picture of a step, not
+ * a re-run of it. Each is one open corner rather than a filled triangle,
+ * so the shape reads at nine points across, and they fade back from the
+ * leading one so the eye is given a direction and not a block.
  */
-function TurnArc({ cx, cy }: { cx: number; cy: number }) {
-  const left = cx - 18;
-  const right = cx + 18;
-  const y = cy - 4;
-  const apex = cy - 30;
+function Chevrons({
+  x,
+  y,
+  direction,
+}: {
+  x: number;
+  y: number;
+  direction: 'right' | 'down';
+}) {
+  const down = direction === 'down';
   return (
     <G>
-      <Path
-        d={`M ${left} ${y} Q ${cx} ${apex}, ${right} ${y}`}
-        stroke={darkColors.success}
-        strokeWidth={2}
-        strokeLinecap="round"
-        fill="none"
-      />
-      {/* Left tip, pointing down and out. */}
-      <Line
-        x1={left}
-        y1={y}
-        x2={left + 5}
-        y2={y - 1}
-        stroke={darkColors.success}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-      <Line
-        x1={left}
-        y1={y}
-        x2={left + 1}
-        y2={y - 5}
-        stroke={darkColors.success}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-      {/* Right tip, mirrored. */}
-      <Line
-        x1={right}
-        y1={y}
-        x2={right - 5}
-        y2={y - 1}
-        stroke={darkColors.success}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-      <Line
-        x1={right}
-        y1={y}
-        x2={right - 1}
-        y2={y - 5}
-        stroke={darkColors.success}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
+      {[0, 1, 2].map((i) => {
+        const step = i * CHEVRON_GAP;
+        const cx = down ? x : x + step;
+        const cy = down ? y + step : y;
+        const d = down
+          ? `M ${cx - CHEVRON_HALF_H} ${cy - CHEVRON_HALF_W} L ${cx} ${cy + CHEVRON_HALF_W} L ${cx + CHEVRON_HALF_H} ${cy - CHEVRON_HALF_W}`
+          : `M ${cx - CHEVRON_HALF_W} ${cy - CHEVRON_HALF_H} L ${cx + CHEVRON_HALF_W} ${cy} L ${cx - CHEVRON_HALF_W} ${cy + CHEVRON_HALF_H}`;
+        return (
+          <Path
+            key={i}
+            d={d}
+            stroke={darkColors.accent}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+            opacity={1 - i * 0.28}
+          />
+        );
+      })}
     </G>
   );
 }
 
-/* --------------------------- steps 2 and 3: the ring --------------------------- */
+/* ----------------------------- the brackets ----------------------------- */
 
 /**
- * The real ring, sized down, around a head.
+ * The four corner brackets, round the window the head sits in.
  *
- * At rest the dial is quiet white, the Start disc waits beneath it and
- * the turn arc swings through the head: the first beat, before anything
- * has been captured. Lit, every sector's coverage is written as 1, the
- * head is tipped forward and the crown is marked — the second beat, at
- * its end. There is no sweep in either: the sheet is a picture of a
- * state, not a re-run of reaching it.
+ * The same frame `FrameBrackets` draws round the oval on the scanner,
+ * reduced to one path per corner: an arm along each edge meeting at the
+ * corner itself. They are drawn quiet here, because in the tile they are
+ * a picture of the frame rather than the frame reacting to a head.
  */
-function RingThumb({ lit, pose }: { lit: boolean; pose: HeadPose }) {
-  const coverage = useSharedValue(
-    lit ? Array.from({ length: SCAN_SECTORS }, () => 1) : emptyCoverage(),
+function Brackets({ x, y, width, height }: { x: number; y: number; width: number; height: number }) {
+  const right = x + width;
+  const bottom = y + height;
+  const corners = [
+    `M ${x} ${y + BRACKET_ARM} L ${x} ${y} L ${x + BRACKET_ARM} ${y}`,
+    `M ${right - BRACKET_ARM} ${y} L ${right} ${y} L ${right} ${y + BRACKET_ARM}`,
+    `M ${right} ${bottom - BRACKET_ARM} L ${right} ${bottom} L ${right - BRACKET_ARM} ${bottom}`,
+    `M ${x + BRACKET_ARM} ${bottom} L ${x} ${bottom} L ${x} ${bottom - BRACKET_ARM}`,
+  ];
+  return (
+    <G>
+      {corners.map((d) => (
+        <Path
+          key={d}
+          d={d}
+          stroke={darkColors.textOnPhoto}
+          strokeOpacity={0.7}
+          strokeWidth={BRACKET_WEIGHT}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      ))}
+    </G>
   );
+}
+
+/* --------------------------- steps 2 and 3: the scan --------------------------- */
+
+/**
+ * The scanner's own frame, sized down, around a head.
+ *
+ * `straight` is the step everybody starts on: the head square to the
+ * camera inside the brackets, the Start disc waiting beneath it, and the
+ * arrow at the side saying which way the first turn goes. `down` is the
+ * last step: the same brackets round a head tipped forward, the crown
+ * marked, and the arrow pointing down.
+ *
+ * There is no dial in either, because the scan has none. What a person
+ * sees here is what they meet a second later.
+ */
+function FrameThumb({ pose }: { pose: HeadPose }) {
+  const down = pose === 'down';
   const cx = INSTRUCTION_THUMB_WIDTH / 2;
-  const ringTop = lit ? (INSTRUCTION_THUMB_HEIGHT - RING_H) / 2 : 2;
-  const cy = ringTop + RING_H / 2;
+  const frameTop = down ? (INSTRUCTION_THUMB_HEIGHT - WINDOW_H) / 2 : 2;
+  const cy = frameTop + WINDOW_H / 2;
+  const frameLeft = (INSTRUCTION_THUMB_WIDTH - WINDOW_W) / 2;
   /* Two tiles share one sheet, so each clip path carries its own id. */
   const clipId = `scan-thumb-window-${pose}`;
 
@@ -357,26 +379,25 @@ function RingThumb({ lit, pose }: { lit: boolean; pose: HeadPose }) {
         style={{ position: 'absolute' }}>
         <Defs>
           <ClipPath id={clipId}>
-            <Ellipse cx={cx} cy={cy} rx={RING_W / 2 - RING_MARGIN} ry={RING_H / 2 - RING_MARGIN} />
+            <Ellipse cx={cx} cy={cy} rx={WINDOW_W / 2} ry={WINDOW_H / 2} />
           </ClipPath>
         </Defs>
-        {/* The video window: the oval the ring's ticks radiate from. */}
+        {/* The video window: the oval the live camera shows through. */}
         <Ellipse
           cx={cx}
           cy={cy}
-          rx={RING_W / 2 - RING_MARGIN}
-          ry={RING_H / 2 - RING_MARGIN}
+          rx={WINDOW_W / 2}
+          ry={WINDOW_H / 2}
           fill={darkColors.surfaceElevated}
         />
         <G clipPath={`url(#${clipId})`}>
-          {pose === 'straight' ? <TurnArc cx={cx} cy={cy} /> : null}
           <Silhouette cx={cx} cy={cy} pose={pose} opacity={0.8} />
           {/*
             The crown, marked: one arc over the top of the tipped head,
-            in the dial's own green, so the third row says where the
-            second beat is looking.
+            in the scan's own green, so the last row says where the last
+            step is looking.
           */}
-          {pose === 'down' ? (
+          {down ? (
             <Path
               d={`M ${cx - 13} ${cy - 3} Q ${cx} ${cy - 20}, ${cx + 13} ${cy - 3}`}
               stroke={darkColors.success}
@@ -385,10 +406,20 @@ function RingThumb({ lit, pose }: { lit: boolean; pose: HeadPose }) {
               fill="none"
             />
           ) : null}
+          {/*
+            The arrow, inside the window and off to the side the head is
+            asked to move — the same place it sits on the scanner.
+          */}
+          {down ? (
+            <Chevrons x={cx} y={cy + 16} direction="down" />
+          ) : (
+            <Chevrons x={cx + 17} y={cy - 4} direction="right" />
+          )}
         </G>
-        {lit ? null : (
+        <Brackets x={frameLeft} y={frameTop} width={WINDOW_W} height={WINDOW_H} />
+        {down ? null : (
           <>
-            {/* The Start disc and its two rings, tucked under the oval. */}
+            {/* The Start disc and its two rings, tucked under the window. */}
             <Circle
               cx={cx}
               cy={INSTRUCTION_THUMB_HEIGHT - 4}
@@ -407,17 +438,6 @@ function RingThumb({ lit, pose }: { lit: boolean; pose: HeadPose }) {
           </>
         )}
       </Svg>
-      <ScanRing
-        width={RING_W}
-        height={RING_H}
-        coverage={coverage}
-        active={lit}
-        complete={false}
-        stage={lit ? 'crown' : 'sweep'}
-        tickLength={RING_TICK}
-        stroke={RING_STROKE}
-        style={{ position: 'absolute', left: (INSTRUCTION_THUMB_WIDTH - RING_W) / 2, top: ringTop }}
-      />
     </View>
   );
 }

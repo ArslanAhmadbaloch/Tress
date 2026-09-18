@@ -480,7 +480,7 @@ test('model: the light row reads the spread across the frames, and the turn', ()
   const light = m.analysis.rows[3];
   assert.equal(light.headline, 'The frames were lit to the same brightness reading, on a scale of 255.');
   assert.match(light.body, /^Light and focus were read on 4 frames, so/);
-  assert.match(light.body, /The ring closed to 100%/);
+  assert.match(light.body, /held frames from \d+ regions of the head/);
   const close = build(() => {
     const f = firstScanMeasured();
     f.session.photos[1] = { ...f.session.photos[1], quality: { ...GOOD, brightness: 134 } };
@@ -515,7 +515,7 @@ test('strengths: a first scan has at least two true positives, and never more th
   }).strengths.cards[0];
   assert.match(spread.body, /within 8 points/);
   assert.match(first[1].body, /turned 2° and tipped 1°/);
-  assert.match(first[2].body, /ring closed to 100%/);
+  assert.match(first[2].body, /four steps held frames from \d+ regions/);
 });
 
 test('strengths: with nothing measured and a stopped turn, the first scan itself is the positive', () => {

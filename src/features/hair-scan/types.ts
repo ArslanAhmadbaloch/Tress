@@ -12,8 +12,8 @@
  *   camera phases, exactly one status (`ScanStatus`). There are no
  *   booleans that could disagree with either.
  * - Nothing here describes hair. A reading is where a head is and how
- *   still it is; a frame is an image with a quality score; the ring is a
- *   record of which directions the head has been seen from.
+ *   still it is; a frame is an image with a quality score; a step is one
+ *   of the four things a person is asked to do with their head.
  */
 
 import type { Contours } from './tracking';
@@ -37,19 +37,106 @@ export type ScanStatus =
   | 'detecting'
   /** A head is being followed: the scan may start, wherever that head is. */
   | 'ready'
-  /** The ring is filling and frames are being taken. */
+  /** The steps are walking themselves and frames are being taken. */
   | 'capturing'
-  /** Every wanted region is captured (or time is up); waiting for in-flight frames. */
+  /** Every step has closed; waiting for in-flight frames. */
   | 'completing'
   | 'complete';
 
 /**
- * The two halves of the scan, in the order a person does them.
+ * The four steps of the scan, in the order a person does them.
  *
- * `sweep` is the head turning left and right with the chin level: that
- * is where the front hairline and both temples are seen. `crown` is the
- * head lowered and then turned again, which is the only way a phone held
- * in front of somebody ever sees the top of their head.
+ * One continuous motion, with no shutter anywhere in it: look straight,
+ * turn to your right, turn to your left, look down. Each step names the
+ * direction the HEAD moves, which is what the person is told and what
+ * the arrow points at — never the side of the head the camera ends up
+ * seeing. Those two are opposites, and `REGION_OF_STEP` in the engine is
+ * the one place that turns one into the other.
+ */
+export type ScanStep = 'front' | 'right' | 'left' | 'down';
+
+/**
+ * What one step asks the head to do.
+ *
+ * `yawDeg` and `pitchDeg` are the pose the step is aiming at, in degrees
+ * with the tracker's signs (positive yaw is the head turned towards its
+ * own right; negative pitch is the chin lowered). Null means the step
+ * does not ask about that axis at all. For `front`, `yawDeg` is not a
+ * turn to make but the WIDTH OF THE WINDOW either side of square on:
+ * `stepReach` there measures how much of that window has been closed.
+ *
+ * `reach` is the share of that scale — 0–1, as `stepReach` reports it —
+ * that counts as having arrived. It is under 1 on the turns because the
+ * tracker smooths and its reading lags a moving head, so demanding the
+ * literal angle would ask people to overshoot it; it is a half on the
+ * front because somebody looking at their own phone is never exactly
+ * square on, and being asked to be would be the build-17 gate again.
+ */
+export type StepTarget = {
+  step: ScanStep;
+  yawDeg: number | null;
+  pitchDeg: number | null;
+  reach: number;
+};
+
+/**
+ * What the scan has done of one step.
+ *
+ * `reach` only ever rises inside a step, so the progress bar and the
+ * arrow cannot flinch backwards while somebody steadies themselves.
+ */
+export type StepProgress = {
+  /** 0–1, monotonic: the nearest the head has come to this step's pose. */
+  reach: number;
+  /** How many frames have landed for this step. */
+  frames: number;
+  /** When this step's first frame landed, or null. */
+  firstFrameAt: number | null;
+  /**
+   * When the head first came as far as this step asks, or null. The
+   * settle beat is measured from the later of this and the first frame,
+   * so a step that hands over short of the angle it aims at still keeps
+   * the picture taken as the turn finished rather than the one taken on
+   * the way there.
+   */
+  reachedAt: number | null;
+  /** True once the step has handed over to the next one. */
+  done: boolean;
+};
+
+/**
+ * The corrective line, when there is something to correct.
+ *
+ * What to DO with your head is the step's own instruction now — a title
+ * and one line, held at the top of the screen for as long as the step
+ * runs — so this union carries only the five things that can go wrong
+ * with a reading, and it is null the rest of the time. Nothing here
+ * teaches the choreography, and nothing here is a verdict.
+ *
+ * There is deliberately no cue for distance. Build 17 asked people to
+ * move back until their arm was at full stretch, and the scan never
+ * armed; the mesh and the brackets scale to the head instead, so how far
+ * away somebody holds the phone is their business.
+ */
+export type ScanCue =
+  /** No head can be read, or the one being read is leaving the picture. */
+  | 'faceCamera'
+  /** A frame is wanted here and the head is not still enough to take it. */
+  | 'holdStill'
+  /** The head is being whipped about; the frames would blur. */
+  | 'tooFast'
+  /** The head has gone out of the picture altogether. */
+  | 'lost'
+  /** The room is dark enough to be worth mentioning. */
+  | 'brighter';
+
+/**
+ * The two halves of the scan as the older screens still read them.
+ *
+ * The choreography is four steps now; this is what the pill and the ring
+ * were written against, derived from the step rather than stored beside
+ * it, so the two can never disagree. `sweep` covers the three upright
+ * steps and `crown` is the last one, with the head lowered.
  */
 export type ScanStage = 'sweep' | 'crown';
 
@@ -75,32 +162,6 @@ export type TargetProgress = {
   /** 0–1, monotonic: how near the head has come to this region's pose. */
   reach: number;
 };
-
-/**
- * The one line of guidance shown at a time.
- *
- * There is deliberately no cue for distance. Build 17 asked people to
- * move back until their arm was at full stretch, and the scan never
- * armed; the ring and the mesh scale to the head instead, so how far
- * away somebody holds the phone is their business.
- */
-export type GuidanceCue =
-  | 'centreFace'
-  | 'holdStill'
-  | 'perfect'
-  | 'moveSlowly'
-  | 'slowDown'
-  | 'backInFrame'
-  | 'brighter'
-  | 'keepGoing'
-  /** Stage one: turn the head left and right. */
-  | 'turnLeftRight'
-  /** Stage two, before the chin is down. */
-  | 'lowerHead'
-  /** Stage two, with the chin down: turn again. */
-  | 'turnAgain'
-  /** The last region is being taken. */
-  | 'almost';
 
 /**
  * One smoothed face reading from the tracker.
@@ -308,9 +369,9 @@ export type DiscardReason = 'outscored' | 'replaced' | 'late' | 'abandoned';
  */
 export type ScanEvent =
   | { type: 'state'; from: ScannerState; to: ScannerState }
-  /** The choreography moved on: stage one's regions are all in. */
-  | { type: 'stage'; from: ScanStage; to: ScanStage }
-  | { type: 'cue'; cue: GuidanceCue | null }
+  /** The choreography moved on: one step handed over to the next. */
+  | { type: 'step'; from: ScanStep; to: ScanStep; index: number }
+  | { type: 'cue'; cue: ScanCue | null }
   | { type: 'capture'; request: CaptureRequest }
   | { type: 'frame'; frame: ScanFrame; replaced: boolean }
   | { type: 'discard'; images: CapturedImage[]; reason: DiscardReason }
@@ -354,20 +415,26 @@ export type RegionScores = {
 export type ScanState = {
   scanner: ScannerState;
   status: ScanStatus;
-  /** Which half of the choreography is being asked for. */
+  /** Which of the four steps is being asked for. */
+  step: ScanStep;
+  /** Where that step sits in `SCAN_STEPS`: 0–3, for "Step N of 4". */
+  stepIndex: number;
+  /** When the current step began, so a step nobody can finish still hands over. */
+  stepStartedAt: number | null;
+  /** What the scan has done of each step. */
+  steps: Record<ScanStep, StepProgress>;
+  /** Derived from `step`, for the screens still written against two beats. */
   stage: ScanStage;
   /** What the scan has of each of the four wanted regions. */
   targets: Record<ScanTarget, TargetProgress>;
-  /** When stage one began, so a sweep nobody can finish still reaches the crown. */
-  stageStartedAt: number | null;
-  cue: GuidanceCue | null;
+  cue: ScanCue | null;
   permission: 'unknown' | 'granted' | 'denied';
   error: ScanErrorReason | null;
 
   /** 24 sector fills, 0–1, clockwise from the top of the ring. Monotonic. */
   sectors: number[];
   /**
-   * 0–1 across both stages, and 1 exactly when all four regions have
+   * 0–1 across the whole scan, and 1 exactly when all four regions have
    * been captured. Approaching a region moves the figure; only the
    * photograph finishes it, so a scan that ran out of time with a region
    * missing can never read as complete — in the ring, in the record, or
@@ -403,10 +470,14 @@ export type ScanState = {
   stalled: boolean;
   lastTooFastAt: number | null;
   slowDownUntil: number;
-  keepGoingUntil: number;
   hold: { bin: number; since: number } | null;
   milestones: ScanMilestone[];
   requestCount: number;
 };
 
-export type ScanStep = { state: ScanState; events: ScanEvent[] };
+/**
+ * What one turn of the reducer produces. Named for the reduction and not
+ * for the choreography: `ScanStep` is one of the four things a person is
+ * asked to do, which is a different idea entirely.
+ */
+export type ScanReduction = { state: ScanState; events: ScanEvent[] };

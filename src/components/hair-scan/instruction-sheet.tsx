@@ -1,16 +1,21 @@
 /**
- * The instruction sheet — three steps, one scan.
+ * The instruction sheet — three things to do before the scan runs.
  *
  * A pale sheet rising over the darkened ground before the camera opens.
- * It says three things and stops, and the three are the scan's own
- * shape: take the glasses off and find light; press Start and turn the
- * head slowly left and right; then lower the head and turn again. The
- * words are the scan copy's — this file never writes its own — and each
- * row carries a portrait thumbnail of the scanner in that state, drawn
- * from the scanner's own parts until frames captured on a device replace
- * them (see `instruction-thumbs.tsx`), with its number on a dark disc at
- * the tile's corner, so the eye reads the three as one sequence rather
- * than as a list of requirements.
+ * It says three things and stops, and the three are what a person has to
+ * do rather than what the machine does: take the glasses off and find
+ * light, press Start, then follow the arrows. The scan itself is one
+ * continuous movement of the head and the screen talks them through it
+ * step by step while it runs, so the sheet's job is only to get somebody
+ * to the Start button knowing they will be told what to do.
+ *
+ * The words are the scan copy's — this file never writes its own, and it
+ * shows exactly the steps the copy declares, so a re-worded or re-counted
+ * list needs no change here. Each row carries a portrait thumbnail of the
+ * scanner in that state, drawn from the scanner's own parts until frames
+ * captured on a device replace them (see `instruction-thumbs.tsx`), with
+ * its number on a dark disc at the tile's corner, so the eye reads the
+ * three as one sequence rather than as a list of requirements.
  *
  * Two slots wait for real device material: `thumbnails` for stills, and
  * `footage` for the short silent loops the owner will film. The stills
@@ -43,6 +48,8 @@ import { HAIR_SCAN_COPY } from '@/features/hair-scan/copy';
 import { MIN_TOUCH_TARGET, darkColors, iconSize, motion, radius, spacing, useTheme } from '@/theme';
 
 import {
+  INSTRUCTION_THUMB_HEIGHT,
+  INSTRUCTION_THUMB_WIDTH,
   InstructionThumb,
   type InstructionStep,
   type InstructionThumbProps,
@@ -83,7 +90,18 @@ export type InstructionSheetProps = {
 /** The numbered disc at each tile's corner. */
 const NUMBER_DISC = 28;
 
-const STEPS: readonly InstructionStep[] = [0, 1, 2];
+/**
+ * Whether a row has a tile drawn for it.
+ *
+ * The tiles are drawings of three particular states of the scanner, so
+ * there are three of them. The rows come from the copy, and if the copy
+ * ever declares a fourth the row still renders — with its number, its
+ * title and its line, and no picture — rather than the sheet breaking or
+ * quietly dropping it.
+ */
+function thumbFor(index: number): InstructionStep | null {
+  return index === 0 || index === 1 || index === 2 ? index : null;
+}
 
 export function InstructionSheet({
   visible,
@@ -152,20 +170,36 @@ export function InstructionSheet({
         </View>
 
         <View style={{ gap: spacing.xl }}>
-          {STEPS.map((step) => {
-            const { title, body } = copy.steps[step];
+          {copy.steps.map(({ title, body }, index) => {
+            const step = thumbFor(index);
             return (
               <View
-                key={step}
+                key={title}
                 accessible
-                accessibilityLabel={`${step + 1}. ${title}. ${body}`}
+                accessibilityLabel={`${index + 1}. ${title}. ${body}`}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
-                <View style={{ marginLeft: spacing.sm }}>
-                  <InstructionThumb
-                    step={step}
-                    image={thumbnails?.[step]}
-                    video={footage?.[step]}
-                  />
+                {/*
+                  The tile's box is reserved whether or not there is a
+                  tile to put in it. The numbered disc is positioned
+                  against this box, so a row the drawings do not cover —
+                  a fourth step, were the copy ever to declare one —
+                  keeps its number in the same place and its text in the
+                  same column, instead of collapsing the box to nothing
+                  and hanging the number off the edge of the sheet.
+                */}
+                <View
+                  style={{
+                    marginLeft: spacing.sm,
+                    width: INSTRUCTION_THUMB_WIDTH,
+                    height: INSTRUCTION_THUMB_HEIGHT,
+                  }}>
+                  {step === null ? null : (
+                    <InstructionThumb
+                      step={step}
+                      image={thumbnails?.[step]}
+                      video={footage?.[step]}
+                    />
+                  )}
                   <View
                     style={{
                       position: 'absolute',
@@ -181,7 +215,7 @@ export function InstructionSheet({
                       justifyContent: 'center',
                     }}>
                     <Text variant="subhead" style={{ color: colors.surface }}>
-                      {step + 1}
+                      {index + 1}
                     </Text>
                   </View>
                 </View>

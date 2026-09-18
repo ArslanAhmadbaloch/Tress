@@ -21,8 +21,10 @@ import {
   faceRegionRects,
   regionRectsFor,
 } from '@/features/hair-scan/region-crops';
+import { compareScans, type RegionChange, type ScanMeasurement } from '@/features/hair-scan/measure';
 import {
   ANGLE_OF_TARGET,
+  CHANGE_FIELDS_STORED,
   FRONT_PITCH_MAX,
   FRONT_YAW_MAX,
   TOP_PITCH,
@@ -30,16 +32,21 @@ import {
   buildHairScanResult,
   closestAngle,
   completionBand,
+  faceObservationFor,
   frameRank,
   gateObservation,
+  lastMeasurement,
   lightingBand,
   lockedSentences,
+  MEASUREMENT_FIELDS_STORED,
   observationHasDepth,
   observationsOf,
   reminderOfferInterval,
   resultSentences,
   scanBlock,
   scanPhotos,
+  storedChanges,
+  storedMeasurement,
   type HairScanFrame,
 } from '@/features/hair-scan/result';
 import {
@@ -54,6 +61,8 @@ import {
   type PhotoQuality,
   type PhotoSession,
 } from '@/types/domain';
+
+import type { FrameMesh } from '@/features/hair-scan/types';
 
 import { HAIR_CLAIMS } from './claims';
 import { assertHonest } from './honesty-words';
@@ -213,13 +222,26 @@ test('a whole scan lands as four photographs, each carrying a rectangle for all 
 test('closestAngle: a small turn is the front, a larger one a side, a nod down the top', () => {
   assert.equal(closestAngle({ yaw: 0, pitch: 0, roll: 0 }), 'front');
   assert.equal(closestAngle({ yaw: FRONT_YAW_MAX, pitch: 0, roll: 0 }), 'front');
-  assert.equal(closestAngle({ yaw: -34, pitch: 0, roll: 0 }), 'leftTemple');
-  assert.equal(closestAngle({ yaw: 34, pitch: 0, roll: 0 }), 'rightTemple');
-  // The capture lane can say which sign is left; the default follows the guided scan's fixture.
-  assert.equal(closestAngle({ yaw: 34, pitch: 0, roll: 0 }, 1), 'leftTemple');
+  /*
+    The handedness, and the whole reason this test exists. Positive yaw
+    is a head turned towards its OWN right, and a head turned to its own
+    right shows the camera its LEFT temple. The default used to be the
+    other way round, silently disagreeing with `REGION_OF_STEP` in
+    engine.ts, with `ANGLE_GUIDANCE` in domain.ts and with the side of
+    the still `region-crops.ts` cuts each temple from.
+  */
+  assert.equal(closestAngle({ yaw: 34, pitch: 0, roll: 0 }), 'leftTemple');
+  assert.equal(closestAngle({ yaw: -34, pitch: 0, roll: 0 }), 'rightTemple');
+  assert.equal(
+    closestAngle({ yaw: 34, pitch: 0, roll: 0 }, 1),
+    closestAngle({ yaw: 34, pitch: 0, roll: 0 }),
+    'the default is the positive sign, spelled out',
+  );
+  // A device that ever reports yaw inverted still has somewhere to say so.
+  assert.equal(closestAngle({ yaw: 34, pitch: 0, roll: 0 }, -1), 'rightTemple');
   assert.equal(closestAngle({ yaw: 3, pitch: TOP_PITCH, roll: 0 }), 'top');
   // A turned head nodded down is still the side it turned to.
-  assert.equal(closestAngle({ yaw: 40, pitch: TOP_PITCH, roll: 0 }), 'rightTemple');
+  assert.equal(closestAngle({ yaw: 40, pitch: TOP_PITCH, roll: 0 }), 'leftTemple');
 });
 
 test('closestAngle: a face-on frame tipped up at the ceiling stands for no angle', () => {
@@ -227,7 +249,7 @@ test('closestAngle: a face-on frame tipped up at the ceiling stands for no angle
   assert.equal(closestAngle({ yaw: 0, pitch: FRONT_PITCH_MAX + 1, roll: 0 }), null);
   assert.equal(closestAngle({ yaw: 5, pitch: 30, roll: 0 }), null, "the engine's 'up' region is not the front");
   // Turned, a tipped-up head is still the side it turned to; the rank prefers the level one.
-  assert.equal(closestAngle({ yaw: 34, pitch: 30, roll: 0 }), 'rightTemple');
+  assert.equal(closestAngle({ yaw: 34, pitch: 30, roll: 0 }), 'leftTemple');
 });
 
 test('closestAngle: an unreadable turn is no angle, never the front', () => {
@@ -727,4 +749,270 @@ test('reminders: offered once per install, and only with a journey interval to s
   assert.equal(reminderOfferInterval(false, 0), null);
   assert.equal(reminderOfferInterval(false, Number.NaN), null);
   assert.equal(reminderOfferInterval(true, undefined), null);
+});
+
+/* ------------------------- the face observation -------------------------- */
+
+/**
+ * A shutter-time mesh whose preview has the same shape as the still, so
+ * `meshInBox` has no aspect-fill crop to undo and a fraction of the
+ * preview is a fraction of the picture. That is deliberate: these tests
+ * are about what `faceObservationFor` puts in the observation, and the
+ * crop arithmetic is `meshInBox`'s own and is covered where it lives.
+ */
+const STILL = { width: 400, height: 600 };
+
+function meshFixture(contours: FrameMesh['contours'] = {}): FrameMesh {
+  return {
+    bounds: { x: 0.3, y: 0.3, width: 0.4, height: 0.3 },
+    contours,
+    viewAspect: STILL.width / STILL.height,
+  };
+}
+
+const POSE = { yaw: 12, pitch: -4, roll: 2 };
+
+test('observation: the face box arrives as fractions of the still, with the head’s own angles', () => {
+  const face = faceObservationFor(meshFixture(), STILL, POSE);
+  assert.ok(face, 'a mesh with size and a readable pose must place a face');
+  const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-6, `${a} vs ${b}`);
+  near(face.bounds.x, 0.3);
+  near(face.bounds.y, 0.3);
+  near(face.bounds.width, 0.4);
+  near(face.bounds.height, 0.3);
+  assert.deepEqual(face.image, STILL);
+  assert.equal(face.yaw, POSE.yaw);
+  assert.equal(face.pitch, POSE.pitch);
+  assert.equal(face.roll, POSE.roll);
+});
+
+test('observation: a landmark nobody reported is absent, never invented', () => {
+  const bare = faceObservationFor(meshFixture(), STILL, POSE);
+  assert.ok(bare);
+  /*
+    This is the whole honesty of the thing. `faceFrameOf` grades a frame
+    anchored on eye corners and a chin apart from one anchored on a box,
+    and `compareScans` widens its noise floor for the weaker grade. An
+    invented chin would promote every ARKit frame — which reports no
+    contours at all — into the stronger grade with nothing saying so.
+  */
+  assert.equal(bare.eyes ?? null, null, 'no eye contours: no eye corners');
+  assert.equal(bare.brow ?? null, null, 'no eyebrow contours: no brow point');
+  assert.equal(bare.chin ?? null, null, 'no face oval: no chin');
+});
+
+test('observation: the eye corners are image-left and image-right, whatever the contours are called', () => {
+  /*
+    The stills are mirrored and the two detectors do not agree about
+    which eye they call left, so the corners are taken as the extreme
+    points of both eye contours together. Here the contour NAMED left
+    sits on the image-RIGHT, which is exactly the case a name-based
+    reading would get backwards.
+  */
+  const face = faceObservationFor(
+    meshFixture({
+      LEFT_EYE: [
+        { x: 0.62, y: 0.42 },
+        { x: 0.72, y: 0.42 },
+      ],
+      RIGHT_EYE: [
+        { x: 0.28, y: 0.42 },
+        { x: 0.38, y: 0.42 },
+      ],
+      LEFT_EYEBROW_TOP: [{ x: 0.6, y: 0.36 }],
+      RIGHT_EYEBROW_TOP: [{ x: 0.4, y: 0.38 }],
+      FACE: [
+        { x: 0.5, y: 0.2 },
+        { x: 0.5, y: 0.74 },
+      ],
+    }),
+    STILL,
+    POSE,
+  );
+  assert.ok(face?.eyes);
+  assert.ok(face.eyes.left.x < face.eyes.right.x, 'left is image-left');
+  assert.ok(Math.abs(face.eyes.left.x - 0.28) < 1e-6);
+  assert.ok(Math.abs(face.eyes.right.x - 0.72) < 1e-6);
+  // The brow is the middle of the eyebrow tops; the chin is the lowest
+  // point of the face oval. Both are points the detector reported.
+  assert.ok(face.brow && Math.abs(face.brow.y - 0.37) < 1e-6);
+  assert.ok(face.chin && Math.abs(face.chin.y - 0.74) < 1e-6);
+});
+
+test('observation: nothing to place means null, never a square-on default', () => {
+  assert.equal(faceObservationFor(meshFixture(), { width: 0, height: 600 }, POSE), null);
+  assert.equal(
+    faceObservationFor({ ...meshFixture(), bounds: { x: 0, y: 0, width: 0, height: 0 } }, STILL, POSE),
+    null,
+  );
+  assert.equal(faceObservationFor({ ...meshFixture(), viewAspect: 0 }, STILL, POSE), null);
+  assert.equal(
+    faceObservationFor(meshFixture(), STILL, { yaw: Number.NaN, pitch: 0, roll: 0 }),
+    null,
+    'a pose the tracker never read cannot be stood in for with zero',
+  );
+});
+
+/* --------------------------- the stored measurement ----------------------- */
+
+const MEASUREMENT: ScanMeasurement = {
+  regions: {
+    hairline: {
+      region: 'hairline',
+      coverage: 0.62,
+      visibleScalp: 0.21,
+      frames: 3,
+      spread: 0.03,
+      confidence: 0.74,
+      anchoring: 'landmarks',
+    },
+  },
+  unread: ['crown', 'partLine'],
+  capturedAt: '2026-02-01T10:00:00.000Z',
+};
+
+const CHANGES: RegionChange[] = [
+  {
+    region: 'hairline',
+    delta: 0.04,
+    noiseFloor: 0.02,
+    verdict: 'small',
+    confidence: 0.6,
+    anchoring: 'same',
+  },
+];
+
+test('block: the measurement and the comparison ride on the scan block, unchanged', () => {
+  const block = scanBlock({
+    startedAt: 0,
+    endedAt: 20_000,
+    completion: 1,
+    frameCount: 4,
+    measurement: MEASUREMENT,
+    changes: CHANGES,
+  });
+  assert.deepEqual(block.measurement, MEASUREMENT, 'the engine’s answer is carried, not reshaped');
+  assert.deepEqual(block.changes, CHANGES);
+  assert.deepEqual(
+    block.measurement?.unread,
+    ['crown', 'partLine'],
+    'a region the engine refused stays refused in the record',
+  );
+  assert.equal(block.version, 1, 'the block’s own version, and the schema’s, do not move for an additive field');
+});
+
+test('block: nothing measured stores no key at all, and an empty comparison is not a comparison', () => {
+  const none = scanBlock({ startedAt: 0, endedAt: 1000, completion: 0.5, frameCount: 1 });
+  assert.ok(!('measurement' in none), 'absent, not undefined: nobody measured');
+  assert.ok(!('changes' in none));
+  const empty = scanBlock({
+    startedAt: 0,
+    endedAt: 1000,
+    completion: 0.5,
+    frameCount: 1,
+    measurement: MEASUREMENT,
+    changes: [],
+  });
+  assert.ok(!('changes' in empty), 'no rows is no comparison, not a comparison of nothing');
+  assert.ok(empty.measurement);
+});
+
+test('block: a scan block survives the store’s own migration with its measurement intact', () => {
+  /*
+    The additive rule has one test that matters and this is it: the
+    loader discards a blob whose SCHEMA_VERSION differs, so a bump would
+    erase every installed journey. A field added to the scan block has to
+    come back out the other side of `migrateStoredData` at the version it
+    went in at.
+  */
+  const block = scanBlock({
+    startedAt: 0,
+    endedAt: 9_000,
+    completion: 1,
+    frameCount: 4,
+    measurement: MEASUREMENT,
+    changes: CHANGES,
+  });
+  const session: PhotoSession = {
+    id: 'ses-1',
+    journeyId: 'j1',
+    capturedAt: '2026-02-01T10:00:00.000Z',
+    isBaseline: true,
+    photos: [],
+    scan: block,
+  };
+  const stored = JSON.parse(
+    JSON.stringify({ ...EMPTY_DATA, version: SCHEMA_VERSION, sessions: [session] }),
+  ) as unknown;
+  const back = migrateStoredData(stored);
+  assert.equal(back?.sessions[0].scan?.measurement?.regions.hairline?.coverage, 0.62);
+  assert.deepEqual(back?.sessions[0].scan?.changes, CHANGES);
+});
+
+test('lastMeasurement: the newest measured scan, stepping over the ones nobody measured', () => {
+  const withScan = (measurement?: ScanMeasurement): Pick<PhotoSession, 'scan'> => ({
+    scan: {
+      durationMs: 1000,
+      completion: 1,
+      frameCount: 4,
+      lighting: null,
+      ...(measurement ? { measurement } : {}),
+      version: 1,
+    },
+  });
+  assert.equal(lastMeasurement([]), null, 'a first scan has nothing to be set beside');
+  assert.equal(lastMeasurement([{ scan: undefined }, withScan()]), null, 'unmeasured scans are not a baseline');
+  const older: ScanMeasurement = { ...MEASUREMENT, capturedAt: '2025-11-01T00:00:00.000Z' };
+  // Newest first, as the store keeps them.
+  assert.equal(
+    lastMeasurement([withScan(), withScan(MEASUREMENT), withScan(older)])?.capturedAt,
+    MEASUREMENT.capturedAt,
+  );
+});
+
+test('stored shapes: the engine’s measurement and the record’s are one shape', () => {
+  // The body of each is the identity; the types are the test. If this
+  // file compiles, `ScanMeasurement` still fits the slot the store keeps
+  // for it — and `compareScans` can still read a stored one back.
+  const stored = storedMeasurement(MEASUREMENT);
+  assert.deepEqual(stored, MEASUREMENT);
+  assert.deepEqual(storedChanges(CHANGES), CHANGES);
+  assert.notEqual(storedChanges(CHANGES), CHANGES, 'the stored list is a copy, not the caller’s array');
+  const again = compareScans(MEASUREMENT, stored);
+  assert.ok(Array.isArray(again), 'a stored measurement goes back into the engine without a converter');
+});
+
+test('stored shapes: the guard against a field being ADDED is a type, not a comment', () => {
+  /*
+    The two functions above return a value rather than a fresh object
+    literal, and TypeScript only checks for excess properties on
+    literals — so a field ADDED to `ScanMeasurement` is assignable to the
+    stored type, compiles clean, and is then written into storage
+    undeclared by domain.ts. That is the silent schema drift
+    `SCHEMA_VERSION`'s note forbids, and an assignment cannot catch it.
+
+    These two constants can. Each is typed as `true` only while the
+    engine's type has no field the stored type lacks, and as the
+    offending field names otherwise — so the day one is added, this file
+    stops compiling. Reading them here is what makes them impossible to
+    delete as unused.
+  */
+  assert.equal(MEASUREMENT_FIELDS_STORED, true, 'the measurement has no field the record drops');
+  assert.equal(CHANGE_FIELDS_STORED, true, 'nor does one region’s comparison');
+
+  // And the fields themselves, named, so a RENAME is caught by a test
+  // as well as by the compiler.
+  assert.deepEqual(Object.keys(storedMeasurement(MEASUREMENT)).sort(), [
+    'capturedAt',
+    'regions',
+    'unread',
+  ]);
+  assert.deepEqual(Object.keys(storedChanges(CHANGES)[0]).sort(), [
+    'anchoring',
+    'confidence',
+    'delta',
+    'noiseFloor',
+    'region',
+    'verdict',
+  ]);
 });

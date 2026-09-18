@@ -29,6 +29,7 @@ import {
   serialiseTrace,
   traceMask,
   type Coverage,
+  type MaskImage,
 } from './hair-mask';
 
 let cached: TensorflowModel | null = null;
@@ -191,6 +192,23 @@ export type PhotoMeasurement = {
 };
 
 /**
+ * The same measurement with the mask itself still attached.
+ *
+ * The note above stands: a mask is about a megabyte of `Float32Array`
+ * and nothing may hold five of them. What changed is that there is now
+ * one caller that needs the pixels rather than the outline — the hair
+ * scan's measurement engine reads its six regions off the mask, and an
+ * outline traced at the 0.5 boundary has already thrown away the hedge
+ * between "probably hair" and "probably skin" that the engine counts as
+ * neither. So the mask is offered, on a call whose name says what it is
+ * handing over, and the caller is expected to drop it the moment it has
+ * read what it wanted. `measureCoverage` below is unchanged in every way
+ * that matters: same model run, same figures, and the mask still dies
+ * inside the call.
+ */
+export type MaskMeasurement = PhotoMeasurement & { mask: MaskImage };
+
+/**
  * Measures hair coverage in one photograph.
  *
  * Null when the photo cannot be read or the model cannot run — callers
@@ -198,6 +216,19 @@ export type PhotoMeasurement = {
  * not look" are very different statements to make to somebody.
  */
 export async function measureCoverage(uri: string): Promise<PhotoMeasurement | null> {
+  const measured = await measureMask(uri);
+  if (!measured) return null;
+  return { coverage: measured.coverage, maskTrace: measured.maskTrace };
+}
+
+/**
+ * The same measurement, with the mask handed back rather than dropped.
+ *
+ * One model run, one decode, one trace: `measureCoverage` is this call
+ * with the mask let go of, so the two can never disagree about what a
+ * photograph measured.
+ */
+export async function measureMask(uri: string): Promise<MaskMeasurement | null> {
   try {
     const model = await segmenter();
     const side = inputSide(model);
@@ -223,11 +254,13 @@ export async function measureCoverage(uri: string): Promise<PhotoMeasurement | n
     const classes = Math.max(1, Math.round(output.length / (side * side)));
 
     /*
-      The mask is reduced to its outline here, while it is in hand, and
-      dies at the end of this call exactly as it always did. Tracing it
-      later would mean carrying a megabyte per photograph up through the
-      capture screen, and tracing it in the report would mean re-running
-      the model on a file that storage may have recompressed since.
+      The mask is reduced to its outline here, while it is in hand.
+      Tracing it later would mean carrying a megabyte per photograph up
+      through the capture screen, and tracing it in the report would mean
+      re-running the model on a file that storage may have recompressed
+      since. The mask itself dies at the end of `measureCoverage` as it
+      always did; a caller that asked for `measureMask` has said out loud
+      that it wants the pixels and owns letting go of them.
 
       ── WHAT THIS COSTS, HONESTLY ──────────────────────────────────────
       `model.run` above is native and asynchronous; everything from here
@@ -252,7 +285,7 @@ export async function measureCoverage(uri: string): Promise<PhotoMeasurement | n
       photograph predates outlines" the same stored state.
     */
     const trace = traceMask(mask) ?? cellsOnlyTrace(mask);
-    return { coverage, maskTrace: serialiseTrace(trace) };
+    return { coverage, maskTrace: serialiseTrace(trace), mask };
   } catch {
     return null;
   }

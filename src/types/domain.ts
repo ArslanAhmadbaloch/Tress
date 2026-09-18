@@ -1113,13 +1113,99 @@ export type PhotoSession = {
 };
 
 /**
- * The scan-level record: facts about the turn, never about the head.
+ * What the scan measured, region by region, in the frame of the person's
+ * own face.
  *
- * Every field is something the scanner measured about its own run — how
- * long it took, how much of the ring closed, how many frames it kept and
- * what the live lighting reading averaged — and that is all this block is
- * for. Anything about hair belongs on the photographs, where the per-still
- * readings already live, or nowhere.
+ * The stored shape of the hair-scan measurement engine's `ScanMeasurement`
+ * (features/hair-scan/measure). It is written out here rather than
+ * imported from there for two reasons, and both matter: this file is the
+ * bottom of the app and must not import a feature, and a schema that is
+ * read back off a phone months later should be pinned in its own words
+ * rather than following an internal type wherever it goes.
+ * `storedMeasurement` in features/hair-scan/result.ts is the one place
+ * the two are checked against each other, and it is a compile error the
+ * day they drift.
+ *
+ * Nothing here is a verdict, a grade or a forecast. `coverage` is the
+ * share of a region's counted samples a segmentation mask called hair;
+ * `spread` is how much the frames of that one scan disagreed with each
+ * other about it, and `confidence` is how much that deserves to be
+ * believed. A region the scan could not read is in `unread` and carries
+ * no figure at all — absent, never zero.
+ */
+export type PhotoSessionMeasurement = {
+  regions: Partial<Record<ScanMeasureRegion, PhotoSessionRegionMeasurement>>;
+  /** Regions this scan could not read well enough to report at all. */
+  unread: ScanMeasureRegion[];
+  capturedAt: string;
+};
+
+/** The six places on a head the measurement engine reads. */
+export type ScanMeasureRegion =
+  | 'hairline'
+  | 'leftTemple'
+  | 'rightTemple'
+  | 'midScalp'
+  | 'crown'
+  | 'partLine';
+
+/** Which landmarks the face coordinates were measured from: what the figures are in units of. */
+export type ScanMeasureAnchoring = 'landmarks' | 'partial' | 'box';
+
+export type PhotoSessionRegionMeasurement = {
+  region: ScanMeasureRegion;
+  /** Share of the region's counted samples the mask called hair, 0–1. */
+  coverage: number;
+  /** Share it confidently called skin rather than hair, 0–1. */
+  visibleScalp: number;
+  /** How many frames contributed a reading. */
+  frames: number;
+  /** How much those frames disagreed: this scan's own error bar. */
+  spread: number;
+  confidence: number;
+  anchoring: ScanMeasureAnchoring;
+};
+
+/** How sure the engine is that a difference is a difference at all. */
+export type ScanChangeVerdict = 'unchanged' | 'small' | 'moderate' | 'large' | 'insufficient';
+
+/**
+ * One region set beside the same region in an earlier scan.
+ *
+ * `delta` is this scan's coverage minus that one's, and it means nothing
+ * at all when the verdict is `insufficient` — which is what the engine
+ * says whenever the difference is inside the two scans' combined error
+ * bars, or either side read the region in too few frames to have one.
+ */
+export type PhotoSessionRegionChange = {
+  region: ScanMeasureRegion;
+  delta: number;
+  /** The combined error bar the difference had to beat. */
+  noiseFloor: number;
+  verdict: ScanChangeVerdict;
+  confidence: number;
+  /** `mixed` when the two scans were anchored differently, and the floor was widened for it. */
+  anchoring: 'same' | 'mixed';
+};
+
+/**
+ * The scan-level record: facts about the run, and what the device
+ * measured off the frames it kept.
+ *
+ * It began as facts about the turn alone — how long it took, how much of
+ * the ring closed, how many frames it kept, what the live lighting
+ * reading averaged — and those are still the first five fields. The two
+ * additive fields below are the measurement engine's output, and they
+ * are here rather than on the photographs because they are not per-
+ * photograph facts: a region's figure is read across every frame that
+ * showed it, and its error bar IS the disagreement between them. Putting
+ * a scan-wide reading on one still would be filing it under a picture it
+ * is only partly about.
+ *
+ * What has not changed is the line: nothing stored here is a verdict
+ * about a person. Every figure is a share some loop on this device
+ * counted, or a confidence saying how much it deserves to be believed,
+ * and a region nobody could read carries no figure.
  */
 export type PhotoSessionScan = {
   /** Milliseconds from Start to the ring closing, or to the scan being stopped. */
@@ -1140,6 +1226,24 @@ export type PhotoSessionScan = {
   lighting: number | null;
   /** Share of the scan the detector held a face for, 0–1, when tracked. */
   tracked?: number;
+  /**
+   * What the measurement engine read off this scan's frames, when it
+   * could read anything at all.
+   *
+   * Additive and absent by the same rule as `maskTrace` and `regions` on
+   * a photograph: a session saved before the engine existed, or by a
+   * build with no segmenter in it, simply has no `measurement`, and
+   * `SCHEMA_VERSION` is not bumped for a field that reads as "nobody
+   * measured" when it is missing.
+   */
+  measurement?: PhotoSessionMeasurement;
+  /**
+   * This scan's regions set beside the most recent earlier scan that
+   * carried a measurement of its own, when there was one. Absent on a
+   * first scan, and absent when nothing before it was ever measured —
+   * there is no comparison to store, rather than a row of zeroes.
+   */
+  changes?: PhotoSessionRegionChange[];
   /** Shape version of this block, for a future reader. */
   version: 1;
 };

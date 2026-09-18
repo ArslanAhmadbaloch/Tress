@@ -50,12 +50,16 @@ import {
   type PhotoMaskTrace,
   type PhotoQuality,
   type PhotoSession,
+  type PhotoSessionMeasurement,
+  type PhotoSessionRegionChange,
   type PhotoSessionScan,
 } from '@/types/domain';
 
+import { meshInBox } from './engine';
+import type { FaceObservation, RegionChange, ScanMeasurement } from './measure';
 import { regionRectsFor } from './region-crops';
 import { HAIR_SCAN_REPORT_COPY as COPY, deg, pct } from './report-copy';
-import type { FrameMesh, ScanTarget } from './types';
+import type { FrameMesh, MeshFace, ScanTarget, Size } from './types';
 
 /* ------------------------------- the frames ------------------------------ */
 
@@ -140,19 +144,30 @@ export const FRONT_PITCH_MAX = 18;
 /**
  * The angle a pose sits closest to.
  *
- * `leftSign` is the yaw sign the capture lane established for the left
- * side of the ring. The front camera's preview is mirrored and the
- * detector's yaw sign is not the same on every platform, which is why the
- * existing guided scan accepts either direction for the first temple and
- * then holds the person to it; this takes the same decision as an
- * argument rather than guessing. The default follows the guided scan's
- * own fixture, where the left side came in at a negative yaw.
+ * `leftSign` is the yaw sign that puts the LEFT TEMPLE in front of the
+ * lens, and the default is the one the rest of this feature is built on:
+ * POSITIVE. Both detectors report positive yaw for a head turned towards
+ * its own right, and a head turned to its own right shows the camera its
+ * left temple — which is why `REGION_OF_STEP.right` is `leftTemple` in
+ * engine.ts, why the journal's own `ANGLE_GUIDANCE.leftTemple` says
+ * "turn your head to the right", and why `region-crops.ts` cuts the left
+ * temple from the left of the mirrored still.
+ *
+ * It used to default to −1, which was the opposite of all three. Nothing
+ * was mis-filed, because the scanner hands every frame an explicit
+ * `angle`, so the fallback was never reached from a scan — but a caller
+ * that hands `scanPhotos` poses and no angles got both temples swapped,
+ * and with the measurement engine filing `leftTemple` and `rightTemple`
+ * by image side, a swap would put one side of a head under the other
+ * side's name in the stored record. The argument stays, because a device
+ * that ever reports yaw inverted needs somewhere to say so; the default
+ * now agrees with the four places that already had a view.
  *
  * The back of the head is never reached from a pose — a detector that
  * can see a face is not looking at the crown — so `crown` only ever
  * arrives as an explicit `angle`.
  */
-export function closestAngle(pose: ScanPose, leftSign: 1 | -1 = -1): Angle | null {
+export function closestAngle(pose: ScanPose, leftSign: 1 | -1 = 1): Angle | null {
   if (!Number.isFinite(pose.yaw)) return null;
   const pitch = Number.isFinite(pose.pitch) ? pose.pitch : 0;
   if (Math.abs(pose.yaw) <= FRONT_YAW_MAX) {
@@ -204,7 +219,7 @@ export function frameRank(frame: HairScanFrame, angle: Angle): number {
  * pose — rather than filed under a guess. Every photograph is marked
  * `capture: 'scan'` so the record says how it was taken.
  */
-export function scanPhotos(frames: HairScanFrame[], leftSign: 1 | -1 = -1): ScanPhotoInput[] {
+export function scanPhotos(frames: HairScanFrame[], leftSign: 1 | -1 = 1): ScanPhotoInput[] {
   const best = new Map<Angle, { frame: HairScanFrame; rank: number }>();
 
   for (const frame of frames) {
@@ -241,6 +256,133 @@ export function scanPhotos(frames: HairScanFrame[], leftSign: 1 | -1 = -1): Scan
   return out;
 }
 
+/* --------------------------- the face observation ------------------------ */
+
+/**
+ * The face in a captured still, as the measurement engine wants it.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────
+ * The engine measures its six regions in a coordinate frame built from
+ * the person's own face, so that a region means the same place at any
+ * distance and any angle. To build one it needs the face located in
+ * FRACTIONS OF THE STILL. What the scanner has instead is the mesh the
+ * live camera held on the PREVIEW at the shutter — the preview being an
+ * aspect-fill crop of the whole camera frame, and the still being the
+ * whole frame. `meshInBox` with the still as the box is the one rule
+ * that undoes that crop; it is the same call `region-crops.ts` makes, so
+ * the measurement's regions and the report's crops are placed by the
+ * same geometry and can never quietly disagree about where a face was.
+ *
+ * ── What is offered and what is not ───────────────────────────────────
+ * The box and the pose always; the landmarks only when the detector
+ * reported them. That distinction does real work downstream:
+ * `faceFrameOf` grades a frame anchored on eye corners and a chin apart
+ * from one anchored on a box alone, and `compareScans` widens its noise
+ * floor when two scans were anchored differently. Today that means an
+ * ML Kit frame is landmark-anchored and an ARKit frame is box-anchored,
+ * because the ARKit path reports no contours at all. Inventing a chin
+ * where none was reported would turn the weaker of those into the
+ * stronger without anything on screen saying so.
+ *
+ * ── Left and right ────────────────────────────────────────────────────
+ * `eyes.left` and `eyes.right` are IMAGE-left and IMAGE-right, which is
+ * what the engine's frame is built from, so they are taken as the
+ * extreme points of the two eye contours rather than from the contours'
+ * names. The stills are mirrored and the two detectors name their eyes
+ * differently; the extremes do not care.
+ *
+ * Null when there is nothing to place: no mesh size, no still, or a
+ * pose the tracker never read. Null, not a square-on default — see the
+ * note in `faceFrameOf` about what a guessed frame costs.
+ */
+export function faceObservationFor(
+  mesh: FrameMesh,
+  still: Size,
+  pose: ScanPose,
+): FaceObservation | null {
+  if (!(still.width > 0) || !(still.height > 0)) return null;
+  if (!(mesh.bounds.width > 0) || !(mesh.bounds.height > 0)) return null;
+  if (!(mesh.viewAspect > 0) || !Number.isFinite(mesh.viewAspect)) return null;
+  if (!Number.isFinite(pose.yaw) || !Number.isFinite(pose.pitch)) return null;
+
+  const face = meshInBox(mesh, still, still);
+  if (!(face.width > 0) || !(face.height > 0)) return null;
+  if (!Number.isFinite(face.cx) || !Number.isFinite(face.cy)) return null;
+
+  /** Still points into fractions of the still. */
+  const frac = (p: { x: number; y: number }) => ({ x: p.x / still.width, y: p.y / still.height });
+
+  const eyes = eyeCorners(face.contours);
+  const brow = browPoint(face.contours);
+  const chin = chinPoint(face.contours);
+
+  return {
+    bounds: {
+      x: (face.cx - face.width / 2) / still.width,
+      y: (face.cy - face.height / 2) / still.height,
+      width: face.width / still.width,
+      height: face.height / still.height,
+    },
+    image: { width: still.width, height: still.height },
+    yaw: pose.yaw,
+    pitch: pose.pitch,
+    roll: Number.isFinite(pose.roll) ? pose.roll : 0,
+    ...(eyes ? { eyes: { left: frac(eyes.left), right: frac(eyes.right) } } : {}),
+    ...(brow ? { brow: frac(brow) } : {}),
+    ...(chin ? { chin: frac(chin) } : {}),
+  };
+}
+
+/** Every finite point of the named contours, in one list. */
+function contourPoints(
+  contours: MeshFace['contours'],
+  names: readonly (keyof MeshFace['contours'])[],
+): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (const name of names) {
+    for (const p of contours[name] ?? []) {
+      if (Number.isFinite(p.x) && Number.isFinite(p.y)) out.push(p);
+    }
+  }
+  return out;
+}
+
+/**
+ * The two outer eye corners: the leftmost and rightmost points of the
+ * eye contours together. Null when there are none, or when the two land
+ * on top of one another — a span of nothing is not a measurement.
+ */
+function eyeCorners(
+  contours: MeshFace['contours'],
+): { left: { x: number; y: number }; right: { x: number; y: number } } | null {
+  const points = contourPoints(contours, ['LEFT_EYE', 'RIGHT_EYE']);
+  if (points.length < 2) return null;
+  let left = points[0];
+  let right = points[0];
+  for (const p of points) {
+    if (p.x < left.x) left = p;
+    if (p.x > right.x) right = p;
+  }
+  return right.x - left.x > 0 ? { left, right } : null;
+}
+
+/** A point on the brow line: the middle of the eyebrow tops the detector reported. */
+function browPoint(contours: MeshFace['contours']): { x: number; y: number } | null {
+  const points = contourPoints(contours, ['LEFT_EYEBROW_TOP', 'RIGHT_EYEBROW_TOP']);
+  if (points.length === 0) return null;
+  const sum = points.reduce((a, p) => ({ x: a.x + p.x, y: a.y + p.y }), { x: 0, y: 0 });
+  return { x: sum.x / points.length, y: sum.y / points.length };
+}
+
+/** The chin: the lowest point of the face oval, when one was reported. */
+function chinPoint(contours: MeshFace['contours']): { x: number; y: number } | null {
+  const points = contourPoints(contours, ['FACE']);
+  if (points.length === 0) return null;
+  let lowest = points[0];
+  for (const p of points) if (p.y > lowest.y) lowest = p;
+  return lowest;
+}
+
 /* ------------------------------- the block ------------------------------- */
 
 export type ScanBlockInput = {
@@ -252,22 +394,114 @@ export type ScanBlockInput = {
   frameCount: number;
   lighting?: number | null;
   tracked?: number;
+  /** What the measurement engine read off this scan's frames, when it read anything. */
+  measurement?: ScanMeasurement | null;
+  /** This scan's regions beside the last measured one, when there was one to compare against. */
+  changes?: readonly RegionChange[] | null;
 };
+
+/**
+ * Every field the engine's type has that the stored type does not:
+ * `true` while the two agree, and the offending field names when they
+ * stop agreeing.
+ *
+ * This exists because the two functions below cannot catch it. They
+ * return a value rather than a fresh object literal, and TypeScript only
+ * checks for excess properties on literals — so an ADDED field is
+ * assignable, compiles clean, and is then `JSON.stringify`'d into
+ * storage undeclared by domain.ts. Verified against this project's own
+ * tsc, not assumed. The assignment is what the assignments below really
+ * catch: a field REMOVED, RENAMED or NARROWED.
+ *
+ * The tuple brackets stop the conditional distributing, so a union of
+ * two new field names fails as one thing rather than dissolving into a
+ * union that happens to contain `true`.
+ */
+type ExtraFields<Engine, Stored> = [Exclude<keyof Engine, keyof Stored>] extends [never]
+  ? true
+  : Exclude<keyof Engine, keyof Stored>;
+
+/**
+ * The half `storedMeasurement` cannot enforce, enforced. The day
+ * `ScanMeasurement` grows a field, this stops compiling and somebody has
+ * to decide what the stored schema does about it — which is exactly the
+ * decision `SCHEMA_VERSION`'s note in types/domain.ts says must never be
+ * made silently. Exported so the sweep in hair-scan-result.test.ts can
+ * say out loud that the guard is a guard and not a comment.
+ */
+export const MEASUREMENT_FIELDS_STORED: ExtraFields<ScanMeasurement, PhotoSessionMeasurement> =
+  true;
+
+/** The same for one region's comparison. */
+export const CHANGE_FIELDS_STORED: ExtraFields<RegionChange, PhotoSessionRegionChange> = true;
+
+/**
+ * The measurement, in the shape the record stores it.
+ *
+ * The body is the identity — the two shapes are the same shape, which is
+ * the whole point — and the types are what this function is for: the day
+ * `ScanMeasurement` renames a field, drops one, or turns a number into
+ * something that will not survive `JSON.stringify`, this assignment
+ * stops compiling. A field ADDED is the one direction an assignment
+ * cannot see, and `MEASUREMENT_FIELDS_STORED` above is there for it.
+ */
+export function storedMeasurement(measurement: ScanMeasurement): PhotoSessionMeasurement {
+  return measurement;
+}
+
+/** The comparison, in the shape the record stores it. Same rule, same pair of guards. */
+export function storedChanges(changes: readonly RegionChange[]): PhotoSessionRegionChange[] {
+  return [...changes];
+}
+
+/**
+ * The most recent measurement in the journal, for a new scan to be set
+ * beside — or null when nothing before it was ever measured.
+ *
+ * Newest first is how the store keeps sessions and how every list in the
+ * app reads them, so the first session carrying a measurement is the one
+ * to compare against. A session whose scan block has no measurement is
+ * skipped rather than counted as an empty one: a build with no segmenter
+ * in it saves scans that were never measured, and reaching past them to
+ * the last real reading is what makes a comparison possible at all.
+ */
+export function lastMeasurement(
+  sessions: readonly Pick<PhotoSession, 'scan'>[],
+): PhotoSessionMeasurement | null {
+  for (const session of sessions) {
+    const measurement = session.scan?.measurement;
+    if (measurement) return measurement;
+  }
+  return null;
+}
 
 function unit(n: number | null | undefined): number | null {
   if (typeof n !== 'number' || !Number.isFinite(n)) return null;
   return Math.max(0, Math.min(1, n));
 }
 
-/** The scan's record of its own run, clamped into shape for the store. */
+/**
+ * The scan's record of its own run, clamped into shape for the store.
+ *
+ * The two measurement fields are spread in rather than set, so a scan
+ * the engine could not read stores no key at all — an absent field, not
+ * an undefined one, which is the difference between "nobody measured"
+ * and a reader finding a hole where a measurement should be. An empty
+ * comparison is dropped for the same reason: a list of no changes and no
+ * comparison at all are the same thing, and storing `[]` would make the
+ * report draw an empty table where it should draw nothing.
+ */
 export function scanBlock(input: ScanBlockInput): PhotoSessionScan {
   const tracked = unit(input.tracked);
+  const changes = input.changes && input.changes.length > 0 ? storedChanges(input.changes) : null;
   return {
     durationMs: Math.max(0, Math.round(input.endedAt - input.startedAt)) || 0,
     completion: unit(input.completion) ?? 0,
     frameCount: Math.max(0, Math.round(input.frameCount)) || 0,
     lighting: unit(input.lighting),
     ...(tracked === null ? {} : { tracked }),
+    ...(input.measurement ? { measurement: storedMeasurement(input.measurement) } : {}),
+    ...(changes === null ? {} : { changes }),
     version: 1,
   };
 }

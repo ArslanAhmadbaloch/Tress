@@ -299,6 +299,86 @@ export const CAP_SECTOR_OF: readonly number[] = range(CAP_POINTS).map((v) => {
   return Math.min(RING_SECTORS - 1, Math.floor(angle / (360 / RING_SECTORS)));
 });
 
+/* ------------------------------- regions -------------------------------- */
+
+/**
+ * The four places the guided scan actually captures, as the cap can tell
+ * them apart: the front, each side, and the top.
+ *
+ * Spelled the way the measurement engine spells them
+ * (`ScanRegion` in measure/regions.ts) so nothing has to translate. The
+ * cap simply has no opinion about the two regions there whose boundary
+ * it cannot see — the mid scalp and the part line — because it is a
+ * picture of where the scan has looked, not a reading of the head.
+ *
+ * Named by the side of the PICTURE, as the ring's sectors are:
+ * `leftTemple` is the quarter of the cap on the LEFT of the screen — the
+ * meridians at negative `CAP_COL_THETA` — and `rightTemple` the quarter
+ * on the right. Nothing here claims which of the person's own temples
+ * that is; the camera and the mirroring decide.
+ *
+ * ── WHICH STEP LIGHTS WHICH IS THE OPPOSITE OF THE OBVIOUS PAIRING ────
+ * Turning right does NOT light the right of the screen, and a wiring
+ * lane that assumes it does will light the quarter of the head that is
+ * hidden at that moment.
+ *
+ * The geometry says so plainly. At the equator `facing` in `writeDome`
+ * comes out as cos(theta + psi), so a POSITIVE yaw — the `right` step,
+ * the nose swinging to the screen's right — is squarest to the camera at
+ * theta = −psi: the NEGATIVE-theta meridians, which are `leftTemple`,
+ * the screen's left. `REGION_OF_STEP` in engine.ts writes the same
+ * pairing down from the person's side and argues it at length
+ * (`right: 'leftTemple'`, `left: 'rightTemple'`), and `region-crops.ts`
+ * cuts that temple from the same side of the still.
+ *
+ * So `REGION_OF_STEP` is the ONE place the two vocabularies meet:
+ * anything wiring this cap's fill to the choreography reads the pairing
+ * from there and never infers it from these two names. The test
+ * 'regions: the temple a step lights is the one the camera can see'
+ * holds the geometry and that table together, so this comment cannot
+ * drift away from either.
+ */
+export type CapRegion = 'hairline' | 'leftTemple' | 'rightTemple' | 'crown';
+
+/** The canonical order. A per-region array is indexed by this. */
+export const CAP_REGIONS: readonly CapRegion[] = [
+  'hairline',
+  'leftTemple',
+  'rightTemple',
+  'crown',
+];
+
+const REGION_HAIRLINE = CAP_REGIONS.indexOf('hairline');
+const REGION_LEFT = CAP_REGIONS.indexOf('leftTemple');
+const REGION_RIGHT = CAP_REGIONS.indexOf('rightTemple');
+const REGION_CROWN = CAP_REGIONS.indexOf('crown');
+
+/** Where one region gives way to the next on the dome. */
+export const CAP_REGION = {
+  /** Above this latitude — 0 at the base, 1 at the pole — the cap is the crown. */
+  crownT: 0.5,
+  /** Further round the head than this, in radians from the front, a meridian is a temple. */
+  templeTheta: Math.PI / 3,
+} as const;
+
+/**
+ * The region each vertex belongs to, as an index into `CAP_REGIONS`.
+ *
+ * Every vertex has one — unlike the ring's sectors, which leave the
+ * front centre unassigned — because the choreography's four steps cover
+ * the whole of what the camera sees of a head.
+ */
+export const CAP_REGION_OF: readonly number[] = range(CAP_POINTS).map((v) => {
+  if (v === CAP_POLE) return REGION_CROWN;
+  const row = Math.floor(v / CAP.cols);
+  const col = v % CAP.cols;
+  if (CAP_ROW_T[row] >= CAP_REGION.crownT) return REGION_CROWN;
+  const theta = CAP_COL_THETA[col];
+  if (theta >= CAP_REGION.templeTheta) return REGION_RIGHT;
+  if (theta <= -CAP_REGION.templeTheta) return REGION_LEFT;
+  return REGION_HAIRLINE;
+});
+
 /**
  * The vertices worth lighting while the scan runs: the hairline band
  * just above the base, and the temple zones — on the meridians that
@@ -1023,6 +1103,12 @@ function fallbackDome(face: CapSource): Dome | null {
  * falls back. Deterministic and allocation-light; called once per
  * tracker frame on the JS thread, and once per still.
  *
+ * `fit` is how far the dome is stretched to reach the hair — see the
+ * hair fit below. Left out, the cap carries `CAP_FIT_DEFAULT`, the
+ * standing allowance, so a phone with no segmenter still draws a mesh
+ * that clears a head of hair rather than one glued to the skull. Pass
+ * `CAP_FIT_IDENTITY` for the bare geometry with no allowance at all.
+ *
  * ── Units ─────────────────────────────────────────────────────────────
  * The cap comes out in whatever units `cx`, `cy`, `width` and `height`
  * are in, and nothing else. A face box in view *fractions* therefore
@@ -1032,10 +1118,441 @@ function fallbackDome(face: CapSource): Dome | null {
  * gets here; the cloud's own points may stay in either, since they are
  * mapped onto the box.
  */
-export function buildHeadCap(face: CapSource): number[] {
+export function buildHeadCap(face: CapSource, fit?: CapFit): number[] {
   const out = new Array<number>(CAP_LENGTH).fill(0);
-  const cloud = readCloud(face);
-  const dome = (cloud === null ? null : meshDome(face, cloud)) ?? fallbackDome(face);
+  const dome = domeOf(face);
   if (dome === null) return out;
-  return writeDome(out, dome);
+  return writeDome(out, fitted(dome, fit === undefined ? CAP_FIT_DEFAULT : fit));
+}
+
+/** The dome one reading asks for, whichever road it comes down. */
+function domeOf(face: CapSource): Dome | null {
+  const cloud = readCloud(face);
+  return (cloud === null ? null : meshDome(face, cloud)) ?? fallbackDome(face);
+}
+
+/* ------------------------------ the hair fit ----------------------------- */
+
+/**
+ * Sitting the cap ON THE HAIR.
+ *
+ * Everything above lofts a dome off a FACE. A face tracker sees a face:
+ * it has nothing to say about the twelve centimetres of hair standing up
+ * off the skull, so the dome is drawn to a bare head and a person with
+ * any volume at all watches the mesh cut through their hair. That is the
+ * standing complaint, and this is the answer to it.
+ *
+ * The segmenter (src/features/assessment/hair-segmenter.ts) knows where
+ * the hair is. It is not cheap — six to sixteen milliseconds at 512²,
+ * which is a fifth of a frame — so it does not run per frame. It runs a
+ * few times a second, and what comes back is a *silhouette*: the outline
+ * of what was called hair, in the same units as the face box. This fits
+ * the dome to it.
+ *
+ * ── What a fit is ─────────────────────────────────────────────────────
+ * Three dimensionless numbers, and deliberately only three:
+ *
+ *   lift   how much taller the dome has to be to reach the top of the
+ *          hair, as a multiple of its own rise above the brow
+ *   widen  the same for its half-width across the sides
+ *   shift  how far the hair's middle stands off the cap's, as a share
+ *          of that half-width — a side parting sweeps the volume over
+ *
+ * Dimensionless on purpose: the person leaning in doubles every length
+ * in the picture and changes none of these, so a fit taken a second ago
+ * is still the right fit now. And only three, because three is what a
+ * silhouette honestly carries. Anything finer would be reading detail
+ * out of an outline that is not in it.
+ *
+ * ── What a fit is NOT ─────────────────────────────────────────────────
+ * Not a measurement, and it is never shown as one. It moves a wireframe
+ * so the wireframe lands on the hair. Nothing here is displayed, nothing
+ * is stored, nothing is compared across scans, and no number this
+ * produces reaches a word of copy. The measurement engine reads the
+ * pixels; this reads them only to know where to draw.
+ *
+ * ── Why it never jumps ────────────────────────────────────────────────
+ * A fit arrives a few times a second and the cap is drawn sixty times a
+ * second, so a fit applied the moment it lands would step the mesh
+ * several times a second — which is exactly the thing this is trying to
+ * cure. `blendCapFit` walks the drawn fit towards the newest one; the
+ * mesh calls it every reading, and the cap grows into the hair over
+ * about half a second instead of snapping to it.
+ *
+ * ── When there is no mask ─────────────────────────────────────────────
+ * Every one of these is optional, everywhere. No Nitro, the Android
+ * fallback, the simulator, a mask too broken to trace: `fitHairCap`
+ * returns null and the cap is drawn to `CAP_FIT_DEFAULT` — the standing
+ * allowance below, which is the bare dome plus a hand's breadth of hair.
+ * The scan works either way; that is the point of keeping the fit a
+ * separate three numbers rather than a different road through the
+ * geometry.
+ *
+ * ── When the readings stop ────────────────────────────────────────────
+ * A segmenter is a classifier looking at a moving head, and it will
+ * refuse — a frame where the trace shatters, a head tipped past the top
+ * gate, a face lost for an instant. A refusal must NOT be read as "there
+ * is no hair": collapsing the fit on one bad frame deflates the cap onto
+ * the skull and re-inflates it a third of a second later, which is the
+ * popping this whole section exists to prevent. `nextCapFit` is the
+ * rule: a refusal holds the fit the cap already has, and only a long run
+ * of them — `CAP_FIT.hold` in a row, a couple of seconds — lets go back
+ * to the standing allowance.
+ */
+
+/** The outline of what the segmenter called hair, in the face box's units. */
+export type HairSilhouette = {
+  /** x then y per point. Order does not matter; only the extent is read. */
+  points: readonly number[];
+};
+
+/** How far the dome is stretched to reach the hair. All three dimensionless. */
+export type CapFit = {
+  /** The dome's rise above the brow, as a multiple of the bare head's. */
+  lift: number;
+  /** Its half-width, likewise. */
+  widen: number;
+  /** The hair's middle off the cap's, as a share of that half-width. */
+  shift: number;
+};
+
+/** The bare head: the dome with no allowance for hair at all. */
+export const CAP_FIT_IDENTITY: CapFit = { lift: 1, widen: 1, shift: 0 };
+
+/**
+ * The standing hair allowance: what the cap is drawn to when no mask has
+ * said anything.
+ *
+ * Everything above this line lofts the dome off a FACE, and the tests
+ * hold it to a bare model skull to within a twelfth. That is correct
+ * geometry and it is exactly the complaint: a face tracker has nothing
+ * to say about the hair standing off the skull, so on a phone with no
+ * segmenter — which today is every phone, because nothing calls
+ * `fitHairCap` yet — the mesh is drawn to the scalp and anybody with
+ * volume watches it cut through their hair.
+ *
+ * So the dome the scan actually draws carries an allowance: a tenth
+ * taller above the brow and a sixteenth wider. It is the same three
+ * numbers a measured fit is, applied the same way, and a measured fit
+ * simply replaces it — `fitHairCap` refines from whatever the cap is
+ * already wearing, so the allowance is a starting guess and never an
+ * addition to a real reading.
+ *
+ * ── What it is and is not ─────────────────────────────────────────────
+ * It is a DRAWING default, of exactly the kind `CAP.rise` and
+ * `CAP.widen` already are: a statement about where to put a wireframe so
+ * it lands on a head of hair rather than on a skull. It is not a
+ * measurement, it is never shown, and nothing reads it back — a shaved
+ * head simply gets a mesh sitting a centimetre clear, which reads as a
+ * loose wireframe and not as a claim.
+ *
+ * One constant, on purpose. Set it to `CAP_FIT_IDENTITY` and every cap
+ * in the app is byte-identical to the bare dome again.
+ */
+export const CAP_FIT_DEFAULT: CapFit = { lift: 1.12, widen: 1.06, shift: 0 };
+
+/**
+ * The limits, and what the reading is made of.
+ *
+ * The clamps are not politeness. A silhouette can be nonsense — a dark
+ * doorway behind the head, a hood, a hand — and an unclamped fit would
+ * then throw the mesh off the person entirely. Inside these bounds the
+ * worst a bad mask can do is a cap a third too big, which reads as a
+ * loose mesh rather than as a broken one.
+ */
+export const CAP_FIT = {
+  /** A shaved head to a big afro, near enough. */
+  lift: { min: 0.85, max: 1.55 },
+  widen: { min: 0.85, max: 1.35 },
+  /** How far off centre the hair's middle may pull the cap. */
+  shift: 0.16,
+  /** Fewest silhouette points before the reading is ignored. */
+  minPoints: 12,
+  /**
+   * Refinement passes. The fit is the ratio of two projections, and a
+   * projection is not linear in the dome's axes once the head is
+   * turned or lowered — so the first pass overshoots or undershoots at
+   * a pose, and the second, measured against the already-fitted dome,
+   * takes the rest out. Two is enough; a third moves nothing.
+   */
+  passes: 2,
+  /** How near the middle the top is looked for, as a share of the cap's half-width. */
+  topGate: 0.7,
+  /** The band the widths are compared in, as shares of the cap's rise above the brow. */
+  band: { lo: 0.15, hi: 0.85 },
+  /**
+   * Consecutive refusals before the cap lets go of the fit it is wearing
+   * and eases back to the standing allowance. At the three or four
+   * readings a second a segmenter can manage, eight is about two
+   * seconds: long enough that a shattered frame, a head tipped past the
+   * gate or a face lost for an instant costs nothing at all, short
+   * enough that a hat coming off, or a segmenter that has genuinely
+   * stopped working, does not leave a stretched cap on the head.
+   */
+  hold: 8,
+  /**
+   * How much a new reading has to differ before the cap re-aims at it.
+   *
+   * A classifier's answer jitters a percent or two between frames on a
+   * head that has not moved, and each jitter is a shape the cap would
+   * ease towards — a slow breathing that is worse than being slightly
+   * wrong. Inside this, the newest reading is treated as the reading the
+   * cap already has.
+   */
+  deadband: 0.02,
+} as const;
+
+function clampFit(fit: CapFit): CapFit {
+  const lift = Number.isFinite(fit.lift) ? fit.lift : 1;
+  const widen = Number.isFinite(fit.widen) ? fit.widen : 1;
+  const shift = Number.isFinite(fit.shift) ? fit.shift : 0;
+  return {
+    lift: clamp(lift, CAP_FIT.lift.min, CAP_FIT.lift.max),
+    widen: clamp(widen, CAP_FIT.widen.min, CAP_FIT.widen.max),
+    shift: clamp(shift, -CAP_FIT.shift, CAP_FIT.shift),
+  };
+}
+
+/**
+ * The dome a fit asks for.
+ *
+ * The base is re-pinned to the brow inside `writeDome`, from this
+ * dome's own axes, so stretching cannot walk the cap off the eyebrows:
+ * whatever `lift` and `widen` do to the shape, the middle of the base
+ * row still lands where the brow was, plus the deliberate `shift`.
+ * The depth follows the width, because they are the same half-width
+ * seen from two sides of the head.
+ */
+function fitted(dome: Dome, fit: CapFit): Dome {
+  const { lift, widen, shift } = clampFit(fit);
+  const ax = dome.ax * widen;
+  return {
+    ...dome,
+    ax,
+    az: dome.az * widen,
+    ay: dome.ay * lift,
+    anchorX: dome.anchorX + shift * ax,
+  };
+}
+
+/** A silhouette's reach above the brow, and how wide it is in a band of that reach. */
+type Shape = { halfWidth: number; mid: number };
+
+/**
+ * How far a silhouette rises above the brow, measured only near the
+ * middle so that a curtain of hair down one side is not mistaken for
+ * the top of the head.
+ */
+function riseOf(local: readonly number[], anchorX: number, anchorY: number, gate: number): number {
+  let top = Number.POSITIVE_INFINITY;
+  for (let i = 0; i + 1 < local.length; i += 2) {
+    const x = local[i];
+    const y = local[i + 1];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (Math.abs(x - anchorX) > gate) continue;
+    if (y < top) top = y;
+  }
+  const rise = anchorY - top;
+  return Number.isFinite(rise) && rise > 0 ? rise : 0;
+}
+
+/**
+ * How wide a silhouette is between two heights, and where its middle
+ * sits. The heights are the CAP's, for both readings, so the two widths
+ * are the same slice of the picture and their ratio means something.
+ */
+function spanOf(local: readonly number[], lo: number, hi: number): Shape | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let count = 0;
+  for (let i = 0; i + 1 < local.length; i += 2) {
+    const x = local[i];
+    const y = local[i + 1];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (y < lo || y > hi) continue;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    count += 1;
+  }
+  if (count < 2) return null;
+  const halfWidth = (maxX - minX) / 2;
+  if (!(halfWidth > 0)) return null;
+  return { halfWidth, mid: (minX + maxX) / 2 };
+}
+
+/** A flat list of view points, in the head's own upright axes. */
+function localPairs(points: readonly number[], frame: Frame): number[] {
+  const out: number[] = [];
+  for (let i = 0; i + 1 < points.length; i += 2) {
+    const p = toLocal(frame, { x: points[i], y: points[i + 1] });
+    out.push(p.x, p.y);
+  }
+  return out;
+}
+
+/** The drawn cap's vertices, in the same axes. Reads x and y, drops the facing. */
+function capPairs(pts: readonly number[], frame: Frame): number[] {
+  const out: number[] = [];
+  for (let v = 0; v < CAP_POINTS; v += 1) {
+    const k = v * CAP_STRIDE;
+    const p = toLocal(frame, { x: pts[k], y: pts[k + 1] });
+    out.push(p.x, p.y);
+  }
+  return out;
+}
+
+/**
+ * The fit one hair silhouette asks for, or null when the reading gives
+ * no honest answer — too few points, nothing above the brow, a
+ * silhouette with no width. Null means "draw the bare dome", which is
+ * what every phone without a segmenter draws anyway.
+ *
+ * Pure, allocation-modest and deterministic — and NOT as cheap as it
+ * looks, which matters because the number decides how often it may be
+ * called. Counted honestly, one call is:
+ *
+ *   • `domeOf(face)`, once. On the tracked road that is THREE walks of
+ *     the whole point cloud — `readCloud`'s bounds pass, its upright
+ *     extent pass, and `bandAnchor` — so on a face anchor of about
+ *     1,200 points it is roughly 3,600 point transforms before any cap
+ *     exists. On the detector road it is one walk of the oval instead,
+ *     which is nothing.
+ *   • then `CAP_FIT.passes` — two — refinement passes, each of which is
+ *     one `writeDome` over the 191 vertices plus `capPairs`, `riseOf`
+ *     and `spanOf` over the same 191 (four walks), and `localPairs`,
+ *     `riseOf` and `spanOf` over the silhouette's own points (three
+ *     walks of however many the trace carries).
+ *
+ * So: three walks of the cloud, two dome writes, eight walks of 191, and
+ * six walks of the silhouette. Fine a few times a second on the JS
+ * thread; NEVER per frame, and worth measuring on a device before it is
+ * put anywhere near a 60 Hz tracker.
+ *
+ * `from` is the fit currently drawn: passing it starts the refinement
+ * where the cap already is, so a steady head converges to a steady
+ * answer instead of re-deriving it each time. Left out it starts from
+ * the standing allowance, which is what the cap is wearing anyway.
+ *
+ * `face` must be the face the MASK belongs to, not the newest tracked
+ * one. A silhouette comes back from an async pass over a frame that is
+ * by then several frames old, and through this choreography the head is
+ * turning for most of the scan: `widen` is read across the picture and
+ * is precisely the number a few degrees of stale yaw corrupts. Fitting a
+ * mask against a head that has since moved is a fit of the wrong shape.
+ */
+export function fitHairCap(face: CapSource, hair: HairSilhouette, from?: CapFit): CapFit | null {
+  if (hair.points.length < CAP_FIT.minPoints * 2) return null;
+  const dome = domeOf(face);
+  if (dome === null) return null;
+
+  let fit = from === undefined ? CAP_FIT_DEFAULT : clampFit(from);
+  let answered = false;
+  const scratch = new Array<number>(CAP_LENGTH).fill(0);
+
+  for (let pass = 0; pass < CAP_FIT.passes; pass += 1) {
+    const d = fitted(dome, fit);
+    writeDome(scratch, d);
+    const cap = capPairs(scratch, d.frame);
+    const strands = localPairs(hair.points, d.frame);
+    const gate = CAP_FIT.topGate * d.ax;
+
+    const capRise = riseOf(cap, d.anchorX, d.anchorY, gate);
+    const hairRise = riseOf(strands, d.anchorX, d.anchorY, gate);
+    if (!(capRise > 0) || !(hairRise > 0)) break;
+
+    // One band, the cap's, for both readings.
+    const lo = d.anchorY - CAP_FIT.band.hi * capRise;
+    const hi = d.anchorY - CAP_FIT.band.lo * capRise;
+    const capSpan = spanOf(cap, lo, hi);
+    const hairSpan = spanOf(strands, lo, hi);
+    if (capSpan === null || hairSpan === null) break;
+    if (!(d.ax > 0)) break;
+
+    fit = clampFit({
+      lift: fit.lift * (hairRise / capRise),
+      widen: fit.widen * (hairSpan.halfWidth / capSpan.halfWidth),
+      shift: fit.shift + (hairSpan.mid - capSpan.mid) / d.ax,
+    });
+    answered = true;
+  }
+
+  return answered ? fit : null;
+}
+
+/**
+ * The drawn fit, walked towards the newest one.
+ *
+ * `t` is how much of the way to go this reading — the mesh derives it
+ * from the time since the last one, so the cap grows into the hair over
+ * about half a second whatever rate the tracker runs at. At 0 nothing
+ * moves; at 1 the new fit is taken whole.
+ */
+export function blendCapFit(from: CapFit, to: CapFit, t: number): CapFit {
+  const k = clamp(Number.isFinite(t) ? t : 0, 0, 1);
+  const a = clampFit(from);
+  const b = clampFit(to);
+  return {
+    lift: a.lift + (b.lift - a.lift) * k,
+    widen: a.widen + (b.widen - a.widen) * k,
+    shift: a.shift + (b.shift - a.shift) * k,
+  };
+}
+
+/**
+ * What the cap is aiming at, and how many readings have said nothing.
+ *
+ * Kept by whoever feeds the segmenter's silhouettes in, and moved only
+ * by `nextCapFit`. `wanted` is the shape the drawn fit is easing
+ * towards; `misses` counts the run of readings that had no honest answer.
+ */
+export type CapFitState = {
+  wanted: CapFit;
+  misses: number;
+};
+
+/** Nothing has been read yet: the standing allowance, no refusals. */
+export const CAP_FIT_START: CapFitState = { wanted: CAP_FIT_DEFAULT, misses: 0 };
+
+/** Whether two fits are the same reading, within `CAP_FIT.deadband`. */
+function sameFit(a: CapFit, b: CapFit): boolean {
+  return (
+    Math.abs(a.lift - b.lift) < CAP_FIT.deadband &&
+    Math.abs(a.widen - b.widen) < CAP_FIT.deadband &&
+    Math.abs(a.shift - b.shift) < CAP_FIT.deadband
+  );
+}
+
+/**
+ * The fit the cap should be heading for after one reading.
+ *
+ * `fit` is what `fitHairCap` returned — a shape, or null for a reading
+ * that had no honest answer in it. The three rules, in order:
+ *
+ *   • A reading within the deadband of the one the cap is already aiming
+ *     at IS that reading. A classifier jitters a percent or two on a
+ *     head that has not moved, and a cap that eased towards every jitter
+ *     would breathe.
+ *   • A refusal HOLDS. One shattered mask, one head tipped past the top
+ *     gate, one frame with the face briefly lost: none of those is a
+ *     statement that the hair went away, and treating them as one
+ *     deflates the cap onto the skull and re-inflates it a third of a
+ *     second later. That pop is the single thing this file is for.
+ *   • Only a run of `CAP_FIT.hold` refusals lets go, back to the
+ *     standing allowance — a hat coming off, a segmenter that has
+ *     genuinely stopped, a different person in the frame.
+ *
+ * Pure, so the rule can be tested without a camera. Nothing it returns
+ * is displayed, stored or compared: it decides where a wireframe is
+ * drawn and nothing else.
+ */
+export function nextCapFit(state: CapFitState, fit: CapFit | null): CapFitState {
+  const held = clampFit(state.wanted);
+  const misses = Number.isFinite(state.misses) ? Math.max(0, Math.floor(state.misses)) : 0;
+  if (fit === null) {
+    const next = misses + 1;
+    if (next < CAP_FIT.hold) return { wanted: held, misses: next };
+    return { wanted: CAP_FIT_DEFAULT, misses: next };
+  }
+  const wanted = clampFit(fit);
+  return { wanted: sameFit(wanted, held) ? held : wanted, misses: 0 };
 }

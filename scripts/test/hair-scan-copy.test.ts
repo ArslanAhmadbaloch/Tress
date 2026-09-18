@@ -63,15 +63,15 @@ test('hair scan copy: nothing hurries anybody or speaks as a person', () => {
 test('hair scan copy: the owner’s wording is used verbatim', () => {
   const c = HAIR_SCAN_COPY;
   assert.equal(c.instructions.title, 'Scan Instructions');
-  // The owner's three steps after build 17, in his order: glasses and
-  // light, press Start and turn left and right, then lower the head and
-  // turn again. Nothing about where to stand.
+  // The sheet, in the owner's order: glasses and light, press Start and
+  // look straight then turn each way, then look down. Nothing about
+  // where to stand, and no chin up anywhere.
   assert.deepEqual(
     c.instructions.steps.map((s) => `${s.title} — ${s.body}`),
     [
       'Take glasses off — And find a well-lit spot',
-      'Press Start, then turn your head — Slowly to the left, then to the right',
-      'Lower your head and turn again — That is how the top of your head is seen',
+      'Press Start and look straight — Then turn your head right, then left',
+      'Last, look down — That is how the top of your head is seen',
     ],
   );
   assert.equal(c.instructions.cta, 'Continue');
@@ -80,19 +80,14 @@ test('hair scan copy: the owner’s wording is used verbatim', () => {
     c.permission.body,
     'Tress uses your camera to capture your hair and scalp during your scan.',
   );
+  // The five corrections, and only those: what to DO is the step's own
+  // instruction, held above for as long as the step runs.
   assert.deepEqual(c.cue, {
-    centreFace: 'Center your face',
-    perfect: 'Ready when you are',
+    faceCamera: 'Center your face',
     holdStill: 'Hold still',
-    moveSlowly: 'Move your head slowly',
-    slowDown: 'Slow down',
-    backInFrame: 'Let’s get you back in frame',
+    tooFast: 'Slow down',
+    lost: 'Let’s get you back in frame',
     brighter: 'Find a brighter spot',
-    keepGoing: 'Keep going',
-    turnLeftRight: 'Turn your head slowly left and right',
-    lowerHead: 'Lower your head',
-    turnAgain: 'Turn slowly, as you did before',
-    almost: 'Nearly done',
   });
   assert.deepEqual(c.processing.stages, [
     'Analysing your scan…',
@@ -126,16 +121,58 @@ test('hair scan copy: nothing anywhere asks anybody to move closer or further aw
   assert.ok(!('back' in HAIR_SCAN_COPY.cue), 'and so is the back cue');
 });
 
-test('hair scan copy: the cues walk through the owner’s choreography', () => {
-  const c = HAIR_SCAN_COPY.cue;
-  // Stage one, stage two, and the line before the end.
-  assert.equal(c.turnLeftRight, 'Turn your head slowly left and right');
-  assert.equal(c.lowerHead, 'Lower your head');
-  assert.equal(c.turnAgain, 'Turn slowly, as you did before');
-  assert.equal(c.almost, 'Nearly done');
-  // Each is an instruction to a person, and none of them is a verdict.
-  for (const line of [c.turnLeftRight, c.lowerHead, c.turnAgain]) {
-    assert.ok(!/your hair|scalp|density|thinning/i.test(line), line);
+test('hair scan copy: the four steps are the owner’s words, in his order', () => {
+  const step = HAIR_SCAN_COPY.step;
+  assert.deepEqual(
+    (['front', 'right', 'left', 'down'] as const).map((k) => `${step[k].title} / ${step[k].instruction}`),
+    [
+      'Look straight / Keep your face in the frame',
+      'Look right / Slowly turn your head to the right',
+      'Look left / Slowly turn your head to the left',
+      'Look down / Slowly tilt your head downward',
+    ],
+  );
+  // Each names the direction the HEAD moves, never a part of the head:
+  // which side of a head a turn shows is the engine's business.
+  for (const key of ['front', 'right', 'left', 'down'] as const) {
+    const both = `${step[key].title} ${step[key].instruction}`;
+    assert.ok(!/temple|crown|hairline|scalp|hair\b/i.test(both), both);
+    assert.ok(!/your hair|density|thinning/i.test(both), both);
+    assert.ok(step[key].title.length <= 16, `${step[key].title} has to be read at arm's length`);
+    assert.ok(sentences.includes(step[key].title) && sentences.includes(step[key].instruction));
+  }
+  /*
+    Nothing the scan ASKS anybody to do is a lifted chin or the back of
+    the head: neither is something a person can do holding their own
+    phone, and the choreography no longer contains either. (The ring
+    region table still has a `Chin up` label — that names a direction a
+    frame could be labelled with, not an instruction to anyone, which is
+    why the sweep here is over what the scan says and not over every
+    noun it knows.)
+  */
+  const instructions = [
+    ...Object.values(step).flatMap((v) => [v.title, v.instruction]),
+    ...Object.values(HAIR_SCAN_COPY.cue),
+    ...HAIR_SCAN_COPY.instructions.steps.flatMap((v) => [v.title, v.body]),
+    HAIR_SCAN_COPY.scanning.hint,
+    HAIR_SCAN_COPY.ready.hint,
+  ]
+    .join(' ')
+    .toLowerCase();
+  for (const phrase of ['chin up', 'lift your chin', 'back of your head', 'raise your head']) {
+    assert.ok(!instructions.includes(phrase), `the scan must not ask for "${phrase}"`);
+  }
+  // The bar across the top counts the steps and says nothing else.
+  assert.equal(HAIR_SCAN_COPY.stepCounter(2, 4), 'Step 2 of 4');
+  assert.ok(sentences.includes('Step 1 of 4'), 'the counter reaches the sweep');
+  // What the Scan Complete screen lists, in the order it was captured.
+  assert.deepEqual(HAIR_SCAN_COPY.checklist, {
+    hairline: 'Hairline',
+    temples: 'Temples',
+    crown: 'Crown',
+  });
+  for (const label of Object.values(HAIR_SCAN_COPY.checklist)) {
+    assert.ok(sentences.includes(label), `${label} reaches the sweep`);
   }
   // The four regions the report is built from are named plainly.
   assert.deepEqual(HAIR_SCAN_COPY.target, {
@@ -171,23 +208,22 @@ test('hair scan copy: images are said to stay on the device only where that is t
   assert.ok(!text.includes('cloud') && !text.includes('server'), 'nothing names a remote');
 });
 
-test('hair scan copy: the two beats of the capture do not read as the same beat', () => {
+test('hair scan copy: the pill says one thing, and the step’s own title says the rest', () => {
   /*
-    The engine has one status for the whole capture, so the pill said
-    "Scanning" through both halves of the choreography: while the head
-    turned left and right, and while it was lowered for the crown. A
-    readout that cannot change is a readout that says nothing about where
-    the person is in a scan they are being asked to follow.
+    The pill used to carry the choreography: "Turning" while the head
+    turned, "Head down" while it was lowered. The step's own title does
+    that now — "Look right", in type big enough to read with the head
+    turned away from the phone — and a pill repeating it underneath was
+    two voices saying one thing. Both lines went out with their last
+    reader, in the same pass that took the reader away; a line of copy
+    nothing renders is a line nobody is checking.
 
-    The words describe the head's position and nothing else. That is the
-    only thing this pill is allowed to know.
+    What is left is the one beat the title cannot say, because it is
+    about the machine and not the head.
   */
-  const { turning, headDown, almost } = HAIR_SCAN_COPY.phase;
-  assert.equal(turning, 'Turning');
-  assert.equal(headDown, 'Head down');
-  assert.notEqual(turning, headDown);
-  for (const line of [turning, headDown, almost]) {
-    assert.ok(sentences.includes(line), `${line} reaches the sweep`);
-    assert.ok(line.length <= 16, `${line} has to fit a pill`);
-  }
+  assert.deepEqual(HAIR_SCAN_COPY.phase, { almost: 'Almost there' });
+  assert.ok(sentences.includes(HAIR_SCAN_COPY.phase.almost), 'and it reaches the sweep');
+  assert.ok(HAIR_SCAN_COPY.phase.almost.length <= 16, 'it has to fit a pill');
+  const text = sentences.join(' ');
+  assert.ok(!text.includes('Head down'), 'the two-beat wording is gone, not hidden');
 });

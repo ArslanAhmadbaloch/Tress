@@ -409,7 +409,13 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
       `Light and focus were read on ${count(n, 'frame', 'frames')}. A difference you see between two of them could be the light rather than what was in front of it; the next scan in one steady light, away from a window, is the fix.`,
     oneBody:
       'One frame is lit however it is lit. The next scan in the same room at the same time of day gives the two the same light to be read in.',
-    turn: (percent: number) => `The ring closed to ${percent}%.`,
+    /*
+      The scan is four guided steps now, not a ring that closes, so this
+      says what was actually reached. Emitted only when more than one
+      region was held: telling somebody who turned once that the scan
+      "reached the parts it asks for" would be flattery, not a reading.
+    */
+    turn: (regions: number) => `The scan held frames from ${count(regions, 'region', 'regions')} of the head.`,
   },
 
   strengths: {
@@ -429,7 +435,7 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
     },
     coverage: {
       title: 'A full turn',
-      body: (percent: number) => `The ring closed to ${percent}%, so the turn reached the parts of the head the scan asks for.`,
+      body: (regions: number) => `The four steps held frames from ${count(regions, 'region', 'regions')}, which is what the scan asks for.`,
       sidesTitle: 'Both sides reached',
       sidesBody: 'Frames were kept from the front and from both sides, which is what a left–right comparison needs next time.',
     },

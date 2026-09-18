@@ -1,13 +1,40 @@
 /**
- * The hair scan: two beats in front of the camera — turn the head left
- * and right, then lower it and turn again.
+ * The hair scan: one continuous movement in four steps — look straight,
+ * turn right, turn left, look down.
+ *
+ * There is no shutter anywhere in it. The engine asks for frames as the
+ * head comes round, and what the person is given is a bar across the four
+ * steps, a title in type big enough to read with their head turned away
+ * from the phone, and one large arrow pointing the way. The brackets
+ * light when the step's pose is reached; the mesh fills a quarter of the
+ * head as each step's frame lands; and the beat at the end lists what was
+ * captured — hairline, temples, crown — before the processing screen
+ * takes over.
  *
  * This screen orchestrates and draws almost nothing itself. The engine
- * decides what is happening; the tracker smooths the detector; the chrome,
- * the ring, the mesh, the light meter, the processing pass and the report
+ * decides what is happening; the tracker smooths the detector; the step
+ * chrome, the mesh, the light meter, the processing pass and the report
  * are each their own component. What lives here is the wiring between
  * them and the two things only a screen can own: the camera's lifetime
  * and the files on disk.
+ *
+ * ── What the scan measures ────────────────────────────────────────────
+ * The processing pass does two things now. It still reads every kept
+ * frame for light, focus and hair area, which is what the report has
+ * always shown. It also hands each frame's segmentation mask, and the
+ * face the tracker held at that shutter, to the measurement engine — so
+ * the scan comes away with a share of hair in each of six named places
+ * on the head, measured in that person's own face coordinates, with the
+ * error bar the scan measured on itself beside every figure. Building
+ * the face observation from the shutter-time mesh is this screen's part
+ * of that; everything after it belongs to `measure/`.
+ *
+ * When the journal already holds a measured scan, the two are compared
+ * and the comparison is stored with this one. Where the engine refused a
+ * region — never in shot, read in too few frames, a difference inside
+ * the noise — the refusal is stored as a refusal. Nothing on this path
+ * fills a gap in, and nothing on this path turns a figure into a
+ * sentence.
  *
  * The engine's state lives in a ref and is reduced on every tracker frame;
  * React is told only when something it draws has changed. Every frame the
@@ -45,14 +72,19 @@ import Svg, { Path } from 'react-native-svg';
 
 import { sampleCameraActive } from '@/components/capture/sample-camera';
 import {
+  CaptureChecklist,
+  FrameBrackets,
   Guidance,
   InstructionSheet,
   PermissionView,
-  ScanRing,
+  START_BUTTON_SIZE,
+  STEP_BAR_HEIGHT,
   StartButton,
+  StepHeader,
   TopBar,
-  emptyCoverage,
-  scanRingBoxFor,
+  TurnArrow,
+  type CaptureChecklistItem,
+  type TurnDirection,
 } from '@/components/hair-scan';
 import { HairMesh, type HairMeshHandle, type MeshTone } from '@/components/hair-scan/hair-mesh';
 import { LightingPill, useLightingProbe } from '@/components/hair-scan/lighting-probe';
@@ -76,19 +108,27 @@ import { Text } from '@/components/ui/text';
 import { toPhotoReadings, type AnalysisResult } from '@/features/hair-scan/analysis';
 import { HAIR_SCAN_COPY } from '@/features/hair-scan/copy';
 import {
+  SCAN_STEPS,
   canStart,
   createScanState,
   orderedFrames,
   reduce,
   snapshotMesh,
   squareOn,
+  stepProgress,
+  stepReached,
 } from '@/features/hair-scan/engine';
 import { createScanHaptics } from '@/features/hair-scan/haptics';
+import { CAP_REGIONS } from '@/features/hair-scan/head-cap';
+import { compareScans } from '@/features/hair-scan/measure';
 import {
   ANGLE_OF_TARGET,
+  faceObservationFor,
+  lastMeasurement,
   scanBlock,
   scanPhotos,
   type HairScanFrame,
+  type ScanPose,
 } from '@/features/hair-scan/result';
 import { usePremium } from '@/features/subscription/provider';
 import {
@@ -104,15 +144,16 @@ import {
 import type {
   ScanAction,
   ScanEvent,
-  ScanStage,
+  ScanFrame,
   ScanState,
   ScanStatus,
+  ScanStep,
   ScannerState,
 } from '@/features/hair-scan/types';
 import { deletePhotoFiles, persistCapture } from '@/lib/photo-storage';
 import { useAppStore } from '@/store/app-store';
 import { hairContent } from '@/features/content/hair-content';
-import { darkColors, iconSize, motion, radius, spacing, useTheme } from '@/theme';
+import { MIN_TOUCH_TARGET, darkColors, iconSize, motion, radius, spacing, useTheme } from '@/theme';
 import { isScanSession, type PhotoSession } from '@/types/domain';
 
 /* ------------------------------- tuning ------------------------------- */
@@ -148,8 +189,69 @@ const COMPLETE_BEAT_REDUCED_MS = 600;
 const MASK_WIDTH_SHARE = 0.8;
 const MASK_MAX_WIDTH = 340;
 const MASK_ASPECT = 1.32;
-/** Where the oval's centre sits, as a share of the window's height. */
-const MASK_CENTRE_Y = 0.44;
+
+/*
+  ── The screen's vertical budget ──────────────────────────────────────
+
+  The chrome is measured first and the oval is given what is left, which
+  is the opposite of how this screen used to work. The oval was placed at
+  a fixed share of the window's height, the step header and the
+  corrective plate were stacked into whatever column happened to remain
+  under it, and neither of them shrinks: on a 375×667 phone the column
+  came to 139 points and held 192 points of chrome, so most of "Hold
+  still" — the only corrective voice the scan has — was off the bottom of
+  the screen, and the "Step 2 of 4" line the owner's own reference names
+  drew on exactly one phone in the range.
+
+  So the four rooms below are reserved, in order, and the oval takes the
+  rest. Each is the real floor of the thing that goes in it, named here
+  rather than guessed: a change to any of those components changes a
+  number in this block and nothing else.
+
+  What that gives, computed from these constants and each phone's own
+  safe-area insets — oval, then the room left under it, against the 76
+  the corrective plate needs and the 96 the Start disc needs:
+
+    375×667 (SE)      227×299   100
+    375×812 (mini)    288×380   100
+    390×844           312×412   102
+    393×852           311×411   100
+    430×932 (Max)     340×449   121
+
+  On every phone in the range the header's band is met in full, so the
+  "Step N of 4" line the reference names is always drawn; on the large
+  ones the oval is the size it always was and has only moved down.
+*/
+
+/** The band the top bar sits in: its own button height, plus the gap above it. */
+const TOP_BAR_ROOM = spacing.sm + MIN_TOUCH_TARGET;
+/**
+ * The step header's own floor, matching `step-header.tsx`: the counter
+ * line and its gap, the bar, the gap under it, and the title block's
+ * `minHeight`. Reserved whether or not a step is running, so the oval
+ * does not move when the scan starts.
+ */
+const HEADER_COUNTER_ROOM = 20 + spacing.sm;
+const HEADER_TITLE_ROOM = 96;
+const HEADER_ROOM = HEADER_COUNTER_ROOM + STEP_BAR_HEIGHT + spacing.lg + HEADER_TITLE_ROOM;
+/** The corrective plate's floor, matching `guidance.tsx`. */
+const GUIDANCE_ROOM = 76;
+/**
+ * The Start disc and the air under it. The button's box is larger than
+ * its disc — the rings around it are what swell on a press — and those
+ * are allowed to run past the bottom of this room, because they are
+ * decoration and the disc is the target.
+ */
+const START_ROOM = START_BUTTON_SIZE + spacing.xl;
+/** What the band under the oval has to hold in the phase that asks most of it. */
+const UNDER_OVAL_ROOM = Math.max(GUIDANCE_ROOM, START_ROOM);
+/**
+ * An oval smaller than this is not worth putting a head in, and the
+ * height rule gives way to it rather than the other way round. It only
+ * bites on a screen narrower than any this build runs on; above it, the
+ * chrome's rooms are always met in full.
+ */
+const MASK_MIN_WIDTH = 160;
 
 /* ---------------------------- view model ----------------------------- */
 
@@ -157,8 +259,36 @@ const MASK_CENTRE_Y = 0.44;
 type ViewModel = {
   scanner: ScannerState;
   status: ScanStatus;
-  /** Which beat of the choreography: the ring, the plate and the pill all read it. */
-  stage: ScanStage;
+  /** Which of the four things the person is being asked to do. */
+  step: ScanStep;
+  /** Where that step sits in `SCAN_STEPS`: what the header counts and the bar fills. */
+  stepIndex: number;
+  /** The head has come as far as this step asks: the brackets light and the arrow stops running. */
+  reached: boolean;
+  /**
+   * How hard the arrow is asking, in quarters. 0 is calm, 1 is insisting.
+   *
+   * It is what the step has LEFT to do, not what it has done. The arrow
+   * exists to get somebody to turn, so it has to be loudest at the moment
+   * the instruction lands and nobody has moved yet, and to ease off as
+   * the head comes round — the way a turnstile arrow does. Feeding it
+   * `stepProgress` directly put it the other way about: dimmest, slowest
+   * and driftless at zero degrees of turn, keenest in the last instant
+   * before `settled` stopped it altogether. `turn-arrow.tsx` has always
+   * said "visibly keener as a step stalls"; this is the figure that
+   * means it.
+   *
+   * `stepProgress` moves on every tracker frame and the arrow takes a
+   * plain number, so passing it through would re-render the screen thirty
+   * times a second to feed an animation whose own gearbox is coarser than
+   * that. Rounded to quarters it changes at most four times in a step,
+   * and the bar's own fill is bound to the shared value instead.
+   */
+  urgency: number;
+  /** What the Scan Complete list ticks. Both temples, because the row says "Temples". */
+  hairlineDone: boolean;
+  templesDone: boolean;
+  crownDone: boolean;
   cue: ScanState['cue'];
   error: ScanState['error'];
   frameCount: number;
@@ -171,11 +301,20 @@ type ViewModel = {
   startReady: boolean;
 };
 
+/** How many places the arrow's urgency is rounded to. See `ViewModel.urgency`. */
+const URGENCY_STEPS = 4;
+
 function viewOf(state: ScanState): ViewModel {
   return {
     scanner: state.scanner,
     status: state.status,
-    stage: state.stage,
+    step: state.step,
+    stepIndex: state.stepIndex,
+    reached: stepReached(state, state.step),
+    urgency: Math.round((1 - stepProgress(state)) * URGENCY_STEPS) / URGENCY_STEPS,
+    hairlineDone: state.targets.hairline.captured,
+    templesDone: state.targets.leftTemple.captured && state.targets.rightTemple.captured,
+    crownDone: state.targets.crown.captured,
     cue: state.cue,
     error: state.error,
     frameCount: state.frames.length,
@@ -206,6 +345,61 @@ function initialScanState(skipInstructions: boolean, granted: boolean): ScanStat
   const at = Date.now();
   state = reduce(state, { type: 'permission', granted: true, at }).state;
   return reduce(state, { type: 'continue', at }).state;
+}
+
+/**
+ * The square the turn arrow is laid out in.
+ *
+ * The arrow is three chevrons, 38 across and 64 tall with two points of
+ * gap — 118 by 64 lying down, and the same turned on its side for the
+ * step that asks the head down. One square big enough for either, plus
+ * the drift it swings through, is simpler than two boxes and cannot get
+ * the rotated case wrong.
+ */
+const ARROW_BOX = 132;
+
+/**
+ * Which way each step turns the head, or null for the step that asks for
+ * nothing but staying put.
+ *
+ * `right` and `left` here are the direction the HEAD moves, which is what
+ * the person is told and what the arrow points at — never the side of the
+ * head the camera ends up seeing. The engine's `REGION_OF_STEP` is the
+ * one place those two are turned into one another.
+ */
+const ARROW_OF_STEP: Record<ScanStep, TurnDirection | null> = {
+  front: null,
+  right: 'right',
+  left: 'left',
+  down: 'down',
+};
+
+/** How far off the oval's centre the arrow sits, as a share of the oval's width. */
+function arrowShift(direction: TurnDirection): number {
+  if (direction === 'right') return 0.34;
+  if (direction === 'left') return -0.34;
+  return 0;
+}
+
+/** The same, down the oval, as a share of its height. */
+function arrowDrop(direction: TurnDirection): number {
+  return direction === 'down' ? 0.34 : 0;
+}
+
+/**
+ * A kept frame's whole pose: the engine's yaw and pitch, with the roll
+ * the tracker held at that shutter.
+ *
+ * Null when any of the three was never read. A pose with a hole in it is
+ * not a pose: the journal would rather store no `pose` at all than one
+ * with a zero standing in for a number nobody measured, and the
+ * measurement engine refuses a frame whose head it cannot place — which
+ * is the whole reason `faceFrameOf` returns null on a non-finite angle.
+ */
+function poseOf(frame: Pick<ScanFrame, 'yaw' | 'pitch'>, roll: number | undefined): ScanPose | null {
+  if (roll === undefined || !Number.isFinite(roll)) return null;
+  if (!Number.isFinite(frame.yaw) || !Number.isFinite(frame.pitch)) return null;
+  return { yaw: frame.yaw, pitch: frame.pitch, roll };
 }
 
 /** Every file a set of captured images owns. */
@@ -394,6 +588,8 @@ function Scanner({
   const engine = useRef<ScanState>(initial);
   const [view, setView] = useState<ViewModel>(() => viewOf(initial));
   const [processingFrames, setProcessingFrames] = useState<ProcessingFrame[]>([]);
+  /** When the scan ended, ISO-8601: what the measurement is stamped with. */
+  const [capturedAt, setCapturedAt] = useState<string | null>(null);
   const [session, setSession] = useState<PhotoSession | null>(null);
   /**
    * A head is being followed and it is turned away from the camera. Not
@@ -402,7 +598,28 @@ function Scanner({
    * word and nothing else.
    */
   const [facingAway, setFacingAway] = useState(false);
-  const coverage = useSharedValue<number[]>(emptyCoverage());
+  /**
+   * The cap's four quarters — hairline, left temple, right temple, crown,
+   * each 0 or 1. The mesh reads it on the UI thread and lights that part
+   * of the head as its step's frame lands, so the head fills in a
+   * quarter at a time as the person turns.
+   *
+   * Built from `CAP_REGIONS` itself, which is the list the mesh INDEXES
+   * this array by. It used to be built from the engine's
+   * `REQUIRED_REGIONS` — a separately declared constant that happens to
+   * hold the same four names in the same order — so reordering either
+   * one would have lit the wrong quarter of somebody's head with every
+   * test still green and nothing on screen to say so. One list, read
+   * from the file that defines what the index means.
+   */
+  const regions = useSharedValue<number[]>(CAP_REGIONS.map(() => 0));
+  /**
+   * How far through the current step the head has come, 0–1. It feeds the
+   * header's bar and the arrow's run without React seeing a frame: the
+   * engine is reduced on every tracker tick and this is set there, beside
+   * the regions, rather than being carried through the view model.
+   */
+  const stepBar = useSharedValue(0);
   const [haptics] = useState(() => createScanHaptics());
   const tracker = useRef<TrackerState>(createTracker());
   const camera = useRef<ScannerCameraHandle>(null);
@@ -454,7 +671,10 @@ function Scanner({
         events = [...events, ...failed.events];
       }
       engine.current = state;
-      if (state.sectors !== before.sectors) coverage.set(state.sectors);
+      if (state.targets !== before.targets) {
+        regions.set(CAP_REGIONS.map((r) => (state.targets[r].captured ? 1 : 0)));
+      }
+      stepBar.set(stepProgress(state));
       // A frame that also completes a region or opens the ring is one
       // moment, not two: the milestone's buzz stands in for the frame's.
       const milestoneToo = events.some(
@@ -512,21 +732,39 @@ function Scanner({
           }
           case 'state':
             if (event.to === 'processing') {
+              setCapturedAt(new Date(current.completedAt ?? Date.now()).toISOString());
               setProcessingFrames(
-                orderedFrames(current).map((f) => ({
-                  id: f.id,
-                  uri: f.uri,
-                  region: f.region,
-                  // The region the engine ASKED this frame for, never the
-                  // ring bin the head happened to be in when the shutter
-                  // fired: those are two different things and only one of
-                  // them says what is in the picture.
-                  angle: ANGLE_OF_TARGET[f.target],
-                  label: HAIR_SCAN_COPY.target[f.target],
-                  ...(f.mesh
-                    ? { mesh: { still: { width: f.width, height: f.height }, face: f.mesh } }
-                    : {}),
-                })),
+                orderedFrames(current).map((f) => {
+                  const still = { width: f.width, height: f.height };
+                  const pose = poseOf(f, rollAt.current.get(f.id));
+                  /*
+                    The face as the measurement engine wants it: the box
+                    and the landmarks in fractions of THIS still, built
+                    from the mesh the live camera had at the shutter. It
+                    is what lets the six regions be placed in the
+                    person's own face coordinates rather than in the
+                    picture's. A frame the tracker had no face for gets
+                    none, and takes no part in the measurement.
+                  */
+                  const face =
+                    f.mesh && pose ? faceObservationFor(f.mesh, still, pose) : null;
+                  return {
+                    id: f.id,
+                    uri: f.uri,
+                    region: f.region,
+                    // The region the engine ASKED this frame for, never the
+                    // ring bin the head happened to be in when the shutter
+                    // fired: those are two different things and only one of
+                    // them says what is in the picture.
+                    angle: ANGLE_OF_TARGET[f.target],
+                    label: HAIR_SCAN_COPY.target[f.target],
+                    captureQuality: f.quality,
+                    ...(face ? { face } : {}),
+                    ...(f.mesh
+                      ? { mesh: { still, face: f.mesh } }
+                      : {}),
+                  };
+                }),
               );
             }
             return;
@@ -544,7 +782,7 @@ function Scanner({
         }
       }
     },
-    [canTrack, coverage, haptics, sampleStill],
+    [canTrack, haptics, regions, sampleStill, stepBar],
   );
 
   useEffect(() => {
@@ -569,18 +807,46 @@ function Scanner({
 
   /* ----------------------------- geometry ----------------------------- */
 
+  /**
+   * Where the chrome above the oval ends: the top bar's band, the step
+   * header's whole floor, and the gap under it. Reserved in every phase,
+   * so the oval sits in one place from the ready screen to the last step.
+   */
+  const bandTop = insets.top + TOP_BAR_ROOM;
+  const ovalTop = bandTop + HEADER_ROOM + spacing.lg;
+
   const mask = useMemo<Rect>(() => {
-    const w = Math.min(width * MASK_WIDTH_SHARE, MASK_MAX_WIDTH);
+    /*
+      The oval takes what the chrome leaves, and is centred in it. On a
+      large phone the width rule still decides and the oval is the size
+      it always was, only lower; on a small one the height rule takes
+      over and the oval narrows rather than pushing the corrective plate
+      off the bottom of the screen.
+    */
+    const bottom = height - insets.bottom - spacing.xl - UNDER_OVAL_ROOM;
+    const span = Math.max(MASK_MIN_WIDTH * MASK_ASPECT, bottom - ovalTop);
+    const w = Math.max(
+      MASK_MIN_WIDTH,
+      Math.min(width * MASK_WIDTH_SHARE, MASK_MAX_WIDTH, span / MASK_ASPECT),
+    );
     const h = w * MASK_ASPECT;
     return {
       x: (width - w) / 2,
-      y: height * MASK_CENTRE_Y - h / 2,
+      y: ovalTop + Math.max(0, (span - h) / 2),
       width: w,
       height: h,
     };
-  }, [width, height]);
-  const ring = useMemo(() => scanRingBoxFor(mask), [mask]);
+  }, [width, height, insets.bottom, ovalTop]);
   const scrim = useMemo(() => ovalCutout(width, height, mask), [width, height, mask]);
+  /**
+   * The band under the oval: one thing in it per phase — the Start
+   * button before the scan, the corrective plate during it.
+   *
+   * It is measured rather than assumed only so the two can be centred
+   * and anchored honestly; nothing is dropped when it is short, because
+   * the oval above it was sized to leave `UNDER_OVAL_ROOM` here.
+   */
+  const bandUnder = mask.y + mask.height + spacing.lg;
 
   /* ----------------------------- tracking ----------------------------- */
 
@@ -823,11 +1089,13 @@ function Scanner({
     over the top could only disagree with the first.
   */
   const cueLine = complete ? null : view.cue ? HAIR_SCAN_COPY.cue[view.cue] : null;
-  const spoken = !cameraLive
-    ? null
-    : complete
-      ? HAIR_SCAN_COPY.complete.title
-      : (cueLine ?? (scanning ? HAIR_SCAN_COPY.scanning.hint : null));
+  /*
+    What is said aloud, and only what is not said elsewhere. The step's
+    title and instruction are the header's to announce — it speaks them
+    itself as each step arrives — so this is the corrective line and the
+    completion plate, and nothing while a step is simply running.
+  */
+  const spoken = !cameraLive ? null : complete ? HAIR_SCAN_COPY.complete.title : cueLine;
 
   // A live region is Android's; VoiceOver hears nothing from it. So on
   // iOS the line is spoken outright each time it changes — and only
@@ -889,16 +1157,14 @@ function Scanner({
       const measured = new Map(result.frames.map((m) => [m.id, m]));
       const frames: HairScanFrame[] = orderedFrames(state).map((f) => {
         const m = measured.get(f.id);
-        const roll = rollAt.current.get(f.id);
+        const pose = poseOf(f, rollAt.current.get(f.id));
         return {
           uri: f.uri,
           width: f.width,
           height: f.height,
           capturedAt: new Date(f.capturedAt).toISOString(),
           angle: ANGLE_OF_TARGET[f.target],
-          ...(roll !== undefined && Number.isFinite(roll)
-            ? { pose: { yaw: f.yaw, pitch: f.pitch, roll } }
-            : {}),
+          ...(pose ? { pose } : {}),
           // The shutter-time mesh gives the report its region crops; without
           // it every crop is the centred fallback.
           ...(f.mesh ? { mesh: f.mesh } : {}),
@@ -907,6 +1173,28 @@ function Scanner({
       });
       const picked = scanPhotos(frames);
       const t = tally.current;
+      /*
+        The regional measurement, and — when there is an earlier one to
+        set it beside — the comparison.
+
+        Both are the engine's answers, carried through untouched. Where
+        it refused a region (never in shot, too few frames, confidence
+        below its bar) the refusal travels with them: an unread region
+        carries no figure, and a change it could not distinguish from the
+        phone having been held differently comes back as `insufficient`
+        with a delta of zero that means nothing. Nothing here fills
+        either in, and nothing here turns one into a sentence — that is
+        the report's job, in a later phase, and it will have to say what
+        it does not know.
+
+        `data.sessions` is newest-first, so the first session carrying a
+        measurement is the most recent one; a build with no segmenter in
+        it saves scans with no measurement at all, and those are stepped
+        over rather than compared against.
+      */
+      const measurement = result.measurement;
+      const previous = lastMeasurement(data.sessions);
+      const changes = measurement && previous ? compareScans(measurement, previous) : null;
       const key = Date.now().toString(36);
       const stored: string[] = [];
       // The scan was closed while the copies were being made: they have no home.
@@ -940,6 +1228,8 @@ function Scanner({
             frameCount: state.frames.length,
             lighting: t.lightN > 0 ? t.lightSum / t.lightN : null,
             tracked: t.ticks > 0 ? t.faced / t.ticks : undefined,
+            measurement,
+            changes,
           }),
         );
         if (!saved) throw new Error('save');
@@ -958,7 +1248,7 @@ function Scanner({
         });
       });
     },
-    [addSession, step],
+    [addSession, data.sessions, step],
   );
 
   const onProcessingError = useCallback(() => {
@@ -991,6 +1281,7 @@ function Scanner({
         <StatusBar style="light" />
         <Processing
           frames={processingFrames}
+          {...(capturedAt === null ? {} : { capturedAt })}
           onComplete={onProcessed}
           onAbsorb={() => haptics.play('absorb')}
           onError={onProcessingError}
@@ -1064,15 +1355,28 @@ function Scanner({
       : 'neutral';
   /*
     The pill's readout. The engine has one status for the whole capture
-    because capturing is one thing to a reducer; to a person it is two,
-    and the stage is which. `scanPhaseFor` makes that one phase, and the
-    phase carries the tone and the glyph — a turn arrow while the head
-    goes left and right, a chevron down while it is lowered — so the two
-    beats are told apart even though the copy has one word for both.
+    and the pill now says exactly that. Which step the head is on is the
+    step header's news — in words, in large type — and a pill repeating
+    it in one word underneath was two voices saying the same thing. So
+    one status in, one readout out, and the phase carries the tone and
+    the glyph with it.
 
     The completion plate below says it once; the pill goes quiet for the beat.
   */
-  const phase = scanPhaseFor(view.status, scanning ? view.stage : null);
+  /*
+    The arrow this step wants, and only while the steps are walking: the
+    ready screen has a Start button to look at and the completion beat
+    has a list.
+  */
+  const arrow = scanning ? ARROW_OF_STEP[view.step] : null;
+  const stepCopy = HAIR_SCAN_COPY.step[view.step];
+  /** What the Scan Complete list says, and which rows have their tick. */
+  const captured: CaptureChecklistItem[] = [
+    { id: 'hairline', label: HAIR_SCAN_COPY.checklist.hairline, captured: view.hairlineDone },
+    { id: 'temples', label: HAIR_SCAN_COPY.checklist.temples, captured: view.templesDone },
+    { id: 'crown', label: HAIR_SCAN_COPY.checklist.crown, captured: view.crownDone },
+  ];
+  const phase = scanPhaseFor(view.status);
   const status =
     cameraLive && !complete
       ? {
@@ -1084,8 +1388,8 @@ function Scanner({
           label:
             view.status === 'detecting' && facingAway
               ? HAIR_SCAN_COPY.facingAway
-              : phase === 'turning' || phase === 'headDown' || phase === 'almost'
-                ? HAIR_SCAN_COPY.phase[phase]
+              : phase === 'almost'
+                ? HAIR_SCAN_COPY.phase.almost
                 : HAIR_SCAN_COPY.status[view.status],
         }
       : null;
@@ -1109,85 +1413,134 @@ function Scanner({
           <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
             <Path d={scrim} fill={darkColors.photoScrim} fillRule="evenodd" />
           </Svg>
-          <HairMesh ref={mesh} scanning={scanning} tone={meshTone} coverage={coverage} />
-          <ScanRing
-            width={ring.width}
-            height={ring.height}
-            coverage={coverage}
-            active={scanning || complete}
-            complete={complete}
-            /*
-              The beat, so the dial swells as the second one opens and
-              latches what the first one lit. Omitted before Start: a ring
-              at rest is on no beat.
-            */
-            stage={scanning || complete ? view.stage : undefined}
+          <HairMesh ref={mesh} scanning={scanning} tone={meshTone} regions={regions} />
+          {/*
+            The four corner brackets, on the oval rather than round the
+            whole screen: what they frame is the head, and they light
+            when this step's pose is reached. The dial that used to sit
+            here went out with the two-beat choreography — a ring filling
+            by sector said nothing a person could act on, and the arrow
+            and the bar now say the two things they can.
+          */}
+          <View
+            pointerEvents="none"
             style={{
               position: 'absolute',
-              left: mask.x + mask.width / 2 - ring.width / 2,
-              top: mask.y + mask.height / 2 - ring.height / 2,
-            }}
-          />
+              left: mask.x,
+              top: mask.y,
+              width: mask.width,
+              height: mask.height,
+            }}>
+            {/* The brackets fill their box; the box is the oval's. */}
+            <FrameBrackets tone={scanning && view.reached ? 'reached' : 'neutral'} />
+          </View>
+          {arrow ? (
+            /*
+              The arrow, over the video and offset the way it points, so
+              it is in the corner of the eye of somebody whose head is
+              already turning. It stops running the moment the step's
+              pose is reached: an arrow still insisting after the person
+              has done the thing is the app not watching.
+            */
+            <TurnArrow
+              direction={arrow}
+              urgency={view.urgency}
+              settled={view.reached}
+              style={{
+                position: 'absolute',
+                left: mask.x + mask.width / 2 - ARROW_BOX / 2 + arrowShift(arrow) * mask.width,
+                top: mask.y + mask.height / 2 - ARROW_BOX / 2 + arrowDrop(arrow) * mask.height,
+                width: ARROW_BOX,
+                height: ARROW_BOX,
+              }}
+            />
+          ) : null}
           <TopBar
             status={status}
             onClose={onClose}
             helpLabel={HAIR_SCAN_COPY.ready.help}
             closeLabel={HAIR_SCAN_COPY.ready.close}
           />
-          <LightingPill
-            level={lightLevel}
-            status={lightStatus}
-            style={{
-              position: 'absolute',
-              top: insets.top + spacing.sm + spacing.huge + spacing.md,
-              alignSelf: 'center',
-            }}
-          />
+          {/*
+            The band under the top bar, which is where the owner's
+            reference puts the progress bar and where `step-header.tsx`
+            says the header belongs. It is reserved in every phase — see
+            the vertical budget above — so nothing below it moves when
+            the steps begin.
+
+            While the steps walk, the header has it: the bar across the
+            four, the counter line, the title in type big enough to read
+            with the head turned away from the phone, and one line under
+            it. Before they do, it holds the light meter — the one moment
+            somebody can still do something about a dark room — and the
+            corrective line, because before the scan the bottom of the
+            screen belongs to Start.
+          */}
           <View
             pointerEvents="box-none"
             style={{
               position: 'absolute',
               left: 0,
               right: 0,
-              top: mask.y + mask.height + spacing.xl,
-              bottom: insets.bottom + spacing.xl,
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              top: bandTop,
+              paddingHorizontal: spacing.xxl,
+              gap: spacing.md,
             }}>
-            {complete ? (
-              <Animated.View
-                entering={reduceMotion ? undefined : FadeIn.duration(motion.duration.slow)}
-                accessibilityRole="text"
-                accessibilityLiveRegion="polite"
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: spacing.sm,
-                  backgroundColor: darkColors.photoScrim,
-                  borderRadius: radius.lg,
-                  paddingVertical: spacing.md,
-                  paddingHorizontal: spacing.xl,
-                }}>
-                <Icon name="checkCircle" size={iconSize.md} color={darkColors.success} />
-                <Text variant="headline" style={{ color: darkColors.textOnPhoto }}>
-                  {HAIR_SCAN_COPY.complete.title}
-                </Text>
-              </Animated.View>
-            ) : (
-              // The beat is passed rather than read off the sentence, so
-              // the change from "turn left and right" to "lower your
-              // head" rises into place instead of cross-fading.
-              <Guidance
-                cue={cueLine}
-                scanning={scanning}
-                stage={scanning ? view.stage : undefined}
+            {complete ? null : scanning ? (
+              /*
+                The bar is driven from a shared value the reducer sets on
+                every tracker frame, so it moves without React drawing a
+                frame. The counter is always drawn: the band it sits in
+                was measured for it, rather than being whatever was left
+                over under the oval.
+              */
+              <StepHeader
+                index={view.stepIndex}
+                total={SCAN_STEPS.length}
+                title={stepCopy.title}
+                instruction={stepCopy.instruction}
+                progress={stepBar}
+                counter={HAIR_SCAN_COPY.stepCounter(view.stepIndex + 1, SCAN_STEPS.length)}
               />
+            ) : (
+              <>
+                <LightingPill
+                  level={lightLevel}
+                  status={lightStatus}
+                  style={{ alignSelf: 'center' }}
+                />
+                {/*
+                  The plate is corrective only now — the step's own
+                  instruction is the header's — so the line is chosen
+                  here and the plate is handed one finished sentence or
+                  nothing at all.
+                */}
+                <Guidance cue={cueLine} />
+              </>
             )}
-            {complete ? (
-              <Text variant="subhead" center style={{ color: darkColors.textSecondary }}>
-                {HAIR_SCAN_COPY.complete.frames(view.frameCount)}
-              </Text>
-            ) : scanning ? null : (
+          </View>
+          {/*
+            The band under the oval holds one thing per phase, which is
+            why nothing in it has to shrink: the Start button before the
+            scan, the corrective plate during it. The oval above was
+            sized to leave `UNDER_OVAL_ROOM` here, so neither can be
+            pushed off the bottom of a small screen.
+          */}
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: bandUnder,
+              bottom: insets.bottom + spacing.xl,
+              paddingHorizontal: spacing.xxl,
+              alignItems: 'center',
+              justifyContent: scanning ? 'flex-start' : 'center',
+            }}>
+            {complete ? null : scanning ? (
+              <Guidance cue={cueLine} />
+            ) : (
               <StartButton
                 label={HAIR_SCAN_COPY.ready.cta}
                 hint={HAIR_SCAN_COPY.ready.hint}
@@ -1197,6 +1550,60 @@ function Scanner({
               />
             )}
           </View>
+          {complete ? (
+            /*
+              The Scan Complete beat: one plate, at the foot of the
+              screen, over the head the mesh is still settling on.
+
+              It says three things and none of them is a finding. That
+              the scan is done; what it came away with, named and ticked
+              — the three places a person can check against their own
+              head; and how many angles were kept. A row without its tick
+              is a row whose frame never landed, and it stays unticked:
+              the list says what happened, never what was meant to.
+            */
+            <Animated.View
+              pointerEvents="none"
+              entering={reduceMotion ? undefined : FadeIn.duration(motion.duration.slow)}
+              style={{
+                position: 'absolute',
+                left: spacing.xxl,
+                right: spacing.xxl,
+                bottom: insets.bottom + spacing.xl,
+                alignItems: 'center',
+                gap: spacing.xl,
+                backgroundColor: darkColors.photoScrim,
+                borderRadius: radius.lg,
+                paddingVertical: spacing.xl,
+                paddingHorizontal: spacing.xl,
+              }}>
+              {/*
+                The live region is the headline alone, not the plate. The
+                rows below are each their own checkbox with their own
+                ticked state, and a polite region around all of them
+                would have TalkBack read the list twice — once as the
+                region's new content and once row by row.
+              */}
+              <View
+                accessibilityRole="text"
+                accessibilityLiveRegion="polite"
+                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Icon name="checkCircle" size={iconSize.md} color={darkColors.success} />
+                <Text variant="headline" style={{ color: darkColors.textOnPhoto }}>
+                  {HAIR_SCAN_COPY.complete.title}
+                </Text>
+              </View>
+              <View style={{ alignSelf: 'stretch', gap: spacing.md }}>
+                <Text variant="subhead" style={{ color: darkColors.textSecondary }}>
+                  {HAIR_SCAN_COPY.complete.captured}
+                </Text>
+                <CaptureChecklist items={captured} />
+              </View>
+              <Text variant="subhead" center style={{ color: darkColors.textSecondary }}>
+                {HAIR_SCAN_COPY.complete.frames(view.frameCount)}
+              </Text>
+            </Animated.View>
+          ) : null}
         </>
       ) : null}
       <InstructionSheet

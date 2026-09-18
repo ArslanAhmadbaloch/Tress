@@ -2,24 +2,29 @@
  * The hair scan engine, driven by hand.
  *
  * Every rule that matters on a phone is checked here without one: that
- * Start arms the moment a head is seen and nothing else, that the two
- * stages ask for the four regions the report is built from, that the
- * ring fills only when the head moves somewhere new and never on a
- * timer, that the shutter is throttled and gated, that the frames are
- * curated rather than hoarded, and that nobody is ever trapped in a scan
- * that will not end — or told to move closer.
+ * Start arms the moment a head is seen and nothing else, that the four
+ * steps walk themselves and reach the four regions the report is built
+ * from, that a step hands over on its target and on its timeout and on
+ * nothing else, that there is no shutter anywhere in the action union,
+ * that the frames are requested and curated rather than hoarded, and
+ * that nobody is ever trapped in a scan that will not end — or told to
+ * move closer.
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import {
   CAPTURE_INTERVAL_MS,
+  CAPTURE_REACH,
   CHIN_SECTORS,
   CROWN_FULL_DEG,
   CROWN_PITCH_DEG,
+  DOWN_PITCH_DEG,
   FORCED_FINISH_MS,
   FRONT_DEVIATION,
+  FRONT_YAW_DEG,
   GOOD_QUALITY,
   HAIRLINE_YAW_DEG,
   LEFT_SECTORS,
@@ -29,16 +34,28 @@ import {
   PITCH_DOWN_FULL_DEG,
   REACH_CEILING,
   REGION_NEEDED,
+  REGION_OF_STEP,
   REPLACE_MARGIN,
   REQUIRED_REGIONS,
   RIGHT_SECTORS,
   RING_SECTORS,
+  SCAN_STEPS,
   SETTLE_MS,
-  STAGE_ONE_MAX_MS,
   STALL_MS,
-  SWEEP_PITCH_LIMIT_DEG,
+  STEP_OF_REGION,
+  STEP_SETTLE_MS,
+  STEP_TARGETS,
+  STABLE_MIN,
+  STABLE_RELAXED,
+  STEP_ARRIVED_GRACE_MS,
+  STEP_TIMEOUT_MS,
+  SWEEP_PITCH_DOWN_LIMIT_DEG,
+  SWEEP_PITCH_UP_LIMIT_DEG,
   TEMPLE_FULL_DEG,
   TEMPLE_YAW_DEG,
+  TURN_HANDOVER_DEG,
+  TURN_REACH,
+  TURN_YAW_DEG,
   YAW_FULL_DEG,
   binOf,
   canStart,
@@ -60,12 +77,18 @@ import {
   requiredFrames,
   sectorOf,
   snapshotMesh,
-  sweepDone,
+  stageOfStep,
+  stepProgress,
+  stepReach,
+  stepRelaxed,
+  stepWantsFrame,
+  stepsDone,
   targetFit,
-  targetFor,
   targetReach,
+  targetWants,
 } from '@/features/hair-scan/engine';
 import { faceRegionRects } from '@/features/hair-scan/region-crops';
+import { ANGLE_OF_TARGET } from '@/features/hair-scan/result';
 import { createTracker, syntheticFace, trackFrame } from '@/features/hair-scan/tracking';
 import { ANGLE_GUIDANCE } from '@/types/domain';
 import type {
@@ -76,6 +99,7 @@ import type {
   ScanEvent,
   ScanFrame,
   ScanState,
+  ScanStep,
   ScanTarget,
 } from '@/features/hair-scan/types';
 
@@ -151,10 +175,22 @@ const of = <T extends ScanEvent['type']>(events: ScanEvent[], type: T) =>
 const turn = (from: number, to: number, ms: number, pitch = 0) => (t: number) =>
   face({ yaw: from + ((to - from) * Math.min(t, ms)) / ms, pitch, stability: 0.9 });
 
-/** Ticks on to just past the forced finish, and no further. */
-function toForcedFinish(d: Driver, pose: (t: number) => FaceReading): Driver {
-  const deadline = (d.state.startedAt ?? d.now) + FORCED_FINISH_MS;
-  return run(d, Math.max(66, deadline - d.now + 66), pose);
+/**
+ * Ticks until the scan stops capturing — the steps running out their own
+ * time — or until the backstop, whichever comes first.
+ */
+function toEnd(d: Driver, pose: (t: number) => FaceReading): Driver {
+  let cur = d;
+  const start = cur.now;
+  for (let t = 66; t <= FORCED_FINISH_MS + 2_000 && cur.state.status === 'capturing'; t += 66) {
+    cur = dispatch(cur, { type: 'tick', at: start + t, face: pose(t), lighting: 0.8 });
+  }
+  return cur;
+}
+
+/** A request already out for a region, for the rules that read `pending`. */
+function pendingFor(target: ScanTarget): CaptureRequest {
+  return { id: 'p1', bin: 0, region: 'front', target, sector: null, yaw: 0, pitch: 0, quality: 0.5, at: 0 };
 }
 
 /** A slow nod: from `from` to `to` degrees of pitch over `ms`, at the given yaw. */
@@ -206,9 +242,10 @@ test('scanner: start only from ready; process only from complete; processed only
   d = dispatch(d, { type: 'start', at: d.now });
   assert.equal(d.state.scanner, 'scanning');
   assert.equal(d.state.status, 'capturing');
-  assert.equal(d.state.stage, 'sweep', 'the scan opens on the turn');
+  assert.equal(d.state.step, 'front', 'the scan opens looking straight ahead');
+  assert.equal(d.state.stepIndex, 0);
   assert.equal(d.state.startedAt, d.now);
-  assert.equal(d.state.stageStartedAt, d.now, 'tracking begins on the press');
+  assert.equal(d.state.stepStartedAt, d.now, 'tracking begins on the press');
   d = dispatch(d, { type: 'process', at: d.now });
   assert.equal(d.state.scanner, 'scanning', 'process is ignored mid-scan');
   d = dispatch(d, { type: 'processed', at: d.now });
@@ -265,13 +302,13 @@ test('ready: Start is live the moment a head is seen, at any distance, angle or 
   assert.ok(canStart(d.state), 'a dark room does not hold Start down');
   assert.equal(d.state.cue, 'brighter', 'it is mentioned, not enforced');
   d = run(d, 33, () => face(), null);
-  assert.equal(d.state.cue, 'perfect');
+  assert.equal(d.state.cue, null, 'nothing to correct, so nothing is said');
   assert.ok(canStart(d.state));
 
   // No reading at all is the one thing that is not a head.
   d = run(d, 33, () => null);
   assert.equal(d.state.status, 'detecting');
-  assert.equal(d.state.cue, 'centreFace');
+  assert.equal(d.state.cue, 'faceCamera');
   assert.ok(!canStart(d.state));
 });
 
@@ -283,20 +320,21 @@ test('ready: no cue ever asks anybody to move closer or further away', () => {
     if (d.state.cue !== null) cues.add(d.state.cue);
   }
   assert.ok(!cues.has('closer') && !cues.has('back'), [...cues].join(', '));
-  assert.ok(cues.size > 0);
+  // Every size reads as a head that needs nothing said about it.
+  assert.equal(cues.size, 0, [...cues].join(', '));
 });
 
 test('ready: a head leaving the picture is asked back, and Start stays live', () => {
   let d = atReady();
   d = run(d, 33, () => face({ bounds: { x: 0.85, y: 0.2, width: 0.46, height: 0.6 } }));
-  assert.equal(d.state.cue, 'centreFace');
+  assert.equal(d.state.cue, 'faceCamera');
   assert.ok(canStart(d.state), 'it is a nudge, not a gate');
 });
 
 test('ready: an unreadable reading is not a head', () => {
   let d = atReady();
   d = run(d, 33, () => face({ yaw: Number.NaN }));
-  assert.equal(d.state.cue, 'centreFace');
+  assert.equal(d.state.cue, 'faceCamera');
   assert.equal(d.state.status, 'detecting');
   assert.ok(!canStart(d.state));
 });
@@ -308,7 +346,8 @@ test('ready: the face-locked buzz fires once, and not again after Start', () => 
   d = run(d, 300, () => face());
   const locks = () => of(d.events, 'milestone').filter((m) => m.milestone === 'faceLocked').length;
   assert.equal(locks(), 1);
-  assert.equal(of(d.events, 'cue').length, 1, 'the cue is announced once, not every frame');
+  assert.equal(of(d.events, 'cue').length, 0, 'a head that needs nothing said gets nothing said');
+  assert.equal(d.state.cue, null);
   assert.deepEqual(d.state.milestones, ['faceLocked']);
 
   d = dispatch(d, { type: 'start', at: d.now });
@@ -342,34 +381,55 @@ test('regions: the scan wants a hairline, two temples and a crown, and nothing e
   assert.deepEqual([...REQUIRED_REGIONS], ['hairline', 'leftTemple', 'rightTemple', 'crown']);
 });
 
-test('regions: a turn shows the temple on the OPPOSITE side to the way it went', () => {
+test('handedness: the step names the way the head moves; the region names what the camera sees', () => {
   /*
-    The test that was missing, and whose absence let three files disagree
-    in the tree the owner installed. Four statements have to line up, and
-    a turn of the head is the only thing that lines them up:
+    The pin for the one thing nobody could settle by reading. Five
+    statements have to line up, and a head turning is the only thing that
+    lines them up. They are not unanimous across the app — the last
+    paragraph names the file that disagrees — but they are unanimous on
+    the path a scan actually takes:
 
-      1. the sign convention  — positive yaw is the head turned towards
-         its own right (engine.ts, and the native module's contract);
-      2. the journal's own instruction, which has said the same thing
+      1. the sign convention — positive yaw is the head turned towards
+         its OWN right (engine.ts, and the native module's contract);
+      2. the step called `right` asks for exactly that turn, which is
+         what the person is told and what the arrow points at;
+      3. the side of the head that turn puts in front of the lens, which
+         is the OPPOSITE one: turn your head to your right and your right
+         cheek rotates away from the camera while your left comes round
+         to face it;
+      4. the journal's own instruction, which has said the same thing
          since long before this scan existed: to show your LEFT side you
          turn towards your right;
-      3. the label this engine files the photograph under;
-      4. the corner of the mirrored still that `region-crops.ts` cuts for
-         that label.
+      5. the corner of the mirrored still that `region-crops.ts` cuts for
+         that label — the left temple from the image's left, because a
+         mirrored front camera puts your own left on the viewer's left.
 
     Read any one of them the other way round and the report crops the
     patch of air in front of somebody's face and captions it as a temple.
+
+    THE DISSENTER. `closestAngle` in `result.ts` defaults `leftSign` to
+    −1 — negative yaw reads as the left temple there, the opposite of
+    (1)–(5) — and `hair-scan-result.test.ts` pins that default. It is
+    dormant on this path, and the last block below is what keeps it
+    dormant: the screen files every scan frame by an explicit `angle`, so
+    the pose fallback is never consulted for a scan. That is pinned here
+    rather than glossed over, because the two want one owner and the next
+    person to flip a sign has to know both places exist.
   */
+  assert.equal(STEP_TARGETS.right.yawDeg, TURN_YAW_DEG, 'the right step wants positive yaw');
+  assert.equal(STEP_TARGETS.left.yawDeg, -TURN_YAW_DEG);
+  assert.equal(stepReach('right', face({ yaw: TURN_YAW_DEG })), 1);
+  assert.equal(stepReach('right', face({ yaw: -TURN_YAW_DEG })), 0);
+  assert.equal(stepReach('left', face({ yaw: -TURN_YAW_DEG })), 1);
+
+  assert.equal(REGION_OF_STEP.right, 'leftTemple', 'turning right shows the camera the left temple');
+  assert.equal(REGION_OF_STEP.left, 'rightTemple');
   assert.match(ANGLE_GUIDANCE.leftTemple.instruction, /turn your head to the right/i);
   assert.match(ANGLE_GUIDANCE.rightTemple.instruction, /turn your head to the left/i);
 
-  assert.equal(targetFor(face({ yaw: TEMPLE_FULL_DEG }), 'sweep'), 'leftTemple');
-  assert.equal(targetFor(face({ yaw: -TEMPLE_FULL_DEG }), 'sweep'), 'rightTemple');
+  // The two maps are each other's inverse, so nothing can drift.
+  for (const step of SCAN_STEPS) assert.equal(STEP_OF_REGION[REGION_OF_STEP[step]], step);
 
-  // And the crop for that label is on the side of the picture the turn
-  // actually put the head's side on. The still is mirrored, so a head
-  // turned towards its own right has its nose towards the image's right
-  // and its left temple towards the image's left.
   const box = { width: 1000, height: 1000 };
   const rects = faceRegionRects(
     { cx: 500, cy: 500, width: 300, height: 400, contours: {} },
@@ -378,31 +438,92 @@ test('regions: a turn shows the temple on the OPPOSITE side to the way it went',
   assert.ok(rects.leftTemple !== undefined && rects.rightTemple !== undefined);
   assert.ok(rects.leftTemple.x + rects.leftTemple.w <= 0.5, 'the left temple is cut from the image\'s left');
   assert.ok(rects.rightTemple.x >= 0.5, 'the right temple from the image\'s right');
+
+  /*
+    And the dormancy the note above leans on: every frame the scan hands
+    to `scanPhotos` carries its own `angle`, taken from the region the
+    step asked for, so `closestAngle`'s opposite default is never reached
+    from a scan. If this line ever goes, the two conventions meet.
+  */
+  const screen = readFileSync('src/app/hair-scan.tsx', 'utf8');
+  assert.match(screen, /angle: ANGLE_OF_TARGET\[f\.target\]/, 'the scan files its own frames by region');
+  assert.equal(ANGLE_OF_TARGET.leftTemple, 'leftTemple', 'by the region it named, unflipped');
+  assert.equal(ANGLE_OF_TARGET.rightTemple, 'rightTemple');
 });
 
-test('regions: which region a pose serves, in each stage', () => {
-  assert.equal(targetFor(face(), 'sweep'), 'hairline');
-  assert.equal(targetFor(face({ yaw: HAIRLINE_YAW_DEG }), 'sweep'), 'hairline');
-  assert.equal(targetFor(face({ yaw: TEMPLE_YAW_DEG }), 'sweep'), 'leftTemple');
-  assert.equal(targetFor(face({ yaw: -TEMPLE_YAW_DEG }), 'sweep'), 'rightTemple');
-  assert.equal(targetFor(face({ yaw: 15 }), 'sweep'), null, 'between the two: in transit');
-
-  // Stage two is the crown and nothing else.
-  assert.equal(targetFor(face({ pitch: -CROWN_PITCH_DEG }), 'crown'), 'crown');
-  assert.equal(targetFor(face({ pitch: -CROWN_PITCH_DEG + 1 }), 'crown'), null);
-  assert.equal(targetFor(face({ yaw: 30 }), 'crown'), null, 'a turn with the chin up is not the crown');
-  assert.equal(targetFor(face({ yaw: 30, pitch: -CROWN_FULL_DEG }), 'crown'), 'crown');
-  assert.equal(targetFor(face({ yaw: Number.NaN }), 'sweep'), null);
-
-  // Stage one photographs a head held the way people hold phones. A chin
-  // a little down is not a reason to take nothing; only a head bowed (or
-  // tipped back) far enough to lose the front of the head is.
-  for (const pitch of [-CROWN_PITCH_DEG, -CROWN_PITCH_DEG - 5, LEVEL_PITCH_DEG + 4]) {
-    assert.equal(targetFor(face({ pitch }), 'sweep'), 'hairline', `${pitch}° of pitch`);
-    assert.equal(targetFor(face({ yaw: -TEMPLE_FULL_DEG, pitch }), 'sweep'), 'rightTemple');
+test('steps: the four steps, in the owner’s order, each with its own region', () => {
+  assert.deepEqual([...SCAN_STEPS], ['front', 'right', 'left', 'down']);
+  assert.deepEqual(
+    SCAN_STEPS.map((s) => REGION_OF_STEP[s]),
+    ['hairline', 'leftTemple', 'rightTemple', 'crown'],
+  );
+  // No chin up anywhere: every step that asks about pitch asks for down.
+  for (const step of SCAN_STEPS) {
+    const pitch = STEP_TARGETS[step].pitchDeg;
+    assert.ok(pitch === null || pitch < 0, `${step} must never ask for a lifted chin`);
   }
-  assert.equal(targetFor(face({ pitch: -SWEEP_PITCH_LIMIT_DEG }), 'sweep'), null, 'bowed: a scalp, not a hairline');
-  assert.equal(targetFor(face({ pitch: SWEEP_PITCH_LIMIT_DEG }), 'sweep'), null, 'tipped back: nostrils');
+  // A comfortable head turn, not a shoulder turn: 28° is about as far as
+  // somebody looking at their own phone swivels before the screen leaves
+  // their eyes, and 35°+ is where people turn their torso instead.
+  assert.ok(TURN_YAW_DEG >= 25 && TURN_YAW_DEG <= 30, `${TURN_YAW_DEG}° is not a head turn`);
+  /*
+    And the step hands over WELL short of it. This is the number that
+    decides whether the timeout is the escape hatch or the design: at
+    nine tenths of the aim, somebody who turns a natural 20° and holds it
+    never reached either turn target, so both steps burned their whole
+    seven seconds and a six-second scan took twenty-two. Nineteen degrees
+    is inside an ordinary neck's range with room to spare; the quality
+    curve still pays for the fuller turn, so nothing is given up by it.
+  */
+  assert.equal(TURN_HANDOVER_DEG, 19);
+  assert.ok(Math.abs(TURN_YAW_DEG * TURN_REACH - TURN_HANDOVER_DEG) < 1e-9);
+  assert.ok(TURN_HANDOVER_DEG <= 20, 'a 20° turner must reach it, not time out');
+  assert.equal(stageOfStep('front'), 'sweep');
+  assert.equal(stageOfStep('down'), 'crown');
+});
+
+test('steps: how near a pose is to each step’s target, and when a frame is worth taking', () => {
+  // Front measures how much of its window has been closed, so a person
+  // looking at their own phone is square on without being exactly 0°.
+  assert.equal(stepReach('front', face()), 1);
+  assert.equal(stepReach('front', face({ yaw: FRONT_YAW_DEG })), 0);
+  assert.ok(stepReach('front', face({ yaw: HAIRLINE_YAW_DEG })) >= STEP_TARGETS.front.reach);
+  assert.equal(stepReach('down', face({ pitch: -DOWN_PITCH_DEG })), 1);
+  assert.equal(stepReach('down', face({ pitch: DOWN_PITCH_DEG })), 0, 'a lifted chin is not a nod');
+  assert.equal(stepReach('front', face({ yaw: Number.NaN })), 0);
+
+  /*
+    Frames start arriving while the turn is still finishing — but never
+    before the temple is in the picture. A frame is filed under the region
+    its step asked for, so a near-frontal frame raised by the `right` step
+    would be captioned in somebody's report as a temple.
+  */
+  assert.ok(stepWantsFrame('right', face({ yaw: TEMPLE_YAW_DEG + 1 })), 'as the temple comes round');
+  assert.ok(TEMPLE_YAW_DEG + 1 < TURN_YAW_DEG * TURN_REACH, 'which is before the step hands over');
+  assert.ok(!stepWantsFrame('right', face({ yaw: TEMPLE_YAW_DEG - 1 })), 'not while it is barely turned');
+  assert.ok(!stepWantsFrame('right', face({ yaw: -TURN_YAW_DEG })), 'and never for the other way');
+  assert.ok(!stepWantsFrame('down', face({ pitch: -CROWN_PITCH_DEG })), 'nor a crown not yet in view');
+
+  /*
+    The upright steps still want the front of the head in the picture —
+    and the two ways it can leave are not the same distance away.
+
+    Chin UP is the short side: a phone held overhead is nostrils, and
+    there is no hairline and no temple in that frame. Chin DOWN is the
+    long one, and it has to be: a phone at chest height reads thirty
+    degrees of chin-down on somebody doing exactly what the title asked,
+    and chin-down is the side where MORE of the hairline faces the lens.
+    A symmetric ±30° gate made that person's first three steps unable to
+    raise a single capture request.
+  */
+  assert.ok(stepWantsFrame('front', face({ pitch: -CROWN_PITCH_DEG })), 'a phone held low is fine');
+  assert.ok(stepWantsFrame('front', face({ pitch: -32 })), 'and a phone at chest height is too');
+  assert.ok(stepWantsFrame('right', face({ yaw: TURN_YAW_DEG, pitch: -32 })), 'the turns as well');
+  assert.ok(!stepWantsFrame('front', face({ pitch: -SWEEP_PITCH_DOWN_LIMIT_DEG })), 'bowed: a scalp');
+  assert.ok(!stepWantsFrame('front', face({ pitch: SWEEP_PITCH_UP_LIMIT_DEG })), 'tipped back: nostrils');
+  assert.ok(SWEEP_PITCH_DOWN_LIMIT_DEG > SWEEP_PITCH_UP_LIMIT_DEG, 'the sides are not the same');
+  assert.ok(stepWantsFrame('down', face({ pitch: -DOWN_PITCH_DEG })), 'which the last step is exempt from');
+  assert.ok(!stepWantsFrame('front', face({ yaw: Number.NaN })));
 });
 
 test('regions: a pose scores for the region it serves, and the fuller turn scores higher', () => {
@@ -421,7 +542,11 @@ test('regions: a pose scores for the region it serves, and the fuller turn score
   // and then, scoring perfectly, could not be replaced by the real thing.
   assert.equal(targetFit(face({ pitch: LEVEL_PITCH_DEG }), 'hairline'), 1, 'a phone held low is not a mistake');
   assert.ok(targetFit(face({ pitch: 25 }), 'hairline') < 0.5, 'chin well up: hardly a hairline');
-  assert.equal(targetFit(face({ pitch: SWEEP_PITCH_LIMIT_DEG }), 'hairline'), 0);
+  assert.equal(targetFit(face({ pitch: SWEEP_PITCH_UP_LIMIT_DEG }), 'hairline'), 0);
+  // The curve and the gate agree about the other side too, so a frame is
+  // never refused at an angle the score calls perfectly good.
+  assert.equal(targetFit(face({ pitch: -SWEEP_PITCH_DOWN_LIMIT_DEG }), 'hairline'), 0);
+  assert.ok(targetFit(face({ pitch: -32 }), 'hairline') > 0, 'a phone at chest height still scores');
   assert.ok(
     targetFit(face(), 'hairline') > targetFit(face({ pitch: 25 }), 'hairline') + REPLACE_MARGIN,
     'so the square-on frame replaces it by more than the margin',
@@ -445,14 +570,13 @@ test('regions: progress is the mean of the four, and sufficiency is all four cap
   const state = createScanState();
   assert.equal(journeyProgress(state.targets), 0);
   assert.ok(!isSufficient(state.targets));
-  assert.ok(!sweepDone(state.targets));
   const all = { ...state.targets };
   for (const region of REQUIRED_REGIONS) {
     all[region] = { captured: true, quality: 0.8, frameId: region, reach: 1 };
   }
   assert.equal(journeyProgress(all), 1);
   assert.ok(isSufficient(all));
-  assert.ok(sweepDone({ ...all, crown: { captured: false, quality: 0, frameId: null, reach: 0 } }));
+  assert.ok(!isSufficient({ ...all, crown: { captured: false, quality: 0, frameId: null, reach: 0 } }));
 });
 
 /*
@@ -484,43 +608,45 @@ test('regions: the journey figure cannot reach 1 without the four photographs', 
 
 /* --------------------------- the choreography ------------------------ */
 
-test('choreography: stage one takes the hairline and both temples, then stage two the crown', () => {
+test('choreography: one continuous motion walks all four steps and reaches all four regions', () => {
   let d = scanning();
-  assert.equal(d.state.cue, 'turnLeftRight');
+  assert.equal(d.state.step, 'front');
+  assert.equal(d.state.stepIndex, 0);
+  assert.equal(d.state.cue, null, 'the step’s own instruction carries the choreography');
 
-  // Square on: the hairline.
-  d = landAll(run(d, 100, () => face()));
-  assert.ok(held(d.state, 'hairline').captured);
-  assert.equal(d.state.stage, 'sweep');
+  // Straight ahead. The hairline lands and the step hands over by itself.
+  d = walk(d, 900, () => face({ stability: 0.95 }));
+  assert.ok(held(d.state, 'hairline').captured, 'the hairline');
+  assert.equal(d.state.step, 'right');
 
-  // A comfortable turn towards the person's own right — which shows the
-  // camera their LEFT side — and back.
-  d = landAll(run(d, 2000, turn(0, TEMPLE_FULL_DEG, 2000)));
+  // Round to their own right, which shows the camera their LEFT side.
+  d = walk(d, 2000, path(SQUARE, RIGHT, 1200));
   assert.ok(held(d.state, 'leftTemple').captured, 'the left temple');
-  d = landAll(run(d, 2000, turn(TEMPLE_FULL_DEG, 0, 2000)));
+  assert.equal(d.state.step, 'left');
 
-  // And the other way: stage one is done, and the cue changes on its own.
-  d = landAll(run(d, 2000, turn(0, -TEMPLE_FULL_DEG, 2000)));
+  // Straight on round to the other side, without stopping in between.
+  d = walk(d, 2600, path(RIGHT, LEFT, 1800));
   assert.ok(held(d.state, 'rightTemple').captured, 'the right temple');
-  assert.deepEqual(of(d.events, 'stage'), [{ type: 'stage', from: 'sweep', to: 'crown' }]);
-  assert.equal(d.state.stage, 'crown');
-  d = run(d, 66, () => face({ yaw: -TEMPLE_FULL_DEG, stability: 0.9 }));
-  assert.equal(d.state.cue, 'lowerHead');
+  assert.equal(d.state.step, 'down');
+  assert.equal(d.state.stage, 'crown', 'the older screens read the last step as the crown beat');
   assert.ok(!held(d.state, 'crown').captured, 'the crown is not taken with the chin up');
-  assert.equal(d.state.status, 'capturing', 'three of four is not a scan');
 
-  // The head goes down, and the cue asks for the turn again.
-  d = run(d, 1500, nod(0, -CROWN_FULL_DEG, 1500, -10));
-  assert.ok(d.state.cue === 'turnAgain' || d.state.cue === 'almost', `${d.state.cue}`);
-  d = landAll(d);
+  // And down.
+  d = walk(d, 2600, path(LEFT, DOWN, 1800));
   assert.ok(held(d.state, 'crown').captured);
-  // The first crown is the shallowest of the nod, so the scan stays open
-  // a moment for a better one — and closes when it lands.
-  d = landAll(run(d, CAPTURE_INTERVAL_MS + 99, () => face({ pitch: -CROWN_FULL_DEG, stability: 0.95 })));
-  assert.ok(held(d.state, 'crown').quality >= GOOD_QUALITY, `${held(d.state, 'crown').quality}`);
+  assert.ok(stepsDone(d.state));
   assert.equal(d.state.completion, 1);
   assert.deepEqual(of(d.events, 'scanComplete'), [{ type: 'scanComplete', reason: 'coverage' }]);
-  assert.equal(d.state.scanner, 'complete');
+
+  // The steps handed over in order, once each, and nothing went back.
+  assert.deepEqual(
+    of(d.events, 'step').map((e) => [e.from, e.to, e.index]),
+    [
+      ['front', 'right', 1],
+      ['right', 'left', 2],
+      ['left', 'down', 3],
+    ],
+  );
 
   const marks = of(d.events, 'milestone').map((m) => m.milestone);
   for (const m of ['hairlineDone', 'leftTempleDone', 'rightTempleDone', 'crownDone'] as const) {
@@ -529,12 +655,199 @@ test('choreography: stage one takes the hairline and both temples, then stage tw
   for (const m of ['quarter', 'half', 'threeQuarters'] as const) {
     assert.equal(marks.filter((x) => x === m).length, 1, `${m} fires exactly once`);
   }
+
+  // The whole thing, at a KYC pace: seconds, not a photo session.
+  const elapsed = (d.state.completedAt ?? d.now) - (d.state.startedAt ?? d.now);
+  assert.ok(elapsed <= 12_000, `${elapsed} ms is not quick`);
+});
+
+test('choreography: a step hands over the moment its own target is reached', () => {
+  // Held just short of the turn the step asks for, the step stays put
+  // however many frames land; one more degree and it moves on.
+  const shy = TURN_YAW_DEG * TURN_REACH - 2;
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  assert.equal(d.state.step, 'right');
+  d = walk(d, 2500, () => face({ yaw: shy, stability: 0.95 }));
+  assert.equal(d.state.step, 'right', 'short of the target, the step waits');
+  assert.ok(held(d.state, 'leftTemple').captured, 'while still taking the frames it can');
+  assert.ok(stepProgress(d.state) < 1);
+  d = walk(d, 600, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
+  assert.equal(d.state.step, 'left', 'reached, it hands over');
+});
+
+test('choreography: a step also hands over on its own timeout, with whatever it holds', () => {
+  // Somebody who cannot turn that far, or whose detector never reads the
+  // turn: the step waits its own time and then moves on regardless.
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  assert.equal(d.state.step, 'right');
+  const startedAt = d.state.stepStartedAt ?? d.now;
+  d = walk(d, STEP_TIMEOUT_MS.right + 200, () => face({ yaw: 6, stability: 0.95 }));
+  assert.equal(d.state.step, 'left', 'nobody is trapped in a step');
+  assert.ok(!held(d.state, 'leftTemple').captured, 'and it took nothing it could not take');
+  assert.ok((d.state.stepStartedAt ?? 0) - startedAt >= STEP_TIMEOUT_MS.right);
+
+  // The rest of the scan runs out the same way, and the reason is honest.
+  d = walk(d, STEP_TIMEOUT_MS.left + STEP_TIMEOUT_MS.down + 500, () => face({ stability: 0.95 }));
+  assert.equal(d.state.completeReason, 'timeout', 'three of four is not coverage');
+  assert.ok(d.state.completion < 1, 'and the figure says so');
+});
+
+/*
+  The three scans that used to end with a step's worth of nothing.
+
+  Each is a person doing exactly what the title asked, in a way the gates
+  had not allowed for: a phone held at chest height, a neck that turns
+  twenty degrees rather than twenty-eight, an unsteady hand. In every one
+  of them the steps ran their whole timeout, the corrective line stayed
+  empty — none of the five corrections is about a chin, a neck or where a
+  phone is held — and the report came out short. They are pinned here
+  together because they are one bug wearing three coats: a gate with no
+  way past it and nothing to say for itself.
+*/
+test('choreography: a phone held at chest height still walks all four steps', () => {
+  // Thirty-two degrees of chin-down is a phone at chest height, which is
+  // where a great many people hold one. The old ±30° gate refused every
+  // frame of the three upright steps for it.
+  const rest = -32;
+  const at = (yaw: number, pitch = rest) => ({ yaw, pitch });
+  let d = walk(scanning(), 900, () => face({ pitch: rest, stability: 0.95 }));
+  assert.ok(held(d.state, 'hairline').captured, 'the hairline');
+  d = walk(d, 2000, path(at(0), at(TURN_YAW_DEG), 1200));
+  assert.ok(held(d.state, 'leftTemple').captured, 'and a temple, with the chin where it was');
+  d = walk(d, 2600, path(at(TURN_YAW_DEG), at(-TURN_YAW_DEG), 1800));
+  assert.ok(held(d.state, 'rightTemple').captured, 'and the other');
+  d = walk(d, 2600, path(at(-TURN_YAW_DEG), { yaw: 0, pitch: -45 }, 1800));
+  assert.equal(d.state.completeReason, 'coverage', 'not a timeout with two temples missing');
+  assert.equal(requiredFrames(d.state).length, 4);
+  const elapsed = (d.state.completedAt ?? d.now) - (d.state.startedAt ?? d.now);
+  assert.ok(elapsed <= 12_000, `${elapsed} ms is not quick`);
+});
+
+test('choreography: a modest turn reaches the target rather than the timeout', () => {
+  // Somebody who turns a natural 20° and holds it. Every frame the scan
+  // wants is there long before the step's time is up, so the step must
+  // hand over on its target: the timeout is the escape hatch, not the
+  // design, and a step that always times out is a design.
+  const TURN = 20;
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  d = walk(d, 2000, path(SQUARE, { yaw: TURN, pitch: 0 }, 1200));
+  assert.equal(d.state.step, 'left', 'the right step reached its target');
+  d = walk(d, 2600, path({ yaw: TURN, pitch: 0 }, { yaw: -TURN, pitch: 0 }, 1800));
+  assert.equal(d.state.step, 'down', 'and so did the left');
+  d = walk(d, 2600, path({ yaw: -TURN, pitch: 0 }, { yaw: 0, pitch: -20 }, 1800));
+  assert.equal(d.state.completeReason, 'coverage');
+  assert.equal(requiredFrames(d.state).length, 4);
+  const elapsed = (d.state.completedAt ?? d.now) - (d.state.startedAt ?? d.now);
+  const timeouts = SCAN_STEPS.reduce((sum, step) => sum + STEP_TIMEOUT_MS[step], 0);
+  assert.ok(elapsed <= 12_000, `${elapsed} ms for a 20° turner`);
+  assert.ok(elapsed < timeouts / 2, 'nowhere near the timeouts');
+});
+
+test('choreography: an unsteady hand costs picture quality, never the whole scan', () => {
+  /*
+    Steadiness is a shaky HAND, not a turning head — `stabilityOf` reads
+    the centre moving and the size changing, and treats a deliberate turn
+    with a still phone as steady. But one shaky scan used to cost
+    everything: no request was ever raised, all four steps ran out, and
+    `settle` found no frames at all and showed the error screen. A step
+    that has held its pose with nothing to show for it settles for a worse
+    picture instead, and the frame carries its low quality with it.
+  */
+  const shaky = (pose: (t: number) => FaceReading) => (t: number) => ({ ...pose(t), stability: 0.5 });
+  let d = walk(scanning(), 900, shaky(() => face()));
+  assert.ok(held(d.state, 'hairline').captured, 'the hairline, blurry and honest about it');
+  d = walk(d, 2000, shaky(path(SQUARE, RIGHT, 1200)));
+  d = walk(d, 2600, shaky(path(RIGHT, LEFT, 1800)));
+  d = walk(d, 2600, shaky(path(LEFT, DOWN, 1800)));
+  assert.notEqual(d.state.scanner, 'error', 'a shaky hand is not a failed scan');
+  assert.equal(requiredFrames(d.state).length, 4);
+  // What it cost is the picture, and the record says so. The hairline is
+  // the honest comparison — the same pose in both runs, so steadiness is
+  // the only thing between them — and the scan as a whole is worse off.
+  const steady = fullScan();
+  assert.ok(held(d.state, 'hairline').quality < held(steady.state, 'hairline').quality);
+  const mean = (x: Driver) =>
+    REQUIRED_REGIONS.reduce((sum, r) => sum + held(x.state, r).quality, 0) / REQUIRED_REGIONS.length;
+  assert.ok(mean(d) < mean(steady), `${mean(d)} vs ${mean(steady)}`);
+});
+
+test('choreography: a step gives nothing away until it has held its pose with nothing to show', () => {
+  // The relaxation is not a lower gate; it is a gate that gives way, and
+  // only for a step that has been standing in the right pose empty-handed.
+  let d = scanning();
+  assert.ok(!stepRelaxed(d.state, d.now), 'not at the moment of the press');
+  d = run(d, 99, () => face({ stability: 0.3 }));
+  assert.ok(!stepRelaxed(d.state, d.now), 'nor a tenth of a second in');
+  assert.equal(of(d.events, 'capture').length, 0, 'so an unsteady frame is refused');
+  d = run(d, STEP_ARRIVED_GRACE_MS, () => face({ stability: 0.3 }));
+  assert.ok(stepRelaxed(d.state, d.now), 'held the pose, still nothing: it gives way');
+  assert.equal(of(d.events, 'capture').length, 1, 'and takes the picture it can get');
+  assert.ok(STABLE_RELAXED < STABLE_MIN);
+
+  // Below even the floor, nothing is taken: a picture of a smear is not
+  // worth a file on somebody's phone.
+  let e = scanning();
+  e = run(e, STEP_ARRIVED_GRACE_MS + 200, () => face({ stability: STABLE_RELAXED - 0.05 }));
+  assert.equal(of(e.events, 'capture').length, 0);
+  // And what it gives way on is the picture, never the pose: no relaxation
+  // ever labels a square-on frame as a temple.
+  let f = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  assert.equal(f.state.step, 'right');
+  f = walk(f, STEP_TIMEOUT_MS.right + 200, () => face({ stability: 0.95 }));
+  assert.ok(!held(f.state, 'leftTemple').captured, 'a head that never turned has no temple frame');
+});
+
+test('choreography: the bar inside a step rises with the pose and finishes with the frame', () => {
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  assert.equal(d.state.step, 'right');
+  assert.equal(stepProgress(d.state), 0, 'a fresh step starts at nothing');
+
+  // Half the turn is most of the bar, and it cannot fall back.
+  d = run(d, 900, (t) => face({ yaw: (TURN_YAW_DEG * Math.min(t, 900)) / 1800, stability: 0.95 }));
+  const half = stepProgress(d.state);
+  assert.ok(half > 0.3 && half < 0.8, `${half}`);
+  d = run(d, 300, () => face({ yaw: 0, stability: 0.95 }));
+  assert.ok(stepProgress(d.state) >= half, 'turning back through the middle costs nothing');
+
+  // The frame is what finishes it.
+  d = walk(d, 2000, path(SQUARE, RIGHT, 1200));
+  assert.equal(stepProgress(d.state), 0, 'and the next step starts at nothing again');
+});
+
+test('honesty: the engine names poses and pictures, and never anything about hair', () => {
+  /*
+    The engine may say where a head is, how steady it was and which part
+    of it a photograph shows. It may not say anything about the hair on
+    it, and it may not put a number on anything it did not compute.
+  */
+  const source = readFileSync('src/features/hair-scan/engine.ts', 'utf8');
+  for (const claim of ['density', 'thinning', 'balding', 'regrowth', 'diagnos', 'out of 100']) {
+    assert.ok(!source.toLowerCase().includes(claim), `the engine must not mention "${claim}"`);
+  }
+  // Nothing leaves the device: no network of any kind from the engine.
+  for (const reach of ['fetch(', 'http://', 'https://', 'XMLHttpRequest', 'WebSocket']) {
+    assert.ok(!source.includes(reach), `the engine must not reach for ${reach}`);
+  }
+  // Every figure the state carries is 0–1 and derived from what happened.
+  const d = fullScan();
+  assert.ok(d.state.completion >= 0 && d.state.completion <= 1);
+  for (const step of SCAN_STEPS) {
+    const held = d.state.steps[step];
+    assert.ok(held.reach >= 0 && held.reach <= 1, `${step} reach ${held.reach}`);
+    assert.ok(held.frames >= d.state.frames.filter((f) => STEP_OF_REGION[f.target] === step).length);
+  }
+  for (const region of REQUIRED_REGIONS) {
+    const target = d.state.targets[region];
+    assert.ok(target.quality >= 0 && target.quality <= 1);
+    // A region reads as captured only while a frame it names is held.
+    assert.equal(target.captured, d.state.frames.some((f) => f.id === target.frameId));
+  }
 });
 
 test('choreography: a crown taken deeper replaces one taken at the edge of the nod', () => {
   let d = sweptScan();
-  assert.equal(d.state.stage, 'crown');
-  d = landAll(run(d, 200, () => face({ pitch: -(CROWN_PITCH_DEG + 1), stability: 0.9 })));
+  assert.equal(d.state.step, 'down');
+  d = landAll(run(d, 200, () => face({ pitch: -(CROWN_PITCH_DEG + 3), stability: 0.9 })));
   const first = held(d.state, 'crown');
   assert.ok(first.captured);
   assert.ok(first.quality < GOOD_QUALITY, `${first.quality}`);
@@ -544,22 +857,55 @@ test('choreography: a crown taken deeper replaces one taken at the edge of the n
   assert.notEqual(better.frameId, first.frameId);
 });
 
-test('choreography: a sweep that never closes still reaches the crown, and the scan still ends', () => {
-  // A head that turns only a little: the temples never register.
-  let d = scanning();
-  d = run(d, STAGE_ONE_MAX_MS - 2000, (t) => face({ yaw: 8 * Math.sin(t / 700), stability: 0.9 }));
-  assert.equal(d.state.stage, 'sweep');
-  assert.ok(!held(d.state, 'leftTemple').captured);
-  d = run(d, 2100, () => face({ stability: 0.9 }));
-  assert.equal(d.state.stage, 'crown', 'stage one does not hold anybody for ever');
-  assert.deepEqual(of(d.events, 'stage'), [{ type: 'stage', from: 'sweep', to: 'crown' }]);
-  d = landAll(run(d, 1500, nod(0, -CROWN_FULL_DEG, 1500)));
-  assert.ok(held(d.state, 'crown').captured);
-  // Still not all four, so it runs to the forced finish rather than lying.
-  assert.equal(d.state.status, 'capturing');
-  d = run(d, FORCED_FINISH_MS, () => face({ stability: 0.9 }));
-  assert.equal(d.state.completeReason, 'timeout');
-  assert.ok(d.state.frames.length >= 2);
+test('choreography: the whole scan is budgeted in seconds, and the timeouts are the ceiling', () => {
+  const worst = SCAN_STEPS.reduce((sum, step) => sum + STEP_TIMEOUT_MS[step], 0);
+  assert.ok(worst >= 20_000 && worst <= 30_000, `${worst} ms is not a KYC pace`);
+  assert.ok(FORCED_FINISH_MS >= worst, 'the backstop sits under all four');
+  assert.ok(FORCED_FINISH_MS <= worst + 6_000, 'and not far under');
+  assert.ok(STEP_SETTLE_MS <= 1_000, 'the beat between "we have it" and "next" is paid four times');
+});
+
+test('choreography: there is no shutter — the engine asks for the frames itself', () => {
+  // The action union is the whole of what the screen may tell the engine.
+  // Nothing in it is a capture, a shutter, a hold or a release: frames are
+  // requested by the engine as the person moves, and that is the phase.
+  const actions: ScanAction['type'][] = [
+    'continue',
+    'permission',
+    'start',
+    'tick',
+    'captured',
+    'captureFailed',
+    'process',
+    'processed',
+    'fail',
+    'retry',
+    'cancel',
+  ];
+  for (const forbidden of ['capture', 'shutter', 'hold', 'release', 'snap']) {
+    assert.ok(!actions.includes(forbidden as ScanAction['type']), `${forbidden} is not an action`);
+  }
+  // `captured` is the camera ANSWERING the engine, never a person firing.
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  const requests = of(d.events, 'capture');
+  assert.ok(requests.length >= 1, 'the engine raised the request itself');
+  assert.ok(requests.every((r) => r.request.target === 'hairline'), 'and only for the step it is on');
+  d = walk(d, 2000, path(SQUARE, RIGHT, 1200));
+  assert.ok(
+    of(d.events, 'capture').every((r) => ['hairline', 'leftTemple'].includes(r.request.target)),
+    'a step never asks for another step’s region',
+  );
+});
+
+test('choreography: several frames per step, the best kept and every other one named for deletion', () => {
+  const d = walk(scanning(), 2400, path(SQUARE, RIGHT, 1200));
+  const asked = of(d.events, 'capture').filter((r) => r.request.target === 'leftTemple').length;
+  assert.ok(asked >= 2, `only ${asked} frames asked for across a step`);
+  assert.equal(d.state.frames.filter((f) => f.target === 'leftTemple').length, 1, 'one is kept');
+  const let_go = of(d.events, 'discard').flatMap((e) => e.images).length;
+  const landed = of(d.events, 'frame').length;
+  assert.equal(landed - d.state.frames.length, let_go, 'every other image was named for deletion');
+  assert.ok(d.state.steps.right.frames >= 2, 'and the step counted what it cost');
 });
 
 /* ----------------------------- geometry ------------------------------ */
@@ -683,25 +1029,25 @@ test('scanning: a dark frame still counts, and a whipped one does not', () => {
   assert.ok(before.some((v) => v > 0), 'square on lights the top of the dial');
   d = dispatch(d, { type: 'tick', at: d.now + 33, face: face({ yaw: 30 }), lighting: 0.8 });
   assert.equal(of(d.events, 'tooFast').length, 1);
-  assert.equal(d.state.cue, 'slowDown');
+  assert.equal(d.state.cue, 'tooFast');
   assert.deepEqual(d.state.sectors, before, 'a whipped frame does not fill');
   d = dispatch(d, { type: 'tick', at: d.now + 33, face: face({ yaw: 0 }), lighting: 0.8 });
   assert.equal(of(d.events, 'tooFast').length, 1, 'the event is throttled');
-  assert.equal(d.state.cue, 'slowDown');
+  assert.equal(d.state.cue, 'tooFast');
 });
 
 /* ------------------------------ capture ------------------------------ */
 
-test('capture: a request needs a steady head in a pose one of the four regions wants', () => {
+test('capture: a request needs a steady head near the step’s own target, and nothing else', () => {
   // Three ticks a pose: the first of a jump reads as a whip, and a
   // whipped frame is refused whatever else is true of it.
   let d = scanning();
   d = run(d, 99, () => face({ stability: 0.3 }));
   assert.equal(of(d.events, 'capture').length, 0, 'not steady');
-  d = run(d, 99, () => face({ yaw: 15, stability: 0.9 }));
-  assert.equal(of(d.events, 'capture').length, 0, 'between two regions');
-  d = run(d, 99, () => face({ pitch: -CROWN_FULL_DEG, stability: 0.9 }));
-  assert.equal(of(d.events, 'capture').length, 0, 'the crown is stage two’s');
+  d = run(d, 99, () => face({ yaw: FRONT_YAW_DEG - 2, stability: 0.9 }));
+  assert.equal(of(d.events, 'capture').length, 0, 'turned away from the step’s pose');
+  d = run(d, 99, () => face({ pitch: -SWEEP_PITCH_DOWN_LIMIT_DEG, stability: 0.9 }));
+  assert.equal(of(d.events, 'capture').length, 0, 'bowed: no hairline to photograph');
   d = run(d, 99, () => face(), null);
   const requests = of(d.events, 'capture');
   assert.equal(requests.length, 1, 'steady, square on, light unmeasured');
@@ -716,7 +1062,16 @@ test('capture: a request needs a steady head in a pose one of the four regions w
   assert.equal(of(e.events, 'capture').length, 1, 'distance and light do not gate the shutter');
 });
 
-test('capture: at most one request every 700 ms, and none for a region already in flight', () => {
+/*
+  What the throttle is, and what it is not.
+
+  `CAPTURE_INTERVAL_MS` is a floor between two requests, not the rate.
+  A step asks only for its own region and `targetWants` refuses a second
+  request while one is out for it, so the shutter is really paced by the
+  camera's round trip — which is why a whole four-step scan raises a
+  handful of requests rather than a handful per step.
+*/
+test('capture: one request at a time per region, no sooner than the throttle allows', () => {
   let d = scanning();
   d = run(d, 33, () => face());
   assert.equal(of(d.events, 'capture').length, 1);
@@ -739,33 +1094,45 @@ test('capture: at most one request every 700 ms, and none for a region already i
 });
 
 test('capture: a good frame is not asked for again; a poor one is replaced by a better one', () => {
-  let d = scanning();
-  // Poor light and a shaky hand: a frame worth about 0.6.
-  d = run(d, 33, () => face({ stability: 0.6 }), 0.4);
-  assert.equal(of(d.events, 'capture').length, 1);
-  const poor = of(d.events, 'capture')[0]?.request as CaptureRequest;
-  assert.ok(poor.quality < 0.7, `${poor.quality}`);
+  // The rule, on its own. A region with nothing wants anything; a region
+  // holding a good picture wants nothing; a region holding a poor one
+  // wants a frame that beats it by more than the margin.
+  const base = createScanState();
+  const withHairline = (quality: number): ScanState => ({
+    ...base,
+    targets: { ...base.targets, hairline: { captured: true, quality, frameId: 'h', reach: 1 } },
+  });
+  assert.ok(targetWants(base, 'hairline', 0.1), 'nothing yet: anything is worth having');
+  assert.ok(!targetWants(withHairline(GOOD_QUALITY), 'hairline', 1), 'good: never asked again');
+  assert.ok(!targetWants(withHairline(0.5), 'hairline', 0.5 + REPLACE_MARGIN / 2), 'not enough better');
+  assert.ok(targetWants(withHairline(0.5), 'hairline', 0.5 + REPLACE_MARGIN + 0.01));
+  assert.ok(
+    !targetWants({ ...withHairline(0.2), pending: [pendingFor('hairline')] }, 'hairline', 0.9),
+    'and never while one is already in flight for it',
+  );
+
+  // And on the step itself: held short of the turn it asks for, the step
+  // keeps working, and each frame it lands beats the one before it.
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  assert.equal(d.state.step, 'right');
+  const part = TURN_HANDOVER_DEG - 1;
+  // Turned into the pose rather than snapped to it: a jump is a whip.
+  d = landAll(run(d, 600, (t) => face({ yaw: (part * Math.min(t, 600)) / 600, stability: 0.6 }), 0.4));
+  d = landAll(run(d, 500, () => face({ yaw: part, stability: 0.6 }), 0.4));
+  const poor = held(d.state, 'leftTemple');
+  assert.ok(poor.captured && poor.quality < 0.7, `${poor.quality}`);
+  assert.equal(d.state.step, 'right', 'the step is still waiting for the turn itself');
+
+  const n = of(d.events, 'capture').length;
+  d = run(d, CAPTURE_INTERVAL_MS + 66, () => face({ yaw: part, stability: 0.6 }), 0.4);
+  assert.equal(of(d.events, 'capture').length, n, 'the same pose in the same light is not worth a shutter');
+
+  d = run(d, CAPTURE_INTERVAL_MS + 66, () => face({ yaw: part, stability: 1 }), 0.95);
+  assert.equal(of(d.events, 'capture').length, n + 1, 'better light and a steadier hand are');
   d = landAll(d);
-  assert.equal(d.state.frames.length, 1);
-  assert.deepEqual(of(d.events, 'frame').map((f) => f.replaced), [false]);
-  assert.ok(of(d.events, 'milestone').some((m) => m.milestone === 'firstFrame'));
-
-  // Same conditions: no point taking it again.
-  d = run(d, 1000, () => face({ stability: 0.6 }), 0.4);
-  assert.equal(of(d.events, 'capture').length, 1, 'an equal frame is not requested');
-
-  // Better light, steady hand: worth the shutter, and it replaces the poor one.
-  d = run(d, 33, () => face(), 0.9);
-  assert.equal(of(d.events, 'capture').length, 2);
-  d = landAll(d);
-  assert.equal(d.state.frames.length, 1, 'replaced, not added');
-  assert.ok((d.state.frames[0]?.quality ?? 0) > poor.quality);
-  assert.deepEqual(of(d.events, 'frame').map((f) => f.replaced), [false, true]);
-
-  // Now good: never asked for again however long the head sits there.
-  d = run(d, 3000, () => face(), 0.9);
-  assert.equal(of(d.events, 'capture').length, 2);
-  assert.equal(held(d.state, 'hairline').frameId, d.state.frames[0]?.id);
+  assert.equal(d.state.frames.filter((f) => f.target === 'leftTemple').length, 1, 'replaced, not added');
+  assert.ok(held(d.state, 'leftTemple').quality > poor.quality);
+  assert.ok(of(d.events, 'frame').some((f) => f.replaced), 'and the old one was named as replaced');
 });
 
 test('capture: a worse frame landing for a bin is dropped, the better one kept', () => {
@@ -899,7 +1266,8 @@ test('retry: from a mid-scan failure the frames are named for deletion and the j
   assert.equal(d.state.scanner, 'ready');
   assert.equal(d.state.frames.length, 0);
   assert.equal(d.state.completion, 0);
-  assert.equal(d.state.stage, 'sweep');
+  assert.equal(d.state.step, 'front');
+  assert.ok(SCAN_STEPS.every((s) => !d.state.steps[s].done));
   assert.deepEqual(d.state.abandoned, inFlight, 'still owed by the camera');
   assert.deepEqual(of(d.events, 'discard').map((e) => [e.reason, e.images.map((i) => i.uri)]), [['abandoned', uris]]);
 });
@@ -934,6 +1302,8 @@ test('curation: the crown is not thrown away for sharing a ring bin with the hai
   let e: Driver = {
     state: {
       ...scanning().state,
+      step: 'down',
+      stepIndex: 3,
       stage: 'crown',
       frames: [hairline],
       targets: { ...createScanState().targets, hairline: { captured: true, quality: 0.9, frameId: hairline.id, reach: 1 } },
@@ -963,6 +1333,8 @@ test('curation: a strong crown cannot take a weak temple’s place', () => {
   let e: Driver = {
     state: {
       ...scanning().state,
+      step: 'down',
+      stepIndex: 3,
       stage: 'crown',
       frames: [temple],
       targets: { ...createScanState().targets, leftTemple: { captured: true, quality: 0.3, frameId: temple.id, reach: 1 } },
@@ -1009,17 +1381,11 @@ test('curation: a whole scan keeps one frame per region and never more than four
 test('choreography: a phone held below eye level still gets all four regions', () => {
   const low = -10;
   assert.equal(binOf(headDirection({ yaw: 0, pitch: low })), SHARED_BIN, 'the poses really do collide');
-  let d = scanning();
-  d = landAll(run(d, 300, () => face({ pitch: low, stability: 0.95 })));
-  d = landAll(run(d, 2000, turn(0, TEMPLE_FULL_DEG, 2000, low)));
-  d = landAll(run(d, 2000, turn(TEMPLE_FULL_DEG, 0, 2000, low)));
-  d = landAll(run(d, 2000, turn(0, -TEMPLE_FULL_DEG, 2000, low)));
-  d = landAll(run(d, 2000, turn(-TEMPLE_FULL_DEG, 0, 2000, low)));
-  assert.equal(d.state.stage, 'crown', 'stage one closed');
-
-  d = landAll(run(d, 1500, nod(low, -24, 1500)));
-  d = landAll(run(d, 2000, turn(-4, 4, 2000, -24)));
-  d = landAll(run(d, 2000, turn(4, -4, 2000, -26)));
+  let d = walk(scanning(), 900, () => face({ pitch: low, stability: 0.95 }));
+  d = walk(d, 2000, path({ yaw: 0, pitch: low }, { yaw: TURN_YAW_DEG, pitch: low }, 1200));
+  d = walk(d, 2600, path({ yaw: TURN_YAW_DEG, pitch: low }, { yaw: -TURN_YAW_DEG, pitch: low }, 1800));
+  assert.equal(d.state.step, 'down', 'the upright steps closed');
+  d = walk(d, 2600, path({ yaw: -TURN_YAW_DEG, pitch: low }, { yaw: -4, pitch: -DOWN_PITCH_DEG }, 1800));
   assert.ok(held(d.state, 'crown').captured, 'the crown, which build 17 discarded over and over');
   assert.equal(d.state.completeReason, 'coverage', 'not a timeout');
   assert.ok(d.now - (d.state.startedAt ?? 0) < FORCED_FINISH_MS, 'and long before the escape hatch');
@@ -1064,26 +1430,31 @@ test('completion: the figure cannot read 100% while the crown is missing', () =>
 });
 
 /*
-  Lighting gates nothing and never took the button down, but it could
-  still take the line — and the line is the only place the choreography
-  is taught while the scan runs. Somebody scanning in a dim room was
-  told to find a brighter spot for the whole seventy-five seconds and
-  never once told what to do with their head.
+  Lighting gates nothing and never took the button down. It used to be
+  able to take the guidance line, which was the only place the
+  choreography was taught — somebody scanning in a dim room was told to
+  find a brighter spot for the whole scan and never once told what to do
+  with their head. The step's title and instruction are not this line's
+  to take any more, so a dark room can say its piece and the choreography
+  carries on underneath it.
 */
-test('scanning: a dark room never costs the instruction', () => {
+test('scanning: a dark room is mentioned, and costs nothing else', () => {
+  const dark = 0.05;
+  let d = walkIn(scanning(), 900, () => face({ stability: 0.95 }), dark);
+  d = walkIn(d, 2000, path(SQUARE, RIGHT, 1200), dark);
+  d = walkIn(d, 2600, path(RIGHT, LEFT, 1800), dark);
+  assert.equal(d.state.step, 'down', 'the upright steps closed in the dark');
+  assert.ok(REQUIRED_REGIONS.slice(0, 3).every((r) => held(d.state, r).captured));
+  assert.equal(d.state.cue, 'brighter', 'and the room is mentioned');
+});
+
+test('scanning: a correction always outranks the mention of the light', () => {
   const dark = 0.05;
   let d = scanning();
-  d = landAll(run(d, 300, () => face({ stability: 0.9 }), dark));
-  d = landAll(run(d, 2000, turn(0, TEMPLE_FULL_DEG, 2000), dark));
-  d = landAll(run(d, 2000, turn(TEMPLE_FULL_DEG, 0, 2000), dark));
-  d = landAll(run(d, 2000, turn(0, -TEMPLE_FULL_DEG, 2000), dark));
-  d = landAll(run(d, 2000, turn(-TEMPLE_FULL_DEG, 0, 2000), dark));
-  assert.equal(d.state.stage, 'crown', 'stage one closed in the dark');
-  const cues = of(d.events, 'cue').map((c) => c.cue);
-  assert.ok(!cues.includes('brighter'), `the light took the line: ${cues.join(', ')}`);
-  assert.ok(cues.includes('turnLeftRight'), 'and the choreography was taught');
-  d = run(d, 1000, () => face({ stability: 0.9 }), dark);
-  assert.equal(d.state.cue, 'lowerHead', 'stage two is taught in the dark too');
+  d = run(d, 200, () => face({ bounds: { x: 0.8, y: 0.2, width: 0.46, height: 0.6 } }), dark);
+  assert.equal(d.state.cue, 'faceCamera', 'a head leaving the picture comes first');
+  d = run(d, LOST_MS + 200, () => null, dark);
+  assert.equal(d.state.cue, 'lost');
 });
 
 /* --------------------------- lost and stalled ------------------------ */
@@ -1095,12 +1466,12 @@ test('scanning: losing the face asks for it back, and finding it says so once', 
   assert.equal(of(d.events, 'lost').length, 0, 'a dropped frame or two is not a loss');
   d = run(d, 200, () => null);
   assert.equal(of(d.events, 'lost').length, 1);
-  assert.equal(d.state.cue, 'backInFrame');
+  assert.equal(d.state.cue, 'lost');
   d = run(d, 200, () => null);
   assert.equal(of(d.events, 'lost').length, 1, 'said once');
   d = run(d, 66, () => face());
   assert.equal(of(d.events, 'found').length, 1);
-  assert.notEqual(d.state.cue, 'backInFrame');
+  assert.notEqual(d.state.cue, 'lost');
 });
 
 test('scanning: a head that earns nothing for a while is a stall, said once', () => {
@@ -1119,34 +1490,35 @@ test('scanning: a head that earns nothing for a while is a stall, said once', ()
 test('scanning: the hold-still cue appears only after lingering unsteadily where a frame is wanted', () => {
   let d = scanning();
   d = run(d, 200, () => face({ stability: 0.3 }));
-  assert.equal(d.state.cue, 'turnLeftRight', 'the stage’s own instruction is the floor');
+  assert.equal(d.state.cue, null, 'a moment of wobble is not worth a line');
   d = run(d, 500, () => face({ stability: 0.3 }));
   assert.equal(d.state.cue, 'holdStill');
   d = run(d, 33, () => face());
-  assert.equal(d.state.cue, 'keepGoing', 'a frame was just taken');
+  assert.equal(d.state.cue, null, 'steady again: the step’s own instruction is all there is');
 });
 
 /* ------------------------------ finishing ---------------------------- */
 
-test('finish: after 75 s the scan completes with whatever it has', () => {
-  assert.equal(FORCED_FINISH_MS, 75_000);
+test('finish: a scan nobody follows still ends, on the steps’ own timeouts', () => {
+  // Somebody who presses Start and then does nothing at all: each step
+  // waits its own time, hands over, and the scan ends honestly.
   let d = scanning();
-  d = run(d, 33, () => face());
-  d = landAll(d);
-  // A small drift, still the hairline, which already has its frame.
-  d = run(d, FORCED_FINISH_MS - 500, () => face({ yaw: 5, stability: 0.9 }));
-  assert.equal(d.state.status, 'capturing');
-  d = run(d, 600, () => face({ yaw: 5, stability: 0.9 }));
+  d = landAll(run(d, 33, () => face()));
+  assert.equal(d.state.frames.length, 1, 'the hairline, which needs nothing doing');
+  d = toEnd(d, () => face({ yaw: 5, stability: 0.9 }));
   assert.deepEqual(of(d.events, 'scanComplete'), [{ type: 'scanComplete', reason: 'timeout' }]);
   assert.equal(d.state.scanner, 'complete');
   assert.equal(d.state.status, 'complete');
-  assert.ok(d.state.completion < 1);
+  assert.ok(d.state.completion < 1, 'three regions missing is not a full scan');
   assert.equal(d.state.frames.length, 1);
+  const elapsed = (d.state.completedAt ?? d.now) - (d.state.startedAt ?? 0);
+  assert.ok(elapsed <= FORCED_FINISH_MS, `${elapsed} ms is past the backstop`);
+  assert.ok(stepsDone(d.state), 'every step handed over');
 });
 
 test('finish: a forced finish with no frames at all is an error, not a report', () => {
   let d = scanning();
-  d = run(d, FORCED_FINISH_MS + 100, () => face({ stability: 0.2 }));
+  d = toEnd(d, () => face({ stability: 0.2 }));
   assert.equal(d.state.scanner, 'error');
   assert.equal(d.state.error, 'noFrames');
 });
@@ -1157,16 +1529,16 @@ test('finish: completing waits for in-flight frames, but not forever', () => {
   let d = scanning();
   d = landAll(run(d, 33, () => face()));
   assert.equal(d.state.frames.length, 1);
-  d = run(d, 1500, turn(0, TEMPLE_FULL_DEG, 1500));
-  assert.equal(d.state.pending.length, 1, 'a request is out');
-  d = toForcedFinish(d, () => face({ yaw: TEMPLE_FULL_DEG, stability: 0.95 }));
+  d = run(d, 800, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
+  assert.ok(d.state.pending.length > 0, 'a request is out');
+  d = toEnd(d, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
   assert.equal(d.state.status, 'completing');
   assert.equal(d.state.scanner, 'scanning');
   const n = of(d.events, 'capture').length;
-  d = run(d, 300, () => face({ yaw: TEMPLE_FULL_DEG, stability: 0.95 }));
+  d = run(d, 300, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
   assert.equal(d.state.scanner, 'scanning', 'still waiting');
   assert.equal(of(d.events, 'capture').length, n, 'no new requests while completing');
-  d = run(d, SETTLE_MS, () => face({ yaw: TEMPLE_FULL_DEG, stability: 0.95 }));
+  d = run(d, SETTLE_MS, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
   assert.equal(d.state.scanner, 'complete', 'gave up waiting');
   assert.equal(d.state.pending.length, 0);
   assert.equal(of(d.events, 'capture').length, n);
@@ -1185,8 +1557,8 @@ test('finish: completing waits for in-flight frames, but not forever', () => {
   // Or the frame lands in time, and the scan completes at once.
   let e = scanning();
   e = landAll(run(e, 33, () => face()));
-  e = run(e, 1500, turn(0, TEMPLE_FULL_DEG, 1500));
-  e = toForcedFinish(e, () => face({ yaw: TEMPLE_FULL_DEG, stability: 0.95 }));
+  e = run(e, 800, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
+  e = toEnd(e, () => face({ yaw: TURN_YAW_DEG, stability: 0.95 }));
   assert.equal(e.state.status, 'completing');
   const [outstanding] = e.state.pending;
   assert.ok(outstanding);
@@ -1441,49 +1813,74 @@ function spare(target: ScanTarget, quality: number, uri = `file:///${target}.jpg
 }
 
 /**
- * The scan as a person does it: square on, right, back, left, back —
- * then, once the stage turns over, the head down and turning again.
- * Stops the moment every region is in, leaving the last request in flight.
+ * Ticks for `ms` with the camera answering every request on the spot —
+ * the closest a reducer test gets to a phone taking pictures while
+ * somebody keeps moving. Stops early if the scan finishes.
  */
-function drive(start: Driver, answer: (r: CaptureRequest) => boolean = () => true): Driver {
-  let d = start;
-  const legs: ((t: number) => FaceReading)[] = [
-    () => face(),
-    turn(0, TEMPLE_FULL_DEG, 2000),
-    () => face({ yaw: TEMPLE_FULL_DEG, stability: 0.95 }),
-    turn(TEMPLE_FULL_DEG, 0, 2000),
-    turn(0, -TEMPLE_FULL_DEG, 2000),
-    () => face({ yaw: -TEMPLE_FULL_DEG, stability: 0.95 }),
-    turn(-TEMPLE_FULL_DEG, 0, 2000),
-    nod(0, -CROWN_FULL_DEG, 1500),
-    turn(0, 20, 1500, -CROWN_FULL_DEG),
-    turn(20, -20, 2000, -CROWN_FULL_DEG),
-  ];
-  for (const leg of legs) {
-    const legStart = d.now;
-    for (let t = 33; t <= 2000; t += 33) {
-      if (d.state.status !== 'capturing') return d;
-      const wasPending = d.state.pending.length;
-      d = dispatch(d, { type: 'tick', at: legStart + t, face: leg(t), lighting: 0.85 });
-      // The camera answers the previous request about a frame later.
-      const oldest = d.state.pending.find(answer);
-      if (wasPending > 0 && oldest && d.state.status === 'capturing') {
-        d = dispatch(d, { type: 'captured', requestId: oldest.id, image: { ...image, uri: `file:///${oldest.id}.jpg` }, at: d.now });
-      }
+function walkIn(
+  d: Driver,
+  ms: number,
+  pose: (t: number) => FaceReading,
+  lighting: number,
+): Driver {
+  const start = d.now;
+  let cur = d;
+  for (let t = 33; t <= ms; t += 33) {
+    if (cur.state.status !== 'capturing') return cur;
+    cur = dispatch(cur, { type: 'tick', at: start + t, face: pose(t), lighting });
+    for (const request of [...cur.state.pending]) {
+      cur = dispatch(cur, {
+        type: 'captured',
+        requestId: request.id,
+        image: { ...image, uri: `file:///${request.id}.jpg` },
+        at: cur.now,
+      });
     }
   }
+  return cur;
+}
+
+/** The same, in good light. */
+function walk(d: Driver, ms: number, pose: (t: number) => FaceReading): Driver {
+  return walkIn(d, ms, pose, 0.85);
+}
+
+/** A head moving from one pose to another over `ms`, then holding it. */
+const path =
+  (from: { yaw: number; pitch: number }, to: { yaw: number; pitch: number }, ms: number) =>
+  (t: number): FaceReading => {
+    const k = Math.min(1, t / ms);
+    return face({
+      yaw: from.yaw + (to.yaw - from.yaw) * k,
+      pitch: from.pitch + (to.pitch - from.pitch) * k,
+      stability: 0.95,
+    });
+  };
+
+const SQUARE = { yaw: 0, pitch: 0 };
+const RIGHT = { yaw: TURN_YAW_DEG, pitch: 0 };
+const LEFT = { yaw: -TURN_YAW_DEG, pitch: 0 };
+const DOWN = { yaw: 0, pitch: -DOWN_PITCH_DEG };
+
+/**
+ * The scan as the owner describes it: one continuous motion, straight
+ * ahead, round to the right, all the way round to the left, then down.
+ * Nothing presses a shutter anywhere in it.
+ */
+function drive(start: Driver): Driver {
+  let d = walk(start, 900, () => face({ stability: 0.95 }));
+  d = walk(d, 2000, path(SQUARE, RIGHT, 1200));
+  d = walk(d, 2600, path(RIGHT, LEFT, 1800));
+  d = walk(d, 2600, path(LEFT, DOWN, 1800));
   return d;
 }
 
-/** A scan with stage one behind it: the hairline and both temples in. */
+/** A scan with the three upright steps behind it, standing on `down`. */
 function sweptScan(): Driver {
-  let d = scanning();
-  d = landAll(run(d, 100, () => face()));
-  d = landAll(run(d, 2000, turn(0, TEMPLE_FULL_DEG, 2000)));
-  d = landAll(run(d, 2000, turn(TEMPLE_FULL_DEG, 0, 2000)));
-  d = landAll(run(d, 2000, turn(0, -TEMPLE_FULL_DEG, 2000)));
-  d = landAll(run(d, 2000, turn(-TEMPLE_FULL_DEG, 0, 2000)));
-  assert.ok(sweepDone(d.state.targets), 'stage one did not close');
+  let d = walk(scanning(), 900, () => face({ stability: 0.95 }));
+  d = walk(d, 2000, path(SQUARE, RIGHT, 1200));
+  d = walk(d, 2600, path(RIGHT, LEFT, 1800));
+  assert.equal(d.state.step, 'down', 'the upright steps did not close');
   return { ...d, events: [] };
 }
 

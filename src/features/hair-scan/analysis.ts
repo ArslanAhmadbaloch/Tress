@@ -58,11 +58,17 @@
  */
 
 import type { PhotoAnalysis } from '@/features/assessment/analyse-photo';
-import type { Coverage } from '@/features/assessment/hair-mask';
+import type { Coverage, MaskImage } from '@/features/assessment/hair-mask';
 import type { PhotoMeasurement } from '@/features/assessment/hair-segmenter';
 import type { Quality } from '@/features/assessment/image-quality';
 import type { Angle, Photo, PhotoMaskTrace } from '@/types/domain';
 
+import {
+  measureScan,
+  type FaceObservation,
+  type ScanFrameInput,
+  type ScanMeasurement,
+} from './measure';
 import type { ScanRegion } from './types';
 
 /* ------------------------------- copy --------------------------------- */
@@ -158,6 +164,25 @@ export type AnalysisFrame = {
   uri: string;
   angle?: Angle;
   region?: ScanRegion;
+  /**
+   * The face in this still, as the measurement engine wants it: the box
+   * and the landmarks in fractions of the still, and the head's angles.
+   *
+   * Absent when the tracker had no face at the shutter, or when the
+   * caller is not a scan at all. A frame without one is read for light
+   * and hair area exactly as before and simply takes no part in the
+   * regional measurement: there is no coordinate frame to place a region
+   * in, and placing one anyway would put six confident figures on a
+   * photograph nobody located a head in.
+   */
+  face?: FaceObservation;
+  /**
+   * 0–1, the scanner's own score for this capture at the moment of the
+   * shutter — steadiness, light and how large the head sat in the frame.
+   * Carried into the measurement, which weighs a region read off good
+   * frames above one read off poor ones. Never recomputed here.
+   */
+  captureQuality?: number;
 };
 
 /** Whether the area reading was taken, and if not, why. */
@@ -252,13 +277,32 @@ export type AnalysisResult = {
   elapsedMs: number;
   /** True when `signal` fired before the last unit; `frames` is then partial. */
   aborted: boolean;
+  /**
+   * What the six regions measured, across every frame that carried both
+   * a mask and a face — or null when no frame carried both.
+   *
+   * Null is the common case on a build without the segmenter, and it is
+   * a statement rather than a gap: the device did not look. A region the
+   * engine could see but not read well enough is inside the measurement,
+   * in `unread`, which is a different statement again and the report has
+   * to be able to tell them apart.
+   */
+  measurement: ScanMeasurement | null;
 };
 
 /** The two measurements, so tests can stand in for the native modules. */
 export type AnalysisDeps = {
   analysePhoto: (uri: string) => Promise<PhotoAnalysis | null>;
-  /** Null when this build has no segmenter — the honest null-model path. */
-  measureCoverage: ((uri: string) => Promise<PhotoMeasurement | null>) | null;
+  /**
+   * Null when this build has no segmenter — the honest null-model path.
+   *
+   * The app hands in `measureMask`, which is `measureCoverage` with the
+   * mask still attached: the figures are identical, and a caller that
+   * gets a mask can read regions off it. A stand-in that returns only
+   * the figures is still a valid answer — the frame is measured for area
+   * and takes no part in the regional measurement.
+   */
+  measureCoverage: ((uri: string) => Promise<(PhotoMeasurement & { mask?: MaskImage }) | null>) | null;
 };
 
 export type AnalysisPacing = {
@@ -431,10 +475,14 @@ function serialLane() {
  * The real measurements, loaded only when asked for.
  *
  * `analysePhoto` pulls in expo-file-system and the image manipulator;
- * `measureCoverage` pulls in TFLite through Nitro. Neither may be imported
+ * the segmenter pulls in TFLite through Nitro. Neither may be imported
  * at the top of a module that Node has to load, and the segmenter may not
  * be imported at all in a binary without Nitro — Metro reports that as a
  * fatal error rather than a thrown one (see `lib/native`).
+ *
+ * `measureMask` rather than `measureCoverage`: the same model run and the
+ * same figures, with the mask handed back so the regional measurement
+ * has pixels to read. The runner drops every mask at the compose unit.
  */
 export async function defaultAnalysisDeps(): Promise<AnalysisDeps> {
   const [{ analysePhoto }, { nitroAvailable }] = await Promise.all([
@@ -446,7 +494,7 @@ export async function defaultAnalysisDeps(): Promise<AnalysisDeps> {
   if (nitroAvailable()) {
     try {
       const segmenter = await import('@/features/assessment/hair-segmenter');
-      measureCoverage = segmenter.measureCoverage;
+      measureCoverage = segmenter.measureMask;
     } catch {
       // A binary built without the model: the area units stay out of the
       // plan, and the screen says so.
@@ -466,6 +514,13 @@ export type RunAnalysisOptions = {
   /** Fired when the screen goes away; the pass stops between units. */
   signal?: AbortSignal;
   pacing?: Partial<AnalysisPacing>;
+  /**
+   * When the scan was taken, ISO-8601, stamped on the measurement. Passed
+   * in rather than read off the clock so the same frames measured twice
+   * give the same answer and a test can say so. Absent: the measurement
+   * is still taken and stamped with now.
+   */
+  capturedAt?: string;
 };
 
 /**
@@ -486,6 +541,9 @@ export async function runAnalysis(
   const plan = planAnalysis(frames, deps.measureCoverage !== null);
   const ordered = orderFrames(frames);
   options.onPlan?.(plan);
+
+  /** The frames as they were handed in, by id: where the face and the shutter's score live. */
+  const sources = new Map<string, AnalysisFrame>(ordered.map((f) => [f.id, f]));
 
   const measurements = new Map<string, FrameMeasurement>(
     ordered.map((f) => [
@@ -529,6 +587,20 @@ export async function runAnalysis(
     });
   };
 
+  /*
+    The masks, held only as long as it takes to read them.
+
+    One entry per frame that came back with both a mask and a face, added
+    as that frame's area unit finishes and dropped the moment the compose
+    unit has read them. A mask is about a megabyte of `Float32Array` and
+    the scan keeps at most four frames, so this peaks at four of them for
+    the length of one unit — which is why they are read in one call at
+    the end rather than kept for the caller, and why nothing downstream
+    of `runAnalysis` ever sees a mask.
+  */
+  const readable: ScanFrameInput[] = [];
+  let measurement: ScanMeasurement | null = null;
+
   const result = (aborted: boolean): AnalysisResult => {
     const out = ordered.map((f) => measurements.get(f.id)!);
     return {
@@ -537,6 +609,7 @@ export async function runAnalysis(
       measured: measuredFrameCount(out),
       elapsedMs: Date.now() - startedAt,
       aborted,
+      measurement,
     };
   };
 
@@ -564,12 +637,46 @@ export async function runAnalysis(
         frame.coverage = reading.coverage;
         frame.maskTrace = reading.maskTrace;
         frame.area = 'measured';
+        /*
+          The regional measurement wants two things this frame may or may
+          not have: the mask itself, and the face the tracker held at the
+          shutter. Both or neither — a mask with no face has no
+          coordinate frame to place a region in, and a face with no mask
+          has nothing to count. A frame missing either is measured for
+          area exactly as before and simply does not take part.
+        */
+        const source = sources.get(unit.frameId);
+        if (reading.mask && source?.face) {
+          readable.push({
+            mask: reading.mask,
+            face: source.face,
+            quality: source.captureQuality ?? 0,
+          });
+        }
       }
       // Otherwise the frame keeps 'failed': the model was there and it
       // did not answer for this file, which is what the record says.
+    } else if (unit.kind === 'compose' && readable.length > 0) {
+      /*
+        The one place the six regions are read, and real work: every
+        frame's mask sampled against the head model in that frame's own
+        face coordinates, and each region's error bar taken across the
+        frames that showed it. It is synchronous and it is the compose
+        unit's own work, which is what the second bar has always been
+        bound to.
+
+        Nothing is invented when it fails. `measureScan` refuses a region
+        it could not see, and the refusal travels — into `unread`, into
+        the stored block, and into whatever the report eventually says.
+      */
+      measurement = measureScan(readable, options.capturedAt ?? new Date().toISOString());
+      // Read; the masks have no further use and the next line is the
+      // last chance to let go of four megabytes before the report.
+      readable.length = 0;
     }
-    // The compose unit's work is the assembly in `result` below; its
-    // floor is what lets the second bar be seen reaching its end.
+    // A compose unit with nothing readable has only the assembly in
+    // `result` below to do; its floor is what lets the second bar be
+    // seen reaching its end.
 
     // The floor holds a finished reading on screen for a beat; it never
     // starts the next unit early.

@@ -17,25 +17,38 @@ import {
   CAP,
   CAP_BAND,
   CAP_COL_THETA,
+  CAP_FIT,
+  CAP_FIT_DEFAULT,
+  CAP_FIT_IDENTITY,
+  CAP_FIT_START,
   CAP_FRONT,
   CAP_LENGTH,
   CAP_MERIDIANS,
   CAP_POINTS,
   CAP_POLE,
+  CAP_REGIONS,
+  CAP_REGION_OF,
   CAP_RINGS,
   CAP_ROW_T,
   CAP_SECTOR_OF,
   CAP_SITES,
   CAP_STRIDE,
+  blendCapFit,
   buildHeadCap,
   capIndex,
+  fitHairCap,
+  nextCapFit,
+  type CapFit,
   type CapSource,
 } from '@/features/hair-scan/head-cap';
 import {
   CHIN_SECTORS,
   LEFT_SECTORS,
+  REGION_OF_STEP,
   RIGHT_SECTORS,
   RING_SECTORS,
+  SCAN_STEPS,
+  STEP_TARGETS,
 } from '@/features/hair-scan/engine';
 import {
   MESH_MID_COL,
@@ -67,6 +80,20 @@ function source(overrides: Partial<CapSource> & { roll?: number } = {}): CapSour
     contours: syntheticContours(CX, CY, WIDTH, HEIGHT, roll),
     ...rest,
   };
+}
+
+/**
+ * The cap with no allowance for hair on it: the geometry alone.
+ *
+ * `buildHeadCap` with no fit draws `CAP_FIT_DEFAULT`, which is what the
+ * app puts on a head — a dome that clears the hair rather than hugging
+ * the skull. The properties about where a FACE is (the base on the brow,
+ * the dome the size of the head, the two roads agreeing) are properties
+ * of the geometry underneath that allowance, so they are asserted here
+ * on the bare dome, and the allowance itself is asserted on its own.
+ */
+function bare(src: CapSource): number[] {
+  return buildHeadCap(src, CAP_FIT_IDENTITY);
 }
 
 type Vertex = { x: number; y: number; facing: number };
@@ -224,7 +251,7 @@ test('build: the base sits on the eyebrow line, where the lattice put its brow r
 });
 
 test('build: the dome rises about 0.45 face heights above the oval and the sides reach ear level', () => {
-  const pts = buildHeadCap(source());
+  const pts = bare(source());
   const pole = vertex(pts, CAP_POLE);
   assert.ok(Math.abs(pole.y - (TOP - CAP.rise * HEIGHT)) < 1, `pole at ${pole.y}`);
   assert.ok(Math.abs(pole.x - CX) < 0.5);
@@ -547,9 +574,20 @@ function distanceToPolyline(line: Point[], p: Point): number {
   return best;
 }
 
-/** The middle of the cap's base row, and its pole: the two vertices everything else hangs from. */
+/**
+ * The middle of the cap's base row, and its pole: the two vertices
+ * everything else hangs from.
+ *
+ * Measured on the BARE dome. The cap the app draws carries
+ * `CAP_FIT_DEFAULT` on top — an allowance for hair, which is a drawing
+ * decision and is asserted on its own below — and every property here is
+ * about the geometry underneath it: where the brow is, how big the head
+ * is, whether a turn steps the cap. Folding a constant allowance into
+ * all of those would only make each number 12% larger and say nothing
+ * more.
+ */
 function pins(src: CapSource): { base: Vertex; pole: Vertex; width: number } {
-  const pts = buildHeadCap(src);
+  const pts = bare(src);
   let left = Number.POSITIVE_INFINITY;
   let right = Number.NEGATIVE_INFINITY;
   for (let c = 0; c < CAP.cols; c += 1) {
@@ -565,10 +603,10 @@ function pins(src: CapSource): { base: Vertex; pole: Vertex; width: number } {
 }
 
 /**
- * Every pose the scan's own choreography passes through: stage one turns
- * the head left and right with the chin level, stage two lowers it and
- * turns again, and a person does both with some tilt. These are the
- * poses the numbers below are held to.
+ * Every pose the guided scan passes through in its one continuous
+ * motion: look straight, turn right, turn left, look down — plus the
+ * tilt a real person carries through all four, and the overshoot at the
+ * ends of a turn. These are the poses the numbers below are held to.
  */
 const SCAN_POSES: CloudPose[] = [
   { yaw: 0, pitch: 0 },
@@ -951,4 +989,541 @@ test('mesh: the drawn stand-in the simulator runs builds a head-sized cap at eve
     assert.ok(right - left > raw.width, `phase ${t}: ${right - left} wide`);
     assert.ok(right - left < 2.6 * raw.width, `phase ${t}: ${right - left} wide`);
   }
+});
+
+/* ------------------------------- the regions ----------------------------- */
+
+test('regions: every vertex belongs to one of the four the choreography captures', () => {
+  assert.equal(CAP_REGIONS.length, 4);
+  assert.equal(CAP_REGION_OF.length, CAP_POINTS);
+  const seen = new Set<number>();
+  for (const r of CAP_REGION_OF) {
+    assert.ok(Number.isInteger(r) && r >= 0 && r < CAP_REGIONS.length, `region ${r}`);
+    seen.add(r);
+  }
+  // All four are actually reachable — a region no vertex belongs to
+  // would be a step that lights nothing.
+  assert.equal(seen.size, CAP_REGIONS.length);
+});
+
+test('regions: the front is the hairline, the sides are the temples, the top is the crown', () => {
+  const mid = (CAP.cols - 1) / 2;
+  const at = (row: number, col: number) => CAP_REGIONS[CAP_REGION_OF[capIndex(row, col)]];
+  assert.equal(at(0, mid), 'hairline');
+  assert.equal(at(1, mid), 'hairline');
+  assert.equal(CAP_REGIONS[CAP_REGION_OF[CAP_POLE]], 'crown');
+  assert.equal(at(CAP.rows - 1, mid), 'crown');
+  // The outermost meridians, at the base: the sides of the head. Named
+  // by the side of the PICTURE — the first column is the screen's left.
+  assert.equal(at(0, 0), 'leftTemple');
+  assert.ok(CAP_COL_THETA[0] < 0, 'and the screen-left column is the negative meridian');
+  assert.equal(at(0, CAP.cols - 1), 'rightTemple');
+  assert.ok(CAP_COL_THETA[CAP.cols - 1] > 0);
+});
+
+test('regions: the temple a step lights is the one the camera can see', () => {
+  /*
+    The comment this holds down: turning right does NOT light the right
+    of the screen. Positive yaw swings the nose to the screen's right,
+    which turns the NEGATIVE-theta meridians — `leftTemple`, the
+    screen's left — towards the lens. `REGION_OF_STEP` in engine.ts is
+    where that pairing is written; this asserts the geometry agrees with
+    it, so a wiring lane that reads either one lights the quarter of the
+    head the phone can actually see.
+  */
+  const meanFacing = (pts: number[]): number[] => {
+    const sum = CAP_REGIONS.map(() => 0);
+    const count = CAP_REGIONS.map(() => 0);
+    for (let v = 0; v < CAP_POINTS; v += 1) {
+      const r = CAP_REGION_OF[v];
+      sum[r] += Math.max(0, vertex(pts, v).facing);
+      count[r] += 1;
+    }
+    return sum.map((s, i) => (count[i] === 0 ? 0 : s / count[i]));
+  };
+  const left = CAP_REGIONS.indexOf('leftTemple');
+  const right = CAP_REGIONS.indexOf('rightTemple');
+
+  for (const step of SCAN_STEPS) {
+    if (step !== 'right' && step !== 'left') continue;
+    const target = STEP_TARGETS[step];
+    const facing = meanFacing(buildHeadCap(source({ yaw: target.yawDeg ?? 0 })));
+    const shown = facing[left] > facing[right] ? 'leftTemple' : 'rightTemple';
+    assert.equal(
+      shown,
+      REGION_OF_STEP[step],
+      `the "${step}" step turns ${shown} to the camera, and the engine pairs it with ${REGION_OF_STEP[step]}`,
+    );
+  }
+
+  // Square on it is the hairline the camera sees best, and lowering the
+  // head is what brings the crown round.
+  const square = meanFacing(buildHeadCap(source()));
+  const hairline = CAP_REGIONS.indexOf('hairline');
+  const crown = CAP_REGIONS.indexOf('crown');
+  assert.equal(REGION_OF_STEP.front, 'hairline');
+  assert.ok(square[hairline] === Math.max(...square), 'the hairline is squarest to the camera');
+  const down = meanFacing(buildHeadCap(source({ pitch: STEP_TARGETS.down.pitchDeg ?? 0 })));
+  assert.equal(REGION_OF_STEP.down, 'crown');
+  assert.ok(down[crown] > square[crown], `the crown turns towards the camera: ${down[crown]}`);
+  // The two temples stay even through the nod — it is a step about the
+  // top of the head, and it must not favour a side.
+  assert.ok(Math.abs(down[left] - down[right]) < 1e-9, 'the nod is even across the two temples');
+});
+
+test('regions: the two sides mirror, and nothing on the crown claims a side', () => {
+  for (let row = 0; row < CAP.rows; row += 1) {
+    for (let col = 0; col < CAP.cols; col += 1) {
+      const a = CAP_REGIONS[CAP_REGION_OF[capIndex(row, col)]];
+      const b = CAP_REGIONS[CAP_REGION_OF[capIndex(row, CAP.cols - 1 - col)]];
+      const mirrored =
+        a === b
+          ? a === 'hairline' || a === 'crown'
+          : (a === 'leftTemple' && b === 'rightTemple') ||
+            (a === 'rightTemple' && b === 'leftTemple');
+      assert.ok(mirrored, `row ${row} col ${col}: ${a} vs ${b}`);
+    }
+  }
+});
+
+/* -------------------------------- the fit -------------------------------- */
+
+/**
+ * A hair silhouette to fit to: a shell over the head fixture's own
+ * ellipsoid, grown taller and wider, clipped to above the ear line and
+ * projected exactly as the cloud is.
+ *
+ * It stands for what the segmenter returns — an outline of what was
+ * called hair, in the same points as the face box — and it is built from
+ * the fixture's proportions rather than from anything the cap produces,
+ * so nothing here is read back out of the thing under test.
+ */
+function hairOutline(
+  pose: CloudPose,
+  grow: { up: number; wide: number; lean?: number },
+): { flat: number[]; points: { x: number; y: number; facing: number; theta: number; height: number }[] } {
+  const { yaw = 0, pitch = 0, roll = 0 } = pose;
+  const { up, wide, lean = 0 } = grow;
+  const ca = Math.cos(pitch * RAD);
+  const sa = Math.sin(pitch * RAD);
+  const cy1 = Math.cos(yaw * RAD);
+  const sy1 = Math.sin(yaw * RAD);
+  const cr = Math.cos(roll * RAD);
+  const sr = Math.sin(roll * RAD);
+  const project = (x: number, y: number, z: number): [number, number, number] => {
+    const y1 = y * ca - z * sa;
+    const z1 = y * sa + z * ca;
+    const x2 = x * cy1 + z1 * sy1;
+    const z2 = -x * sy1 + z1 * cy1;
+    return [x2 * cr - y1 * sr, x2 * sr + y1 * cr, z2];
+  };
+
+  const a = HEAD.a * wide;
+  const b = HEAD.b * up;
+  const d = HEAD.d * wide;
+  const rows = 13;
+  const cols = 28;
+  const phiLo = phiOf(0.4);
+  const phiHi = Math.PI / 2;
+  const flat: number[] = [];
+  const points: { x: number; y: number; facing: number; theta: number; height: number }[] = [];
+  for (let r = 0; r < rows; r += 1) {
+    const phi = phiLo + ((phiHi - phiLo) * r) / (rows - 1);
+    for (let c = 0; c < cols; c += 1) {
+      const theta = -Math.PI + (2 * Math.PI * c) / cols;
+      const [x, y] = project(
+        a * Math.cos(phi) * Math.sin(theta) + lean * HEAD.a,
+        -b * Math.sin(phi),
+        d * Math.cos(phi) * Math.cos(theta),
+      );
+      const nx = (Math.cos(phi) * Math.sin(theta)) / a;
+      const ny = -Math.sin(phi) / b;
+      const nz = (Math.cos(phi) * Math.cos(theta)) / d;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      const facing = project(nx / len, ny / len, nz / len)[2];
+      flat.push(x, y);
+      points.push({ x, y, facing, theta, height: (Math.sin(phi) + 1) / 2 });
+    }
+  }
+  return { flat, points };
+}
+
+/** The poses the fit has to hold at: square on, turned either way, and looking down. */
+const FIT_POSES: CloudPose[] = [
+  { yaw: 0, pitch: 0 },
+  { yaw: 30, pitch: 0 },
+  { yaw: -30, pitch: 0 },
+  { yaw: 0, pitch: -30 },
+  { yaw: 30, pitch: -30 },
+  { yaw: -30, pitch: -30 },
+  { yaw: 25, pitch: -15, roll: 12 },
+];
+
+test('fit: no fit is the standing allowance — one constant decides what a phone with no mask draws', () => {
+  for (const pose of FIT_POSES) {
+    const src = cloudOf('head', pose).source;
+    assert.deepEqual(buildHeadCap(src, CAP_FIT_DEFAULT), buildHeadCap(src), JSON.stringify(pose));
+  }
+  assert.deepEqual(buildHeadCap(source(), CAP_FIT_DEFAULT), buildHeadCap(source()));
+  // And the allowance is genuinely an allowance: setting it to the
+  // identity would give back the bare dome, byte for byte.
+  assert.notDeepEqual(buildHeadCap(source()), bare(source()));
+});
+
+test('fit: the standing allowance clears the skull, on every road and at every pose', () => {
+  // The whole point of it. A face tracker has nothing to say about the
+  // hair standing off the head, so the dome the app draws stands clear
+  // of the one the geometry alone asks for — at every pose, on the
+  // tracked road and on the detector's, without any mask at all.
+  assert.ok(CAP_FIT_DEFAULT.lift > 1 && CAP_FIT_DEFAULT.widen > 1, 'the allowance is an allowance');
+  assert.ok(
+    CAP_FIT_DEFAULT.lift <= CAP_FIT.lift.max && CAP_FIT_DEFAULT.widen <= CAP_FIT.widen.max,
+    'and it is inside the clamps a measured fit lives in',
+  );
+  for (const pose of FIT_POSES) {
+    const cloud = cloudOf('head', pose);
+    const drawn = buildHeadCap(cloud.source);
+    const skull = bare(cloud.source);
+    for (const v of drawn) assert.ok(Number.isFinite(v), JSON.stringify(pose));
+    // The crown stands clear of the skull.
+    const rose = vertex(skull, CAP_POLE).y - vertex(drawn, CAP_POLE).y;
+    assert.ok(rose > 1, `${JSON.stringify(pose)}: the pole rose ${rose.toFixed(1)} points`);
+    // Every vertex of the bare dome is inside the drawn one, so the
+    // allowance never trades one side of the head for another.
+    const outline = hull(vertices(drawn).map((v) => ({ x: v.x, y: v.y })));
+    for (const v of vertices(skull)) {
+      assert.ok(
+        insideBy(outline, { x: v.x, y: v.y }) > -0.5,
+        `${JSON.stringify(pose)}: skull point ${v.x},${v.y} left outside`,
+      );
+    }
+    // And the base is still on the brow: the allowance grows the dome,
+    // it does not walk the cap up off the eyebrows.
+    const drift = distanceToPolyline(baseRow(drawn), cloud.landmarkAt(ON_HEAD.brow));
+    assert.ok(drift < 0.0625 * HEAD.b, `${JSON.stringify(pose)}: base ${drift.toFixed(1)} off the brow`);
+  }
+
+  // The detector's road too, where the brow is the detected one and the
+  // base row's middle vertex is the pin itself.
+  const src = source();
+  const held = vertex(buildHeadCap(src), capIndex(0, (CAP.cols - 1) / 2));
+  const brow = latticeBrow(src);
+  assert.ok(Math.abs(held.x - brow.x) < 0.5 && Math.abs(held.y - brow.y) < 0.5, 'base held');
+  assert.ok(
+    vertex(bare(src), CAP_POLE).y - vertex(buildHeadCap(src), CAP_POLE).y > 1,
+    'and the oval road rises too',
+  );
+});
+
+test('fit: a silhouette standing off the skull lifts and widens the cap, at every pose', () => {
+  for (const pose of FIT_POSES) {
+    const cloud = cloudOf('head', pose);
+    const hair = hairOutline(pose, { up: 1.25, wide: 1.18 });
+    const fit = fitHairCap(cloud.source, { points: hair.flat });
+    assert.ok(fit !== null, `${JSON.stringify(pose)}: a fit`);
+    assert.ok(fit.lift > 1.02, `${JSON.stringify(pose)}: lift ${fit.lift}`);
+    assert.ok(fit.widen > 1.0, `${JSON.stringify(pose)}: widen ${fit.widen}`);
+    assert.ok(Number.isFinite(fit.lift + fit.widen + fit.shift));
+    // Deterministic: the same reading twice is the same fit.
+    assert.deepEqual(fitHairCap(cloud.source, { points: hair.flat }), fit);
+  }
+});
+
+test('fit: the fitted cap holds the hair the bare dome cuts through, turned or looking down', () => {
+  const reach = Math.abs(CAP_COL_THETA[0]);
+  // A twentieth of a head's height of slack: the cap is a head's shape,
+  // not this fixture's, and the two differ by about that around the ears.
+  const slack = 0.05 * HEAD.b;
+  let missedByBare = 0;
+  for (const pose of FIT_POSES) {
+    const cloud = cloudOf('head', pose);
+    const hair = hairOutline(pose, { up: 1.25, wide: 1.18 });
+    const fit = fitHairCap(cloud.source, { points: hair.flat });
+    assert.ok(fit !== null);
+    const fitted = hull(vertices(buildHeadCap(cloud.source, fit)).map((v) => ({ x: v.x, y: v.y })));
+    const bare = hull(vertices(buildHeadCap(cloud.source)).map((v) => ({ x: v.x, y: v.y })));
+    const seen = hair.points.filter(
+      (p) => p.facing > 0.05 && p.height > ON_HEAD.brow + 0.05 && Math.abs(p.theta) <= reach,
+    );
+    assert.ok(seen.length >= 10, `${JSON.stringify(pose)}: the outline shows its top`);
+    for (const p of seen) {
+      assert.ok(
+        insideBy(fitted, p) > -slack,
+        `${JSON.stringify(pose)}: hair at ${p.x.toFixed(1)},${p.y.toFixed(1)} outside the fitted cap`,
+      );
+      if (insideBy(bare, p) < -slack) missedByBare += 1;
+    }
+  }
+  // The point of the whole exercise: the bare dome really does leave
+  // hair outside, so the fit is doing work rather than agreeing.
+  assert.ok(missedByBare > 0, 'the bare dome misses hair the fit catches');
+});
+
+test('fit: a hairline sweep pulls the cap across, within its limit', () => {
+  const cloud = cloudOf('head', { yaw: 0, pitch: 0 });
+  const swept = hairOutline({ yaw: 0, pitch: 0 }, { up: 1.2, wide: 1.1, lean: 0.25 });
+  const fit = fitHairCap(cloud.source, { points: swept.flat });
+  assert.ok(fit !== null);
+  assert.ok(fit.shift > 0.01, `shift ${fit.shift}`);
+  assert.ok(Math.abs(fit.shift) <= CAP_FIT.shift + 1e-9, `shift ${fit.shift} inside its clamp`);
+  const level = hairOutline({ yaw: 0, pitch: 0 }, { up: 1.2, wide: 1.1 });
+  const straight = fitHairCap(cloud.source, { points: level.flat });
+  assert.ok(straight !== null);
+  assert.ok(Math.abs(straight.shift) < 0.02, `a level head barely shifts: ${straight.shift}`);
+});
+
+test('fit: a wild silhouette is clamped or refused, never obeyed', () => {
+  const cloud = cloudOf('head', { yaw: 0, pitch: 0 });
+  let fitted = 0;
+  for (const grow of [
+    { up: 4, wide: 4 },
+    { up: 1.9, wide: 0.5 },
+    // Nothing above the brow at all, and a shell thrown clean off the
+    // head sideways: neither has an honest answer, and null is it.
+    { up: 0.2, wide: 0.2 },
+    { up: 3, wide: 0.3, lean: 3 },
+  ]) {
+    const fit = fitHairCap(cloud.source, { points: hairOutline({}, grow).flat });
+    if (fit === null) continue;
+    fitted += 1;
+    assert.ok(fit.lift >= CAP_FIT.lift.min && fit.lift <= CAP_FIT.lift.max, `lift ${fit.lift}`);
+    assert.ok(fit.widen >= CAP_FIT.widen.min && fit.widen <= CAP_FIT.widen.max, `widen ${fit.widen}`);
+    assert.ok(Math.abs(fit.shift) <= CAP_FIT.shift + 1e-9, `shift ${fit.shift}`);
+    for (const v of buildHeadCap(cloud.source, fit)) assert.ok(Number.isFinite(v));
+  }
+  assert.ok(fitted >= 2, 'the clamps are actually exercised');
+});
+
+test('fit: a reading with nothing in it is no fit at all, and the bare dome is drawn', () => {
+  const cloud = cloudOf('head', { yaw: 0, pitch: 0 });
+  const nothing: number[][] = [
+    [],
+    [1, 2, 3, 4],
+    Array.from({ length: 80 }, () => Number.NaN),
+    // Every point below the brow: nothing rises above it to measure.
+    Array.from({ length: 80 }, (_, i) => (i % 2 === 0 ? cloud.source.cx : cloud.source.cy + 400)),
+  ];
+  for (const points of nothing) {
+    assert.equal(fitHairCap(cloud.source, { points }), null, JSON.stringify(points.slice(0, 4)));
+  }
+  // A broken face is no fit either, and a broken fit still draws finite.
+  const hair = hairOutline({}, { up: 1.2, wide: 1.1 });
+  assert.equal(fitHairCap({ ...cloud.source, width: 0, height: 0 }, { points: hair.flat }), null);
+  const wild: CapFit[] = [
+    { lift: Number.NaN, widen: Number.NaN, shift: Number.NaN },
+    { lift: Number.POSITIVE_INFINITY, widen: -50, shift: 900 },
+  ];
+  for (const fit of wild) {
+    const pts = buildHeadCap(cloud.source, fit);
+    assert.equal(pts.length, CAP_LENGTH);
+    for (const v of pts) assert.ok(Number.isFinite(v), JSON.stringify(fit));
+  }
+});
+
+test('fit: the base stays on the brow however the cap is stretched', () => {
+  for (const pose of FIT_POSES) {
+    const cloud = cloudOf('head', pose);
+    const hair = hairOutline(pose, { up: 1.3, wide: 1.2 });
+    const fit = fitHairCap(cloud.source, { points: hair.flat });
+    assert.ok(fit !== null);
+    const drift = distanceToPolyline(
+      baseRow(buildHeadCap(cloud.source, fit)),
+      cloud.landmarkAt(ON_HEAD.brow),
+    );
+    assert.ok(drift < 0.0625 * HEAD.b, `${JSON.stringify(pose)}: base ${drift.toFixed(1)} off the brow`);
+  }
+});
+
+test('fit: the cap grows into the hair without popping', () => {
+  const cloud = cloudOf('head', { yaw: 20, pitch: -20 });
+  const hair = hairOutline({ yaw: 20, pitch: -20 }, { up: 1.3, wide: 1.2 });
+  const to = fitHairCap(cloud.source, { points: hair.flat });
+  assert.ok(to !== null);
+
+  assert.deepEqual(blendCapFit(CAP_FIT_IDENTITY, to, 0), CAP_FIT_IDENTITY);
+  assert.deepEqual(blendCapFit(CAP_FIT_IDENTITY, to, 1), to);
+  // Out of range is not a leap past the target.
+  assert.deepEqual(blendCapFit(CAP_FIT_IDENTITY, to, 4), to);
+  assert.deepEqual(blendCapFit(CAP_FIT_IDENTITY, to, Number.NaN), CAP_FIT_IDENTITY);
+
+  // Walked at the mesh's own rate — a reading every 33 ms against a
+  // 520 ms constant — the pole never moves more than a couple of points
+  // in a step, which is under the glide's own reach and reads as growth.
+  let fit = CAP_FIT_IDENTITY;
+  let previous = vertex(buildHeadCap(cloud.source, fit), CAP_POLE);
+  let worst = 0;
+  let travelled = 0;
+  for (let i = 0; i < 90; i += 1) {
+    fit = blendCapFit(fit, to, 1 - Math.exp(-33 / 520));
+    const pole = vertex(buildHeadCap(cloud.source, fit), CAP_POLE);
+    const step = Math.hypot(pole.x - previous.x, pole.y - previous.y);
+    if (step > worst) worst = step;
+    travelled += step;
+    previous = pole;
+  }
+  assert.ok(worst < 2.5, `worst step ${worst.toFixed(2)} points`);
+  // And it actually arrives: three seconds of readings later the pole
+  // is where the finished fit puts it.
+  assert.ok(travelled > 8, `travelled ${travelled.toFixed(1)} points`);
+  const settled = vertex(buildHeadCap(cloud.source, to), CAP_POLE);
+  assert.ok(Math.hypot(previous.x - settled.x, previous.y - settled.y) < 0.5, 'arrives');
+});
+
+test('fit: a fit refined from where the cap already is lands in the same place', () => {
+  const cloud = cloudOf('head', { yaw: -30, pitch: -15 });
+  const hair = hairOutline({ yaw: -30, pitch: -15 }, { up: 1.22, wide: 1.15 });
+  const cold = fitHairCap(cloud.source, { points: hair.flat });
+  assert.ok(cold !== null);
+  for (const from of [CAP_FIT_IDENTITY, cold, { lift: 1.4, widen: 1.3, shift: 0.1 }]) {
+    const warm = fitHairCap(cloud.source, { points: hair.flat }, from);
+    assert.ok(warm !== null);
+    assert.ok(Math.abs(warm.lift - cold.lift) < 0.04, `lift ${warm.lift} vs ${cold.lift}`);
+    assert.ok(Math.abs(warm.widen - cold.widen) < 0.04, `widen ${warm.widen} vs ${cold.widen}`);
+    assert.ok(Math.abs(warm.shift - cold.shift) < 0.04, `shift ${warm.shift} vs ${cold.shift}`);
+  }
+});
+
+test('fit: the detector road takes a fit too — a phone with no cloud still sits on the hair', () => {
+  const src = source();
+  const bare = buildHeadCap(src);
+  const fit: CapFit = { lift: 1.3, widen: 1.15, shift: 0 };
+  const grown = buildHeadCap(src, fit);
+  for (const v of grown) assert.ok(Number.isFinite(v));
+  const basePole = vertex(bare, CAP_POLE);
+  const grownPole = vertex(grown, CAP_POLE);
+  assert.ok(grownPole.y < basePole.y - 10, 'the crown rises');
+  const base = vertex(grown, capIndex(0, (CAP.cols - 1) / 2));
+  const wasBase = vertex(bare, capIndex(0, (CAP.cols - 1) / 2));
+  assert.ok(Math.abs(base.x - wasBase.x) < 0.5 && Math.abs(base.y - wasBase.y) < 0.5, 'base held');
+});
+
+/* --------------------------- holding the fit ----------------------------- */
+
+test('fit: a refused reading holds the cap where it is, and only a run of them lets go', () => {
+  /*
+    The failure this exists to stop: a segmenter is a classifier looking
+    at a moving head, and it refuses often — a shattered trace, a head
+    tipped past the top gate, a face lost for an instant. Read as "there
+    is no hair", one refusal deflates the cap onto the skull and the
+    next good frame re-inflates it, which is a visible pop several times
+    a scan.
+  */
+  const cloud = cloudOf('head', { yaw: 20, pitch: -20 });
+  const hair = hairOutline({ yaw: 20, pitch: -20 }, { up: 1.3, wide: 1.2 });
+  const measured = fitHairCap(cloud.source, { points: hair.flat });
+  assert.ok(measured !== null);
+  assert.ok(measured.lift > CAP_FIT_DEFAULT.lift + CAP_FIT.deadband, 'the fixture is worth fitting');
+
+  let state = nextCapFit(CAP_FIT_START, measured);
+  assert.deepEqual(state.wanted, measured);
+  assert.equal(state.misses, 0);
+
+  // Every refusal short of the hold keeps the very same shape — not a
+  // shape near it, the same one.
+  for (let i = 1; i < CAP_FIT.hold; i += 1) {
+    state = nextCapFit(state, null);
+    assert.deepEqual(state.wanted, measured, `refusal ${i} moved the cap`);
+    assert.equal(state.misses, i);
+  }
+  // And one good reading anywhere in that run clears the count.
+  const recovered = nextCapFit(state, measured);
+  assert.deepEqual(recovered.wanted, measured);
+  assert.equal(recovered.misses, 0);
+
+  // Past the hold it lets go — back to the standing allowance, never to
+  // the bare skull.
+  state = nextCapFit(state, null);
+  assert.deepEqual(state.wanted, CAP_FIT_DEFAULT);
+  assert.notDeepEqual(state.wanted, CAP_FIT_IDENTITY);
+  for (let i = 0; i < 5; i += 1) state = nextCapFit(state, null);
+  assert.deepEqual(state.wanted, CAP_FIT_DEFAULT, 'and stays there');
+});
+
+test('fit: a reading inside the deadband is the reading the cap already has', () => {
+  // A classifier jitters a percent or two on a head that has not moved.
+  // Easing towards every jitter is a cap that breathes, which is what a
+  // reduced-motion reader would be left with once the glide is off.
+  const settled: CapFit = { lift: 1.2, widen: 1.1, shift: 0.02 };
+  const state = nextCapFit(CAP_FIT_START, settled);
+  const nudge = CAP_FIT.deadband * 0.4;
+  const jittered = nextCapFit(state, {
+    lift: settled.lift + nudge,
+    widen: settled.widen - nudge,
+    shift: settled.shift + nudge,
+  });
+  assert.deepEqual(jittered.wanted, state.wanted, 'the jitter did not move the cap');
+
+  // A real change does move it.
+  const moved = nextCapFit(state, { lift: settled.lift + 0.1, widen: settled.widen, shift: settled.shift });
+  assert.notDeepEqual(moved.wanted, state.wanted);
+  assert.ok(Math.abs(moved.wanted.lift - (settled.lift + 0.1)) < 1e-9);
+});
+
+test('fit: the held shape is clamped and finite, whatever it is handed', () => {
+  const wild: (CapFit | null)[] = [
+    { lift: Number.NaN, widen: Number.NaN, shift: Number.NaN },
+    { lift: Number.POSITIVE_INFINITY, widen: -50, shift: 900 },
+    null,
+    { lift: 1.25, widen: 1.1, shift: -0.9 },
+  ];
+  let state: typeof CAP_FIT_START = { wanted: CAP_FIT_START.wanted, misses: Number.NaN };
+  for (const fit of wild) {
+    state = nextCapFit(state, fit);
+    const { lift, widen, shift } = state.wanted;
+    assert.ok(Number.isFinite(lift + widen + shift), JSON.stringify(fit));
+    assert.ok(lift >= CAP_FIT.lift.min && lift <= CAP_FIT.lift.max, `lift ${lift}`);
+    assert.ok(widen >= CAP_FIT.widen.min && widen <= CAP_FIT.widen.max, `widen ${widen}`);
+    assert.ok(Math.abs(shift) <= CAP_FIT.shift + 1e-9, `shift ${shift}`);
+    assert.ok(Number.isInteger(state.misses) && state.misses >= 0, `misses ${state.misses}`);
+    for (const v of buildHeadCap(cloudOf('head').source, state.wanted)) assert.ok(Number.isFinite(v));
+  }
+});
+
+test('fit: a segmenter that stutters never pops the cap — a whole scan, readings and refusals', () => {
+  /*
+    The scan as it actually runs: a tracked face every 33 ms, a
+    segmenter reading a few times a second, and that reading refusing
+    now and then the way a real classifier does. The two rules under
+    test together — `nextCapFit` holding through a refusal, `blendCapFit`
+    easing towards what it holds — have to leave the cap moving smoothly
+    the whole way through. A reset on a single bad frame shows up here
+    as a pole that leaps and comes back.
+  */
+  const pose = { yaw: 30, pitch: -30 };
+  const cloud = cloudOf('head', pose);
+  const hair = hairOutline(pose, { up: 1.3, wide: 1.2 });
+  const measured = fitHairCap(cloud.source, { points: hair.flat });
+  assert.ok(measured !== null);
+
+  // A refusal every fourth reading, and two in a row in the middle:
+  // shorter than the hold, so the cap may never let go.
+  const refuses = (reading: number) => reading % 4 === 3 || reading === 9 || reading === 10;
+
+  let state = CAP_FIT_START;
+  let drawn = CAP_FIT_DEFAULT;
+  let previous = vertex(buildHeadCap(cloud.source, drawn), CAP_POLE);
+  let worst = 0;
+  let lowest = Number.POSITIVE_INFINITY;
+  let readings = 0;
+  for (let frame = 0; frame < 300; frame += 1) {
+    // Three readings a second against a 30 Hz tracker.
+    if (frame % 10 === 0) {
+      state = nextCapFit(state, refuses(readings) ? null : measured);
+      readings += 1;
+    }
+    drawn = blendCapFit(drawn, state.wanted, 1 - Math.exp(-33 / 520));
+    const pole = vertex(buildHeadCap(cloud.source, drawn), CAP_POLE);
+    const step = Math.hypot(pole.x - previous.x, pole.y - previous.y);
+    if (step > worst) worst = step;
+    if (drawn.lift < lowest) lowest = drawn.lift;
+    previous = pole;
+  }
+  assert.ok(readings > CAP_FIT.hold, 'the run is longer than the hold');
+  assert.ok(worst < 2.5, `worst step ${worst.toFixed(2)} points`);
+  // It never sagged back below where it started: a refusal held, it did
+  // not deflate the cap towards the skull.
+  assert.ok(lowest >= CAP_FIT_DEFAULT.lift - 1e-9, `sagged to ${lowest}`);
+  // And it arrived at the measured shape.
+  const settled = vertex(buildHeadCap(cloud.source, measured), CAP_POLE);
+  assert.ok(Math.hypot(previous.x - settled.x, previous.y - settled.y) < 0.5, 'arrives');
 });

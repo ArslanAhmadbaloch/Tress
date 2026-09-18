@@ -36,18 +36,48 @@
  * that light on one vertex, fade, and light on another; they are dimmed
  * by facing, so they gather on the side of the head the phone sees.
  *
+ * ── On the hair, not on the skull ─────────────────────────────────────
+ * A face tracker sees a face. Left to it the cap is drawn to a bare
+ * head, and anyone with volume watches the mesh cut through their hair —
+ * which is the whole complaint. Two things answer it, and the first one
+ * needs nothing wired at all:
+ *
+ *   • the cap carries a STANDING ALLOWANCE (`CAP_FIT_DEFAULT` in
+ *     head-cap.ts) — a tenth taller above the brow, a sixteenth wider —
+ *     so the dome every phone draws, segmenter or no segmenter, already
+ *     clears a head of hair instead of hugging the scalp.
+ *   • where a mask can say how much hair there actually is, the
+ *     segmenter's silhouette comes in through `setHair` and REPLACES
+ *     that guess with the measured shape: taller, wider, nudged across
+ *     for a parting. The stretch is the same three dimensionless numbers
+ *     (`CapFit`) and it eases in, so the mesh grows onto the hair
+ *     instead of stepping at the segmenter's rate.
+ *
+ * Nothing calls `setHair` yet — see the note on the handle — so today
+ * every phone draws the allowance. The scan works either way, and a
+ * refusal never collapses the cap back onto the skull: `nextCapFit`
+ * holds the shape through a bad frame and lets go only after a run of
+ * them.
+ *
  * ── The fill ──────────────────────────────────────────────────────────
- * The screen hands over the engine's coverage — the same twenty-four
- * numbers the ring reads — and each line of the cap belongs to one of
- * those sectors (see `CAP_SECTOR_OF`). As a sector is captured its lines
- * take the accent, so the head fills in as the ring does: turn to the
- * right and the right side of the cap comes up green with the right of
- * the ring. It is a picture of where the head has been pointed, not of
- * anything on the head.
+ * The screen hands over what has been captured and each line of the cap
+ * belongs to a part of it. With the guided scan's four regions
+ * (`CAP_REGION_OF`) the head fills a quarter at a time as each step
+ * lands. With the ring's twenty-four sectors (`CAP_SECTOR_OF`) it fills
+ * as the ring does. Both are a picture of where the head has been
+ * pointed, not of anything on the head.
+ *
+ * The `regions` array is indexed by `CAP_REGIONS`, and which region a
+ * STEP fills is the opposite of the obvious pairing: turn right and it
+ * is the screen's LEFT quarter — `leftTemple` — that swings towards the
+ * lens and should light. Do not infer it from the names; the pairing is
+ * written once, as `REGION_OF_STEP` in engine.ts, and argued from the
+ * geometry in head-cap.ts.
  *
  * Reduce Motion takes the glide, the scan line and the lit points away
  * and leaves the cap where the head is. Following a head is tracking, not
- * animation; it stays. So does the fill: it is state, as the ring's is.
+ * animation; it stays, and so does sitting the cap on the hair. So does
+ * the fill: it is state, as the ring's is.
  *
  * ── The still ─────────────────────────────────────────────────────────
  * `StaticHairMesh`, at the bottom, is the same cap held on a
@@ -60,8 +90,11 @@
  * ── What it is not ────────────────────────────────────────────────────
  * The cap is geometry: lofted from a tracked 3D face where the phone
  * has one, extrapolated from the face oval and the brow where it does
- * not. It is where the scan looks, not a measurement of what is there.
- * The mesh knows where the head is; it does not know what is on it.
+ * not, and sat on the hair where a mask says where the hair is. It is
+ * where the scan looks, not a measurement of what is there. Nothing it
+ * computes is displayed, stored or compared: the mesh says Tress is
+ * mapping the hair, and never what it found. No number appears on it,
+ * ever — the measurement engine does that work, later, on the frames.
  */
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, type Ref } from 'react';
@@ -87,16 +120,26 @@ import Svg, { Circle, G, Path } from 'react-native-svg';
 import {
   CAP,
   CAP_BAND,
+  CAP_FIT_DEFAULT,
+  CAP_FIT_START,
   CAP_LENGTH,
   CAP_MERIDIANS,
+  CAP_REGION_OF,
   CAP_RINGS,
   CAP_SECTOR_OF,
   CAP_SITES,
   CAP_STRIDE,
   CAP_VERTICES,
+  blendCapFit,
   buildHeadCap,
   capIndex,
+  fitHairCap,
+  nextCapFit,
+  type CapFit,
+  type CapFitState,
   type CapMesh,
+  type CapSource,
+  type HairSilhouette,
 } from '@/features/hair-scan/head-cap';
 import type { FaceSource, TrackedFace } from '@/features/hair-scan/tracking';
 import type { MeshFace } from '@/features/hair-scan/types';
@@ -123,6 +166,41 @@ export type HairMeshHandle = {
    * the frame handler; it never causes a React render.
    */
   setFace(face: TrackedFace | null): void;
+  /**
+   * A hair silhouette from the segmenter — the outline of what it called
+   * hair, in the PREVIEW's own points — together with the face it was
+   * measured against.
+   *
+   * ── `from` is not optional in spirit ──────────────────────────────
+   * A silhouette on its own says nothing: the fit is the hair measured
+   * against a head, and `widen` in particular is a width read across the
+   * picture, which a few degrees of stale yaw corrupts. The mask comes
+   * back from an async pass over a frame that is by then several frames
+   * old, and this choreography has the head turning for most of the
+   * scan — so pass the face that was tracked WHEN THAT FRAME WAS TAKEN.
+   * Left out, the newest tracked face stands in, which is right only
+   * while the head is still.
+   *
+   * ── How often ─────────────────────────────────────────────────────
+   * Not per frame, and not casually. `fitHairCap` walks the whole point
+   * cloud three times before it starts (see its own note), and the
+   * segmenter in front of it is 30-245 ms of Hermes on old hardware.
+   * The cheap and honest cadence for this repo is ONCE PER CAPTURED
+   * FRAME — four times in the whole scan — because the shape of
+   * somebody's hair does not change between frames and the fit eases in
+   * over half a second anyway.
+   *
+   * ── Null, and refusals ────────────────────────────────────────────
+   * Null means "this reading had nothing in it", NOT "there is no
+   * hair": the cap holds the shape it has and only lets go after
+   * `CAP_FIT.hold` refusals in a row. Never calling this at all is a
+   * supported way to run — every phone without a segmenter does, and
+   * that is every phone today — and draws the standing allowance.
+   *
+   * It is a drawing instruction and nothing else: no number it produces
+   * is shown, stored or compared.
+   */
+  setHair(hair: HairSilhouette | null, from?: CapSource): void;
 };
 
 export type HairMeshProps = {
@@ -136,6 +214,17 @@ export type HairMeshProps = {
    * take the accent. Leave it out and the cap never fills.
    */
   coverage?: SharedValue<number[]>;
+  /**
+   * The guided scan's four regions, 0–1 each, in `CAP_REGIONS` order —
+   * hairline, left temple, right temple, crown. As each step's region is
+   * captured its part of the cap takes the accent, so the head fills in
+   * a quarter at a time as the person turns.
+   *
+   * Given, it is what the cap fills from and `coverage` is ignored: the
+   * two are different dials over the same head and blending them would
+   * light parts of the cap twice.
+   */
+  regions?: SharedValue<number[]>;
 };
 
 /* --------------------------------- tuning -------------------------------- */
@@ -145,6 +234,29 @@ const GLIDE_TAU_MS = 48;
 
 /** Closer than this, in points, and the glide snaps and goes quiet. */
 const SNAP_EPS = 0.05;
+
+/**
+ * Time constant of the cap's growth onto the hair, in milliseconds.
+ *
+ * Far slower than the glide, and on purpose. The glide is following a
+ * head, which has to be instant or the mesh lags; the fit is a change of
+ * SHAPE, which arrives a few times a second from the segmenter and would
+ * be seen as the cap pulsing if it were taken whole each time. At this
+ * constant a person who steps into frame sees the cap settle onto their
+ * hair over about half a second, once, and then hold.
+ *
+ * Reduce Motion takes it away, as it takes the glide: the cap is built
+ * to the new shape at once and holds there. What makes that bearable
+ * rather than a pulse is the pair of rules in `nextCapFit` — a reading
+ * inside the deadband is the reading the cap already has, and a refusal
+ * holds rather than collapsing — so a reduced-motion reader sees the
+ * shape change when the hair genuinely reads differently and not
+ * otherwise. Without those two this could not honestly be switched off.
+ */
+const FIT_TAU_MS = 520;
+
+/** Milliseconds assumed between readings when the tracker stamps none. */
+const FIT_STEP_MS = 60;
 
 /** One sweep of the scan line, brow to crown, before it turns back. */
 const BEAM_MS = 2400;
@@ -224,6 +336,18 @@ const TWINKLE_SLOTS = Array.from({ length: TWINKLE_COUNT }, (_, i) => i);
  * paths, the scan line one more (three strokes of it), and the lights
  * on top are ten flicks and six blooms: thirty-two animated nodes, the
  * same count this drew before the near side and the twinkles arrived.
+ *
+ * Sitting the cap on the hair did not change that count either. The
+ * fit is three numbers applied to the dome's three axes before the
+ * 191 vertices are written — no vertex added, no segment added, no
+ * node added — and it is COMPUTED off the drawn frame entirely, on the
+ * JS thread, when a silhouette arrives. What it costs there is not
+ * small and is counted honestly on `fitHairCap`: three walks of the
+ * tracked point cloud, two dome writes, eight walks of these 191
+ * vertices and six of the silhouette's own points. That is why the
+ * handle asks to be called once per captured frame rather than at the
+ * segmenter's rate. The UI thread's per-frame work is unchanged: the
+ * same 191 vertices and 370 segments it always was.
  */
 const PATH_FAR = 0;
 const PATH_GRID = 1;
@@ -239,22 +363,37 @@ function num(v: number): string {
   return (Math.round(v * 10) / 10).toString();
 }
 
-/** A vertex's fill, 0–1: its sector's coverage, or the scan's mean for the front centre. */
-function tintOf(cover: number[] | null, mean: number, v: number): number {
+/**
+ * A vertex's fill, 0–1.
+ *
+ * Which dial it is read off is passed in rather than guessed: the
+ * guided scan's four regions when the screen hands those over, the
+ * ring's twenty-four sectors otherwise. A vertex belonging to neither —
+ * the ring leaves its front centre unassigned — fills with the scan's
+ * mean.
+ */
+function tintOf(cover: number[] | null, byRegion: boolean, mean: number, v: number): number {
   'worklet';
   if (cover === null) return 0;
-  const sector = CAP_SECTOR_OF[v];
-  if (sector < 0) return mean;
-  const c = cover[sector];
+  const key = byRegion ? CAP_REGION_OF[v] : CAP_SECTOR_OF[v];
+  if (key < 0) return mean;
+  const c = cover[key];
   return c === undefined ? 0 : c;
 }
 
 /** Which path the line between two vertices belongs in. */
-function pathOf(pts: number[], cover: number[] | null, mean: number, a: number, b: number): number {
+function pathOf(
+  pts: number[],
+  cover: number[] | null,
+  byRegion: boolean,
+  mean: number,
+  a: number,
+  b: number,
+): number {
   'worklet';
   const facing = (pts[a * CAP_STRIDE + 2] + pts[b * CAP_STRIDE + 2]) / 2;
   if (facing < FAR_FACING) return PATH_FAR;
-  const tint = (tintOf(cover, mean, a) + tintOf(cover, mean, b)) / 2;
+  const tint = (tintOf(cover, byRegion, mean, a) + tintOf(cover, byRegion, mean, b)) / 2;
   for (let step = TINT.steps.length - 1; step >= 0; step -= 1) {
     if (tint >= TINT.steps[step]) return PATH_TINT + step;
   }
@@ -272,6 +411,7 @@ function walk(
   pts: number[],
   indices: readonly number[],
   cover: number[] | null,
+  byRegion: boolean,
   mean: number,
 ): void {
   'worklet';
@@ -279,7 +419,7 @@ function walk(
   for (let i = 1; i < indices.length; i += 1) {
     const a = indices[i - 1];
     const b = indices[i];
-    const path = pathOf(pts, cover, mean, a, b);
+    const path = pathOf(pts, cover, byRegion, mean, a, b);
     const ka = a * CAP_STRIDE;
     const kb = b * CAP_STRIDE;
     if (path !== prev) out[path] += 'M' + num(pts[ka]) + ' ' + num(pts[ka + 1]);
@@ -288,8 +428,8 @@ function walk(
   }
 }
 
-/** Every path of the cap, from the drawn vertices and the coverage. */
-function capPaths(pts: number[], cover: number[] | null): string[] {
+/** Every path of the cap, from the drawn vertices and the fill. */
+function capPaths(pts: number[], cover: number[] | null, byRegion: boolean): string[] {
   'worklet';
   const out: string[] = [];
   for (let i = 0; i < PATH_COUNT; i += 1) out.push('');
@@ -299,8 +439,10 @@ function capPaths(pts: number[], cover: number[] | null): string[] {
     for (let i = 0; i < cover.length; i += 1) sum += cover[i];
     mean = sum / cover.length;
   }
-  for (let r = 0; r < CAP_RINGS.length; r += 1) walk(out, pts, CAP_RINGS[r], cover, mean);
-  for (let c = 0; c < CAP_MERIDIANS.length; c += 1) walk(out, pts, CAP_MERIDIANS[c], cover, mean);
+  for (let r = 0; r < CAP_RINGS.length; r += 1) walk(out, pts, CAP_RINGS[r], cover, byRegion, mean);
+  for (let c = 0; c < CAP_MERIDIANS.length; c += 1) {
+    walk(out, pts, CAP_MERIDIANS[c], cover, byRegion, mean);
+  }
   return out;
 }
 
@@ -352,7 +494,7 @@ function starPath(x: number, y: number, arm: number): string {
 
 /* ------------------------------- component ------------------------------- */
 
-export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMeshProps) {
+export function HairMesh({ ref, scanning, tone = 'neutral', coverage, regions }: HairMeshProps) {
   const { colors } = useTheme();
   const reduced = useReducedMotion();
 
@@ -376,11 +518,30 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
     reducedRef.current = reduced;
   }, [reduced]);
 
+  /*
+    The hair fit. Three numbers, all on the JS thread: `drawnFit` is the
+    shape the cap is being built to, `fitState` holds the shape it is
+    heading for and the run of readings that said nothing, and every
+    face walks the first a little way towards the second — so a fit that
+    lands between two frames grows in over about half a second rather
+    than stepping. Both start at the standing allowance, so the very
+    first cap drawn already clears the skull.
+
+    `faceRef` is the newest tracked face, kept only as the stand-in for
+    a caller that hands over a silhouette without saying which head it
+    was measured against.
+  */
+  const drawnFit = useRef<CapFit>(CAP_FIT_DEFAULT);
+  const fitState = useRef<CapFitState>(CAP_FIT_START);
+  const faceRef = useRef<TrackedFace | null>(null);
+  const fitAtRef = useRef(0);
+
   useImperativeHandle(
     ref,
     (): HairMeshHandle => ({
       setFace(face) {
         if (face === null) {
+          faceRef.current = null;
           if (!presentRef.current) return;
           presentRef.current = false;
           // Fades where it stands. Collapsing it would be a pop.
@@ -389,7 +550,16 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
           );
           return;
         }
-        const cap = buildHeadCap(face);
+        faceRef.current = face;
+        const now = Number.isFinite(face.at) ? face.at : fitAtRef.current + FIT_STEP_MS;
+        const dt = Math.min(500, Math.max(0, now - fitAtRef.current));
+        fitAtRef.current = now;
+        drawnFit.current = blendCapFit(
+          drawnFit.current,
+          fitState.current.wanted,
+          reducedRef.current ? 1 : 1 - Math.exp(-dt / FIT_TAU_MS),
+        );
+        const cap = buildHeadCap(face, drawnFit.current);
         target.set(cap);
         if (!presentRef.current) {
           presentRef.current = true;
@@ -401,6 +571,21 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
           );
         }
         dirty.set(1);
+      },
+      setHair(hair, from) {
+        // The head the mask was measured against, which is the one the
+        // caller names. The newest tracked face is only the stand-in.
+        const face: CapSource | null = from ?? faceRef.current;
+        // Refined from where the cap already is, so a steady head
+        // converges on a steady answer instead of re-deriving one. A
+        // reading with nothing in it — no silhouette, no head to
+        // measure it against, or a trace `fitHairCap` will not answer
+        // for — is a refusal, and a refusal HOLDS the shape the cap
+        // has. Collapsing here on one bad frame is what made the mesh
+        // deflate onto the skull and re-inflate a moment later.
+        const fit =
+          hair === null || face === null ? null : fitHairCap(face, hair, drawnFit.current);
+        fitState.current = nextCapFit(fitState.current, fit);
       },
     }),
     [target, current, visible, dirty],
@@ -479,9 +664,11 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage }: HairMesh
     interpolateColor(toneValue.get() * TONE_MIX, [0, 1], [white, sage]),
   );
 
-  const paths = useDerivedValue(() =>
-    capPaths(current.get(), coverage === undefined ? null : coverage.get()),
-  );
+  const paths = useDerivedValue(() => {
+    const cover =
+      regions !== undefined ? regions.get() : coverage === undefined ? null : coverage.get();
+    return capPaths(current.get(), cover, regions !== undefined);
+  });
 
   const far = useAnimatedProps(() => ({ d: paths.get()[PATH_FAR], stroke: stroke.get() }));
   const grid = useAnimatedProps(() => ({ d: paths.get()[PATH_GRID], stroke: stroke.get() }));
@@ -756,6 +943,16 @@ export type StaticHairMeshProps = {
   width: number;
   height: number;
   tone?: MeshTone;
+  /**
+   * The hair fit the live cap was wearing when this frame was taken.
+   *
+   * Carried for the same reason the tracked mesh is: the camera drew a
+   * cap sitting on this person's hair, and a still that rebuilt a
+   * differently-shaped dome would show a different cap on the same head
+   * a second later. Left out, the standing allowance is drawn — which is
+   * what a phone with no segmenter showed live too, so the two agree.
+   */
+  fit?: CapFit;
   /** 0–1: how strongly the lines are drawn. A thumbnail draws faint. */
   strength?: number;
   /** Leave out the lines that face away — a haze at thumbnail size. */
@@ -787,6 +984,7 @@ export function StaticHairMesh({
   width,
   height,
   tone = 'neutral',
+  fit,
   strength = 1,
   sparse = false,
   points = false,
@@ -802,8 +1000,9 @@ export function StaticHairMesh({
       face.pose === undefined
         ? face
         : { ...face, yaw: face.pose.yaw, pitch: face.pose.pitch, roll: face.pose.roll },
+      fit,
     );
-    const built = capPaths(pts, null);
+    const built = capPaths(pts, null, false);
     return {
       far: built[PATH_FAR],
       grid: built[PATH_GRID],
@@ -814,7 +1013,7 @@ export function StaticHairMesh({
         y: pts[site * CAP_STRIDE + 1] ?? 0,
       })),
     };
-  }, [face]);
+  }, [face, fit]);
 
   const lit = points && !reduced;
   const breath = useSharedValue(0);

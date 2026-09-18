@@ -16,6 +16,7 @@ import { test, type TestContext } from 'node:test';
 
 import './expo-globals';
 import type { PhotoAnalysis } from '@/features/assessment/analyse-photo';
+import type { MaskImage } from '@/features/assessment/hair-mask';
 import type { PhotoMeasurement } from '@/features/assessment/hair-segmenter';
 import {
   ANALYSIS_COPY,
@@ -51,6 +52,7 @@ import {
   type AnalysisProgress,
 } from '@/features/hair-scan/analysis';
 import { HAIR_SCAN_COPY } from '@/features/hair-scan/copy';
+import { SCAN_REGIONS, measureScan, type FaceObservation } from '@/features/hair-scan/measure';
 
 import { assertHonest } from './honesty-words';
 
@@ -738,4 +740,156 @@ test('copy: every line the pass can say is swept, and none describes a head', ()
   for (const word of ['before', 'after', 'forecast', 'predict', 'will']) {
     assert.ok(!text.includes(` ${word} `), `the processing pass must not say "${word}"`);
   }
+});
+
+/* ---------------------------- the measurement ---------------------------- */
+
+/**
+ * A mask that calls every pixel hair, at the resolution the segmenter
+ * emits. Uniform on purpose: what these tests are about is the wiring —
+ * whether the masks and the faces reach the engine at all, and whether
+ * its refusals survive the trip. The arithmetic of reading a region off
+ * a mask is `hair-scan-measure.test.ts`'s, over a painted head.
+ */
+function maskOf(value: number, side = 64): MaskImage {
+  return { width: side, height: side, data: new Float32Array(side * side).fill(value) };
+}
+
+const FACE: FaceObservation = {
+  bounds: { x: 0.3, y: 0.25, width: 0.4, height: 0.3 },
+  image: { width: 400, height: 600 },
+  yaw: 0,
+  pitch: 0,
+  roll: 0,
+};
+
+/** The frames as the scan hands them in: a face at each shutter, and the shutter's own score. */
+const SEEN: AnalysisFrame[] = FRAMES.map((f) => ({ ...f, face: FACE, captureQuality: 0.8 }));
+
+const WITH_MASK = { ...AREA, mask: maskOf(1) };
+const AT = '2026-02-01T10:00:00.000Z';
+
+test('measurement: masks and faces reach the engine, and its answer comes back stamped', async (t) => {
+  const result = await drive(t, () =>
+    runAnalysis(SEEN, { deps: deps({ measureCoverage: async () => WITH_MASK }), capturedAt: AT }),
+  );
+  assert.ok(result.measurement, 'three frames with a mask and a face must produce a measurement');
+  assert.equal(result.measurement.capturedAt, AT, 'the stamp is the caller’s, not the clock’s');
+  /*
+    Every region is accounted for exactly once: either it was read, or it
+    is named in `unread`. A region that was quietly dropped from both
+    would be the failure this whole engine exists to prevent — a gap
+    nothing on screen could tell from a reading.
+  */
+  const read = Object.keys(result.measurement.regions);
+  const seen = [...read, ...result.measurement.unread].sort();
+  assert.deepEqual(seen, [...SCAN_REGIONS].sort(), 'read or refused, never neither and never both');
+  assert.equal(new Set(seen).size, seen.length);
+  assert.ok(read.includes('hairline'), 'a head square to the camera shows its hairline');
+  /*
+    And the crown is refused, on exactly these frames, for exactly the
+    right reason: a level head does not show the top of itself. This is
+    the assertion that makes the rest of this test mean something — a
+    wiring that produced six confident figures from three frames of a
+    face-on head would be worse than one that produced none.
+  */
+  assert.ok(result.measurement.unread.includes('crown'), 'a level head has no crown in the picture');
+  assert.ok(
+    read.every((r) => result.measurement!.regions[r as (typeof SCAN_REGIONS)[number]]!.anchoring === 'box'),
+    'a fixture with no eye corners and no chin is box-anchored, and says so',
+  );
+  for (const region of read) {
+    const m = result.measurement.regions[region as (typeof SCAN_REGIONS)[number]]!;
+    assert.ok(m.coverage >= 0 && m.coverage <= 1, `${region} coverage out of range`);
+    assert.ok(m.frames >= 1, `${region} claims a reading from no frame`);
+    assert.ok(m.confidence > 0 && m.confidence <= 1);
+  }
+  // The area pass is untouched: the measurement is additional, not a
+  // replacement, and every frame still carries its own readings.
+  assert.equal(result.measured, SEEN.length);
+  assert.ok(result.frames.every((f) => f.area === 'measured' && f.coverage !== null));
+});
+
+test('measurement: faces but no pixels — nothing to count, and the area reading stands', async (t) => {
+  // The stand-in hands back only the figures, which is what a caller
+  // that asked for `measureCoverage` rather than `measureMask` gets, and
+  // is a valid answer rather than a fault.
+  const result = await drive(t, () => runAnalysis(SEEN, { deps: deps(), capturedAt: AT }));
+  assert.equal(result.measurement, null, 'no pixels: nothing to count');
+  assert.ok(result.frames.every((f) => f.area === 'measured'), 'the area reading is unaffected');
+});
+
+test('measurement: pixels but no face — six confident figures on an unlocated head is the failure', async (t) => {
+  // There is no coordinate frame to place a region in, so there is no
+  // measurement. Placing one anyway would be the one mistake that still
+  // looks exactly like a reading.
+  const result = await drive(t, () =>
+    runAnalysis(FRAMES, { deps: deps({ measureCoverage: async () => WITH_MASK }), capturedAt: AT }),
+  );
+  assert.equal(result.measurement, null);
+});
+
+test('measurement: a build with no segmenter says so rather than measuring nothing', async (t) => {
+  const result = await drive(t, () =>
+    runAnalysis(SEEN, { deps: deps({ measureCoverage: null }), capturedAt: AT }),
+  );
+  assert.equal(result.measurement, null);
+  assert.equal(result.plan.areaAvailable, false);
+  assert.equal(result.plan.note, ANALYSIS_COPY.areaUnavailable);
+  assert.ok(result.frames.every((f) => f.area === 'unavailable'), 'nobody looked, and the record says so');
+});
+
+test('measurement: the stamp is the caller’s, so two passes over one scan agree', async (t) => {
+  /*
+    One `drive` per test — the mocked clock may only be enabled once —
+    so the repeat is two passes of the engine over one set of readings
+    rather than two runs of the whole pass. That is the claim that
+    matters anyway: `measureScan` takes its timestamp as an argument
+    precisely so that the same frames never produce two records.
+  */
+  const result = await drive(t, () =>
+    runAnalysis(SEEN, { deps: deps({ measureCoverage: async () => WITH_MASK }), capturedAt: AT }),
+  );
+  assert.ok(result.measurement);
+  const inputs = SEEN.map(() => ({ mask: maskOf(1), face: FACE, quality: 0.8 }));
+  assert.deepEqual(measureScan(inputs, AT), result.measurement);
+});
+
+test('measurement: a frame the model could not read takes no part in it', async (t) => {
+  let call = 0;
+  const result = await drive(t, () =>
+    runAnalysis(SEEN, {
+      deps: deps({
+        measureCoverage: async () => {
+          call += 1;
+          // The middle frame's file is unreadable: null, which is the
+          // honest answer and not an empty mask.
+          return call === 2 ? null : WITH_MASK;
+        },
+      }),
+      capturedAt: AT,
+    }),
+  );
+  assert.equal(result.frames.filter((f) => f.area === 'failed').length, 1);
+  assert.ok(result.measurement, 'the other two frames still measure');
+  for (const region of Object.values(result.measurement.regions)) {
+    assert.ok(region.frames <= 2, 'a frame the model refused cannot appear in a region’s count');
+  }
+});
+
+test('measurement: nothing about it reaches the record as a sentence', async (t) => {
+  /*
+    The pass says what the device is doing, and a measurement does not
+    change that. If a coverage figure ever starts appearing in a label on
+    this screen, it will be a number on a progress bar describing
+    somebody's head — which is the line this whole feature does not
+    cross.
+  */
+  const result = await drive(t, () =>
+    runAnalysis(SEEN, { deps: deps({ measureCoverage: async () => WITH_MASK }), capturedAt: AT }),
+  );
+  assert.ok(result.measurement);
+  const labels = result.plan.units.map((u) => u.label);
+  assertHonest(assert, labels, 'the processing pass');
+  assert.ok(!labels.join(' ').match(/\d/), 'no unit label carries a figure');
 });

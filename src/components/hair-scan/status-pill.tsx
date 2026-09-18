@@ -1,22 +1,24 @@
 /**
  * The status pill — the instrument's one-word readout of itself.
  *
- * It sits at the top of the video and says one thing at a time, and the
- * five things it can say are the five states of the new scan: looking
- * for you, tracking, turning, head down, almost done. The caller maps
- * the engine's state to one of those phases with `scanPhaseFor` and
- * takes the words from the scan copy; this file owns the tone and the
- * glyph each phase wears and how the change looks, and it looks like one
- * object changing colour rather than two objects swapping.
+ * It sits at the top of the video and says one thing at a time, and it
+ * has got quieter. The instruction is the step header's job now, and the
+ * corrections are the plate's; what is left for the pill is the thing
+ * neither of them says — whether the machine has a head to follow and
+ * whether it is taking frames. Four readouts: looking for you, following
+ * you, scanning, nearly done.
  *
- * The scan copy has one sentence per engine *status*, and the engine has
- * one status for the whole capture, so `turning` and `head down` reach
- * the pill with the same word on them. The glyph is what tells them
- * apart until the copy has a word for each: a turn arrow while the head
- * is going left and right, a chevron down while it is lowered. Two
- * readouts wearing one word is a gap in the copy, not something this
- * file may invent its way out of — every word the scanner says is
- * written in one place so the honesty sweep can read it.
+ * The words come from the scan copy by way of the screen. This file owns
+ * the tone and the glyph each readout wears, and how the change looks,
+ * and it looks like one object changing colour rather than two objects
+ * swapping.
+ *
+ * While frames are being taken, the glyph is the step's own: the head
+ * straight, turning right, turning left, or lowered. That is the only
+ * place the pill knows anything about the choreography, and it is there
+ * because the four steps share one word — the machine is scanning
+ * throughout, and which way the head is going is the arrow's news, not
+ * the pill's.
  *
  * Three tones, no red, and nothing about distance. Green is for a
  * machine that has what it needs, a warm amber is reserved for the light
@@ -48,24 +50,24 @@ import Animated, {
 
 import { Icon, type IconName } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import type { ScanStage, ScanStatus } from '@/features/hair-scan/types';
+import type { ScanStatus, ScanStep } from '@/features/hair-scan/types';
 import { darkColors, iconSize, motion, radius, spacing } from '@/theme';
 
 export type StatusTone = 'good' | 'adjust' | 'neutral';
 
 /**
- * The five readouts of the scan, in the order a person meets them.
+ * The four readouts of the scan, in the order a person meets them.
  *
  * - `searching` — no head is being followed yet.
  * - `tracking` — a head is followed and Start may be pressed.
- * - `turning` — the first beat: the head is going left and right.
- * - `headDown` — the second beat: the head is lowered and turning again.
+ * - `capturing` — the motion is running and frames are being taken.
  * - `almost` — enough has been captured; the last frames are landing.
  *
  * There is no phase for "too far", "too close" or "hold still", because
- * the scan no longer asks for any of them.
+ * the scan no longer asks for any of them, and no phase per step: the
+ * header says which step it is, in words, in large type.
  */
-export type ScanPhase = 'searching' | 'tracking' | 'turning' | 'headDown' | 'almost';
+export type ScanPhase = 'searching' | 'tracking' | 'capturing' | 'almost';
 
 /**
  * What each phase wears. Only the first is neutral: from the moment a
@@ -76,8 +78,7 @@ export type ScanPhase = 'searching' | 'tracking' | 'turning' | 'headDown' | 'alm
 export const SCAN_PHASE_TONE: Record<ScanPhase, StatusTone> = {
   searching: 'neutral',
   tracking: 'good',
-  turning: 'good',
-  headDown: 'good',
+  capturing: 'good',
   almost: 'good',
 };
 
@@ -86,37 +87,51 @@ export function scanPhaseTone(phase: ScanPhase): StatusTone {
 }
 
 /**
- * The glyph each readout wears.
+ * The glyph each step wears while frames are being taken.
  *
- * It is the only thing that distinguishes the two halves of the capture
- * while they share a word, so the two that matter are the two movements:
- * a turn arrow and a chevron pointing down. Nothing here is a warning
- * sign — no triangle, no exclamation — because none of the five states
- * is a problem.
+ * They are the movement itself — a target for the head held straight, a
+ * chevron each way for the turns, a chevron down for the crown — so the
+ * pill agrees with the arrow rather than repeating it. Nothing here is a
+ * warning sign: no triangle, no exclamation, because none of the four is
+ * a problem.
  */
+export const SCAN_STEP_ICON: Record<ScanStep, IconName> = {
+  front: 'target',
+  right: 'chevronRight',
+  left: 'chevronLeft',
+  down: 'chevronDown',
+};
+
+/** The glyph for the phases that are not a step. */
 export const SCAN_PHASE_ICON: Record<ScanPhase, IconName> = {
   searching: 'search',
   tracking: 'check',
-  turning: 'retake',
-  headDown: 'chevronDown',
+  capturing: 'camera',
   almost: 'sparkle',
 };
 
-export function scanPhaseIcon(phase: ScanPhase): IconName {
+/**
+ * The glyph for a readout. While capturing, the step's own; otherwise the
+ * phase's. The step is optional: a caller with none in hand gets the
+ * general glyph, which is what the pill wore before the steps existed,
+ * so a screen can adopt the step glyphs when it has a step to give and
+ * not before.
+ */
+export function scanPhaseIcon(phase: ScanPhase, step: ScanStep | null = null): IconName {
+  if (phase === 'capturing' && step) return SCAN_STEP_ICON[step];
   return SCAN_PHASE_ICON[phase];
 }
 
 /**
  * Which readout the machine's own state comes to.
  *
- * The engine has one status for the whole capture, because capturing is
- * one thing to a reducer; to a person it is two, and which one they are
- * in is the stage. That is the only place the two halves of the scan
- * differ in this file, and it is why the stage is passed in at all.
+ * One status in, one readout out. The step no longer changes the answer:
+ * the four steps are one continuous motion and the machine is doing the
+ * same thing throughout it, which is exactly what the pill is for.
  */
-export function scanPhaseFor(status: ScanStatus, stage: ScanStage | null): ScanPhase {
+export function scanPhaseFor(status: ScanStatus): ScanPhase {
   if (status === 'completing' || status === 'complete') return 'almost';
-  if (status === 'capturing') return stage === 'crown' ? 'headDown' : 'turning';
+  if (status === 'capturing') return 'capturing';
   if (status === 'ready') return 'tracking';
   return 'searching';
 }

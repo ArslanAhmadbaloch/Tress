@@ -474,7 +474,13 @@ function lightRow(session: PhotoSession): Omit<AnalysisRow, 'locked'> | null {
   const hero = byAngle(session, 'front') ?? session.photos[0];
   const base = { id: 'light', region: 'hairline' as const, regionLabel: COPY.regions.light, icon: 'light' as const, tab: 'light' as const, measured: false };
   const crop = hero ? cropFor(hero, 'hairline') : null;
-  const turn = session.scan ? COPY.light.turn(pct(session.scan.completion)) : null;
+  /*
+    Only when the scan actually held more than one region: a one-region
+    scan has nothing to say about a turn, and saying it anyway would be
+    flattery dressed as a reading.
+  */
+  const heldRegions = new Set(session.photos.map((p) => p.angle)).size;
+  const turn = session.scan && heldRegions > 1 ? COPY.light.turn(heldRegions) : null;
 
   if (read.length === 1) {
     const q = read[0].quality;
@@ -574,7 +580,9 @@ function strengthCards(data: AppData, session: PhotoSession): StrengthCard[] {
     byAngle(session, 'rightTemple') !== undefined &&
     (byAngle(session, 'top') ?? byAngle(session, 'crown')) !== undefined;
   if (typeof completion === 'number' && completion >= FULL_TURN_AT && everyRegion) {
-    cards.push({ id: 'coverage', icon: 'coverage', title: COPY.strengths.coverage.title, body: COPY.strengths.coverage.body(pct(completion)) });
+    // Four regions is what `everyRegion` just proved; the card names what
+    // the scan held rather than how far a ring that no longer exists went.
+    cards.push({ id: 'coverage', icon: 'coverage', title: COPY.strengths.coverage.title, body: COPY.strengths.coverage.body(4) });
   } else if (front && byAngle(session, 'leftTemple') && byAngle(session, 'rightTemple')) {
     cards.push({ id: 'coverage', icon: 'coverage', title: COPY.strengths.coverage.sidesTitle, body: COPY.strengths.coverage.sidesBody });
   }

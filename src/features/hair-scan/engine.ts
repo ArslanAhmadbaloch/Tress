@@ -10,38 +10,63 @@
  * `node --test`.
  *
  * ── The choreography ─────────────────────────────────────────────────
- * Build 17 asked for a full rotation, like a skincare scanner, behind a
- * ready gate that wanted square-on, a size window, stillness and light
- * all at once. On a real face that gate flickered and Start never armed,
- * and nobody rotates their whole head for a phone anyway. So:
+ * One continuous motion, in four steps, with no shutter anywhere in it.
+ * The person is told one thing at a time and the engine takes the
+ * pictures itself as they move — the pace a KYC check sets, not a photo
+ * session:
  *
- *   Start is live the moment a head is followed — any distance, any
- *   angle, any light. Tracking begins when it is pressed.
- *   Stage one, `sweep`: turn the head slowly left and right. That is
- *   where the FRONT HAIRLINE and BOTH TEMPLES are seen.
- *   Stage two, `crown`: lower the head, then turn again. That is the
- *   only way a phone held in front of somebody sees the CROWN.
+ *   1. `front` — look straight.        → the FRONT HAIRLINE
+ *   2. `right` — turn your head right. → one TEMPLE
+ *   3. `left`  — turn your head left.  → the other TEMPLE
+ *   4. `down`  — look down.            → the CROWN
+ *
+ * No chin up, and no shot of the back of the head: neither is something
+ * a person can do holding their own phone. Each step hands over the
+ * moment its pose is reached AND it is holding a frame it is happy with
+ * (`stepSatisfied`); each also hands over on a generous timeout with
+ * whatever it has (`STEP_TIMEOUT_MS`), so nobody is ever trapped — but
+ * the timeout is the escape hatch, not the design. Start is live the
+ * moment a head is followed: any distance, any angle, any light.
  *
  * Those four frames are the report, so they are what the engine asks
  * for: `REQUIRED_REGIONS`, one kept frame each, better ones replacing
- * worse ones as the head passes again. Nothing else ends the scan, and
- * nothing at all is ever said about how far away to stand.
+ * worse ones while the step is still running. Nothing at all is ever
+ * said about how far away to stand.
+ *
+ * ── No shutter ───────────────────────────────────────────────────────
+ * There is no capture action in `ScanAction` and no hold-to-fire. While
+ * a step runs the engine raises `capture` requests itself whenever the
+ * pose is near that step's target, the head is steady and the frame is
+ * worth having. One is kept per region and every other image is named in
+ * a `discard` event so the screen deletes the file.
+ *
+ * How many that is, honestly: `CAPTURE_INTERVAL_MS` is a floor between
+ * requests, not the rate. A step asks only for its own region and
+ * `targetWants` refuses a second request while one is out for it, so the
+ * real pace is the camera's round trip — one request, then the next only
+ * once that image has landed AND a better one is worth having
+ * (`REPLACE_MARGIN`). Driven end to end that is a handful of requests
+ * across the WHOLE scan, not per step: four to eight, whether the camera
+ * answers instantly or takes 300 ms. Anything written about how many
+ * files a scan puts on a phone has to start there.
  *
  * ── The ring ─────────────────────────────────────────────────────────
  * Twenty-four sectors run clockwise from the top, and they are the
  * JOURNEY rather than the pose — `ringDirection`, not `headDirection`.
- * Stage one walks the top half: the turn to the person's own left at
- * nine o'clock, square on at twelve, the turn to their own right at
- * three. Stage two walks the bottom half with the chin down: nine, six,
- * three again. The fill only ever rises, so stage two adds to stage one
- * rather than restarting it, and between them the whole circle is walked
- * once. The ring closes once, gradually, over the two stages.
+ * The three upright steps (`stage` 'sweep') walk the top half: the turn
+ * to the person's own left at nine o'clock, square on at twelve, the
+ * turn to their own right at three. The last step ('crown') walks the
+ * bottom half with the chin down: nine, six, three again. The fill only
+ * ever rises, so the last step adds to what the first three left rather
+ * than restarting it, and between them the whole circle is walked once.
  *
  * It was a compass before, read straight off the pose — and on that dial
  * the top meant the chin LIFTED, which this choreography never asks for.
  * A third of the ring could not light at the end of a perfect scan while
  * the report said it had closed. The picture is the thing the person
- * trusts, so the picture is what was changed.
+ * trusts, so the picture is what was changed. The ring is drawn from
+ * `stage`, which is derived from the step: the three upright steps walk
+ * the top half and `down` walks the bottom.
  *
  * Frames. One is kept per wanted region — four in all — filed under the
  * region it was asked for and never under the ring bin it happened to
@@ -68,13 +93,14 @@ import type {
   FaceReading,
   FrameMesh,
   MeshPose,
-  GuidanceCue,
   MeshFace,
   RegionScores,
   ScanAction,
+  ScanCue,
   ScanEvent,
   ScanFrame,
   ScanMilestone,
+  ScanReduction,
   ScanRegion,
   ScanStage,
   ScanState,
@@ -82,6 +108,8 @@ import type {
   ScanTarget,
   ScannerState,
   Size,
+  StepProgress,
+  StepTarget,
   TargetProgress,
 } from './types';
 
@@ -94,47 +122,177 @@ import type {
  */
 export const REQUIRED_REGIONS = ['hairline', 'leftTemple', 'rightTemple', 'crown'] as const;
 
-/**
- * Angles, in degrees, with the sign convention both detectors share:
- * positive `yaw` is the head turned towards its own right — which is the
- * viewer's right in the mirrored front-camera preview — and positive
- * `pitch` is the face tilted up, so a lowered chin is NEGATIVE pitch.
- *
- * The thresholds are deliberately generous. They are where a comfortable
- * turn lands after the tracker's smoothing, not where the detector stops
- * reading: the person is never asked to reach.
- */
-/** Inside this much turn, the frame shows the front hairline. */
-export const HAIRLINE_YAW_DEG = 12;
-/** From this much turn, the frame shows that temple. */
-export const TEMPLE_YAW_DEG = 18;
-/** At this much turn the temple is as well seen as the scan asks for. */
-export const TEMPLE_FULL_DEG = 32;
-/** Chin down this far (pitch ≤ −this) and the top of the head comes into view. */
-export const CROWN_PITCH_DEG = 15;
-/** Chin down this far, the crown is as well seen as the scan asks for. */
-export const CROWN_FULL_DEG = 30;
+/** The four steps, in the order a person does them. */
+export const SCAN_STEPS: readonly ScanStep[] = ['front', 'right', 'left', 'down'];
+
+/*
+  ── Handedness, settled ────────────────────────────────────────────────
+
+  Two different facts get called "right" in this feature, and confusing
+  them files a photograph of one side of somebody's head under the other.
+
+  1. THE SIGN. Both detectors report positive `yaw` for a head turned
+     towards its OWN right, and positive `pitch` for a face tilted up —
+     so a lowered chin is negative pitch. The `right` step therefore
+     wants POSITIVE yaw, and `left` wants negative.
+
+  2. THE SIDE THE CAMERA SEES, which is the OPPOSITE one. Stand facing a
+     camera and turn your head to your own right: your nose swings right,
+     your right cheek rotates away from the lens, and your LEFT cheek
+     rotates towards it. At the end of that turn the camera is looking at
+     your left temple. So `right` (the step) yields `leftTemple` (the
+     region), and `left` yields `rightTemple`.
+
+     Two other parts of the app already say this and would be wrong if
+     this line were flipped: `ANGLE_GUIDANCE.leftTemple` in
+     `src/types/domain.ts` reads "Turn your head to the right to show
+     your left side", and `region-crops.ts` cuts the `leftTemple`
+     rectangle from the LEFT of the still — which is where that temple
+     lands, because the preview and the still are both written mirrored,
+     and a mirrored front camera puts your own left on the viewer's left.
+
+  ONE PLACE DISAGREES, and it is in this folder: `closestAngle` in
+  `result.ts` defaults `leftSign` to −1, so a NEGATIVE yaw reads as the
+  left temple there — the opposite of the line above. It is dormant on
+  this path and nothing is mis-filed today, because the screen files
+  every scan frame by its explicit `angle` (`ANGLE_OF_TARGET[f.target]`
+  in `hair-scan.tsx`) and `scanPhotos` only falls back to a pose when
+  that is missing. It is written down here rather than left out so that
+  nobody reads this note as unanimity: the two want one owner, and the
+  fix belongs in `result.ts`, not here.
+
+  The step is named for the direction the head MOVES, because that is
+  what the person is told and what the arrow points at. The region is
+  named for the part of the head in the picture. `REGION_OF_STEP` below
+  is the only place the two meet, and `stepReach` is the only place the
+  sign is read. If a device ever shows this inverted, change those two —
+  and `closestAngle`'s default in the same pass, or the app ends up with
+  three files on one convention and two on the other.
+*/
 
 /**
- * How far the chin may be off level before a stage-one frame stops being
- * what it says it is.
+ * The window either side of square on that counts as the front, in
+ * degrees of yaw. `front` asks for half of it closed — 12° — because
+ * somebody looking at their own phone is never exactly 0°, and asking
+ * them to be was build 17's gate.
+ */
+export const FRONT_YAW_DEG = 24;
+export const FRONT_REACH = 0.5;
+
+/**
+ * The turn the `right` and `left` steps aim at, in degrees of yaw.
  *
- * The hairline and the temples are read off the front of the head, and
- * the front of the head is only in the picture while the chin is near
- * level. Inside `LEVEL_PITCH_DEG` nothing is deducted at all: almost
- * everybody holds a phone below eye level, and that is not a mistake to
- * be corrected. Past it the score tapers, and at `SWEEP_PITCH_LIMIT_DEG`
- * there is no frame worth taking — chin up, the forehead has left the
- * picture and the camera is looking at nostrils; chin down, the head is
- * already in the crown pose and the face is a scalp.
+ * Twenty-eight degrees is a head turn, not a shoulder turn: it is about
+ * as far as somebody looking at a phone held in front of them swivels
+ * before their eyes leave the screen, and both temples are plainly in
+ * frame well before it. Thirty-five and up is where people start turning
+ * their whole torso, lose sight of the instruction, and drift out of the
+ * picture — so the scan does not ask for it.
  *
- * The limit is deliberately much deeper than `CROWN_PITCH_DEG`. Stage
- * one used to refuse anything past the crown threshold, which meant a
- * phone held at chest height could spend the whole sweep with nothing
- * eligible to photograph.
+ * `TURN_HANDOVER_DEG` is what the step HANDS OVER at, and it is
+ * deliberately well short of the aim: nineteen degrees of smoothed yaw,
+ * expressed as `TURN_REACH` because that is the share `stepReach`
+ * reports. Nine tenths of the aim — 25° — was the design, and it was no
+ * design at all: driven with somebody who turns a natural 20° and holds
+ * it, both temples were photographed (frames land from about 14°) and
+ * yet neither turn step ever reached its target, so both burned their
+ * whole seven seconds and a scan that should take six took twenty-two.
+ * The timeout is meant to be the escape hatch; at 25° it was the route
+ * anybody with an ordinary neck took.
+ *
+ * Handing over early does not mean settling for the shallow picture. The
+ * aim stays 28° — `TEMPLE_FULL_DEG` reads it, so the quality curve keeps
+ * paying for the fuller turn — and `stepSatisfied` holds `STEP_SETTLE_MS`
+ * past the moment of arrival, so the frame taken as the turn completes
+ * replaces the one taken on the way.
+ */
+export const TURN_YAW_DEG = 28;
+export const TURN_HANDOVER_DEG = 19;
+export const TURN_REACH = TURN_HANDOVER_DEG / TURN_YAW_DEG;
+
+/**
+ * The nod the `down` step aims at, in degrees of chin-down (negative
+ * pitch). At twenty-five degrees the top of the head is square to a phone
+ * held at chest height, which is where the crown is. `DOWN_HANDOVER_DEG`
+ * hands the step over well short of it, for the same reason the turns do:
+ * a modest nodder must not be held to the timeout to prove they nodded.
+ */
+export const DOWN_PITCH_DEG = 25;
+export const DOWN_HANDOVER_DEG = 19;
+export const DOWN_REACH = DOWN_HANDOVER_DEG / DOWN_PITCH_DEG;
+
+/**
+ * What each step asks the head to reach. `stepReach` measures against
+ * this and `stepSatisfied` decides when it has been met.
+ */
+export const STEP_TARGETS: Record<ScanStep, StepTarget> = {
+  front: { step: 'front', yawDeg: FRONT_YAW_DEG, pitchDeg: null, reach: FRONT_REACH },
+  right: { step: 'right', yawDeg: TURN_YAW_DEG, pitchDeg: null, reach: TURN_REACH },
+  left: { step: 'left', yawDeg: -TURN_YAW_DEG, pitchDeg: null, reach: TURN_REACH },
+  down: { step: 'down', yawDeg: null, pitchDeg: -DOWN_PITCH_DEG, reach: DOWN_REACH },
+};
+
+/**
+ * Which part of the head each step puts in front of the lens. The
+ * opposite-side pairing on the two turns is the whole of the handedness
+ * note above, in two lines of code.
+ */
+export const REGION_OF_STEP: Record<ScanStep, ScanTarget> = {
+  front: 'hairline',
+  right: 'leftTemple',
+  left: 'rightTemple',
+  down: 'crown',
+};
+
+/**
+ * Angles used to score a frame once its region is known — how well this
+ * pose stands for that region, rather than whether the step is done.
+ *
+ * Deliberately generous, and set where a comfortable turn lands after the
+ * tracker's smoothing rather than where the detector stops reading.
+ */
+/** Inside this much turn, the frame shows the front hairline. */
+export const HAIRLINE_YAW_DEG = FRONT_YAW_DEG * FRONT_REACH;
+/** From this much turn, the frame shows that temple. */
+export const TEMPLE_YAW_DEG = 16;
+/** At this much turn the temple is as well seen as the scan asks for. */
+export const TEMPLE_FULL_DEG = TURN_YAW_DEG;
+/** Chin down this far (pitch ≤ −this) and the top of the head comes into view. */
+export const CROWN_PITCH_DEG = 14;
+/** Chin down this far, the crown is as well seen as the scan asks for. */
+export const CROWN_FULL_DEG = DOWN_PITCH_DEG;
+
+/**
+ * How far the chin may be off level before an upright step's frame stops
+ * being what it says it is. The two sides are not the same distance, and
+ * treating them as one number was a bug that cost people whole steps.
+ *
+ * Inside `LEVEL_PITCH_DEG` nothing is deducted at all: almost everybody
+ * holds a phone below eye level, and that is not a mistake to be
+ * corrected. Past it the score tapers, to nothing at the limit for that
+ * side:
+ *
+ * - CHIN UP (`SWEEP_PITCH_UP_LIMIT_DEG`). The tight one. The forehead
+ *   leaves the picture quickly when a phone goes overhead, and what is
+ *   left is nostrils: there is no hairline in that frame and no temple
+ *   either, however good the picture is.
+ * - CHIN DOWN (`SWEEP_PITCH_DOWN_LIMIT_DEG`). The generous one, and it
+ *   has to be. A phone at chest height reads thirty degrees of chin-down
+ *   on a person doing nothing wrong — and chin-down is the side where
+ *   MORE of the hairline faces the lens, not less. A symmetric ±30° gate
+ *   meant that person's first three steps could not raise a single
+ *   capture request: three steps' worth of titles asking them to look
+ *   straight, then right, then left, each running its whole timeout with
+ *   nothing taken and nothing said. Fifty degrees is where the face
+ *   really has become a scalp.
+ *
+ * Both are deliberately much deeper than `CROWN_PITCH_DEG`: the upright
+ * steps and the crown step share poses, and a frame is filed by the
+ * region its step asked for, never by the pose it happened to be at.
  */
 export const LEVEL_PITCH_DEG = 12;
-export const SWEEP_PITCH_LIMIT_DEG = 30;
+export const SWEEP_PITCH_UP_LIMIT_DEG = 30;
+export const SWEEP_PITCH_DOWN_LIMIT_DEG = 50;
 
 export const RING_SECTORS = 24;
 export const SECTOR_DEG = 360 / RING_SECTORS;
@@ -199,7 +357,35 @@ export const OFF_FRAME_TOLERANCE = 0.34;
 /** Front lock: within this of square on and steady. */
 export const FRONT_LOCK_DEG = 8;
 
+/**
+ * How steady the head has to be for a frame to be worth asking for, and
+ * the floor a step drops to rather than come away with nothing.
+ *
+ * `stabilityOf` (tracking.ts) measures the centre moving and the size
+ * changing — a deliberate turn with a still phone reads as steady — so
+ * this is a shaky HAND, not a turning head. But a shaky hand used to
+ * cost the whole scan: driven at 0.50 throughout, the engine raised no
+ * request at all, all four steps ran their timeouts, and `settle` found
+ * no frames and showed the error screen. A blurry picture of somebody's
+ * hairline is worth more to them than that, so a step that is past
+ * `STEP_RELAX_SHARE` of its own time with nothing for its region settles
+ * for `STABLE_RELAXED` — and the frame carries its low quality with it,
+ * so a steadier pass still replaces it.
+ *
+ * The pose is never relaxed, only the picture: what a frame is OF is not
+ * something to compromise on to fill a slot.
+ */
 export const STABLE_MIN = 0.55;
+export const STABLE_RELAXED = 0.25;
+export const STEP_RELAX_SHARE = 0.45;
+/**
+ * The other way a step relaxes: the pose held for this long with nothing
+ * taken. Arriving is the signal — a head sitting in the pose the title
+ * asked for, and no picture of it — and it comes long before the share of
+ * the timeout does, which matters most on `front`, where a person is in
+ * the pose from the first tick.
+ */
+export const STEP_ARRIVED_GRACE_MS = 700;
 /**
  * Lighting below this is dark enough to be worth mentioning. It gates
  * nothing: Start arms in the dark, and a dark frame is still a frame —
@@ -209,7 +395,15 @@ export const LIGHT_MIN = 0.3;
 /** The neutral lighting score used for quality when lighting is unmeasured. */
 export const LIGHT_UNKNOWN = 0.7;
 
-export const CAPTURE_INTERVAL_MS = 700;
+/**
+ * The floor between two capture requests. NOT the rate: a step asks only
+ * for its own region and `targetWants` refuses a second request while one
+ * is out for it, so what actually paces the shutter is the camera's round
+ * trip and the `REPLACE_MARGIN` a second frame has to beat. Measured end
+ * to end, a whole scan raises four to eight requests, not that many a step.
+ * Every image but the best of each region is discarded as it lands.
+ */
+export const CAPTURE_INTERVAL_MS = 350;
 export const MAX_PENDING = 2;
 /** A bin at or above this quality is not asked for again. */
 export const GOOD_QUALITY = 0.8;
@@ -220,29 +414,54 @@ export const REPLACE_MARGIN = 0.1;
 export const TOO_FAST_DEG_PER_S = 90;
 export const TOO_FAST_EVENT_GAP_MS = 1500;
 export const SLOW_DOWN_HOLD_MS = 1000;
-export const KEEP_GOING_MS = 1200;
 /** In a bin that wants a frame but not steady for this long: ask for stillness. */
 export const HOLD_HINT_MS = 500;
 
 export const LOST_MS = 600;
 export const STALL_MS = 3500;
+
 /**
- * Two stages take longer than one turn did, so the escape hatch is
- * longer too: at seventy-five seconds the scan ends with whatever it
- * has rather than holding anybody there.
+ * How near a step's target the head has to be before frames are worth
+ * asking for, as a share of that step's own `reach`.
+ *
+ * Seven tenths: the pictures start arriving while the turn is still
+ * finishing, which is the point of a continuous motion, and the last and
+ * best of them lands at the end of it.
  */
-export const FORCED_FINISH_MS = 75_000;
+export const CAPTURE_REACH = 0.7;
+
 /**
- * If stage one has not closed by this point the scan moves on anyway, so
- * somebody whose temples never quite register still gets the crown asked
- * for — and still gets a report — instead of sweeping until the timeout.
+ * How long a step holds after its first frame so a better one can take
+ * its place — the deeper nod, the fuller turn. Short: this is the beat
+ * between "we have it" and "next", and it is paid four times.
  */
-export const STAGE_ONE_MAX_MS = 40_000;
+export const STEP_SETTLE_MS = 400;
+
 /**
- * How long a crown that is not yet a good picture may keep the finished
- * scan open, so a deeper nod can replace the first shallow one.
+ * The longest each step may run before it hands over with whatever it
+ * holds. Nobody is ever trapped, and nobody is ever asked twice.
+ *
+ * They add up to 27 s, and with the in-flight wait the worst scan anybody
+ * can have — somebody who presses Start and then does nothing at all — is
+ * about 28.5 s. Driven, the scans people actually have are far shorter:
+ * about 6 s for a full 28° turn and 25° nod, and about 7 s for somebody
+ * who only turns 20° and nods 20°. That second figure is the one this
+ * build exists to fix: at the old hand-over angle the same person took
+ * 22 s, because both turn steps ran their whole timeout to prove a turn
+ * they had already made.
  */
-export const CROWN_POLISH_MS = 1500;
+export const STEP_TIMEOUT_MS: Record<ScanStep, number> = {
+  front: 5_000,
+  right: 7_000,
+  left: 7_000,
+  down: 8_000,
+};
+
+/**
+ * The backstop under all four timeouts: at thirty-two seconds the scan
+ * ends with whatever it has, whatever the steps think.
+ */
+export const FORCED_FINISH_MS = 32_000;
 /** How long completion waits for in-flight frames before going on without them. */
 export const SETTLE_MS = 1500;
 
@@ -261,13 +480,29 @@ export function createTargets(): Record<ScanTarget, TargetProgress> {
   };
 }
 
+function freshStep(): StepProgress {
+  return { reach: 0, frames: 0, firstFrameAt: null, reachedAt: null, done: false };
+}
+
+export function createSteps(): Record<ScanStep, StepProgress> {
+  return { front: freshStep(), right: freshStep(), left: freshStep(), down: freshStep() };
+}
+
+/** The half of the choreography a step belongs to, for the older screens. */
+export function stageOfStep(step: ScanStep): ScanStage {
+  return step === 'down' ? 'crown' : 'sweep';
+}
+
 export function createScanState(): ScanState {
   return {
     scanner: 'instructions',
     status: 'initializing',
+    step: 'front',
+    stepIndex: 0,
+    stepStartedAt: null,
+    steps: createSteps(),
     stage: 'sweep',
     targets: createTargets(),
-    stageStartedAt: null,
     cue: null,
     permission: 'unknown',
     error: null,
@@ -290,7 +525,6 @@ export function createScanState(): ScanState {
     stalled: false,
     lastTooFastAt: null,
     slowDownUntil: 0,
-    keepGoingUntil: 0,
     hold: null,
     milestones: [],
     requestCount: 0,
@@ -343,16 +577,16 @@ export function headDirection(face: Pick<FaceReading, 'yaw' | 'pitch'>): HeadDir
  * report said the ring had closed. The picture is the thing the person
  * trusts, so the dial is now the journey rather than the pose.
  *
- * The journey is a turn made twice. Stage one walks the TOP half — the
- * turn to the person's own left at nine o'clock, square on at twelve, the
- * turn to their own right at three. Stage two walks the BOTTOM half with
- * the chin down: nine o'clock, six, three. Between them the turn is made
- * once each way and the whole circle is walked once, which is what the
- * ring has claimed all along.
+ * The journey is a turn made twice. The upright steps walk the TOP half —
+ * the turn to the person's own left at nine o'clock, square on at twelve,
+ * the turn to their own right at three. The last step walks the BOTTOM
+ * half with the chin down: nine o'clock, six, three. Between them the
+ * turn is made once each way and the whole circle is walked once, which
+ * is what the ring has claimed all along.
  *
  * Null when this pose is not part of this stage's walk — a head bowed out
- * of stage one, or a chin not yet down in stage two. Nothing fills then,
- * and nothing is taken away either: the sectors only ever rise.
+ * of the upright steps, or a chin not yet down in the last one. Nothing
+ * fills then, and nothing is taken away either: the sectors only rise.
  */
 export function ringDirection(
   face: Pick<FaceReading, 'yaw' | 'pitch'>,
@@ -361,7 +595,10 @@ export function ringDirection(
   if (!Number.isFinite(face.yaw) || !Number.isFinite(face.pitch)) return null;
   const turn = Math.max(-1, Math.min(1, face.yaw / YAW_FULL_DEG));
   if (stage === 'sweep') {
-    if (Math.abs(face.pitch) >= SWEEP_PITCH_LIMIT_DEG) return null;
+    // The same asymmetry as the capture gate: a phone held low is not a
+    // head bowed out of the sweep, and the ring must keep filling for it.
+    if (face.pitch >= SWEEP_PITCH_UP_LIMIT_DEG) return null;
+    if (face.pitch <= -SWEEP_PITCH_DOWN_LIMIT_DEG) return null;
     return { angle: ((turn * 90) % 360 + 360) % 360, magnitude: 1 };
   }
   if (!(face.pitch <= -CROWN_PITCH_DEG)) return null;
@@ -445,50 +682,71 @@ export function completionOf(regions: RegionScores): number {
 /* ------------------------- the wanted regions ------------------------ */
 
 /**
- * Which of the four regions the head is showing right now, or null when
- * it is between two of them.
+ * 0–1: how far towards this step's pose the head has come.
  *
- * Stage one reads the turn with the chin somewhere near level; stage two
- * reads the same turn with the chin down. Stage one asks only that the
- * front of the head is in the picture at all (`SWEEP_PITCH_LIMIT_DEG`,
- * either way) — a head bowed that far shows no hairline and no temple,
- * and a head tipped that far back shows nostrils. Anything gentler than
- * that is somebody holding a phone, and it is photographed.
+ * `front` is the odd one out and it is the only one that has to be: it
+ * measures how much of the front window has been CLOSED, so 1 is square
+ * on and 0 is at the window's edge. The other three measure the turn or
+ * the nod they ask for, against the angle they aim at. The signs are the
+ * handedness note at the top of this file, and this is the only place
+ * they are read.
  */
-export function targetFor(face: Pick<FaceReading, 'yaw' | 'pitch'>, stage: ScanStage): ScanTarget | null {
-  if (!Number.isFinite(face.yaw) || !Number.isFinite(face.pitch)) return null;
-  if (stage === 'crown') return face.pitch <= -CROWN_PITCH_DEG ? 'crown' : null;
-  if (Math.abs(face.pitch) >= SWEEP_PITCH_LIMIT_DEG) return null;
-  /*
-    Which temple a turn shows, and it is the opposite of the way the head
-    went. Positive yaw is the head turned towards its OWN right (the sign
-    convention above), and a head turned to its own right presents its
-    LEFT side to a camera in front of it — which is what this app has
-    said everywhere else since long before this scan existed
-    (`src/types/domain.ts`: "leftTemple: Turn your head to the right to
-    show your left side"). The still is written mirrored, so that left
-    temple lands on the image's left, which is exactly where
-    `region-crops.ts` cuts the `leftTemple` rectangle.
+export function stepReach(step: ScanStep, face: Pick<FaceReading, 'yaw' | 'pitch'>): number {
+  if (!Number.isFinite(face.yaw) || !Number.isFinite(face.pitch)) return 0;
+  switch (step) {
+    case 'front':
+      return clamp01(1 - Math.abs(face.yaw) / FRONT_YAW_DEG);
+    // Positive yaw is the head turned towards its own right.
+    case 'right':
+      return clamp01(face.yaw / TURN_YAW_DEG);
+    case 'left':
+      return clamp01(-face.yaw / TURN_YAW_DEG);
+    // Negative pitch is the chin lowered.
+    case 'down':
+      return clamp01(-face.pitch / DOWN_PITCH_DEG);
+    default:
+      return 0;
+  }
+}
 
-    Read the other way round, every one of those three agreed with the
-    other two and disagreed with this line: the photograph of a left
-    temple was filed under the right temple's angle and the report cropped
-    the corner of the picture in front of the face. The sign itself is the
-    one thing here that no amount of reading settles — it is device check
-    one, and if a phone shows it inverted this pair of lines is the only
-    place it is decided.
-  */
-  if (face.yaw >= TEMPLE_YAW_DEG) return 'leftTemple';
-  if (face.yaw <= -TEMPLE_YAW_DEG) return 'rightTemple';
-  return Math.abs(face.yaw) <= HAIRLINE_YAW_DEG ? 'hairline' : null;
+/**
+ * Whether the pose is near enough this step's target for a frame to be
+ * worth asking for.
+ *
+ * Two conditions, and the first is the one that keeps the report honest:
+ * the region this step is FOR has to be in the picture at all
+ * (`targetFit` above zero). A frame is filed under the region its step
+ * asked for, so a near-frontal frame raised by the `right` step would be
+ * captioned as a temple in somebody's report; the score that decides
+ * which frame to keep is the same function that decides whether to ask
+ * for one, so the two cannot drift apart.
+ *
+ * That single clause carries the whole chin window with it, including its
+ * asymmetry (see `SWEEP_PITCH_UP_LIMIT_DEG` and
+ * `SWEEP_PITCH_DOWN_LIMIT_DEG`, which `levelFit` reads): a phone held at
+ * chest height is thirty degrees of chin-down with a hairline in every
+ * frame, and a phone held overhead is nostrils at the same number.
+ * Nothing about how somebody holds their phone is ever said out loud; it
+ * is scored, not corrected.
+ *
+ * The second is the step's own target, approached: frames start arriving
+ * while the turn is still finishing, which is the point of a continuous
+ * motion.
+ */
+export function stepWantsFrame(step: ScanStep, face: Pick<FaceReading, 'yaw' | 'pitch'>): boolean {
+  if (!Number.isFinite(face.yaw) || !Number.isFinite(face.pitch)) return false;
+  if (targetFit(face, REGION_OF_STEP[step]) <= 0) return false;
+  return stepReach(step, face) >= CAPTURE_REACH * STEP_TARGETS[step].reach;
 }
 
 /**
  * 0–1: how much of the front of the head a chin angle leaves in view.
  *
- * Level is a whole frame; past `SWEEP_PITCH_LIMIT_DEG` there is nothing
- * of the hairline left to photograph. It cuts both ways, and the chin-up
- * side is the one that matters: a phone held above eye level used to
+ * Level is a whole frame; at the limit for that side there is nothing of
+ * the hairline left to photograph. It cuts both ways and the two ways are
+ * different lengths — the same asymmetry the capture gate has, so the
+ * curve and the gate cannot disagree about what is photographable. The
+ * chin-up side is the short one: a phone held above eye level used to
  * score a perfect hairline for a picture of two nostrils, and because it
  * scored perfectly, the square-on frame that followed could not replace
  * it.
@@ -496,7 +754,8 @@ export function targetFor(face: Pick<FaceReading, 'yaw' | 'pitch'>, stage: ScanS
 function levelFit(pitch: number): number {
   const off = Math.abs(pitch);
   if (off <= LEVEL_PITCH_DEG) return 1;
-  return clamp01(1 - (off - LEVEL_PITCH_DEG) / (SWEEP_PITCH_LIMIT_DEG - LEVEL_PITCH_DEG));
+  const limit = pitch >= 0 ? SWEEP_PITCH_UP_LIMIT_DEG : SWEEP_PITCH_DOWN_LIMIT_DEG;
+  return clamp01(1 - (off - LEVEL_PITCH_DEG) / (limit - LEVEL_PITCH_DEG));
 }
 
 /**
@@ -504,7 +763,7 @@ function levelFit(pitch: number): number {
  *
  * Square on is a perfect hairline and a hopeless temple; the temples
  * earn their score with the turn, the crown with the depth of the nod.
- * Stage one's two also earn it with the chin: both are pictures of the
+ * The upright steps' two also earn it with the chin: both are pictures of the
  * front of the head, so both are scaled by `levelFit`. `frameQuality`
  * scales by all of this, so the first frame to scrape into a region
  * never counts as good and the better pass replaces it — the picture
@@ -539,7 +798,7 @@ export function targetReach(face: Pick<FaceReading, 'yaw' | 'pitch'>, target: Sc
   switch (target) {
     case 'hairline':
       return targetFit(face, target);
-    // Same pairing as `targetFor`: the left temple comes into view as
+    // Same pairing as `REGION_OF_STEP`: the left temple comes into view as
     // the head turns towards its own right, which is positive yaw.
     case 'leftTemple':
       return clamp01(face.yaw / TEMPLE_YAW_DEG);
@@ -552,14 +811,9 @@ export function targetReach(face: Pick<FaceReading, 'yaw' | 'pitch'>, target: Sc
   }
 }
 
-/** Every wanted region captured: the one thing that completes a scan. */
+/** Every wanted region captured: what makes a finished scan a full one. */
 export function isSufficient(targets: Record<ScanTarget, TargetProgress>): boolean {
   return REQUIRED_REGIONS.every((region) => targets[region].captured);
-}
-
-/** Stage one is done when the hairline and both temples are in. */
-export function sweepDone(targets: Record<ScanTarget, TargetProgress>): boolean {
-  return targets.hairline.captured && targets.leftTemple.captured && targets.rightTemple.captured;
 }
 
 /**
@@ -588,6 +842,94 @@ export function journeyProgress(targets: Record<ScanTarget, TargetProgress>): nu
     total += held.captured ? 1 : Math.min(REACH_CEILING, clamp01(held.reach));
   }
   return clamp01(total / REQUIRED_REGIONS.length);
+}
+
+/**
+ * How much of the pose the progress inside a step is made of; the rest
+ * is the photograph. Same bargain as `journeyProgress`: the approach is
+ * worth showing, because a bar that moved once would be no use, but only
+ * the frame finishes the step.
+ */
+export const STEP_POSE_SHARE = 0.7;
+
+/**
+ * 0–1 inside the current step: what the thin bar at the top fills to,
+ * and what the arrow takes its urgency from.
+ *
+ * Monotonic within a step, because `steps[step].reach` only ever rises,
+ * so the bar cannot flinch backwards while somebody steadies themselves.
+ */
+export function stepProgress(state: ScanState): number {
+  const step = state.step;
+  const target = STEP_TARGETS[step];
+  const held = state.steps[step];
+  if (held.done) return 1;
+  const pose = target.reach <= 0 ? 1 : clamp01(held.reach / target.reach);
+  const captured = state.targets[REGION_OF_STEP[step]].captured ? 1 : 0;
+  return clamp01(STEP_POSE_SHARE * pose + (1 - STEP_POSE_SHARE) * captured);
+}
+
+/** Whether the head has come as far as this step asks. */
+export function stepReached(state: ScanState, step: ScanStep): boolean {
+  return state.steps[step].reach >= STEP_TARGETS[step].reach - 1e-9;
+}
+
+/**
+ * Whether this step has been running long enough with nothing to show
+ * that it should settle for a worse picture rather than none.
+ *
+ * It is false for the whole of a scan that goes as asked — the moment the
+ * step's region is captured it is false again — and the only thing it
+ * loosens is how steady the hand has to be. See `STABLE_MIN`.
+ */
+export function stepRelaxed(state: ScanState, at: number, step: ScanStep = state.step): boolean {
+  if (state.targets[REGION_OF_STEP[step]].captured) return false;
+  // Held the pose a moment with nothing to show for it: the picture in
+  // front of the lens right now is the one this step went for, and a
+  // steadier one can still replace it while the step runs.
+  const arrived = state.steps[step].reachedAt;
+  if (arrived !== null && at - arrived >= STEP_ARRIVED_GRACE_MS) return true;
+  if (state.stepStartedAt === null) return false;
+  return at - state.stepStartedAt >= STEP_RELAX_SHARE * STEP_TIMEOUT_MS[step];
+}
+
+/** How steady a head has to be right now for a frame to be asked for. */
+export function steadyEnough(state: ScanState, stability: number, at: number): boolean {
+  return stability >= (stepRelaxed(state, at) ? STABLE_RELAXED : STABLE_MIN);
+}
+
+/**
+ * Whether a step has everything it went for: the pose reached, a frame
+ * held for its region, and the settle beat spent — unless the frame is
+ * already as good as the scan asks for, in which case there is nothing
+ * to wait for and the step hands over at once.
+ *
+ * The beat is measured from the LATER of arriving and holding a frame,
+ * which matters now that a step hands over well short of the angle it
+ * aims at: the first frame of a turn often lands long before the turn
+ * finishes, and a beat measured from it would already be spent at the
+ * moment of arrival, so the step would hand over on the shallow picture
+ * and the fuller turn would never be photographed.
+ *
+ * `step` is an argument, like `stepReached`'s, rather than read off the
+ * state: two neighbouring predicates that disagree about where the step
+ * comes from is how a caller ends up with an answer about a step it did
+ * not ask about.
+ */
+export function stepSatisfied(state: ScanState, at: number, step: ScanStep = state.step): boolean {
+  if (!stepReached(state, step)) return false;
+  const region = state.targets[REGION_OF_STEP[step]];
+  if (!region.captured) return false;
+  if (region.quality >= GOOD_QUALITY) return true;
+  const held = state.steps[step];
+  const since = Math.max(held.reachedAt ?? at, held.firstFrameAt ?? at);
+  return at - since >= STEP_SETTLE_MS;
+}
+
+/** Whether a step has run out of its own time and must hand over regardless. */
+export function stepExpired(state: ScanState, at: number): boolean {
+  if (state.stepStartedAt === null) return false;
+  return at - state.stepStartedAt >= STEP_TIMEOUT_MS[state.step];
 }
 
 /** Whether a frame of this quality would be worth taking for a region. */
@@ -718,7 +1060,7 @@ export function frameQuality(
 
 /* ---------------------------- the reducer ---------------------------- */
 
-export function reduce(state: ScanState, action: ScanAction): ScanStep {
+export function reduce(state: ScanState, action: ScanAction): ScanReduction {
   switch (action.type) {
     case 'continue':
       if (state.scanner !== 'instructions') return { state, events: [] };
@@ -742,9 +1084,13 @@ export function reduce(state: ScanState, action: ScanAction): ScanStep {
         {
           ...fresh,
           status: 'capturing',
+          step: 'front',
+          stepIndex: 0,
+          stepStartedAt: action.at,
           stage: 'sweep',
-          stageStartedAt: action.at,
-          cue: 'turnLeftRight',
+          // The step's own title and instruction carry the choreography
+          // now, so there is nothing to correct at the moment of the press.
+          cue: null,
           frontLocked: state.frontLocked,
           milestones: state.milestones.slice(),
           regions,
@@ -752,7 +1098,7 @@ export function reduce(state: ScanState, action: ScanAction): ScanStep {
           lastGainAt: action.at,
         },
         'scanning',
-        [{ type: 'cue', cue: 'turnLeftRight' }],
+        state.cue === null ? [] : [{ type: 'cue', cue: null }],
       );
     }
 
@@ -821,7 +1167,7 @@ export function reduce(state: ScanState, action: ScanAction): ScanStep {
   }
 }
 
-function move(state: ScanState, to: ScannerState, extra: ScanEvent[] = []): ScanStep {
+function move(state: ScanState, to: ScannerState, extra: ScanEvent[] = []): ScanReduction {
   const from = state.scanner;
   if (from === to) return { state, events: extra };
   return { state: { ...state, scanner: to }, events: [{ type: 'state', from, to }, ...extra] };
@@ -872,10 +1218,10 @@ function discardAll(state: ScanState): ScanEvent[] {
  * left is a head leaving the picture, which is worth saying, and a dark
  * room, which is worth mentioning; neither holds the button down.
  */
-function tickReady(state: ScanState, action: Extract<ScanAction, { type: 'tick' }>): ScanStep {
+function tickReady(state: ScanState, action: Extract<ScanAction, { type: 'tick' }>): ScanReduction {
   const { at, face, lighting } = action;
   let status: ScanState['status'] = 'detecting';
-  let cue: GuidanceCue = 'centreFace';
+  let cue: ScanCue | null = 'faceCamera';
   let frontLocked = state.frontLocked;
   const milestones = state.milestones.slice();
   const events: ScanEvent[] = [];
@@ -884,7 +1230,7 @@ function tickReady(state: ScanState, action: Extract<ScanAction, { type: 'tick' 
     const framing = framingOf(face);
     if (framing.readable) {
       status = 'ready';
-      cue = framing.offFrame ? 'centreFace' : litEnough(lighting) ? 'perfect' : 'brighter';
+      cue = framing.offFrame ? 'faceCamera' : litEnough(lighting) ? null : 'brighter';
       // A head held square and still is worth one buzz — the scan knows
       // where the front is before it starts. It gates nothing.
       if (!frontLocked && face.stability >= STABLE_MIN && squareOn(face)) {
@@ -937,30 +1283,54 @@ const MILESTONE_OF_TARGET: Record<ScanTarget, ScanMilestone> = {
   crown: 'crownDone',
 };
 
-/** The cue that belongs to a stage when nothing more urgent is being said. */
-function stageCue(stage: ScanStage, down: boolean): GuidanceCue {
-  if (stage === 'sweep') return 'turnLeftRight';
-  return down ? 'turnAgain' : 'lowerHead';
-}
-
-/** Whether the chin is far enough down for the top of the head to be in view. */
-function chinDown(face: Pick<FaceReading, 'pitch'> | null): boolean {
-  return face !== null && Number.isFinite(face.pitch) && face.pitch <= -CROWN_PITCH_DEG;
-}
-
 /**
- * Stage one closes when the hairline and both temples are in — or, for
- * somebody whose turn the detector never quite reads as a temple, when
- * stage one has simply gone on long enough. Either way the crown still
- * gets asked for, because a report without it is missing the picture
- * people most want to see.
+ * The choreography, moved on as far as it will go this tick.
+ *
+ * A step closes when it has what it went for (`stepSatisfied`) or when
+ * its own time is up (`stepExpired`) — and then the next one starts from
+ * this instant, so a step that closes early gives its spare seconds to
+ * the steps after it rather than to the clock. More than one may close
+ * on a single tick: somebody who has already turned past the target when
+ * the frame lands walks through two steps at once, which is exactly what
+ * a continuous motion should do.
+ *
+ * The last step does not hand over to anything; it marks itself done and
+ * `finishIfDone` reads that.
  */
-function advanceStage(state: ScanState, at: number, events: ScanEvent[]): ScanState {
-  if (state.stage !== 'sweep') return state;
-  const timeUp = state.stageStartedAt !== null && at - state.stageStartedAt >= STAGE_ONE_MAX_MS;
-  if (!sweepDone(state.targets) && !timeUp) return state;
-  events.push({ type: 'stage', from: 'sweep', to: 'crown' });
-  return { ...state, stage: 'crown', stageStartedAt: at };
+function advanceSteps(state: ScanState, at: number, events: ScanEvent[]): ScanState {
+  let next = state;
+  // At most one pass per step: `stepSatisfied` reads the state it is
+  // given, so the loop cannot run away.
+  for (let guard = 0; guard < SCAN_STEPS.length; guard += 1) {
+    const step = next.step;
+    if (next.steps[step].done) break;
+    if (!stepSatisfied(next, at, step) && !stepExpired(next, at)) break;
+    const steps = { ...next.steps, [step]: { ...next.steps[step], done: true } };
+    const index = next.stepIndex + 1;
+    const to = SCAN_STEPS[index];
+    if (to === undefined) {
+      next = { ...next, steps };
+      break;
+    }
+    events.push({ type: 'step', from: step, to, index });
+    next = {
+      ...next,
+      steps,
+      step: to,
+      stepIndex: index,
+      stepStartedAt: at,
+      stage: stageOfStep(to),
+      // A fresh step may ask for its first frame straight away.
+      lastRequestAt: null,
+      hold: null,
+    };
+  }
+  return next;
+}
+
+/** Whether every step has closed, however it closed. */
+export function stepsDone(state: ScanState): boolean {
+  return SCAN_STEPS.every((step) => state.steps[step].done);
 }
 
 /**
@@ -982,24 +1352,20 @@ function withProgress(state: ScanState, events: ScanEvent[]): ScanState {
 }
 
 /**
- * Every region in: the scan is over, whatever else is still in flight.
+ * The last step closed: the scan is over, whatever else is still in
+ * flight. The thirty-two second backstop ends it too, from wherever it
+ * had got to.
  *
- * With one grace note. The crown arrives the moment the chin passes the
- * threshold, and that first frame is the shallowest nod of the lot; if
- * it is not yet a good picture the scan stays open a moment longer so a
- * deeper one can replace it. The picture of the top of somebody's head
- * is the one they most want to see, and it is worth a second and a half.
+ * `reason` is the honest one of the two. A scan that walked all four
+ * steps but never got a frame for one of them reads as `timeout`, and
+ * `completion` stays under 1, so nothing downstream can call it full.
  */
-function finishIfDone(state: ScanState, at: number, events: ScanEvent[]): ScanStep | null {
+function finishIfDone(state: ScanState, at: number, events: ScanEvent[]): ScanReduction | null {
   if (state.scanner !== 'scanning' || state.status !== 'capturing') return null;
   const elapsed = state.startedAt === null ? 0 : at - state.startedAt;
-  const done = isSufficient(state.targets);
-  if (done && elapsed < FORCED_FINISH_MS && state.targets.crown.quality < GOOD_QUALITY) {
-    const crown = state.frames.find((f) => f.id === state.targets.crown.frameId);
-    if (crown !== undefined && at - crown.capturedAt < CROWN_POLISH_MS) return null;
-  }
-  if (!done && elapsed < FORCED_FINISH_MS) return null;
-  const reason = done ? 'coverage' : 'timeout';
+  const walked = stepsDone(state);
+  if (!walked && elapsed < FORCED_FINISH_MS) return null;
+  const reason = isSufficient(state.targets) ? 'coverage' : 'timeout';
   const completing: ScanState = {
     ...state,
     status: 'completing',
@@ -1012,7 +1378,7 @@ function finishIfDone(state: ScanState, at: number, events: ScanEvent[]): ScanSt
   return settle(completing, at);
 }
 
-function tickScanning(state: ScanState, action: Extract<ScanAction, { type: 'tick' }>): ScanStep {
+function tickScanning(state: ScanState, action: Extract<ScanAction, { type: 'tick' }>): ScanReduction {
   const { at, face, lighting } = action;
   const events: ScanEvent[] = [];
 
@@ -1065,10 +1431,10 @@ function tickScanning(state: ScanState, action: Extract<ScanAction, { type: 'tic
   }
 
   /*
-    The ring. One journey across both stages: the sectors only ever rise,
-    stage two does not clear them, and because the chin is down by then
-    the same left-and-right turn lands in the lower half of the ring and
-    fills the arc stage one could not reach.
+    The ring. One journey across the whole scan: the sectors only ever
+    rise, the last step does not clear them, and because the chin is down
+    by then the turn lands in the lower half of the ring and fills the arc
+    the upright steps could not reach.
   */
   let direction: HeadDirection | null = null;
   if (usable && face !== null) {
@@ -1119,26 +1485,53 @@ function tickScanning(state: ScanState, action: Extract<ScanAction, { type: 'tic
       // wanders without coming nearer to anything is still stalled.
       if (next.completion > before + 1e-12) next = { ...next, lastGainAt: at, stalled: false };
     }
+
+    // How far into the CURRENT step the head has come. Monotonic inside
+    // the step, so the bar and the arrow never flinch backwards.
+    const reach = stepReach(next.step, face);
+    const held = next.steps[next.step];
+    if (reach > held.reach + 1e-6) {
+      // The instant the target is met is the anchor for the settle beat,
+      // so the frame taken as the turn completes can replace the one
+      // taken on the way to it.
+      const arrived = reach >= STEP_TARGETS[next.step].reach - 1e-9;
+      const reachedAt = held.reachedAt === null && arrived ? at : held.reachedAt;
+      next = { ...next, steps: { ...next.steps, [next.step]: { ...held, reach, reachedAt } } };
+    }
   }
 
-  /* The stage, which a long stage one moves on by itself. */
-  next = advanceStage(next, at, events);
+  /* The choreography, which a step that runs long moves on by itself. */
+  next = advanceSteps(next, at, events);
 
-  /* Capture: only ever for one of the four regions, and only when still. */
+  /*
+    Capture. The step says which region is wanted — there is no shutter
+    and nothing else is ever asked for — and a frame is raised when the
+    pose is near that step's target and the head is steady enough.
+
+    "Enough" is `steadyEnough`, which gives way for a step that has held
+    its pose with nothing to show (see `STABLE_MIN`). While it has not
+    given way, the wobble is worth a line — `holdWanted` becomes the
+    hold-still cue — and once it has, there is nothing to correct and the
+    picture is simply taken, low quality and all.
+  */
   let holdWanted = false;
-  const target = usable && face !== null ? targetFor(face, next.stage) : null;
+  const target =
+    usable && face !== null && !next.steps[next.step].done && stepWantsFrame(next.step, face)
+      ? REGION_OF_STEP[next.step]
+      : null;
   if (usable && face !== null && direction !== null && target !== null) {
     const bin = binOf(direction);
     const quality = frameQuality(face, lighting, target);
     const wants = targetWants(next, target, quality);
-    if (wants && face.stability < STABLE_MIN) {
+    const steady = steadyEnough(next, face.stability, at);
+    if (wants && !steady) {
       holdWanted = true;
       if (next.hold === null || next.hold.bin !== bin) next = { ...next, hold: { bin, since: at } };
     } else {
       next = { ...next, hold: null };
     }
     const throttled = next.lastRequestAt !== null && at - next.lastRequestAt < CAPTURE_INTERVAL_MS;
-    if (wants && !throttled && face.stability >= STABLE_MIN && next.pending.length < MAX_PENDING) {
+    if (wants && !throttled && steady && next.pending.length < MAX_PENDING) {
       const request: CaptureRequest = {
         id: `c${next.requestCount + 1}`,
         bin,
@@ -1155,7 +1548,6 @@ function tickScanning(state: ScanState, action: Extract<ScanAction, { type: 'tic
         pending: [...next.pending, request],
         lastRequestAt: at,
         requestCount: next.requestCount + 1,
-        keepGoingUntil: at + KEEP_GOING_MS,
       };
       events.push({ type: 'capture', request });
     }
@@ -1170,8 +1562,8 @@ function tickScanning(state: ScanState, action: Extract<ScanAction, { type: 'tic
     events.push({ type: 'stall' });
   }
 
-  /* Cue. */
-  const cue = scanningCue(next, face, framing, holdWanted, at);
+  /* Cue: only ever a correction, and null when there is nothing to correct. */
+  const cue = scanningCue(next, face, framing, holdWanted, at, lighting);
   if (cue !== next.cue) {
     next = { ...next, cue };
     events.push({ type: 'cue', cue });
@@ -1191,22 +1583,20 @@ function pushMilestone(state: ScanState, events: ScanEvent[], milestone: ScanMil
 }
 
 /**
- * The one line to show, in the order the person needs it.
+ * The correction to show, or null when there is nothing to correct.
  *
- * Nothing in here asks anybody to move closer or further away, and the
- * stage's own instruction is the floor: whatever else is true, somebody
- * mid-scan is always being told what to do with their head.
+ * What to DO is the step's own title and instruction, held at the top of
+ * the screen for as long as the step runs; this line sits under it and is
+ * empty most of the way through a good scan. That is the whole change
+ * from the two-beat build: the choreography is no longer taught one cue
+ * at a time in a place that also has to say "hold still".
  *
- * Which is why lighting is not in here at all. It is the one condition
- * that can hold for a whole scan, so "Find a brighter spot" would be the
- * only line a person in a dim room ever read — and this line is the only
- * place the choreography is taught while the scan is running. Light
- * gates nothing now: a dark frame is still a frame, `frameQuality` scores
- * it low, and a better-lit pass replaces it. The pill above says the
- * room is dark; the line below says what to do with your head. The two
- * cues left in front of the instruction are about the head as well, and
- * both clear within a second: a head leaving the picture, which the
- * camera cannot read, and a head being whipped about, which blurs.
+ * Nothing in here asks anybody to move closer or further away, and
+ * nothing in here is a verdict. Lighting comes last of the five because
+ * it is the one condition that can hold for a whole scan: a dark frame is
+ * still a frame, `frameQuality` scores it low and a better-lit pass
+ * replaces it, so it is worth a mention and never worth interrupting a
+ * turn for.
  */
 function scanningCue(
   state: ScanState,
@@ -1214,24 +1604,16 @@ function scanningCue(
   framing: Framing | null,
   holdWanted: boolean,
   at: number,
-): GuidanceCue | null {
-  if (state.lost) return 'backInFrame';
+  lighting: number | null,
+): ScanCue | null {
+  if (state.lost) return 'lost';
   if (face === null || framing === null) return state.cue;
-  if (!framing.readable) return 'centreFace';
-  const down = chinDown(face);
-  if (framing.offFrame) return 'centreFace';
-  if (state.slowDownUntil > at) return 'slowDown';
-  // Stage two with the head still up: nothing else is worth saying, and
-  // a "keep going" left over from the last frame would be a lie.
-  if (state.stage === 'crown' && !down) return 'lowerHead';
-  // The last region is being taken: the shutter is out and the head is
-  // where it needs to be.
-  if (state.stage === 'crown' && down && state.pending.some((p) => p.target === 'crown')) {
-    return 'almost';
-  }
+  if (!framing.readable) return 'faceCamera';
+  if (framing.offFrame) return 'faceCamera';
+  if (state.slowDownUntil > at) return 'tooFast';
   if (holdWanted && state.hold !== null && at - state.hold.since >= HOLD_HINT_MS) return 'holdStill';
-  if (state.keepGoingUntil > at) return 'keepGoing';
-  return stageCue(state.stage, down);
+  if (!litEnough(lighting)) return 'brighter';
+  return null;
 }
 
 /* ----------------------------- curation ------------------------------ */
@@ -1269,7 +1651,33 @@ function recredit(state: ScanState, at: number, events: ScanEvent[]): ScanState 
     if (next.targets[region].captured) pushMilestone(next, events, MILESTONE_OF_TARGET[region]);
   }
   next = withProgress(next, events);
-  return advanceStage(next, at, events);
+  return advanceSteps(next, at, events);
+}
+
+/** Which step asks for a region: the reverse of `REGION_OF_STEP`. */
+export const STEP_OF_REGION: Record<ScanTarget, ScanStep> = {
+  hairline: 'front',
+  leftTemple: 'right',
+  rightTemple: 'left',
+  crown: 'down',
+};
+
+/**
+ * Records a landed image against the step that asked for it.
+ *
+ * `frames` counts every image the step caused, kept or not, because that
+ * is how many shutters it cost. `firstFrameAt` starts the settle beat and
+ * so only moves for an image the scan is actually holding: an image that
+ * lost to a better one cannot start a wait for something better.
+ */
+function creditStep(state: ScanState, target: ScanTarget, at: number, kept: boolean): ScanState {
+  const step = STEP_OF_REGION[target];
+  const held = state.steps[step];
+  const firstFrameAt = kept && held.firstFrameAt === null ? at : held.firstFrameAt;
+  return {
+    ...state,
+    steps: { ...state.steps, [step]: { ...held, frames: held.frames + 1, firstFrameAt } },
+  };
 }
 
 function landFrame(
@@ -1278,7 +1686,7 @@ function landFrame(
   image: CapturedImage,
   mesh: FrameMesh | undefined,
   at: number,
-): ScanStep {
+): ScanReduction {
   const request = state.pending.find((p) => p.id === requestId);
   if (!request) return { state, events: [] };
   const pending = state.pending.filter((p) => p.id !== requestId);
@@ -1316,7 +1724,7 @@ function landFrame(
   if (existing) {
     if (existing.quality >= frame.quality) {
       discard([frame], 'outscored');
-      const settled = settle({ ...state, pending }, at);
+      const settled = settle(creditStep({ ...state, pending }, frame.target, at, false), at);
       return { state: settled.state, events: [...events, ...settled.events] };
     }
     frames = state.frames.map((f) => (f.target === frame.target ? frame : f));
@@ -1324,7 +1732,12 @@ function landFrame(
   } else {
     frames = [...state.frames, frame];
   }
-  let next: ScanState = { ...state, pending, frames, milestones: state.milestones.slice() };
+  let next: ScanState = creditStep(
+    { ...state, pending, frames, milestones: state.milestones.slice() },
+    frame.target,
+    at,
+    true,
+  );
   events.push({ type: 'frame', frame, replaced: existing !== undefined });
   pushMilestone(next, events, 'firstFrame');
   // The frame set has changed, so what the scan has of each region has
@@ -1340,7 +1753,7 @@ function landFrame(
 /* ---------------------------- completion ----------------------------- */
 
 /** From `completing`, go to `complete` once in-flight frames have landed or the wait is up. */
-function settle(state: ScanState, at: number): ScanStep {
+function settle(state: ScanState, at: number): ScanReduction {
   if (state.scanner !== 'scanning' || state.status !== 'completing') return { state, events: [] };
   const waited = state.completedAt === null ? Infinity : at - state.completedAt;
   if (state.pending.length > 0 && waited < SETTLE_MS) return { state, events: [] };

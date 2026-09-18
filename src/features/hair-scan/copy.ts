@@ -11,20 +11,30 @@
  * exclaims, nothing forecasts, and nothing hurries anyone.
  */
 
-import type { GuidanceCue, ScanErrorReason, ScanRegion, ScanStatus, ScanTarget } from './types';
+import type {
+  ScanCue,
+  ScanErrorReason,
+  ScanRegion,
+  ScanStatus,
+  ScanStep,
+  ScanTarget,
+} from './types';
+
+/** One step's two lines: what to do, and how to do it. */
+export type StepCopy = { title: string; instruction: string };
 
 export const HAIR_SCAN_COPY = {
   instructions: {
     title: 'Scan Instructions',
     /**
-     * One row per state of the scanner: glasses off in good light, head
-     * straight and Start pressed, a slow full turn while the ring fills.
-     * The sheet draws (or later photographs) each state beside its row.
+     * One row per beat of the scan as somebody meets it: glasses off in
+     * good light, Start pressed and the head straight, then each turn,
+     * then down. The sheet draws (or later photographs) each row.
      */
     steps: [
       { title: 'Take glasses off', body: 'And find a well-lit spot' },
-      { title: 'Press Start, then turn your head', body: 'Slowly to the left, then to the right' },
-      { title: 'Lower your head and turn again', body: 'That is how the top of your head is seen' },
+      { title: 'Press Start and look straight', body: 'Then turn your head right, then left' },
+      { title: 'Last, look down', body: 'That is how the top of your head is seen' },
     ],
     privacy: 'Your images stay on this device.',
     cta: 'Continue',
@@ -43,30 +53,50 @@ export const HAIR_SCAN_COPY = {
     close: 'Close scan',
   },
   /**
-   * The one line under the ring.
+   * The four steps, in the owner's words.
    *
-   * Nothing here asks anybody to move closer or further away. Build 17
-   * did, and the owner's verdict was that it meant holding the phone at
-   * arm's stretch and waiting; the scan works at whatever distance the
-   * person is comfortable holding a phone, so it says nothing about it.
+   * A title big enough to read at arm's length with the head turned away
+   * from the phone, and one line under it saying how. Each names the
+   * direction the HEAD moves — which is what the arrow points at — and
+   * none of them names a part of the head, because which side of the
+   * head a turn shows is the engine's business and not the person's.
+   *
+   * They are instructions, never verdicts, and nothing hurries anybody:
+   * "slowly" is in three of the four on purpose.
+   */
+  step: {
+    front: { title: 'Look straight', instruction: 'Keep your face in the frame' },
+    right: { title: 'Look right', instruction: 'Slowly turn your head to the right' },
+    left: { title: 'Look left', instruction: 'Slowly turn your head to the left' },
+    down: { title: 'Look down', instruction: 'Slowly tilt your head downward' },
+  } satisfies Record<ScanStep, StepCopy>,
+  /** The label on the thin bar across the top. */
+  stepCounter: (index: number, total: number) => `Step ${index} of ${total}`,
+  /**
+   * The corrective line, when there is one.
+   *
+   * What to do with your head is the step's own instruction above; these
+   * five are only for when a reading cannot be used, and for most of a
+   * good scan none of them is shown. Nothing here asks anybody to move
+   * closer or further away. Build 17 did, and the owner's verdict was
+   * that it meant holding the phone at arm's stretch and waiting; the
+   * scan works at whatever distance the person is comfortable holding a
+   * phone, so it says nothing about it.
    */
   cue: {
-    centreFace: 'Center your face',
-    perfect: 'Ready when you are',
+    faceCamera: 'Center your face',
     holdStill: 'Hold still',
-    moveSlowly: 'Move your head slowly',
-    slowDown: 'Slow down',
-    backInFrame: 'Let’s get you back in frame',
+    tooFast: 'Slow down',
+    lost: 'Let’s get you back in frame',
     brighter: 'Find a brighter spot',
-    keepGoing: 'Keep going',
-    turnLeftRight: 'Turn your head slowly left and right',
-    lowerHead: 'Lower your head',
-    turnAgain: 'Turn slowly, as you did before',
-    almost: 'Nearly done',
-  } satisfies Record<GuidanceCue, string>,
+  } satisfies Record<ScanCue, string>,
+  /**
+   * The line under the video when nothing needs correcting, for the
+   * screens that still want one. It says what the scan is doing, not
+   * what to do: the step's own instruction says that.
+   */
   scanning: {
-    hint: 'Turn slowly — the ring fills as you go',
-    chin: 'Lower your head, then turn again',
+    hint: 'Follow the arrow — the scan takes the pictures',
   },
   /**
    * What the machine is doing, in the top bar's pill. One state, one
@@ -90,23 +120,17 @@ export const HAIR_SCAN_COPY = {
     complete: 'Scan complete',
   } satisfies Record<ScanStatus, string>,
   /**
-   * The pill's readout while a scan is running.
+   * The pill's readout near the end of a scan.
    *
-   * The engine has one status for the whole capture, because capturing is
-   * one thing to a reducer. To the person holding the phone it is two
-   * beats — the head goes left and right, then it goes down — and a pill
-   * that says the same word through both is telling them nothing about
-   * where they are. `scanPhaseFor` decides which beat; these are its
-   * words, and they live here with every other sentence the scanner says
-   * so the honesty sweep reads them.
-   *
-   * They describe the head and nothing else. `searching` and `tracking`
-   * are left out on purpose: those beats keep `status.detecting` and
-   * `status.ready`, which already say the right thing.
+   * One line, because one line is all that is left: the pill's other
+   * phases wear `status.detecting`, `status.ready` and `status.capturing`,
+   * which already say the right thing. `Turning` and `Head down` lived
+   * here for the two-beat build and went out with it — the step's own
+   * title says which way to turn now, in type big enough to read with the
+   * head turned away, and a pill repeating it underneath was two voices
+   * saying one thing.
    */
   phase: {
-    turning: 'Turning',
-    headDown: 'Head down',
     almost: 'Almost there',
   },
   /** Shown in place of `status.detecting` while a followed head is turned away. */
@@ -122,6 +146,22 @@ export const HAIR_SCAN_COPY = {
     body: 'The captured angles are ready to review.',
     frames: (n: number) => `${n} ${n === 1 ? 'angle' : 'angles'} captured`,
     cta: 'Review scan',
+    /** The heading over the list of what the scan came away with. */
+    captured: 'Captured',
+  },
+  /**
+   * The Scan Complete list: what the four steps came away with, ticked
+   * as each one lands.
+   *
+   * Three lines rather than four, because both turns are the same thing
+   * to the person who did them. Each names a part of the head that is in
+   * a photograph — never anything about the hair on it, and never a
+   * count or a score the code did not compute.
+   */
+  checklist: {
+    hairline: 'Hairline',
+    temples: 'Temples',
+    crown: 'Crown',
   },
   processing: {
     title: 'Analysing your scan…',
@@ -198,8 +238,10 @@ export function copySentences(): string[] {
   const visit = (value: unknown): void => {
     if (typeof value === 'string') out.push(value);
     else if (typeof value === 'function') {
+      // Two samples, because a line may count within a total — "Step 1
+      // of 4". A function that takes one argument ignores the second.
       for (const n of [0, 1, 2, 12]) {
-        const produced: unknown = (value as (n: number) => unknown)(n);
+        const produced: unknown = (value as (n: number, of: number) => unknown)(n, 4);
         if (typeof produced === 'string') out.push(produced);
       }
     } else if (Array.isArray(value)) value.forEach(visit);
