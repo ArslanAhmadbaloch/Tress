@@ -53,15 +53,22 @@ export type FrameSample = {
 /**
  * The square asked for by default.
  *
- * 256 is a compromise and worth naming as one. The segmenter's own input
- * is larger, so this is resampled up before the model sees it and some
- * detail is lost on the way — but the bytes crossing the bridge are a
- * quarter of what the model's own side would cost, three or four times a
- * second, for the whole length of a scan. The cap is a wireframe being
- * sat on a head of hair, not a measurement: a little softness in the
- * outline moves it by less than a line's width.
+ * It matches the bundled segmenter's own input exactly, which is the
+ * whole point: `resampleTensor` then copies pixel for pixel instead of
+ * resampling, so nothing is invented and nothing is dropped on the way
+ * in, and fewer bytes cross the bridge than at any larger size.
+ *
+ * It was 256 when the model wanted 512 and the note here called it a
+ * compromise: an upsample that invents nothing, for a quarter of the
+ * bytes. The model changed — see `hair-mask.ts` on why the old one could
+ * not load at all — and 256 silently became a DOWNsample into 224, which
+ * is a different thing entirely. Nearest neighbour going down drops
+ * every eighth row and column, and what it drops at a hair's edge is the
+ * edge. Matching the model costs nothing and removes the question.
+ *
+ * If the model is ever swapped again, this follows its input side.
  */
-export const SAMPLE_SIZE = 256;
+export const SAMPLE_SIZE = 224;
 
 /** The smallest and largest square the native side will render. */
 export const SAMPLE_MIN = 64;

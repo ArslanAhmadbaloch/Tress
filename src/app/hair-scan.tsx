@@ -207,6 +207,23 @@ type SegmentFrame = typeof import('@/features/assessment/hair-segmenter').segmen
 /** Companion to the above: why the last frame produced no mask. */
 type LastSegmentFailure = typeof import('@/features/assessment/hair-segmenter').lastSegmentFailure;
 
+/**
+ * The strongest hair confidence anywhere in a mask, for the readout.
+ *
+ * Diagnostics only, and only walked when the readout is on. It is the one
+ * number that tells a weak model apart from a threshold chosen for a
+ * different one: `HAIR_FIT.level` cuts at 0.5, so a mask whose peak sits
+ * near 0.5 has hair in it that the cut is throwing away, while a peak up
+ * near 1 with a tiny share is a mask that simply found little hair.
+ */
+function maskPeak(data: Float32Array): number {
+  let peak = 0;
+  for (let i = 0; i < data.length; i += 1) {
+    if (data[i] > peak) peak = data[i];
+  }
+  return peak;
+}
+
 /** How often the tracker is asked whether its last face has gone stale. */
 const EXPIRE_TICK_MS = 250;
 /**
@@ -1222,12 +1239,28 @@ function Scanner({
              that threw is the only thing that says why. Trimmed hard —
              this is one line on a camera, not a log. */
           const detail = failed?.detail ? ` ${failed.detail.slice(0, 60)}` : '';
+          /* With a mask in hand, the refusal word alone does not say
+             whether the model is weak or the threshold is wrong for it.
+             The share it measured, and how confident the mask gets at its
+             strongest, separate those: a high peak with a small share is
+             genuinely little hair, a peak near the threshold is a model
+             whose probabilities this cut was not chosen for. Both come
+             free — the trace already measured the share, and the peak is
+             one pass over a buffer that is only walked when the readout
+             is switched on. */
+          const peak = mask === null ? 0 : maskPeak(mask.data);
+          const numbers =
+            mask === null || attempt === null
+              ? ''
+              : ` ${(attempt.share * 100).toFixed(1)}% peak ${peak.toFixed(2)}`;
           setFitRefusal(
             mask === null
               ? failed
                 ? `mask:${failed.reason}${detail}`
                 : 'noMask'
-              : (attempt?.refusal ?? null),
+              : attempt?.refusal
+                ? `${attempt.refusal}${numbers}`
+                : null,
           );
         }
       } catch {
