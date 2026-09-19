@@ -234,8 +234,9 @@ async function inputTensor(
       tensor[o] = raw.data[i] / 255;
       tensor[o + 1] = raw.data[i + 1] / 255;
       tensor[o + 2] = raw.data[i + 2] / 255;
-      // Any plane beyond RGB is left at zero: for this model that is the
-      // previous frame's mask, which a still photograph does not have.
+      // Any plane beyond RGB is left at zero. The bundled model takes
+      // three and gets exactly three; a video model's fourth plane is the
+      // previous frame's mask, which neither road here keeps.
     }
     return tensor;
   } catch {
