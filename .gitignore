@@ -49,3 +49,4 @@ tress-site.zip
 # Signing material — private keys, never commit
 .signing/
 credentials.json
+build-out/

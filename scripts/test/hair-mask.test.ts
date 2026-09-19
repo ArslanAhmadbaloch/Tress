@@ -835,11 +835,9 @@ test('hairChannel: one output plane is read as the probability it already is', (
   const mask = hairChannel(output, side, 1);
   assert.equal(mask.width, side);
   assert.equal(mask.height, side);
-  assert.deepEqual(
-    Array.from(mask.data),
-    Array.from(output),
-    'the plane was transformed on the way through instead of passed along',
-  );
+  // Passed along, except that the overshoot at each end is clamped: both
+  // mask types say 0-1 and the thresholds below rely on nothing else.
+  assert.deepEqual(Array.from(mask.data), [0, 0.15, 0.94, 1].map((v) => Math.fround(v)));
   // The point of not squashing: the threshold still separates the plane.
   const over = Array.from(mask.data).filter((v) => v >= 0.5).length;
   assert.equal(over, 2, 'a 0.5 cut no longer splits the mask in two');

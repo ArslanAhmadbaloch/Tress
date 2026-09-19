@@ -165,7 +165,12 @@ export function hairChannel(
     /* One plane: the model scores hair directly rather than scoring every
        class and letting the caller pick. */
     for (let p = 0; p < data.length; p += 1) {
-      data[p] = HAIR_OUTPUT === 'logit' ? probabilityOf(output[p]) : output[p];
+      const v = HAIR_OUTPUT === 'logit' ? probabilityOf(output[p]) : output[p];
+      /* Clamped because `MaskImage` and `FitMask` both say 0-1 and mean
+         it. This model overshoots slightly at both ends — it came out
+         -0.079 to 1.148 over a portrait — which no threshold notices but
+         which would make a liar of the type. */
+      data[p] = v < 0 ? 0 : v > 1 ? 1 : v;
     }
     return { width: side, height: side, data };
   }
