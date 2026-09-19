@@ -1438,13 +1438,37 @@ export const CAP_FIT = {
  * a wireframe is drawn and is never shown, stored or compared.
  */
 export const CAP_PROFILE = {
-  /** Directions the shape is read on, round the whole turn. */
-  rays: 24,
+  /**
+   * Directions the shape is read on, round the whole turn.
+   *
+   * Raised from 24 once the mask became trustworthy. At 24 the dial reads
+   * every 15 degrees, which is coarser than a fringe or a receding
+   * corner, so the cap could only ever be a rounder or flatter dome. The
+   * cost is linear and small — this is a dial cast over an outline the
+   * trace has already reduced to at most `maxPoints`.
+   */
+  rays: 36,
   /** How far one ray may depart from the dome, out and in. */
-  out: 1.35,
-  in: 0.8,
-  /** The most two neighbouring rays may differ. */
-  slope: 0.12,
+  out: 1.4,
+  /**
+   * The floor is the asymmetric one, and it has moved least. A cap
+   * sitting INSIDE somebody's hair is the complaint this file exists to
+   * answer, and a mask cut off by the edge of the frame reads as hair
+   * stopping there — so a ray may reach well out and only a little in.
+   */
+  in: 0.75,
+  /**
+   * The most two neighbouring rays may differ.
+   *
+   * This is a step between NEIGHBOURS, so it has to move with the ray
+   * count or the smoothness changes by accident. At 24 rays, 0.12 over
+   * 15 degrees was 0.008 per degree; 36 rays sit 10 degrees apart, so
+   * the same smoothness is 0.08 and anything above that is a deliberate
+   * loosening. 0.09 is about a tenth looser per degree than the dial
+   * that shipped — enough for a hairline to step, and still inside what
+   * `shape: a spike in the mask cannot grow a horn` will allow.
+   */
+  slope: 0.09,
   /** Silhouette points in a ray before it is believed whole. */
   support: 3,
   /** Cap vertices in a ray before the cap has a reach worth dividing by. */

@@ -259,6 +259,17 @@ export type AssessmentBlock = {
   regions: CoverageMapRegion[];
   /** The word beside a region with no score. */
   unreadLabel: string;
+  /**
+   * A developer readout of what each region actually measured, or null.
+   *
+   * Only ever set when the scan diagnostics preference is on, and never
+   * shown otherwise — it is numbers about the engine, not about a person,
+   * and none of it is a finding. It exists because a region that reads
+   * zero and a region that reads nothing look identical on the screen,
+   * and the difference is the whole of what a zero means: samples that
+   * landed on no hair, or samples that never landed at all.
+   */
+  devReadout: string | null;
   /** One line about the regions that carry no score, or null when they all do. */
   unreadNote: string | null;
   /** Set only when `availability` is `unavailable`: the whole analysis half, replaced by an honest absence. */
@@ -1427,7 +1438,41 @@ function coverageMap(read: readonly ReadRegion[]): CoverageMapRegion[] {
   });
 }
 
-function assessmentBlock(read: readonly ReadRegion[], availability: Availability): AssessmentBlock {
+/**
+ * What each region measured, in one line per region.
+ *
+ * Engine numbers, never a finding, and never built unless the caller asks
+ * for it. `cov` is the share of a region's samples the mask called hair,
+ * and `frames` how many frames answered for it. A region with frames
+ * above zero and cov zero was looked at and found no hair — a real
+ * reading when the boxes sit on the head, and a bug when they do not.
+ * `anchor` is what tells those apart: it names what the face coordinates
+ * were measured from, a brow, the eyes, or a fallback to the box.
+ */
+function devReadoutOf(measurement: ScanMeasurement | null): string {
+  if (!measurement) return 'no measurement';
+  const lines: string[] = [];
+  for (const region of SCAN_REGIONS) {
+    const m = measurement.regions[region];
+    if (!m) {
+      lines.push(`${region}: unread`);
+      continue;
+    }
+    lines.push(
+      `${region}: cov ${(m.coverage * 100).toFixed(0)} scalp ${(m.visibleScalp * 100).toFixed(0)}` +
+        ` frames ${m.frames} spread ${(m.spread * 100).toFixed(1)}` +
+        ` conf ${(m.confidence * 100).toFixed(0)} anchor ${m.anchoring}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function assessmentBlock(
+  read: readonly ReadRegion[],
+  availability: Availability,
+  measurement: ScanMeasurement | null,
+  diagnose: boolean,
+): AssessmentBlock {
   const base = {
     heading: COPY.assessment.heading,
     subheading: COPY.assessment.subheading,
@@ -1439,6 +1484,7 @@ function assessmentBlock(read: readonly ReadRegion[], availability: Availability
     mapHeading: COPY.assessment.mapHeading,
     mapSubheading: COPY.assessment.mapSubheading,
     unreadLabel: COPY.assessment.unread,
+    devReadout: diagnose ? devReadoutOf(measurement) : null,
     /*
       The whole head of the report is free. The rule the gate has always
       worked to is that a free reading is never LESS qualified than the
@@ -2003,7 +2049,17 @@ function qualityBlock(session: PhotoSession, premium: boolean): QualityBlock {
 export function buildHairScanReport(
   data: AppData,
   session: PhotoSession,
-  opts: { premium: boolean; now?: Date },
+  opts: {
+    premium: boolean;
+    now?: Date;
+    /**
+     * Whether to attach the engine's own per-region numbers to the
+     * assessment. Passed in rather than read here, because this file is
+     * pure: reaching for the device preference itself would drag the
+     * native module into a model the tests run in plain Node.
+     */
+    diagnose?: boolean;
+  },
 ): HairScanReportModel {
   const premium = opts.premium;
   const now = opts.now ?? new Date();
@@ -2022,7 +2078,7 @@ export function buildHairScanReport(
   const availability: Availability = read.length > 0 ? 'measured' : 'unavailable';
 
   const quality = qualityBlock(session, premium);
-  const assessment = assessmentBlock(read, availability);
+  const assessment = assessmentBlock(read, availability, measurement, opts.diagnose === true);
   const baselineMeasurement = baselineMeasured(data, session)?.scan?.measurement ?? null;
   const baselineChanges: RegionChange[] =
     measurement && baselineMeasurement ? compareScans(measurement, baselineMeasurement) : [];

@@ -105,6 +105,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
+import { Text } from '@/components/ui/text';
 import { buildHairScanReport, type ReportTab, type ScanRegion } from '@/features/hair-scan/report-model';
 import { reminderOfferInterval } from '@/features/hair-scan/result';
 import type { StillMesh } from '@/features/hair-scan/types';
@@ -114,6 +115,7 @@ import {
   markRemindersOffered,
   remindersAlreadyOffered,
   routineReminderIsEnabled,
+  scanDiagnosticsOn,
   updateReminderIsEnabled,
 } from '@/lib/device-preferences';
 import { enableRemindersWithPrompt } from '@/lib/notifications';
@@ -215,10 +217,13 @@ export function HairScanReport({
   const router = useRouter();
   const { isPremium } = usePremium();
   const { data } = useAppStore();
+  /* Read once: the preference cannot change while a report is open, and
+     a report that re-read it would re-render for nothing. */
+  const [diagnose] = useState(scanDiagnosticsOn());
 
   const model = useMemo(
-    () => buildHairScanReport(data, session, { premium: isPremium }),
-    [data, session, isPremium],
+    () => buildHairScanReport(data, session, { premium: isPremium, diagnose }),
+    [data, session, isPremium, diagnose],
   );
 
   /*
@@ -512,6 +517,22 @@ export function HairScanReport({
             <>
               <SheetBlock continues heading={model.assessment.heading} subheading={model.assessment.subheading}>
                 <AssessmentScore assessment={model.assessment} />
+                {/*
+                  The engine's own numbers, when the diagnostics
+                  preference is on. Never shown otherwise, and never a
+                  finding: a region reading zero and a region reading
+                  nothing look identical on this screen, and this is the
+                  only thing that tells them apart.
+                */}
+                {model.assessment.devReadout ? (
+                  <Text
+                    variant="caption"
+                    color="textTertiary"
+                    style={{ fontFamily: 'Menlo', fontSize: 9, opacity: 0.6, marginTop: spacing.sm }}
+                  >
+                    {model.assessment.devReadout}
+                  </Text>
+                ) : null}
               </SheetBlock>
               <SheetBlock heading={model.assessment.mapHeading} subheading={model.assessment.mapSubheading}>
                 {/* The tints follow the dial rather than racing it; Reduce Motion skips both. */}

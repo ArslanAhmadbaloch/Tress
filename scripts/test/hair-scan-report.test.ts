@@ -416,7 +416,12 @@ test('report screen: the one ask for notifications lives here, once per install,
 });
 
 test('report screen: the words are the model’s — the screen builds the report once and computes no sentence', () => {
-  assert.match(REPORT_SOURCE, /buildHairScanReport\(data, session, \{ premium: isPremium \}\)/);
+  // `diagnose` rides along: the screen reads the preference once and hands
+  // it in, because `report-model.ts` is pure and cannot read it itself.
+  assert.match(
+    REPORT_SOURCE,
+    /buildHairScanReport\(data, session, \{ premium: isPremium, diagnose \}\)/,
+  );
   assert.match(REPORT_SOURCE, /usePremium\(\)/);
   assert.ok(!REPORT_SOURCE.includes('HAIR_SCAN_REPORT_COPY'), 'the old card vocabulary is not drawn');
   assert.ok(!REPORT_SOURCE.includes('buildHairScanResult'), 'the old card builder is not drawn');
