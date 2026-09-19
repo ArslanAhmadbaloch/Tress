@@ -184,6 +184,7 @@ import type {
   ScanStep,
   ScannerState,
 } from '@/features/hair-scan/types';
+import { FRAME_MIRRORED } from '@/features/hair-scan/handedness';
 import { scanDiagnosticsOn } from '@/lib/device-preferences';
 import { nitroAvailable } from '@/lib/native';
 import { deletePhotoFiles, persistCapture } from '@/lib/photo-storage';
@@ -203,6 +204,8 @@ import { isScanSession, type Angle, type PhotoSession } from '@/types/domain';
  * in the fit loop below.
  */
 type SegmentFrame = typeof import('@/features/assessment/hair-segmenter').segmentFrame;
+/** Companion to the above: why the last frame produced no mask. */
+type LastSegmentFailure = typeof import('@/features/assessment/hair-segmenter').lastSegmentFailure;
 
 /** How often the tracker is asked whether its last face has gone stale. */
 const EXPIRE_TICK_MS = 250;
@@ -432,6 +435,30 @@ const ARROW_OF_STEP: Record<ScanStep, TurnDirection | null> = {
   down: 'down',
 };
 
+/**
+ * The same turn, as a direction on the SCREEN.
+ *
+ * `ARROW_OF_STEP` above is the direction the HEAD moves, which is what
+ * the person is told. An arrow is drawn in the picture, and which side
+ * of the picture the person's own right is on belongs to
+ * `FRAME_MIRRORED` — see `handedness.ts`.
+ *
+ * The two agreed while the preview was flipped, which is why this
+ * conversion did not exist and the arrow simply used the head's word. It
+ * had to exist the moment the preview stopped being flipped: the plate
+ * said "turn your head to the right" while the chevrons pointed at the
+ * person's left, so people followed the arrow, the engine sat waiting
+ * for the opposite yaw, and the step fired late — once they turned back
+ * the other way for the NEXT step, which then satisfied itself
+ * immediately. A scanner that looks broken, from an arrow.
+ *
+ * `down` is not a left or a right and never moves.
+ */
+function arrowOnScreen(direction: TurnDirection): TurnDirection {
+  if (FRAME_MIRRORED || direction === 'down') return direction;
+  return direction === 'right' ? 'left' : 'right';
+}
+
 /** How far off the oval's centre the arrow sits, as a share of the oval's width. */
 function arrowShift(direction: TurnDirection): number {
   if (direction === 'right') return 0.34;
@@ -637,7 +664,9 @@ function Scanner({
      segmenter returning nothing at all and `threw` is the frame or the
      model throwing; the rest come from `traceHair` and name the step
      that gave up. */
-  const [fitRefusal, setFitRefusal] = useState<FitRefusal | 'noMask' | 'threw' | null>(null);
+  const [fitRefusal, setFitRefusal] = useState<FitRefusal | 'noMask' | 'threw' | string | null>(
+    null,
+  );
   const onImplementation = useCallback((kind: ScannerImplementation) => {
     setArkit(kind === 'arkit');
   }, []);
@@ -1124,6 +1153,7 @@ function Scanner({
     let live = true;
     let timer: ReturnType<typeof setInterval> | null = null;
     let segment: SegmentFrame | null = null;
+    let whyNoMask: LastSegmentFailure | null = null;
 
     const stop = (): void => {
       live = false;
@@ -1184,7 +1214,12 @@ function Scanner({
         // shipping another guess.
         if (diagnose) {
           setFitState(attempt?.outline ? 'fitted' : 'refused');
-          setFitRefusal(mask === null ? 'noMask' : (attempt?.refusal ?? null));
+          /* A null mask is five different failures wearing one word, so
+             the segmenter is asked which — see `lastSegmentFailure`. */
+          const failed = mask === null ? whyNoMask?.() : null;
+          setFitRefusal(
+            mask === null ? (failed ? `mask:${failed.reason}` : 'noMask') : (attempt?.refusal ?? null),
+          );
         }
       } catch {
         // A frame the camera would not give, or a model run that threw.
@@ -1211,6 +1246,7 @@ function Scanner({
         const model = await import('@/features/assessment/hair-segmenter');
         if (!live) return;
         segment = model.segmentFrame;
+        whyNoMask = model.lastSegmentFailure;
       } catch {
         // A binary built without the model. The dome is what this phone
         // draws, which is what every phone drew before this existed.
@@ -1673,6 +1709,8 @@ function Scanner({
     ready screen has a Start button to look at and the completion beat
     has a list.
   */
+  /* The head's direction, and the same turn as the screen sees it. The
+     second is what anything drawn in the picture must use. */
   const arrow = scanning ? ARROW_OF_STEP[view.step] : null;
   const stepCopy = HAIR_SCAN_COPY.step[view.step];
   /** What the Scan Complete list says, and which rows have their tick. */
@@ -1748,7 +1786,8 @@ function Scanner({
               has done the thing is the app not watching.
             */
             <TurnArrow
-              direction={arrow}
+              /* The head's turn as the SCREEN sees it — see `arrowOnScreen`. */
+              direction={arrowOnScreen(arrow)}
               urgency={view.urgency}
               /*
                 And when the engine is asking for more turn, the arrow
@@ -1761,8 +1800,10 @@ function Scanner({
               settled={view.reached}
               style={{
                 position: 'absolute',
-                left: mask.x + mask.width / 2 - ARROW_BOX / 2 + arrowShift(arrow) * mask.width,
-                top: mask.y + mask.height / 2 - ARROW_BOX / 2 + arrowDrop(arrow) * mask.height,
+                left:
+                  mask.x + mask.width / 2 - ARROW_BOX / 2 + arrowShift(arrowOnScreen(arrow)) * mask.width,
+                top:
+                  mask.y + mask.height / 2 - ARROW_BOX / 2 + arrowDrop(arrowOnScreen(arrow)) * mask.height,
                 width: ARROW_BOX,
                 height: ARROW_BOX,
               }}

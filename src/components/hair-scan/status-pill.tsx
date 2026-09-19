@@ -52,6 +52,7 @@ import { Icon, type IconName } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import type { ScanStatus, ScanStep } from '@/features/hair-scan/types';
 import { darkColors, iconSize, motion, radius, spacing } from '@/theme';
+import { FRAME_MIRRORED } from '@/features/hair-scan/handedness';
 
 export type StatusTone = 'good' | 'adjust' | 'neutral';
 
@@ -95,10 +96,20 @@ export function scanPhaseTone(phase: ScanPhase): StatusTone {
  * warning sign: no triangle, no exclamation, because none of the four is
  * a problem.
  */
+/*
+ * A chevron points somewhere on the SCREEN, and the two turn steps are
+ * named for where the HEAD goes. Which side of the picture that is
+ * belongs to `FRAME_MIRRORED` — see `handedness.ts`. These glyphs exist
+ * to agree with the arrow over the video, so they convert exactly as it
+ * does; `arrowOnScreen` in the scan screen is the same conversion.
+ */
+const TOWARD_OWN_RIGHT: IconName = FRAME_MIRRORED ? 'chevronRight' : 'chevronLeft';
+const TOWARD_OWN_LEFT: IconName = FRAME_MIRRORED ? 'chevronLeft' : 'chevronRight';
+
 export const SCAN_STEP_ICON: Record<ScanStep, IconName> = {
   front: 'target',
-  right: 'chevronRight',
-  left: 'chevronLeft',
+  right: TOWARD_OWN_RIGHT,
+  left: TOWARD_OWN_LEFT,
   down: 'chevronDown',
 };
 

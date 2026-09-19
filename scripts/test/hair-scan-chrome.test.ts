@@ -25,6 +25,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { FRAME_MIRRORED } from '@/features/hair-scan/handedness';
 
 import {
   SCAN_HAPTIC_FLOOR_MS,
@@ -831,12 +832,31 @@ test('chrome: while frames are being taken the pill wears the step’s own glyph
   const source = read('status-pill.tsx');
   const table = /SCAN_STEP_ICON: Record<ScanStep, IconName> = \{([\s\S]*?)\};/.exec(source);
   assert.ok(table, 'the step glyphs are no longer declared');
+  // The two turns read their glyph from a named constant rather than a
+  // literal, because which way a chevron points on the SCREEN depends on
+  // `FRAME_MIRRORED` while the step names the HEAD's direction. So the
+  // table is resolved through those constants before it is judged.
+  const named = Object.fromEntries(
+    [...source.matchAll(/const (\w+): IconName = FRAME_MIRRORED \? '(\w+)' : '(\w+)';/g)].map(
+      (m) => [m[1], { mirrored: m[2], plain: m[3] }],
+    ),
+  );
   const icons = Object.fromEntries(
-    [...table[1].matchAll(/(\w+):\s*'(\w+)'/g)].map((m) => [m[1], m[2]]),
+    [...table[1].matchAll(/(\w+):\s*(?:'(\w+)'|(\w+))/g)].map((m) => {
+      const glyph = m[2] ?? named[m[3]]?.[FRAME_MIRRORED ? 'mirrored' : 'plain'];
+      assert.ok(glyph, `${m[1]} wears a glyph this test cannot resolve: ${m[3]}`);
+      return [m[1], glyph];
+    }),
   );
   assert.deepEqual(Object.keys(icons), ['front', 'right', 'left', 'down'], 'four steps, four glyphs');
   assert.equal(new Set(Object.values(icons)).size, 4, 'two steps wearing one glyph tell nothing apart');
   assert.notEqual(icons.right, icons.left, 'the two turns must not look identical');
+  // And the pair is the two horizontal chevrons, whichever way round.
+  assert.deepEqual(
+    [icons.right, icons.left].sort(),
+    ['chevronLeft', 'chevronRight'],
+    'the turns are not the two horizontal chevrons',
+  );
   assert.ok(
     source.includes("if (phase === 'capturing' && step) return SCAN_STEP_ICON[step];"),
     'the step’s glyph wins while frames are being taken',
@@ -1007,4 +1027,37 @@ test('chrome: the chrome uses colour tokens, and disables no lint rule', () => {
       `${file} writes a raw colour instead of a token`,
     );
   }
+});
+
+test('chrome: the turn arrow points where the HEAD goes, not where the screen does', () => {
+  /*
+    The regression this pins. `ARROW_OF_STEP` names the direction the head
+    moves — "turn your head to the right" — and the arrow is drawn in the
+    picture, where the person's own right is on whichever side
+    `FRAME_MIRRORED` puts it. The two agreed while the preview was
+    flipped, so the arrow used the head's word directly and nobody
+    noticed the conversion was missing.
+
+    Un-mirroring the preview made them disagree: the plate said "right"
+    while the chevrons pointed at the person's left. People followed the
+    arrow, the engine waited for the opposite yaw, and the step fired
+    late — then the next step, already satisfied, fired at once. It read
+    as a scanner that had stopped tracking.
+  */
+  const screen = readFileSync('src/app/hair-scan.tsx', 'utf8');
+  assert.match(
+    screen,
+    /function arrowOnScreen\(direction: TurnDirection\): TurnDirection \{\s*if \(FRAME_MIRRORED \|\| direction === 'down'\) return direction;\s*return direction === 'right' \? 'left' : 'right';/,
+    'the head-to-screen conversion is gone, or no longer reads the flag',
+  );
+  // Every place the arrow becomes pixels goes through it.
+  assert.match(screen, /direction=\{arrowOnScreen\(arrow\)\}/, 'the chevrons skip the conversion');
+  assert.match(screen, /arrowShift\(arrowOnScreen\(arrow\)\)/, 'the arrow’s offset skips it');
+  assert.match(screen, /arrowDrop\(arrowOnScreen\(arrow\)\)/, 'the arrow’s drop skips it');
+  // And the step table it converts FROM stays in the head's terms.
+  assert.match(
+    screen,
+    /const ARROW_OF_STEP: Record<ScanStep, TurnDirection \| null> = \{\s*front: null,\s*right: 'right',\s*left: 'left',/,
+    'ARROW_OF_STEP has been quietly flipped instead of converted',
+  );
 });

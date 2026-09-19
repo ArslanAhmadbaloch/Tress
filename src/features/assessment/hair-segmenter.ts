@@ -342,24 +342,77 @@ function resampleTensor(
  * it, because "we could not look" is not "there is no hair".
  */
 export async function segmentFrame(frame: RawFrame): Promise<MaskImage | null> {
+  let model: Awaited<ReturnType<typeof segmenter>>;
   try {
-    const model = await segmenter();
+    model = await segmenter();
+  } catch (error) {
+    // The model itself: missing from the bundle, or a runtime that could
+    // not load it. Every later stage would fail too, and for a reason
+    // that would read as the model's fault rather than the loader's.
+    noteFailure('model', error);
+    return null;
+  }
+
+  try {
     const side = inputSide(model);
     const channels = inputChannels(model);
 
     const input = resampleTensor(frame, side, channels);
-    if (!input) return null;
+    if (!input) {
+      noteFailure('frame');
+      return null;
+    }
 
     // The interpreter will not tell us if this is wrong; see the note at
     // the same line on the still road.
-    if (input.length !== side * side * channels) return null;
+    if (input.length !== side * side * channels) {
+      noteFailure('shape');
+      return null;
+    }
 
     const output = await runModel(model, input);
     const classes = Math.max(1, Math.round(output.length / (side * side)));
-    return hairChannel(output, side, classes);
-  } catch {
+    const mask = hairChannel(output, side, classes);
+    noteFailure(mask ? null : 'output');
+    return mask;
+  } catch (error) {
+    noteFailure('run', error);
     return null;
   }
+}
+
+/**
+ * Why the last live frame produced no mask.
+ *
+ * Diagnostics only, and deliberately a module-level note rather than a
+ * widened return type: every caller's answer to "no mask" is the same —
+ * hold the cap — and none of them should start branching on the reason.
+ * The scan screen reads it for the developer readout, which is the one
+ * place it is ever shown.
+ *
+ * It exists because `segmentFrame` had a single `catch` returning null,
+ * so a phone that produced no mask said only that. Five different
+ * failures wore one word, and two builds were spent guessing which.
+ */
+export type SegmentFailure = 'model' | 'frame' | 'shape' | 'run' | 'output';
+
+let lastFailure: SegmentFailure | null = null;
+/** Kept for the readout: the throw behind a `model` or `run` failure. */
+let lastFailureDetail: string | null = null;
+
+function noteFailure(reason: SegmentFailure | null, error?: unknown): void {
+  lastFailure = reason;
+  lastFailureDetail =
+    reason === null || error === undefined
+      ? null
+      : error instanceof Error
+        ? error.message
+        : String(error);
+}
+
+/** The last frame's failure, or null if the last frame produced a mask. */
+export function lastSegmentFailure(): { reason: SegmentFailure; detail: string | null } | null {
+  return lastFailure === null ? null : { reason: lastFailure, detail: lastFailureDetail };
 }
 
 /**
