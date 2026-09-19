@@ -1,62 +1,81 @@
 /**
  * The hair scan report's view-model: everything the report screen draws,
- * built once, in one place, from the record.
+ * built once, in one place, out of the measurement the scan already took.
  *
- * ── One long sheet ────────────────────────────────────────────────────
- * The report is a hero still with a sheet of sections over it — the
- * analysis rows with their region crops, what is working, the profile
- * tiles, whether the turn covered the person's own focus, four care
- * notes, the routine shelf and the coach's paragraph — with a tab row
- * that filters the rows and a floating Next pill that walks the
- * sections. Every string, crop, count and lock is decided here; the
- * components render the model and compute nothing, so the honesty
+ * ── What the report is ────────────────────────────────────────────────
+ * A hero still, and then a sheet of sections in one order: what the scan
+ * found, what that is set against, and then everything else. The
+ * assessment with its overall figure and its coverage map; a card for
+ * each region the scan could read; visible scalp; the two temples side
+ * by side; what cleared the noise floor since the last scan and since
+ * the baseline; the places worth aiming the next scan at; the goal they
+ * stated, with the reading at the region it points at. Only then how the
+ * frames themselves came out, the coach's paragraph, the care notes, the
+ * routine shelf and the hairstyles.
+ *
+ * The screen renders this model and computes nothing, so the honesty
  * sweep in scripts/test/hair-scan-report-model.test.ts reads the whole
  * report by building it.
  *
- * ── What each section may say ─────────────────────────────────────────
- * A row is an observation about the frames: what the mask counted, how
- * a still was lit and focused, which frames exist. Where the segmenter
- * did not run the row says what was kept and what a second scan lets it
- * compare, in words, with no placeholder digit. A strength is a true
- * positive about the images or the record. A profile tile is the label
- * of a choice, never a finding. The focus block says whether the turn
- * *reached* the region somebody said they are watching, and never what
- * the region shows. The tips are general care practice. The routine
- * block is the shelf. The coach's paragraph is the coach's.
+ * ── Where the figures come from ───────────────────────────────────────
+ * Every one of them was computed before this file ran. `measureScan`
+ * reads the frames during processing and the result is stored on the
+ * session; `compareScans` decides, and is the only thing allowed to
+ * decide, whether a difference between two scans is a difference at all.
+ * This file turns a measured share into a score in `grade.ts`, picks
+ * which region leads, and chooses the English. It measures nothing,
+ * re-derives nothing, and softens no verdict.
  *
- * ── First scan, mature record ─────────────────────────────────────────
- * A first scan on a fresh install — one session, no routine, no products,
- * perhaps no segmenter — has to render a full report with real content
- * in every section, and it does: light, framing and the turn are almost
- * always true positives, the profile is the funnel's answers, the focus
- * block is about coverage, the tips need only a goal (and lean on the
- * self-knowledge answers where a journey has them), the shelf says it
- * is empty, and the coach says what was kept. A record with a routine,
- * a streak, several scans and scanned products fills the same sections
- * more richly. Nothing is invented for either.
+ * The score has one name, `Visual Coverage`, and one meaning: the share
+ * of a region that read as hair in an image. It is not hair density, a
+ * follicle count or a shaft measurement, and no sentence this file
+ * builds may be worded as though it were. `grade.ts` states the rule;
+ * the sweeps enforce it.
+ *
+ * ── Availability ──────────────────────────────────────────────────────
+ * A scan that carries no measurement, or one that read no region, has no
+ * analysis half at all: `availability` is `unavailable`, the assessment
+ * carries the words and the rescan action, and every measured block is
+ * empty. No zeroes, no coverage map of dashes, no paragraph written as
+ * though a reading had been taken. The quality section, the profile, the
+ * care notes and the shelf are still a real report about a real scan.
+ *
+ * ── One report for everybody ──────────────────────────────────────────
+ * There is no male report and no female report, and there must never be
+ * one. Which region leads is decided by three things the person said —
+ * their goal, the part of the head they watch, and how they wear their
+ * hair — and by what the scan could actually read. A middle part leads
+ * with the part line; a temple concern leads with the temples. The
+ * figures are identical whatever the answers: only the order changes.
+ *
+ * ── What each section may say ─────────────────────────────────────────
+ * An observation is a comparison of two figures this model holds. A
+ * change row is a verdict the engine reached. A watch item carries the
+ * figure that put it on the list. A quality row is an observation about
+ * a frame. A strength is a true positive about the images or the record.
+ * A profile tile is the label of a choice, never a finding. The tips are
+ * general care practice. The routine block is the shelf. The coach's
+ * paragraph is the coach's.
  *
  * ── Locking ───────────────────────────────────────────────────────────
- * Without Premium every row, the focus block, the tips and the routine
- * block are locked; the hero, the strengths, the profile and the coach's
- * paragraph are free. A locked row still carries its real headline —
- * the screen shows the first row's and blurs the bodies — so the free
- * reading is never more confident than the paid one about the same
- * pictures. Premium locks nothing.
+ * Without Premium the analysis detail — the cards, scalp visibility,
+ * symmetry, the comparisons, the watch list — the quality rows, the goal
+ * block, the tips and the routine block are held. The hero, the
+ * assessment's own figure, the strengths, the profile and the coach's
+ * paragraph are free: a free reading is never less qualified, and never
+ * a different reading, about the same pictures. Premium locks nothing.
  *
  * ── "Measured" ────────────────────────────────────────────────────────
- * A row is `measured` only when the segmenter's hair-area reading is
- * behind a figure on it. Light and focus are read off the pixels too,
- * but they do not earn the mark: the screen draws "Measured" beside a
- * row to say the mask counted this, and a weaker meaning would let the
- * mark sit beside a row with no figure at all. The light row's figures
- * are brightness readings and it is never marked.
+ * A quality row is `measured` only when a hair-area reading is behind a
+ * figure on it. Light and focus are read off the pixels too, but they do
+ * not earn the mark, and the light row never carries it.
  *
  * Pure: no React, nothing native. Loaded by `node --test`.
  */
 
-import { reportSummary } from '@/features/coach/report-summary';
+import { profileSentence, tressSays } from '@/features/coach/report-summary';
 import { buildShelf } from '@/features/products/shelf';
-import { formatDateShort } from '@/lib/date';
+import { daysBetween, formatDateShort, formatDuration } from '@/lib/date';
 import { adherencePercent, currentStreak } from '@/store/selectors';
 import {
   APPROACH_LABELS,
@@ -71,20 +90,43 @@ import {
   joinPhrases,
   journeyGoals,
   journeyHairType,
+  journeyHairWearing,
   journeyScalpSensitivity,
   journeyScalpType,
   type Angle,
   type AppData,
   type HairGoal,
+  type HairWearing,
   type Journey,
   type Photo,
   type PhotoRegion,
   type PhotoSession,
+  type TrackingArea,
 } from '@/types/domain';
 
 import { HAIRSTYLE_COPY, hairstylesFor } from '@/features/hairstyles';
 
 import { FRONT_LOCK_DEG } from './engine';
+import {
+  COMPARABLE_CONFIDENCE,
+  COVERAGE_SCORE_MAX,
+  comparable,
+  confidenceBand,
+  confidencePercent,
+  gradeOf,
+  overallGrade,
+  visibleScalpPointsOf,
+  type Grade,
+} from './grade';
+import {
+  SCAN_REGIONS,
+  compareScans,
+  type ChangeVerdict,
+  type RegionChange,
+  type RegionMeasurement,
+  type ScanMeasurement,
+  type ScanRegion,
+} from './measure';
 import { cropFor, type ReportCrop } from './region-crops';
 import {
   HAIR_SCAN_REPORT_MODEL_COPY as COPY,
@@ -101,7 +143,200 @@ import { tipProfileOf, tipsForProfile, type Tip } from './tips';
 export type ReportRegion = PhotoRegion;
 export type { ReportCrop, Tip };
 
-export type ReportTab = 'all' | 'hairline' | 'temples' | 'crown' | 'light';
+/**
+ * The tab row over the detailed analysis.
+ *
+ * `midScalp` and `partLine` are places the measurement engine reads but
+ * the scan never photographs on their own — both are read off the frame
+ * taken with the chin down — so they had no tab while the report was
+ * built out of frames. They have one now that the report is built out of
+ * the measurement. `light` stays: it is the scan-quality row's tab, and
+ * the quality section still filters by it.
+ */
+export type ReportTab =
+  | 'all'
+  | 'hairline'
+  | 'temples'
+  | 'crown'
+  | 'midScalp'
+  | 'partLine'
+  | 'light';
+
+/* --------------------------- the measured half --------------------------- */
+
+export type { Grade, ScanRegion, RegionChange, ChangeVerdict };
+
+/**
+ * Whether the measurement engine read this scan at all.
+ *
+ * `unavailable` is not a degraded `measured`. It means the whole
+ * analysis half of the report is absent — no overall figure, no map, no
+ * cards, no comparison — and the screen shows the rescan state instead
+ * of a page of zeroes. Nothing is estimated to stand in for a reading
+ * that was never taken.
+ */
+export type Availability = 'measured' | 'unavailable';
+
+/** One region on the coverage map: the figure, or the absence of one. */
+export type CoverageMapRegion = {
+  region: ScanRegion;
+  label: string;
+  /** `Visual Coverage` out of 100, or null where the scan could not read the region. */
+  score: number | null;
+  /** 0–1, the engine's own. Zero where there is no score. */
+  confidence: number;
+  /**
+   * The confidence in words, for the chip a screen reader reads out:
+   * "Confidence 80%". Null where there is no score, because there is no
+   * confidence in a reading nobody took.
+   */
+  confidenceLabel: string | null;
+};
+
+/**
+ * One region's card in the detailed analysis.
+ *
+ * Every field is either something the engine measured or a sentence
+ * built out of two figures this model holds. `grade` is null for a
+ * region the engine refused — null, never zero.
+ */
+export type RegionCard = {
+  region: ScanRegion;
+  label: string;
+  grade: Grade | null;
+  /** Samples in this region that read as scalp rather than hair, out of 100. */
+  visibleScalp: number | null;
+  /** Points of visual coverage between this temple and the other one. Temples only. */
+  symmetry?: number;
+  /** This region set beside the baseline scan, when there is one to set it beside. */
+  changeFromBaseline?: RegionChange;
+  /**
+   * That difference in whole points of visual coverage, signed, or null
+   * where the engine reported none clear of the two scans' own margin of
+   * error.
+   *
+   * Worked out here rather than on the card, and by the same arithmetic
+   * as the change rows below it — rounded away from zero and floored at
+   * one, so one measurement never reads as two different figures in two
+   * places on one screen.
+   */
+  changePoints: number | null;
+  crop: ReportCrop | null;
+  observation: string;
+  tab: ReportTab;
+};
+
+/** One row of a comparison: the engine's verdict, and what that verdict says in words. */
+export type ChangeRow = {
+  region: ScanRegion;
+  label: string;
+  verdict: ChangeVerdict;
+  detail: string;
+};
+
+/** One place the next scan is worth aiming at, and the figure that put it on the list. */
+export type WatchItem = { region: ScanRegion; label: string; reason: string };
+
+export type AssessmentBlock = {
+  heading: string;
+  subheading: string;
+  /** The name of the figure, everywhere it is shown: "Visual Coverage". */
+  scoreLabel: string;
+  scoreScale: string;
+  /** The unit on a difference between two of those figures: "points". */
+  pointsLabel: string;
+  scoreNote: string;
+  confidenceLabel: string;
+  /** The whole scan in one figure, or null when nothing was read. */
+  overall: Grade | null;
+  /** "High confidence · 72%", or null with no overall figure to qualify. */
+  overallConfidence: string | null;
+  /** One line under the figure, or null when there is no figure. */
+  summary: string | null;
+  mapHeading: string;
+  mapSubheading: string;
+  /** Every region the scan looks for, front to back; the unread ones carry no score. */
+  regions: CoverageMapRegion[];
+  /** The word beside a region with no score. */
+  unreadLabel: string;
+  /** One line about the regions that carry no score, or null when they all do. */
+  unreadNote: string | null;
+  /** Set only when `availability` is `unavailable`: the whole analysis half, replaced by an honest absence. */
+  unavailable: { title: string; body: string; cta: string } | null;
+  locked: boolean;
+};
+
+export type CardsBlock = {
+  heading: string;
+  subheading: string;
+  coverageLabel: string;
+  scalpLabel: string;
+  differenceLabel: string;
+  changeLabel: string;
+  cards: RegionCard[];
+  locked: boolean;
+};
+
+export type ScalpVisibilityBlock = {
+  heading: string;
+  subheading: string;
+  label: string;
+  rows: { region: ScanRegion; label: string; visibleScalp: number; confidence: number }[];
+  body: string;
+  note: string;
+  locked: boolean;
+} | null;
+
+export type SymmetryBlock = {
+  heading: string;
+  subheading: string;
+  label: string;
+  left: Grade;
+  right: Grade;
+  leftLabel: string;
+  rightLabel: string;
+  /** Points of visual coverage between the two sides, sign dropped. */
+  differencePoints: number;
+  balanced: boolean;
+  body: string;
+  note: string;
+  locked: boolean;
+} | null;
+
+export type ChangedBlock = {
+  heading: string;
+  subheading: string;
+  baselineHeading: string;
+  /** What the rows are set against, in words. Empty when there is nothing to set them against. */
+  span: string;
+  baselineSpan: string;
+  /** Only verdicts that cleared the two scans' own margin of error. */
+  sinceLast: ChangeRow[];
+  sinceBaseline: ChangeRow[];
+  /** What to say when the since-last comparison has no row of its own. */
+  body: string;
+  /** What to say when the baseline comparison has no row of its own. */
+  baselineBody: string;
+  locked: boolean;
+};
+
+export type WatchBlock = {
+  heading: string;
+  subheading: string;
+  items: WatchItem[];
+  /** Said in place of the list when nothing stood out. */
+  body: string | null;
+  locked: boolean;
+};
+
+export type QualityBlock = {
+  heading: string;
+  subheading: string;
+  summary: string;
+  rows: AnalysisRow[];
+  /** The two words a row is marked with, by `AnalysisRow.measured`. */
+  marks: { measured: string; kept: string };
+};
 
 export type AnalysisRow = {
   id: string;
@@ -166,6 +401,19 @@ export type FocusBlock = {
   status: FocusStatus;
   statusLabel: string;
   body: string;
+  /**
+   * The measured region the goal points at, when the scan read one.
+   *
+   * The block used to say only whether the turn REACHED the region
+   * somebody said they watch. Now that the engine measures that region,
+   * the block carries the reading as well — the same figure the card and
+   * the map carry, lifted from the same measurement rather than worked
+   * out a second time.
+   */
+  lead: { region: ScanRegion; label: string; grade: Grade | null; visibleScalp: number | null } | null;
+  readingHeading: string;
+  /** One line about what the scan read at the lead region, or null when there is no lead. */
+  reading: string | null;
   locked: boolean;
 } | null;
 
@@ -207,23 +455,80 @@ export type HairstylesBlock = {
   locked: boolean;
 };
 
+/**
+ * Everything the report screen draws, in the order it draws it.
+ *
+ * The analysis half — `assessment` through `watch` — exists only where
+ * `availability` is `measured`. Where it is `unavailable` those blocks
+ * are empty and `assessment.unavailable` carries the words and the
+ * rescan action instead: no zeroes, no prose written as though a reading
+ * had been taken.
+ */
 export type HairScanReportModel = {
   hero: { uri: string; width: number; height: number; dateLabel: string; contours?: unknown };
   tabs: { id: ReportTab; label: string }[];
-  analysis: {
+
+  /** Whether the measurement engine read this scan at all. */
+  availability: Availability;
+  /** The overall figure and the coverage map. */
+  assessment: AssessmentBlock;
+  /** One card per region the scan could read, the person's own lead regions first. */
+  cards: CardsBlock;
+  scalpVisibility: ScalpVisibilityBlock;
+  symmetry: SymmetryBlock;
+  changed: ChangedBlock;
+  watch: WatchBlock;
+  /** The goal block, rebuilt around the region the person's goal points at. */
+  goal: FocusBlock;
+  /** How the frames themselves came out. Moved below the findings, where it belongs. */
+  quality: QualityBlock;
+
+  says: SaysBlock;
+  /**
+   * The care notes, and — where one of the person's own answers picked
+   * them — the sentence that names that answer.
+   *
+   * `shapedBy` sits here rather than in the coach's paragraph because it
+   * is not a measurement: the paragraph reads what the scan found, and
+   * an answer somebody typed into the funnel is not a finding. It is a
+   * quotation of their own words, and the sweep checks it as one.
+   *
+   * It is also on the END of `subheading`, which is the string the
+   * section actually draws. Both, deliberately: the field is the shape a
+   * screen can lay out on its own, the subheading is the one that
+   * reaches a person today, and the field alone reached nobody.
+   */
+  tips: {
     heading: string;
+    /** The notes that decide what the next report can say, and the heading over them. */
+    trackingHeading: string;
+    trackingSubheading: string;
+    tracking: Tip[];
     subheading: string;
-    rows: AnalysisRow[];
-    /** The two words a row is marked with, by `AnalysisRow.measured`. */
-    marks: { measured: string; kept: string };
+    shapedBy: string | null;
+    items: Tip[];
+    locked: boolean;
   };
+  routine: RoutineBlock;
+  hairstyles: HairstylesBlock;
+
+  /**
+   * The scan-quality block under its former name, and the goal block
+   * under its former one.
+   *
+   * The report screen is moving onto `quality` and `goal`; until it has,
+   * both names point at the same object, so neither lane has to land its
+   * half of the change in the same commit as the other. Deleting these
+   * two is the last step of that move, not a change of behaviour.
+   *
+   * @deprecated Read `quality` and `goal`.
+   */
+  analysis: QualityBlock;
+  /** @deprecated Read `goal`. */
+  focus: FocusBlock;
+
   strengths: { heading: string; cards: StrengthCard[] };
   profile: { heading: string; tiles: ProfileTile[] };
-  focus: FocusBlock;
-  tips: { heading: string; subheading: string; items: Tip[]; locked: boolean };
-  hairstyles: HairstylesBlock;
-  routine: RoutineBlock;
-  says: SaysBlock;
   /** In scroll order, for the Next pill. */
   sections: { id: string; label: string }[];
 };
@@ -274,6 +579,135 @@ export const STRENGTHS_MIN = 2;
 export const ROUTINE_TILES = 3;
 /** Catalogue drawings on the hairstyles block; the rest are on /hairstyles. */
 export const HAIRSTYLE_TILES = 3;
+
+/* ----------------------- the measured half's dials ----------------------- */
+
+/**
+ * The detailed analysis, in the order the report reads down the head:
+ * the frontal hairline, the two temples beside it, then the crown, the
+ * mid-scalp and the part line on top. The coverage map uses the
+ * engine's own `SCAN_REGIONS` order instead — a map is a diagram and
+ * must not be reordered by whose goal is whose.
+ */
+export const CARD_ORDER: readonly ScanRegion[] = [
+  'hairline',
+  'leftTemple',
+  'rightTemple',
+  'crown',
+  'midScalp',
+  'partLine',
+];
+
+/** Which tab a region's card sits under. */
+const TAB_OF_REGION: Readonly<Record<ScanRegion, ReportTab>> = Object.freeze({
+  hairline: 'hairline',
+  leftTemple: 'temples',
+  rightTemple: 'temples',
+  midScalp: 'midScalp',
+  crown: 'crown',
+  partLine: 'partLine',
+});
+
+/**
+ * Which photograph a region's crop is cut from.
+ *
+ * The engine reads six places; the scan photographs four. The mid-scalp
+ * and the part line are both read off the frame taken with the chin
+ * down, which the journal files as `top`, so that is the picture their
+ * cards show. A crop is a place, never a finding: showing the top frame
+ * beside a part-line figure says "this is where we looked".
+ */
+const CROP_REGION_OF: Readonly<Record<ScanRegion, ReportRegion>> = Object.freeze({
+  hairline: 'hairline',
+  leftTemple: 'leftTemple',
+  rightTemple: 'rightTemple',
+  midScalp: 'top',
+  crown: 'crown',
+  partLine: 'top',
+});
+
+/**
+ * Which measured regions a stated goal points at. Empty is a goal that
+ * points at the whole head, or at something no photograph can count —
+ * either way, nothing leads and the cards stay in their own order.
+ *
+ * One report for everybody. There is no male list and no female list
+ * here, and there must never be one: a middle part puts the part line
+ * first whoever is wearing it, and a temple concern puts the temples
+ * first whoever raised it.
+ */
+export const GOAL_SCAN_REGIONS: Readonly<Record<HairGoal, readonly ScanRegion[]>> = Object.freeze({
+  hairline: ['hairline', 'leftTemple', 'rightTemple'],
+  crown: ['crown', 'midScalp'],
+  fullness: ['midScalp', 'crown', 'partLine'],
+  overall: [],
+  unsure: [],
+  narrowerPart: ['partLine', 'midScalp'],
+  fullerPonytail: ['partLine', 'crown'],
+  shedding: [],
+  lessBreakage: [],
+  routineWorking: [],
+});
+
+/** The same, for the part of the head they said they watch. */
+export const TRACKING_SCAN_REGIONS: Readonly<Record<TrackingArea, readonly ScanRegion[]>> =
+  Object.freeze({
+    hairline: ['hairline'],
+    crown: ['crown'],
+    overallThinning: [],
+    diffuseThinning: ['midScalp', 'crown'],
+    shedding: [],
+    density: ['midScalp', 'crown'],
+    transplantRecovery: ['hairline'],
+    generalChanges: [],
+    widerPart: ['partLine'],
+    ponytail: ['partLine', 'crown'],
+    edges: ['leftTemple', 'rightTemple', 'hairline'],
+    breakage: [],
+  });
+
+/** And for how they said they wear it, which decides what is on show. */
+export const WEARING_SCAN_REGIONS: Readonly<Record<HairWearing, readonly ScanRegion[]>> =
+  Object.freeze({
+    middlePart: ['partLine', 'crown'],
+    sidePart: ['partLine'],
+    noDefinedPart: ['midScalp', 'crown'],
+    pulledBack: ['hairline', 'leftTemple', 'rightTemple'],
+    shortAllOver: ['crown', 'midScalp'],
+    other: [],
+  });
+
+/**
+ * The fewest points of visual coverage between two regions of the SAME
+ * scan that the report will name in a sentence.
+ *
+ * This is a display threshold and nothing more. It is not a change
+ * verdict — `compareScans` owns those, and only it may say a difference
+ * between two SCANS is real. What it guards against is prose: a report
+ * that says the crown "reads below the hairline" on a two-point gap is
+ * describing rounding, and would say something different next month for
+ * no reason anybody could see. Eight points is of the same order as the
+ * frame-to-frame spread of a decent scan.
+ *
+ * It is on this build's deviceOnly list: nobody has yet held a phone up
+ * and checked what the gap between two regions of one head actually
+ * varies by.
+ */
+export const CONTRAST_POINTS = 8;
+
+/**
+ * The fewest points of visual coverage between the two temples before
+ * the symmetry block calls them uneven rather than even.
+ *
+ * Smaller than `CONTRAST_POINTS` on purpose: the two temples are the one
+ * pair in the scan that is measured the same way, at the same moment, on
+ * the same head, so the gap between them carries less of the error that
+ * separates a hairline reading from a crown one. Also deviceOnly.
+ */
+export const SYMMETRY_POINTS = 5;
+
+/** The most places the report will name as worth a second look. */
+export const WATCH_MAX = 3;
 
 /* -------------------------------- helpers -------------------------------- */
 
@@ -654,12 +1088,75 @@ function regionWord(region: ReportRegion): string {
   return COPY.regions[region].toLowerCase();
 }
 
-function focusBlock(journey: Journey | null, session: PhotoSession, premium: boolean): FocusBlock {
+/**
+ * The region the goal block is built around: the first measured region
+ * the person's own answers point at.
+ *
+ * Null for a goal no photograph can count — shedding, breakage, whether
+ * a routine is working. Those blocks say what they have always said, and
+ * hanging a coverage figure off one of them would be answering a
+ * question nobody asked with a number about somewhere else.
+ */
+function goalLead(goal: HairGoal, read: readonly ReadRegion[]): ReadRegion | null {
+  if (FOCUS_REGIONS[goal] === null) return null;
+  const byRegion = new Map(read.map((r) => [r.region, r]));
+  for (const region of GOAL_SCAN_REGIONS[goal]) {
+    const entry = byRegion.get(region);
+    if (entry) return entry;
+  }
+  /*
+    No fallback. A section headed "Your goal" that opened with a figure
+    from somewhere else — the temple a tracking answer points at, say,
+    when the goal is the crown — would be answering a question nobody
+    asked, and would silence the one sentence written for this case:
+    that the scan could not read the place they said they are watching.
+  */
+  return null;
+}
+
+function focusBlock(
+  journey: Journey | null,
+  session: PhotoSession,
+  read: readonly ReadRegion[],
+  availability: Availability,
+  premium: boolean,
+): FocusBlock {
   const goal = journey ? journeyGoals(journey)[0] : undefined;
   if (goal === undefined) return null;
   const goalLabel = HAIR_GOAL_LABELS[goal];
   const regions = FOCUS_REGIONS[goal];
   const locked = !premium;
+
+  const leadEntry = goalLead(goal, read);
+  const lead = leadEntry
+    ? {
+        region: leadEntry.region,
+        label: regionLabel(leadEntry.region),
+        grade: leadEntry.grade,
+        visibleScalp: leadEntry.visibleScalp,
+      }
+    : null;
+  /*
+    The reading at the goal's own region, in words.
+
+    Where the scan read the region, both figures it holds; where the scan
+    read SOMETHING but not this place, the absence, named — a person
+    watching their crown is owed "this scan could not read it" rather
+    than silence. Where the scan read nothing at all the assessment
+    already says so once, and saying it again here would be the report
+    apologising twice for the same thing.
+  */
+  const goalRegion = regions === null ? undefined : GOAL_SCAN_REGIONS[goal][0];
+  const reading = leadEntry
+    ? [
+        COPY.focus.reading(scanRegionWord(leadEntry.region), leadEntry.grade.score),
+        ...(leadEntry.visibleScalp !== null
+          ? [COPY.focus.readingScalp(scanRegionWord(leadEntry.region), leadEntry.visibleScalp)]
+          : []),
+      ].join(' ')
+    : availability === 'measured' && goalRegion !== undefined
+      ? COPY.focus.readingUnread(scanRegionWord(goalRegion))
+      : null;
 
   if (regions === null) {
     const body = goal === 'shedding' ? COPY.focus.shedding : goal === 'lessBreakage' ? COPY.focus.breakage : COPY.focus.routine;
@@ -674,6 +1171,9 @@ function focusBlock(journey: Journey | null, session: PhotoSession, premium: boo
       status: 'notVisible',
       statusLabel: COPY.focus.notVisible,
       body,
+      lead: null,
+      readingHeading: COPY.focus.readingHeading,
+      reading: null,
       locked,
     };
   }
@@ -738,7 +1238,21 @@ function focusBlock(journey: Journey | null, session: PhotoSession, premium: boo
     coverage,
     status,
     statusLabel,
-    body,
+    /*
+      The finding first, the turn second.
+
+      "Your goal" is a section about the place somebody said they are
+      watching, and the sentence that belongs at the top of it is what
+      the scan READ there — not whether the turn managed to photograph
+      it. The reading is also carried apart, on `lead` and `reading`, for
+      a screen that wants to set it out under its own heading; until one
+      does, the paragraph is where it reaches a person, and a payload the
+      product never shows is a payload that is not delivered.
+    */
+    body: reading === null ? body : `${reading} ${body}`,
+    lead,
+    readingHeading: COPY.focus.readingHeading,
+    reading,
     locked,
   };
 }
@@ -788,6 +1302,702 @@ function hairstylesBlock(data: AppData, premium: boolean): HairstylesBlock {
   };
 }
 
+/* ========================= the measured half ============================== */
+
+/**
+ * Everything below reads the measurement the scan already took and
+ * stored, and computes no finding of its own. The two rules it works
+ * under:
+ *
+ *   • A figure on the screen is a figure the engine produced. Coverage
+ *     becomes a score out of a hundred in `grade.ts` and nowhere else;
+ *     visible scalp is the engine's own count, not `100 − coverage`; a
+ *     change verdict comes from `compareScans` and is never recomputed,
+ *     softened or re-ranked here.
+ *   • A region the engine refused has no figure. Null, absent, "Not
+ *     read" — never zero, and never a sentence written as though a
+ *     reading had been taken.
+ */
+
+/** The engine's measurement, read back off the record, or null when the scan carries none. */
+function measurementOf(session: PhotoSession): ScanMeasurement | null {
+  return session.scan?.measurement ?? null;
+}
+
+function regionLabel(region: ScanRegion): string {
+  return COPY.regions[region];
+}
+
+/** The region's name in the possessive, for a sentence that names two of them. */
+function scanRegionWord(region: ScanRegion): string {
+  return COPY.regionWords[region];
+}
+
+/** One region the scan actually read: the measurement, its score, and its scalp figure. */
+type ReadRegion = {
+  region: ScanRegion;
+  measurement: RegionMeasurement;
+  grade: Grade;
+  visibleScalp: number | null;
+};
+
+/**
+ * The regions this scan read, in the engine's own order.
+ *
+ * A region in `measurement.regions` that `gradeOf` refuses — a coverage
+ * that is not a finite number — is dropped here rather than carried with
+ * a null grade, because everything downstream of this function exists to
+ * say something about a figure, and there is no figure.
+ */
+function readRegions(measurement: ScanMeasurement | null): ReadRegion[] {
+  if (!measurement) return [];
+  const out: ReadRegion[] = [];
+  for (const region of SCAN_REGIONS) {
+    const m = measurement.regions[region];
+    const grade = gradeOf(m);
+    if (!m || !grade) continue;
+    out.push({ region, measurement: m, grade, visibleScalp: visibleScalpPointsOf(m) });
+  }
+  return out;
+}
+
+/** The crop that shows where a measured region was read. A place, never a finding. */
+function cropForScanRegion(session: PhotoSession, region: ScanRegion): ReportCrop | null {
+  const reportRegion = CROP_REGION_OF[region];
+  const photo = photoForRegion(session, reportRegion);
+  return photo ? cropFor(photo, reportRegion) : null;
+}
+
+/**
+ * Which regions lead, for this person, on this scan.
+ *
+ * Three inputs, in order of how directly the person stated them: what
+ * they said they want, what they said they watch, and how they said they
+ * wear their hair. Filtered by what the scan actually read, because a
+ * region nobody could measure cannot lead a report about measurements.
+ *
+ * There is exactly one report. Nothing here branches on anything but the
+ * person's own answers and the scan's own reach.
+ */
+function leadRegions(journey: Journey | null, read: readonly ReadRegion[]): ScanRegion[] {
+  const available = new Set(read.map((r) => r.region));
+  const wanted: ScanRegion[] = [];
+  const push = (list: readonly ScanRegion[] | undefined): void => {
+    for (const region of list ?? []) {
+      if (available.has(region) && !wanted.includes(region)) wanted.push(region);
+    }
+  };
+  if (journey) {
+    for (const goal of journeyGoals(journey)) push(GOAL_SCAN_REGIONS[goal]);
+    for (const area of journey.trackingAreas) push(TRACKING_SCAN_REGIONS[area]);
+    const wearing = journeyHairWearing(journey);
+    if (wearing) push(WEARING_SCAN_REGIONS[wearing]);
+  }
+  return wanted;
+}
+
+/* ----------------------------- the assessment ---------------------------- */
+
+function confidenceLine(grade: Grade): string {
+  return COPY.assessment.confidence(
+    COPY.assessment.bands[confidenceBand(grade.confidence)],
+    confidencePercent(grade.confidence),
+  );
+}
+
+/**
+ * The coverage map: every region the scan looks for, in the engine's
+ * front-to-back order, whether or not this scan reached it. A map with
+ * rows missing would hide the thing most worth knowing — that a place
+ * was not read.
+ */
+function coverageMap(read: readonly ReadRegion[]): CoverageMapRegion[] {
+  const byRegion = new Map(read.map((r) => [r.region, r]));
+  return SCAN_REGIONS.map((region) => {
+    const entry = byRegion.get(region);
+    return {
+      region,
+      label: regionLabel(region),
+      score: entry ? entry.grade.score : null,
+      confidence: entry ? entry.grade.confidence : 0,
+      confidenceLabel: entry
+        ? `${COPY.assessment.confidenceLabel} ${confidencePercent(entry.grade.confidence)}%`
+        : null,
+    };
+  });
+}
+
+function assessmentBlock(read: readonly ReadRegion[], availability: Availability): AssessmentBlock {
+  const base = {
+    heading: COPY.assessment.heading,
+    subheading: COPY.assessment.subheading,
+    scoreLabel: COPY.assessment.scoreLabel,
+    scoreScale: COPY.assessment.scoreScale,
+    pointsLabel: COPY.assessment.pointsLabel,
+    scoreNote: COPY.assessment.scoreNote,
+    confidenceLabel: COPY.assessment.confidenceLabel,
+    mapHeading: COPY.assessment.mapHeading,
+    mapSubheading: COPY.assessment.mapSubheading,
+    unreadLabel: COPY.assessment.unread,
+    /*
+      The whole head of the report is free. The rule the gate has always
+      worked to is that a free reading is never LESS qualified than the
+      paid one about the same pictures; holding the one figure that says
+      what the scan found would leave a free reader with a page of
+      captions about a number they cannot see.
+    */
+    locked: false,
+  };
+
+  if (availability === 'unavailable') {
+    return {
+      ...base,
+      overall: null,
+      overallConfidence: null,
+      summary: null,
+      regions: [],
+      unreadNote: null,
+      unavailable: {
+        title: COPY.assessment.unavailableTitle,
+        body: COPY.assessment.unavailableBody,
+        cta: COPY.assessment.unavailableCta,
+      },
+    };
+  }
+
+  const overall = overallGrade(read.map((r) => r.measurement));
+  const regions = coverageMap(read);
+  const unread = regions.filter((r) => r.score === null).length;
+  return {
+    ...base,
+    overall,
+    overallConfidence: overall ? confidenceLine(overall) : null,
+    summary: overall ? COPY.assessment.overall(overall.score, read.length) : null,
+    regions,
+    unreadNote: unread > 0 ? COPY.assessment.unreadNote(unread) : null,
+    unavailable: null,
+  };
+}
+
+/* ------------------------------- the cards ------------------------------- */
+
+/**
+ * The observation on a card: at most three sentences, each of which can
+ * be pointed at a figure this model is already holding.
+ *
+ * The first says what was read here. The second sets it beside another
+ * region of the SAME scan — the honest kind of comparison, because both
+ * figures came off the same frames in the same light — and is emitted
+ * only where both readings are sure enough of themselves to be compared
+ * and the gap is wide enough to survive rounding. The third is the
+ * caveat a shaky reading carries with it.
+ */
+function observationFor(entry: ReadRegion, read: readonly ReadRegion[]): string {
+  const parts: string[] = [
+    entry.visibleScalp !== null
+      ? COPY.cards.reading(entry.grade.score, entry.visibleScalp)
+      : COPY.cards.readingNoScalp(entry.grade.score),
+  ];
+
+  const others = read.filter((r) => r.region !== entry.region && comparable(entry.grade, r.grade));
+
+  let widest: ReadRegion | null = null;
+  for (const other of others) {
+    const gap = Math.abs(entry.grade.score - other.grade.score);
+    const best = widest ? Math.abs(entry.grade.score - widest.grade.score) : -1;
+    if (gap > best) widest = other;
+  }
+  const coverageGap = widest ? Math.abs(entry.grade.score - widest.grade.score) : 0;
+
+  if (widest && coverageGap >= CONTRAST_POINTS) {
+    parts.push(
+      entry.grade.score > widest.grade.score
+        ? COPY.cards.contrastAbove(scanRegionWord(widest.region), coverageGap)
+        : COPY.cards.contrastBelow(scanRegionWord(widest.region), coverageGap),
+    );
+  } else if (entry.visibleScalp !== null) {
+    /*
+      No coverage gap worth naming, so the other figure on the card gets
+      its turn: the place in this scan with the least visible scalp, set
+      against this one. Same rule — both readings comparable, gap wide
+      enough to mean something next month too.
+    */
+    const scalps = others.filter(
+      (r): r is ReadRegion & { visibleScalp: number } => r.visibleScalp !== null,
+    );
+    let lightest: (ReadRegion & { visibleScalp: number }) | null = null;
+    for (const other of scalps) {
+      if (lightest === null || other.visibleScalp < lightest.visibleScalp) lightest = other;
+    }
+    if (lightest && entry.visibleScalp - lightest.visibleScalp >= CONTRAST_POINTS) {
+      parts.push(
+        COPY.cards.scalpMore(scanRegionWord(lightest.region), entry.visibleScalp - lightest.visibleScalp),
+      );
+    }
+  }
+
+  if (entry.grade.confidence < COMPARABLE_CONFIDENCE) parts.push(COPY.cards.lowConfidence);
+  return parts.join(' ');
+}
+
+function cardsBlock(
+  session: PhotoSession,
+  journey: Journey | null,
+  read: readonly ReadRegion[],
+  baselineChanges: readonly RegionChange[],
+  premium: boolean,
+): CardsBlock {
+  const lead = leadRegions(journey, read);
+  const byRegion = new Map(read.map((r) => [r.region, r]));
+  /*
+    The person's own regions first, then the rest down the head. Sorting
+    rather than filtering: a region that does not lead is still read, and
+    still shown, because hiding a measured place would be the report
+    choosing what somebody is allowed to know about their own scan.
+  */
+  const ordered = [...lead, ...CARD_ORDER.filter((r) => !lead.includes(r))].filter((r) =>
+    byRegion.has(r),
+  );
+
+  const left = byRegion.get('leftTemple');
+  const right = byRegion.get('rightTemple');
+  const temples = left && right && comparable(left.grade, right.grade)
+    ? Math.abs(left.grade.score - right.grade.score)
+    : null;
+
+  const cards: RegionCard[] = ordered.map((region) => {
+    const entry = byRegion.get(region) as ReadRegion;
+    const change = baselineChanges.find((c) => c.region === region);
+    return {
+      region,
+      label: regionLabel(region),
+      grade: entry.grade,
+      visibleScalp: entry.visibleScalp,
+      ...(temples !== null && (region === 'leftTemple' || region === 'rightTemple')
+        ? { symmetry: temples }
+        : {}),
+      ...(change ? { changeFromBaseline: change } : {}),
+      changePoints: changePointsOf(change),
+      crop: cropForScanRegion(session, region),
+      observation: observationFor(entry, read),
+      tab: TAB_OF_REGION[region],
+    };
+  });
+
+  return {
+    heading: COPY.cards.heading,
+    subheading: COPY.cards.subheading,
+    coverageLabel: COPY.cards.coverageLabel,
+    scalpLabel: COPY.cards.scalpLabel,
+    differenceLabel: COPY.cards.differenceLabel,
+    changeLabel: COPY.cards.changeLabel,
+    cards,
+    locked: !premium,
+  };
+}
+
+/* -------------------------- the scalp visibility ------------------------- */
+
+function scalpVisibilityBlock(read: readonly ReadRegion[], premium: boolean): ScalpVisibilityBlock {
+  const rows = read
+    .filter((r): r is ReadRegion & { visibleScalp: number } => r.visibleScalp !== null)
+    .map((r) => ({
+      region: r.region,
+      label: regionLabel(r.region),
+      visibleScalp: r.visibleScalp,
+      confidence: r.grade.confidence,
+    }))
+    .sort((a, b) => b.visibleScalp - a.visibleScalp);
+  if (rows.length === 0) return null;
+
+  // "The most" is only worth saying when the top of the list is clear of
+  // the next one by more than rounding; otherwise the honest line is
+  // that nothing stands out.
+  const clear = rows.length >= 2 && rows[0].visibleScalp - rows[1].visibleScalp >= CONTRAST_POINTS;
+  return {
+    heading: COPY.scalp.heading,
+    subheading: COPY.scalp.subheading,
+    label: COPY.scalp.label,
+    rows,
+    body: clear
+      ? COPY.scalp.most(scanRegionWord(rows[0].region), rows[0].visibleScalp)
+      : COPY.scalp.even,
+    note: COPY.scalp.note,
+    locked: !premium,
+  };
+}
+
+/* ------------------------------ the symmetry ----------------------------- */
+
+function symmetryBlock(read: readonly ReadRegion[], premium: boolean): SymmetryBlock {
+  const left = read.find((r) => r.region === 'leftTemple');
+  const right = read.find((r) => r.region === 'rightTemple');
+  // One side is not a pair, and two readings too shaky to compare are
+  // not a pair either. Both refusals leave the section out entirely
+  // rather than drawing it with a figure nobody can stand behind.
+  if (!left || !right || !comparable(left.grade, right.grade)) return null;
+
+  const differencePoints = Math.abs(left.grade.score - right.grade.score);
+  const balanced = differencePoints < SYMMETRY_POINTS;
+  const higher = left.grade.score >= right.grade.score ? 'left' : 'right';
+  return {
+    heading: COPY.symmetry.heading,
+    subheading: COPY.symmetry.subheading,
+    label: COPY.symmetry.label,
+    left: left.grade,
+    right: right.grade,
+    leftLabel: regionLabel('leftTemple'),
+    rightLabel: regionLabel('rightTemple'),
+    differencePoints,
+    balanced,
+    body: balanced
+      ? COPY.symmetry.balanced(differencePoints)
+      : COPY.symmetry.apart(higher, differencePoints),
+    note: COPY.symmetry.note,
+    locked: !premium,
+  };
+}
+
+/* ------------------------------ what changed ----------------------------- */
+
+/**
+ * One comparison row. The verdict is the engine's; this only puts it
+ * into words.
+ *
+ * The delta is rounded to whole points and floored at one: a difference
+ * the engine reported has, by definition, cleared the two scans' own
+ * margin of error, and printing "0 points higher" beside a reported
+ * difference would be the report contradicting itself over a rounding.
+ * The delta of an `insufficient` row is never printed at all — it is a
+ * placeholder zero, and the engine says so.
+ */
+function changeRowOf(change: RegionChange): ChangeRow {
+  const label = regionLabel(change.region);
+  if (change.verdict === 'insufficient') {
+    return { region: change.region, label, verdict: change.verdict, detail: COPY.changed.insufficient };
+  }
+  if (change.verdict === 'unchanged') {
+    return { region: change.region, label, verdict: change.verdict, detail: COPY.changed.unchanged };
+  }
+  const points = Math.max(1, Math.round(Math.abs(change.delta) * 100));
+  const word = COPY.changed.verdicts[change.verdict];
+  return {
+    region: change.region,
+    label,
+    verdict: change.verdict,
+    detail: change.delta > 0 ? COPY.changed.higher(points, word) : COPY.changed.lower(points, word),
+  };
+}
+
+/**
+ * A reported difference in whole points, signed, or null where there is
+ * none to report.
+ *
+ * The same rounding as `changeRowOf` — away from zero, floored at one —
+ * so the figure on a region's card and the sentence in the comparison
+ * below it are one number said twice rather than two numbers.
+ */
+function changePointsOf(change: RegionChange | undefined): number | null {
+  if (!change) return null;
+  if (change.verdict === 'unchanged' || change.verdict === 'insufficient') return null;
+  const points = Math.max(1, Math.round(Math.abs(change.delta) * COVERAGE_SCORE_MAX));
+  return change.delta > 0 ? points : -points;
+}
+
+/** Only the verdicts that cleared the floor. An `unchanged` row is the absence of news, not news. */
+function reportedChanges(changes: readonly RegionChange[]): ChangeRow[] {
+  return changes
+    .filter((c) => c.verdict !== 'unchanged' && c.verdict !== 'insufficient')
+    .map(changeRowOf);
+}
+
+/**
+ * How far a stored delta may sit from the difference of the two
+ * coverages before the pair is not the pair it was computed from.
+ *
+ * Half a point of coverage. The two sides are stored to full precision,
+ * so an honest pair reproduces its delta to floating-point error and
+ * anything this wide apart is a different scan.
+ */
+const DELTA_TOLERANCE = 0.005;
+
+/**
+ * Whether `candidate` is provably the scan the stored comparison was
+ * made against.
+ *
+ * `PhotoSessionRegionChange` records no identity for the other side, and
+ * `deleteSession` can remove the scan a comparison was made against
+ * long after the comparison was stored. Picking "the most recent earlier
+ * measured session as the record stands now" and dating the rows from it
+ * would then print a date and a day count for a comparison that was made
+ * against something else.
+ *
+ * The record does, though, carry enough to CHECK a candidate: `delta` is
+ * this scan's coverage minus that scan's, so a candidate that is the
+ * right one reproduces every delta the record holds. This verifies that
+ * identity and nothing else — the verdicts stay exactly as the engine
+ * decided them, and a candidate that fails only loses its date.
+ *
+ * `insufficient` rows are skipped: their delta is a placeholder and the
+ * schema says so. A comparison with nothing but those rows cannot be
+ * checked, and takes the undated sentence.
+ */
+function reproducesChanges(
+  measurement: ScanMeasurement | null,
+  candidate: PhotoSession,
+  changes: readonly RegionChange[],
+): boolean {
+  const before = candidate.scan?.measurement;
+  if (!measurement || !before) return false;
+  let checked = 0;
+  for (const change of changes) {
+    if (change.verdict === 'insufficient') continue;
+    const now = measurement.regions[change.region];
+    const then = before.regions[change.region];
+    if (!now || !then) return false;
+    if (!Number.isFinite(now.coverage) || !Number.isFinite(then.coverage)) return false;
+    if (Math.abs(now.coverage - then.coverage - change.delta) > DELTA_TOLERANCE) return false;
+    checked += 1;
+  }
+  return checked > 0;
+}
+
+/** The most recent earlier session carrying a measurement: the candidate for what the stored comparison was made against. */
+function previousMeasured(data: AppData, session: PhotoSession): PhotoSession | null {
+  for (const earlier of data.sessions) {
+    if (earlier.id === session.id) continue;
+    if (!earlier.scan?.measurement) continue;
+    if (earlier.capturedAt > session.capturedAt) continue;
+    return earlier;
+  }
+  return null;
+}
+
+function baselineMeasured(data: AppData, session: PhotoSession): PhotoSession | null {
+  return (
+    data.sessions.find(
+      (s) => s.isBaseline && s.id !== session.id && s.scan?.measurement !== undefined,
+    ) ?? null
+  );
+}
+
+/**
+ * Whether the scan before this one and the baseline are provably the
+ * same scan: the ordinary shape of a second scan, and the one place two
+ * comparison blocks would be one comparison drawn twice.
+ *
+ * Provably. The stored rows have to reproduce against that session (see
+ * `reproducesChanges`); where they do not, the stored comparison was
+ * made against something that is no longer on record, and the two
+ * comparisons really are two.
+ */
+function baselineIsPreviousMeasured(data: AppData, session: PhotoSession): boolean {
+  const previous = previousMeasured(data, session);
+  const baseline = baselineMeasured(data, session);
+  if (!previous || !baseline || previous.id !== baseline.id) return false;
+  return reproducesChanges(measurementOf(session), previous, session.scan?.changes ?? []);
+}
+
+function changedBlock(
+  data: AppData,
+  session: PhotoSession,
+  baselineChanges: readonly RegionChange[],
+  availability: Availability,
+  premium: boolean,
+): ChangedBlock {
+  /*
+    A comparison is a measured block like any other. An unavailable
+    report has no reading of its own, so it has nothing to set beside
+    anything: a record whose measurement is absent or corrupt while its
+    stored changes survive would otherwise put "9 points of visual
+    coverage lower" under the words "we could not reliably analyse this
+    scan". The section is left off the sheet in that case too, but the
+    contract is held here rather than left to depend on that.
+  */
+  if (availability !== 'measured') {
+    return {
+      heading: COPY.changed.heading,
+      subheading: COPY.changed.subheading,
+      baselineHeading: COPY.changed.baselineHeading,
+      span: '',
+      baselineSpan: '',
+      sinceLast: [],
+      sinceBaseline: [],
+      body: '',
+      baselineBody: '',
+      locked: !premium,
+    };
+  }
+
+  /*
+    The since-last rows are the comparison the scanner already made and
+    stored. They are not recomputed here — the record is what the engine
+    decided at the time, on the two measurements as they were, and a
+    second opinion taken months later off the same numbers would be this
+    file pretending to be the engine.
+  */
+  const stored: readonly RegionChange[] = session.scan?.changes ?? [];
+  const sinceLast = reportedChanges(stored);
+
+  /*
+    The date on the span has to belong to the rows above it. The rows are
+    the stored comparison; the candidate for its other side is the most
+    recent earlier measured session AS THE RECORD STANDS NOW, and that is
+    not the same thing — the scan the comparison was actually made
+    against can have been deleted since. So the candidate is checked
+    against the deltas it would have produced, and a candidate that does
+    not reproduce them is not dated: the same rows go out under the
+    undated sentence rather than under somebody else's date.
+  */
+  const previous = previousMeasured(data, session);
+  const provable =
+    previous !== null && reproducesChanges(measurementOf(session), previous, stored)
+      ? previous
+      : null;
+
+  // The baseline is the one comparison the record does not store, so it
+  // is made by the engine through its own front door in
+  // `buildHairScanReport` and handed in here already decided.
+  const baseline = baselineMeasured(data, session);
+  const sinceBaseline = reportedChanges(baselineChanges);
+
+  /*
+    The second scan is the commonest report there is, and on it the scan
+    before this one IS the baseline. Drawn as two blocks that is the same
+    region, the same figure and the same date under two headings — and
+    worse, under two words for it, since one side is the verdict the
+    engine stored at the time and the other a comparison made just now.
+    So where the two sides are provably one scan the comparison is stated
+    once, in the block that is about the scan before this one, and the
+    span says that it is also the baseline.
+
+    Provably: the stored rows have to reproduce against that session (see
+    `reproducesChanges`). Where they do not, the stored comparison was
+    made against something else and the two blocks are two comparisons.
+  */
+  const folded = baselineIsPreviousMeasured(data, session);
+
+  const span =
+    stored.length === 0
+      ? ''
+      : provable
+        ? (folded ? COPY.changed.spanBoth : COPY.changed.span)(
+            formatDateShort(provable.capturedAt),
+            Math.max(0, daysBetween(provable.capturedAt, session.capturedAt)),
+          )
+        : COPY.changed.spanUndated;
+
+  /*
+    One line per block, each about its own comparison. A single line for
+    both was what made "Baseline comparison" a heading over nothing: the
+    quiet side fell silent because the other side had a row.
+  */
+  const nothingToCompare = previous === null && baselineChanges.length === 0;
+  const body =
+    sinceLast.length > 0 ? '' : nothingToCompare ? COPY.changed.firstScan : COPY.changed.none;
+
+  const showBaseline = !folded && baseline !== null && baselineChanges.length > 0;
+  const baselineBody = showBaseline && sinceBaseline.length === 0 ? COPY.changed.noneBaseline : '';
+
+  return {
+    heading: COPY.changed.heading,
+    subheading: COPY.changed.subheading,
+    baselineHeading: COPY.changed.baselineHeading,
+    span,
+    baselineSpan: showBaseline && baseline ? COPY.changed.spanBaseline(formatDateShort(baseline.capturedAt)) : '',
+    sinceLast,
+    sinceBaseline: showBaseline ? sinceBaseline : [],
+    body,
+    baselineBody,
+    locked: !premium,
+  };
+}
+
+/* ---------------------------- the areas to watch -------------------------- */
+
+/**
+ * Three derivations, and nothing else may be added without a figure
+ * behind it: the place with the most visible scalp, the weaker half of
+ * an uneven pair, and any region the engine said actually changed.
+ *
+ * Each carries the figure that put it on the list, so the reason is
+ * always checkable against the card above it. This is not a finding
+ * about somebody's hair and the copy says so: it is where the next scan
+ * is worth aiming.
+ */
+function watchItems(
+  read: readonly ReadRegion[],
+  changes: readonly RegionChange[],
+): WatchItem[] {
+  const items: WatchItem[] = [];
+  const seen = new Set<ScanRegion>();
+  const add = (region: ScanRegion, reason: string): void => {
+    if (seen.has(region)) return;
+    seen.add(region);
+    items.push({ region, label: regionLabel(region), reason });
+  };
+
+  const withScalp = read
+    .filter((r): r is ReadRegion & { visibleScalp: number } => r.visibleScalp !== null)
+    .sort((a, b) => b.visibleScalp - a.visibleScalp);
+  if (withScalp.length >= 2 && withScalp[0].visibleScalp - withScalp[1].visibleScalp >= CONTRAST_POINTS) {
+    add(withScalp[0].region, COPY.watch.scalp(withScalp[0].visibleScalp));
+  }
+
+  const left = read.find((r) => r.region === 'leftTemple');
+  const right = read.find((r) => r.region === 'rightTemple');
+  if (left && right && comparable(left.grade, right.grade)) {
+    const gap = Math.abs(left.grade.score - right.grade.score);
+    if (gap >= SYMMETRY_POINTS) {
+      const lower = left.grade.score < right.grade.score ? left : right;
+      add(lower.region, COPY.watch.asymmetry(gap));
+    }
+  }
+
+  for (const change of changes) {
+    if (change.verdict === 'unchanged' || change.verdict === 'insufficient') continue;
+    add(change.region, COPY.watch.changed);
+  }
+
+  return items.slice(0, WATCH_MAX);
+}
+
+/*
+  The list is a measured block, and an unavailable report has none.
+
+  Two of the three derivations already fall silent on their own when no
+  region was read — there is no visible scalp to rank and no pair to set
+  side by side — but the third reads the comparison the record stored,
+  and a record whose measurement is absent or corrupt while its stored
+  changes survive would put a row under the words "we could not
+  reliably analyse this scan". Today's engine cannot produce that pair;
+  the contract that every measured block is empty when the analysis did
+  not run is enforced here rather than left to depend on that.
+*/
+function watchBlock(items: WatchItem[], availability: Availability, premium: boolean): WatchBlock {
+  return {
+    heading: COPY.watch.heading,
+    subheading: COPY.watch.subheading,
+    items: availability === 'measured' ? items : [],
+    body: items.length === 0 && availability === 'measured' ? COPY.watch.none : null,
+    locked: !premium,
+  };
+}
+
+/* ------------------------------ the quality ------------------------------ */
+
+function qualityBlock(session: PhotoSession, premium: boolean): QualityBlock {
+  const frames = session.photos.length;
+  const regions = new Set(session.photos.map((p) => p.angle)).size;
+  return {
+    heading: COPY.quality.heading,
+    subheading: COPY.quality.subheading,
+    summary: frames === 0 ? COPY.quality.summaryNone : COPY.quality.summary(frames, regions),
+    rows: analysisRows(session, premium),
+    marks: { measured: COPY.marks.measured, kept: COPY.marks.kept },
+  };
+}
+
 /* ------------------------------- the model ------------------------------- */
 
 export function buildHairScanReport(
@@ -799,25 +2009,105 @@ export function buildHairScanReport(
   const now = opts.now ?? new Date();
   const hero = byAngle(session, 'front') ?? session.photos[0];
 
-  const rows = analysisRows(session, premium);
-  const tabsHeld = new Set(rows.map((r) => r.tab));
+  /*
+    The measurement first: everything above the scan-quality section is
+    built from it, and whether it exists at all decides what kind of
+    report this is. A measurement that read no region is as unavailable
+    as no measurement — there is nothing to show either way, and a page
+    of "Not read" rows under an empty headline figure would be the
+    report insisting it had something to say.
+  */
+  const measurement = measurementOf(session);
+  const read = readRegions(measurement);
+  const availability: Availability = read.length > 0 ? 'measured' : 'unavailable';
+
+  const quality = qualityBlock(session, premium);
+  const assessment = assessmentBlock(read, availability);
+  const baselineMeasurement = baselineMeasured(data, session)?.scan?.measurement ?? null;
+  const baselineChanges: RegionChange[] =
+    measurement && baselineMeasurement ? compareScans(measurement, baselineMeasurement) : [];
+  const changed = changedBlock(data, session, baselineChanges, availability, premium);
+  const cards = cardsBlock(session, data.journey, read, baselineChanges, premium);
+  const scalpVisibility = scalpVisibilityBlock(read, premium);
+  const symmetry = symmetryBlock(read, premium);
+  const watch = watchBlock(
+    watchItems(read, session.scan?.changes ?? []),
+    availability,
+    premium,
+  );
+
+  /*
+    The tab row is the union of what the cards hold and what the quality
+    rows hold, in reading order. Built from both so that a scan with no
+    measurement still gets the tabs its frames earn, and a measured scan
+    gets the two — mid-scalp and part line — that no frame is named
+    after.
+  */
+  const tabsHeld = new Set<ReportTab>([
+    ...cards.cards.map((c) => c.tab),
+    ...quality.rows.map((r) => r.tab),
+  ]);
   const tabs: { id: ReportTab; label: string }[] = [{ id: 'all', label: COPY.tabs.all }];
-  for (const id of ['hairline', 'temples', 'crown', 'light'] as const) {
+  for (const id of ['hairline', 'temples', 'crown', 'midScalp', 'partLine', 'light'] as const) {
     if (tabsHeld.has(id)) tabs.push({ id, label: COPY.tabs[id] });
   }
 
-  const focus = focusBlock(data.journey, session, premium);
+  const goal = focusBlock(data.journey, session, read, availability, premium);
   const tips = tipsForProfile(tipProfileOf(data.journey));
+  const shapedBySentence = profileSentence(tips.shapedBy);
 
+  /*
+    The coach's paragraph reads the same findings this model holds rather
+    than working them out again: the measurement, the stored comparison,
+    and the baseline comparison made once above. `formatDuration` under a
+    week reads "Day 4", which is not a span anybody says "back" after, so
+    a baseline that recent is handed over without one.
+  */
+  const baselineFrom = baselineMeasured(data, session);
+  const baselineDays = baselineFrom
+    ? Math.max(0, daysBetween(baselineFrom.capturedAt, session.capturedAt))
+    : 0;
+  const saysBody =
+    tressSays(data, session, data.profile?.displayName, now, {
+      measurement: session.scan?.measurement ?? null,
+      sinceLast: session.scan?.changes,
+      sinceBaseline: baselineChanges,
+      baselineSpan:
+        baselineFrom && baselineDays >= 7
+          ? formatDuration(baselineFrom.capturedAt, session.capturedAt)
+          : null,
+      /*
+        Stated rather than inferred. The paragraph can work out that the
+        two comparisons are one from the rows being identical, but that
+        holds only while both sides come from the same pure call; the
+        model knows which sessions they were and says so. `changed` folds
+        the same pair on the same test.
+      */
+      baselineIsPrevious: baselineIsPreviousMeasured(data, session),
+    }) ?? '';
+
+  // The owner's order, and the one the Next pill walks: what the scan
+  // found, then what it is set against, then how the scan itself went,
+  // then the things to do about none of it in particular.
   const sections: { id: string; label: string }[] = [
-    { id: 'analysis', label: COPY.sections.analysis },
-    { id: 'strengths', label: COPY.sections.strengths },
-    { id: 'profile', label: COPY.sections.profile },
-    ...(focus ? [{ id: 'focus', label: COPY.sections.focus }] : []),
+    { id: 'assessment', label: COPY.sections.assessment },
+    ...(cards.cards.length > 0 ? [{ id: 'cards', label: COPY.sections.cards }] : []),
+    ...(scalpVisibility ? [{ id: 'scalp', label: COPY.sections.scalp }] : []),
+    ...(symmetry ? [{ id: 'symmetry', label: COPY.sections.symmetry }] : []),
+    ...(availability === 'measured' ? [{ id: 'changed', label: COPY.sections.changed }] : []),
+    ...(watch.items.length > 0 ? [{ id: 'watch', label: COPY.sections.watch }] : []),
+    ...(goal ? [{ id: 'focus', label: COPY.sections.focus }] : []),
+    { id: 'quality', label: COPY.sections.quality },
+    /*
+      No measurement, no paragraph, and no section for it. The coach
+      returns nothing rather than an apology, and the one place in the
+      report that says the analysis did not run is the assessment's own
+      unavailable block.
+    */
+    ...(saysBody.length > 0 ? [{ id: 'says', label: COPY.sections.says }] : []),
     { id: 'tips', label: COPY.sections.tips },
-    { id: 'hairstyles', label: HAIRSTYLE_COPY.report.sectionLabel },
     { id: 'routine', label: COPY.sections.routine },
-    { id: 'says', label: COPY.sections.says },
+    { id: 'hairstyles', label: HAIRSTYLE_COPY.report.sectionLabel },
   ];
 
   return {
@@ -828,19 +2118,51 @@ export function buildHairScanReport(
       dateLabel: heroDateLabel(session.capturedAt),
     },
     tabs,
-    analysis: {
-      heading: COPY.analysis.heading,
-      subheading: COPY.analysis.subheading,
-      rows,
-      marks: { measured: COPY.marks.measured, kept: COPY.marks.kept },
+    availability,
+    assessment,
+    cards,
+    scalpVisibility,
+    symmetry,
+    changed,
+    watch,
+    goal,
+    quality,
+    says: { heading: COPY.says.heading, speaker: 'Tress', body: saysBody },
+    tips: {
+      heading: COPY.tips.heading,
+      /*
+        The tracking notes lead. They are the only notes in the report
+        that change what the next one can say: a comparison engine that
+        refuses to report a difference inside two scans' error bars is
+        worth exactly what the conditions it was handed are worth, and
+        the same light, the same parting and an even interval are how
+        somebody hands it better ones.
+      */
+      trackingHeading: COPY.tips.trackingHeading,
+      trackingSubheading: COPY.tips.trackingSubheading,
+      tracking: tips.tracking,
+      /*
+        The sentence that names their own answer rides the subheading,
+        which is what the section actually draws above the notes. It is
+        also carried apart on `shapedBy` for a screen that wants to set
+        it out on its own; until one does, this is where it reaches a
+        person. Losing it altogether — which is what happened when it
+        moved out of the coach's paragraph into a field nothing read —
+        takes away a line the person wrote themselves.
+      */
+      subheading: shapedBySentence === null
+        ? COPY.tips.subheading
+        : `${COPY.tips.subheading} ${shapedBySentence}`,
+      shapedBy: shapedBySentence,
+      items: tips.items,
+      locked: !premium,
     },
+    routine: routineBlock(data, premium),
+    hairstyles: hairstylesBlock(data, premium),
+    analysis: quality,
+    focus: goal,
     strengths: { heading: COPY.strengths.heading, cards: strengthCards(data, session) },
     profile: { heading: COPY.profile.heading, tiles: profileTiles(data.journey) },
-    focus,
-    tips: { heading: COPY.tips.heading, subheading: COPY.tips.subheading, items: tips.items, locked: !premium },
-    hairstyles: hairstylesBlock(data, premium),
-    routine: routineBlock(data, premium),
-    says: { heading: COPY.says.heading, speaker: 'Tress', body: reportSummary(data, session, data.profile?.displayName, now) },
     sections,
   };
 }
@@ -854,21 +2176,95 @@ export function buildHairScanReport(
  * (see `reportModelQuotes`), and the sweep checks them separately.
  */
 export function reportModelSentences(model: HairScanReportModel): string[] {
+  const assessment = model.assessment;
+  const scalp = model.scalpVisibility;
+  const symmetry = model.symmetry;
   return [
     model.hero.dateLabel,
     ...model.tabs.map((t) => t.label),
-    model.analysis.heading,
-    model.analysis.subheading,
-    model.analysis.marks.measured,
-    model.analysis.marks.kept,
-    ...model.analysis.rows.flatMap((r) => [r.regionLabel, r.headline, r.body]),
+
+    // The measured half, every string of it.
+    assessment.heading,
+    assessment.subheading,
+    assessment.scoreLabel,
+    assessment.scoreScale,
+    assessment.pointsLabel,
+    assessment.scoreNote,
+    assessment.confidenceLabel,
+    assessment.overallConfidence ?? '',
+    assessment.summary ?? '',
+    assessment.mapHeading,
+    assessment.mapSubheading,
+    assessment.unreadLabel,
+    assessment.unreadNote ?? '',
+    ...(assessment.unavailable
+      ? [assessment.unavailable.title, assessment.unavailable.body, assessment.unavailable.cta]
+      : []),
+    ...assessment.regions.flatMap((r) => [r.label, r.confidenceLabel ?? '']),
+    model.cards.heading,
+    model.cards.subheading,
+    model.cards.coverageLabel,
+    model.cards.scalpLabel,
+    model.cards.differenceLabel,
+    model.cards.changeLabel,
+    ...model.cards.cards.flatMap((c) => [c.label, c.observation]),
+    ...(scalp
+      ? [scalp.heading, scalp.subheading, scalp.label, scalp.body, scalp.note, ...scalp.rows.map((r) => r.label)]
+      : []),
+    ...(symmetry
+      ? [
+          symmetry.heading,
+          symmetry.subheading,
+          symmetry.label,
+          symmetry.leftLabel,
+          symmetry.rightLabel,
+          symmetry.body,
+          symmetry.note,
+        ]
+      : []),
+    model.changed.heading,
+    model.changed.subheading,
+    model.changed.baselineHeading,
+    model.changed.span,
+    model.changed.baselineSpan,
+    model.changed.body,
+    model.changed.baselineBody,
+    ...[...model.changed.sinceLast, ...model.changed.sinceBaseline].flatMap((r) => [r.label, r.detail]),
+    model.watch.heading,
+    model.watch.subheading,
+    model.watch.body ?? '',
+    ...model.watch.items.flatMap((i) => [i.label, i.reason]),
+
+    model.quality.heading,
+    model.quality.subheading,
+    model.quality.summary,
+    model.quality.marks.measured,
+    model.quality.marks.kept,
+    ...model.quality.rows.flatMap((r) => [r.regionLabel, r.headline, r.body]),
     model.strengths.heading,
     ...model.strengths.cards.flatMap((c) => [c.title, c.body]),
     model.profile.heading,
     ...model.profile.tiles.map((t) => t.label),
-    ...(model.focus ? [model.focus.heading, model.focus.regionsLabel, model.focus.statusLabel, model.focus.body] : []),
+    ...(model.goal
+      ? [
+          model.goal.heading,
+          model.goal.regionsLabel,
+          model.goal.statusLabel,
+          model.goal.body,
+          model.goal.readingHeading,
+          model.goal.reading ?? '',
+          ...(model.goal.lead ? [model.goal.lead.label] : []),
+        ]
+      : []),
     model.tips.heading,
-    model.tips.subheading,
+    // The subheading carries the quoted answer now, so it is swept the
+    // same way the sentence itself was: our words checked, their words
+    // lifted out and checked as a quotation in `reportModelQuotes`.
+    stripQuotes(model.tips.subheading),
+    model.tips.shapedBy === null ? '' : stripQuotes(model.tips.shapedBy),
+    model.tips.trackingHeading,
+    model.tips.trackingSubheading,
+    ...model.tips.tracking.flatMap((t) => [t.kicker, t.body]),
     ...model.tips.items.flatMap((t) => [t.kicker, t.body]),
     model.hairstyles.heading,
     model.hairstyles.subheading,
@@ -892,9 +2288,11 @@ export function reportModelSentences(model: HairScanReportModel): string[] {
 export function reportModelQuotes(model: HairScanReportModel): string[] {
   return [
     ...model.profile.tiles.map((t) => t.value),
-    ...(model.focus ? [model.focus.goalLabel] : []),
+    ...(model.goal ? [model.goal.goalLabel] : []),
     ...(model.hairstyles.hairTypeLabel !== null ? [model.hairstyles.hairTypeLabel] : []),
     ...model.routine.products.map((p) => p.name),
+    ...quotedSpans(model.tips.subheading),
+    ...(model.tips.shapedBy === null ? [] : quotedSpans(model.tips.shapedBy)),
     ...quotedSpans(model.says.body),
   ];
 }

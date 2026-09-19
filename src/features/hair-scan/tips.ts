@@ -1,6 +1,16 @@
 /**
- * Care notes, by the goal somebody picked and what they told us about
- * themselves.
+ * Care and tracking notes: what makes a run of scans readable, and what
+ * a hairdresser would say to somebody with this goal and these answers.
+ *
+ * ── The tracking notes ────────────────────────────────────────────────
+ * `TRACKING_TIPS` leads the section and is the same five for everybody:
+ * keep the conditions the same, keep the styling the same, scan on a
+ * steady interval, write down what changed, and take anything persistent
+ * to a professional. They are the notes that earn their place under a
+ * report of measurements, because they are what makes the next
+ * measurement worth comparing to this one.
+ *
+ * ── The care notes ────────────────────────────────────────────────────
  *
  * Four per goal, written the way a good hairdresser talks: how to wash,
  * dry, brush and tie hair so it is handled kindly, and when a scalp is a
@@ -23,7 +33,8 @@
  * somebody who said fragrance has bothered them, and every one of them
  * is chosen by the label of a choice they made, never by anything the
  * app worked out about them. The set says which answer shaped it, so
- * the paragraph under the report can name the same one.
+ * the line above the notes can name the same one — `profileSentence` in
+ * features/coach/report-summary writes it.
  *
  * Pure: no React, nothing native. Loaded by `node --test`.
  */
@@ -56,7 +67,49 @@ export type Tip = {
   /** One emoji, leading the note the way the reference report does. */
   emoji: string;
   body: string;
+  /**
+   * A note that points somebody at a doctor.
+   *
+   * The report holds its care notes back from a free reader after the
+   * first, which is the subscription doing its job — but not these. A
+   * line saying a sore or flaking scalp belongs with a GP is the one
+   * thing in here that could matter to somebody's health, and putting it
+   * behind a price would be indefensible. Marked here, at the source, so
+   * the rule travels with the note.
+   */
+  safety?: boolean;
 };
+
+/* ---------------------------- tracking notes ---------------------------- */
+
+function trackingNote(id: string, kicker: string, emoji: string, body: string, safety = false): Tip {
+  return safety ? { id, kicker, emoji, body, safety } : { id, kicker, emoji, body };
+}
+
+/**
+ * What actually helps somebody who is tracking hair, and what the
+ * report's notes now lead with.
+ *
+ * The old report opened with general hair advice, which is the part of
+ * any hair app that reads as filler: the same four sentences whatever
+ * the scan found. These five are not about hair care at all. They are
+ * about making a run of scans comparable — the same light, the same
+ * styling, an even interval, a line written down when something changed
+ * — because an engine that refuses to report a difference inside two
+ * scans' error bars is only as useful as the conditions it was handed.
+ * The last one is the hand-off: an app is not where a persistent scalp
+ * problem gets looked at.
+ *
+ * They are habits, like every other note here. None says what will
+ * happen if it is followed, and none is about what this scan found.
+ */
+export const TRACKING_TIPS: readonly Tip[] = Object.freeze([
+  trackingNote('track_conditions', 'Conditions', '💡', 'Same room, same light, same time of day. Light decides what a camera can see, and a reading is only ever a reading of what the camera saw.'),
+  trackingNote('track_styling', 'Same look', '💇', 'Keep the parting and the styling roughly the same between scans; hair brushed a new way changes what the camera can see.'),
+  trackingNote('track_interval', 'Interval', '🗓️', 'Scan on a steady interval rather than whenever something catches your eye in the mirror; even spacing is what makes a run of scans readable.'),
+  trackingNote('track_notes', 'Write it down', '📝', 'Note anything that changed between scans: a new product, a new routine, an illness, a fortnight in the sun.'),
+  trackingNote('track_ask', 'When to ask', '🩺', 'Anything persistent or worrying — a sore, itchy or flaking scalp, or a change that keeps bothering you — is one for a GP or dermatologist rather than an app.', true),
+]);
 
 /** The goal the notes fall back to when nobody picked one. */
 export const DEFAULT_TIP_GOAL: HairGoal = 'overall';
@@ -71,31 +124,35 @@ export const TIPS_PER_GOAL = 4;
  */
 export const PROFILE_TIPS_MAX = 2;
 
-const note = (goal: HairGoal, n: number, kicker: string, emoji: string, body: string): Tip => ({
-  id: `${goal}_${n}`,
-  kicker,
-  emoji,
-  body,
-});
+const note = (
+  goal: HairGoal,
+  n: number,
+  kicker: string,
+  emoji: string,
+  body: string,
+  safety = false,
+): Tip => (safety
+  ? { id: `${goal}_${n}`, kicker, emoji, body, safety }
+  : { id: `${goal}_${n}`, kicker, emoji, body });
 
 export const TIPS_BY_GOAL: Readonly<Record<HairGoal, readonly Tip[]>> = Object.freeze({
   fullness: [
     note('fullness', 1, 'Wash', '🚿', 'Wash with lukewarm water and rinse until the water runs clear; leftover product sits flat on the hair.'),
     note('fullness', 2, 'Drying', '🌬️', 'Blot with a towel rather than rubbing, and keep a dryer moving rather than parked on one spot.'),
     note('fullness', 3, 'Brushing', '🪮', 'Start at the ends and work up in short strokes, so a knot is teased out rather than pulled through.'),
-    note('fullness', 4, 'Scalp', '🫧', 'A scalp that itches or flakes for weeks is worth a GP or dermatologist visit, not another product.'),
+    note('fullness', 4, 'Scalp', '🫧', 'A scalp that itches or flakes for weeks is worth a GP or dermatologist visit, not another product.', true),
   ],
   hairline: [
     note('hairline', 1, 'Styling', '🎀', 'Tight styles and hard headbands pull on the same spot every day; loosen them where you can.'),
     note('hairline', 2, 'Hats', '🧢', 'A hat is fine; a hat that leaves a mark is tight enough to swap for the next size.'),
     note('hairline', 3, 'Wet hair', '💧', 'Handle wet hair gently: it stretches further than dry hair and is easier to snap.'),
-    note('hairline', 4, 'Scalp', '🩺', 'Redness or soreness along the hairline that lasts more than a couple of weeks is one for a GP or dermatologist.'),
+    note('hairline', 4, 'Scalp', '🩺', 'Redness or soreness along the hairline that lasts more than a couple of weeks is one for a GP or dermatologist.', true),
   ],
   crown: [
     note('crown', 1, 'Parting', '✂️', 'Move the parting a little from time to time; the same line every day is the one that catches the sun.'),
     note('crown', 2, 'Sun', '☀️', 'On a bright day the crown catches the most sun; a cap, or a mist with SPF, reaches the part a hand cannot.'),
     note('crown', 3, 'Heat', '🔥', 'Keep the dryer at arm’s length from the crown and finish on the cool setting.'),
-    note('crown', 4, 'Scalp', '🫧', 'Itching or flaking at the crown that lasts weeks is worth a GP or dermatologist visit.'),
+    note('crown', 4, 'Scalp', '🫧', 'Itching or flaking at the crown that lasts weeks is worth a GP or dermatologist visit.', true),
   ],
   shedding: [
     note('shedding', 1, 'Brushing', '🪮', 'Detangle from the ends up with a wide-tooth comb; a brush dragged from the root pulls more than it needs to.'),
@@ -118,7 +175,7 @@ export const TIPS_BY_GOAL: Readonly<Record<HairGoal, readonly Tip[]>> = Object.f
   unsure: [
     note('unsure', 1, 'Look', '👀', 'Photographs in the same light, at the same distance, once a month, are the simplest way to know what is there.'),
     note('unsure', 2, 'Gentle', '💧', 'Handle wet hair gently, comb from the ends, and skip the tightest styles.'),
-    note('unsure', 3, 'Scalp', '🫧', 'A scalp that itches, flakes or feels sore for weeks is worth a GP or dermatologist visit.'),
+    note('unsure', 3, 'Scalp', '🫧', 'A scalp that itches, flakes or feels sore for weeks is worth a GP or dermatologist visit.', true),
     note('unsure', 4, 'Ask', '🗣️', 'A hairdresser sees hundreds of heads a month and is a fair person to ask what they notice.'),
   ],
   narrowerPart: [
@@ -175,12 +232,23 @@ export type TipSignal = {
 };
 
 export type ProfileTips = {
+  /** The care notes: what a hairdresser would say, chosen by the goal and the answers. */
   items: Tip[];
-  /** The first answer that shaped the set, or null when the goal alone did. */
+  /**
+   * The tracking notes the section leads with, ahead of `items`.
+   *
+   * The same five for everybody, because they are about the scans rather
+   * than about the person: what makes two of them comparable, and when a
+   * scalp is a matter for a doctor. Additive, so a caller that only
+   * knows about `items` still renders the care notes it always did.
+   */
+  tracking: Tip[];
+  /** The first answer that shaped the care notes, or null when the goal alone did. */
   shapedBy: TipSignal | null;
 };
 
-const profileNote = (id: string, kicker: string, emoji: string, body: string): Tip => ({ id, kicker, emoji, body });
+const profileNote = (id: string, kicker: string, emoji: string, body: string, safety = false): Tip =>
+  safety ? { id, kicker, emoji, body, safety } : { id, kicker, emoji, body };
 
 /**
  * The notes a self-knowledge answer can bring in, one habit each.
@@ -197,7 +265,7 @@ export const PROFILE_TIPS = Object.freeze({
   oily: profileNote('scalp_oily', 'Wash', '🚿', 'Wash as often as the scalp feels like it needs; shampoo at the roots with fingertips, conditioner on the lengths only.'),
   dry: profileNote('scalp_dry', 'Wash', '💧', 'Lukewarm rather than hot water, and a day or two between washes where the scalp is comfortable with it.'),
   combination: profileNote('scalp_combination', 'Wash', '🚿', 'Shampoo where the scalp feels oily and let the rinse do the rest; conditioner on the lengths, away from the roots.'),
-  flakesOrItch: profileNote('concern_scalp', 'Scalp', '🫧', 'Flaking or itching that lasts more than a few weeks is one for a GP or dermatologist rather than another bottle.'),
+  flakesOrItch: profileNote('concern_scalp', 'Scalp', '🫧', 'Flaking or itching that lasts more than a few weeks is one for a GP or dermatologist rather than another bottle.', true),
   dryness: profileNote('concern_dryness', 'Conditioner', '💧', 'Conditioner on the lengths every wash, left a minute or two, and a towel pressed rather than rubbed.'),
   frizz: profileNote('concern_frizz', 'Drying', '🌬️', 'Blot with a soft towel or a T-shirt rather than rubbing, and let the hair mostly dry on its own ahead of the dryer.'),
 });
@@ -298,11 +366,11 @@ export function tipsForProfile(profile: TipProfile): ProfileTips {
     take(tip);
   }
 
-  return { items, shapedBy };
+  return { items, tracking: [...TRACKING_TIPS], shapedBy };
 }
 
-/** Every note, goal and profile alike, for the sweep. */
+/** Every note — tracking, goal and profile alike — for the sweep. */
 export function tipSentences(): string[] {
-  const all = [...Object.values(TIPS_BY_GOAL).flat(), ...Object.values(PROFILE_TIPS)];
+  const all = [...TRACKING_TIPS, ...Object.values(TIPS_BY_GOAL).flat(), ...Object.values(PROFILE_TIPS)];
   return all.flatMap((t) => [t.kicker, t.body]);
 }

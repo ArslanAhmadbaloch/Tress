@@ -15,6 +15,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { coverageTrendFinding } from '@/features/assessment/engine';
@@ -34,8 +35,11 @@ import {
   type IntentMatch,
   type MatchContext,
 } from '@/features/coach';
-import { profileSentence } from '@/features/coach/report-summary';
+import { coveragePoints, profileSentence, tressSays } from '@/features/coach/report-summary';
+import { confidenceBand, gradeOf } from '@/features/hair-scan/grade';
+import { compareScans } from '@/features/hair-scan/measure';
 import { stripQuotes } from '@/features/hair-scan/report-copy';
+import { TRACKING_TIPS, tipSentences, tipsForProfile } from '@/features/hair-scan/tips';
 import { formatRelative, toDateKey } from '@/lib/date';
 import {
   activeRoutineItems,
@@ -67,8 +71,12 @@ import {
   type Journey,
   type Photo,
   type PhotoSession,
+  type PhotoSessionMeasurement,
+  type PhotoSessionRegionChange,
   type RoutineCadence,
   type RoutineItem,
+  type ScanChangeVerdict,
+  type ScanMeasureRegion,
 } from '@/types/domain';
 
 import { assertHonest } from './honesty-words';
@@ -907,20 +915,411 @@ test('coach: the report paragraph reads an answer back in the plainest words it 
   assertHonest(assert, every, 'report paragraph, profile sentences');
 
   // Every sentence puts the person first and the answer in quotation
-  // marks, so none of them can be read as the app's own claim. Pinned
-  // rather than left to the prose above, which said more than the code
-  // did: 'reaction' still narrates the conversation ("You told Tress
-  // …"), and until the lane that pins its wording changes it, this test
-  // records that as the state of things instead of implying otherwise.
+  // marks, so none of them can be read as the app's own claim. None of
+  // them narrates the conversation either: "You told Tress you have
+  // reacted to …" reports that an exchange happened instead of saying
+  // the thing, which is the construction the owner read aloud and
+  // rejected, and both branches that used it now say the thing.
   for (const sentence of every) {
     assert.match(sentence, /^You (said|told|described|mentioned) /, sentence);
     assert.match(sentence, /“[^”]+”/, sentence);
   }
   assert.ok(
     profileSentence({ kind: 'reaction', label: INGREDIENT_REACTION_LABELS.fragrance })!.startsWith(
-      'You told Tress you have reacted to “',
+      'You said you have reacted to “',
     ),
   );
 
   assert.equal(profileSentence(null), null);
+});
+
+/* -------------------------- the says paragraph --------------------------- */
+
+/**
+ * "Tress says" used to describe the scanner: how many frames the turn
+ * kept, which angles they were, and whether the segmenter had run. The
+ * owner read that as a report about photographs rather than about hair,
+ * and he was right. These tests hold the paragraph to the other thing:
+ * every clause traces to a figure the engine computed, and with no
+ * figures at all the paragraph is not written.
+ */
+
+function reading(coverage: number, confidence = 0.8) {
+  return {
+    coverage,
+    visibleScalp: 1 - coverage,
+    frames: 4,
+    spread: 0.02,
+    confidence,
+    anchoring: 'landmarks' as const,
+  };
+}
+
+/** A measurement in the shape the scanner stores on a session. */
+function measurement(
+  entries: [ScanMeasureRegion, number, number?][],
+  capturedAt = daysAgo(10).toISOString(),
+): PhotoSessionMeasurement {
+  const regions: PhotoSessionMeasurement['regions'] = {};
+  for (const [region, coverage, confidence] of entries) {
+    regions[region] = { region, ...reading(coverage, confidence ?? 0.8) };
+  }
+  const all: ScanMeasureRegion[] = ['hairline', 'leftTemple', 'rightTemple', 'midScalp', 'crown', 'partLine'];
+  return { regions, unread: all.filter((r) => regions[r] === undefined), capturedAt };
+}
+
+function change(
+  region: ScanMeasureRegion,
+  delta: number,
+  verdict: ScanChangeVerdict,
+): PhotoSessionRegionChange {
+  return { region, delta, noiseFloor: 0.02, verdict, confidence: 0.7, anchoring: 'same' };
+}
+
+/** A scan session carrying what the engine read off it. */
+function measuredScan(
+  id: string,
+  dAgo: number,
+  m: PhotoSessionMeasurement | null,
+  changes?: PhotoSessionRegionChange[],
+): PhotoSession {
+  const s = scanSession(id, dAgo, ['front', 'leftTemple', 'rightTemple', 'top']);
+  return {
+    ...s,
+    scan: {
+      ...s.scan!,
+      ...(m ? { measurement: m } : {}),
+      ...(changes && changes.length > 0 ? { changes } : {}),
+    },
+  };
+}
+
+const FIVE: [ScanMeasureRegion, number, number?][] = [
+  ['hairline', 0.62, 0.75],
+  ['leftTemple', 0.54, 0.5],
+  ['rightTemple', 0.58],
+  ['midScalp', 0.74],
+  ['crown', 0.81, 0.9],
+];
+
+test('says: the paragraph reads the measurement back, and every figure in it was counted', () => {
+  const s = measuredScan('s1', 10, measurement(FIVE));
+  const data = withSessions(base(), s);
+  const body = tressSays(data, s, 'Sam', new Date())!;
+  assert.ok(body !== null);
+
+  // Four or five sentences, the scan's own scope first.
+  const sentences = body.split(/(?<=[.])\s+/);
+  assert.ok(sentences.length >= 4 && sentences.length <= 5, `${sentences.length} sentences: ${body}`);
+  assert.match(body, /^Sam, this scan read five of the six areas Tress measures; your part line was not clear enough in these frames to read\./);
+
+  // Highest and lowest, each with the confidence its own reading carried.
+  assert.match(body, /Your crown reads highest of them at 81 out of 100 for visual coverage, with high confidence/);
+  assert.match(body, /your left temple lowest at 54, with moderate confidence/);
+  // The figures in the sentence are the ones the cards above it show:
+  // both read through grade.ts, which is the only place a share becomes
+  // a score at all.
+  assert.deepEqual(gradeOf({ region: 'crown', ...reading(0.81, 0.9) }), { score: 81, confidence: 0.9 });
+  assert.equal(confidenceBand(0.9), 'high');
+  assert.equal(confidenceBand(0.5), 'moderate');
+  assert.equal(confidenceBand(0.39), 'low');
+
+  // Nothing earlier was measured, so nothing is set beside anything.
+  assert.match(body, /Nothing earlier on record carries a reading of its own/);
+
+  // What is watched next is the lowest reading, with the goal quoted rather than restated.
+  assert.match(body, /You said you are hoping for “more fullness”, and your left temple is the lowest reading here, which is what Tress watches next/);
+  assert.match(body, /Tress watches next, on the scan due in 20 days\.$/);
+
+  // No number appears that the fixture did not carry.
+  for (const n of body.match(/\b\d+\b/g) ?? []) {
+    assert.ok(['81', '54', '100', '20'].includes(n), `${n} is not a figure the record holds: ${body}`);
+  }
+  assertHonest(assert, [stripQuotes(body)], 'says');
+  assert.ok(!/density|follicle|shaft|hairs per/i.test(body), body);
+});
+
+test('says: with no measurement there is no paragraph at all, and no explanation of why', () => {
+  // A scan from a build with no segmenter in it: the block is there, the measurement is not.
+  const bare = measuredScan('s1', 10, null);
+  assert.equal(tressSays(withSessions(base(), bare), bare, 'Sam', new Date()), null);
+
+  // A measurement that read nothing is the same thing: null, not a row of zeroes.
+  const empty = measuredScan('s1', 10, measurement([]));
+  assert.equal(tressSays(withSessions(base(), empty), empty, 'Sam', new Date()), null);
+
+  // An ordinary set of photographs, never scanned, says nothing either.
+  const plain = session('s1', 10, ['front', 'top']);
+  assert.equal(tressSays(withSessions(base(), plain), plain, 'Sam', new Date()), null);
+
+  // And nothing anywhere in the file explains the segmenter to somebody reading a report.
+  const source = readFileSync(new URL('../../src/features/coach/report-summary.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  const strings = [...source.matchAll(/'([^'\n]{25,})'|`([^`\n]{25,})`/g)].map((m) => m[1] ?? m[2]);
+  for (const s of strings) {
+    assert.ok(!/segmenter|on-device|did not run|this build|model/i.test(s), `debugging text in a sentence: ${s}`);
+  }
+});
+
+test('says: a difference is only a change when it cleared the noise floor the engine set', () => {
+  const now = new Date();
+
+  // Inside the margin, every region: the paragraph says so and names no figure.
+  const flat = measuredScan('s2', 10, measurement(FIVE), [
+    change('crown', 0.01, 'unchanged'),
+    change('hairline', 0.004, 'insufficient'),
+  ]);
+  const quiet = tressSays(withSessions(base(), flat), flat, 'Sam', now)!;
+  assert.match(quiet, /Set beside your last scan with a reading, no area both scans read moved further than the two scans' own margin of error, so nothing here counts as a change\./);
+  assert.ok(!/points (higher|lower)/.test(quiet), quiet);
+
+  // One region clear of it: named, with the difference in the same units as the score.
+  const one = measuredScan('s2', 10, measurement(FIVE), [
+    change('crown', 0.01, 'unchanged'),
+    change('leftTemple', -0.05, 'moderate'),
+  ]);
+  const moved = tressSays(withSessions(base(), one), one, 'Sam', now)!;
+  assert.match(moved, /your left temple is the one area that moved further than the two scans' own margin of error, reading 5 points lower\./);
+  assert.equal(coveragePoints(-0.05), 5);
+
+  // Several: counted, and the largest named, never all of them listed.
+  const many = measuredScan('s2', 10, measurement(FIVE), [
+    change('leftTemple', -0.05, 'small'),
+    change('crown', 0.09, 'large'),
+    change('midScalp', 0.04, 'small'),
+  ]);
+  const lots = tressSays(withSessions(base(), many), many, 'Sam', now)!;
+  assert.match(lots, /three areas moved further than the two scans' own margin of error, your crown most of all, reading 9 points higher\./);
+
+  // The baseline comparison is the report's to hand over, and reads as its own sentence.
+  const withBaseline = tressSays(withSessions(base(), one), one, 'Sam', now, {
+    sinceLast: [change('leftTemple', -0.05, 'moderate')],
+    sinceBaseline: [change('leftTemple', -0.08, 'moderate'), change('crown', 0.06, 'small')],
+    baselineSpan: '4 months',
+  })!;
+  assert.match(withBaseline, /Against your baseline, 4 months back, two areas have moved further than that margin, your left temple most of all, reading 8 points lower\./);
+  assert.equal(withBaseline.split(/(?<=[.])\s+/).length, 5);
+  assertHonest(assert, [stripQuotes(withBaseline)], 'says, with a baseline');
+
+  // A baseline that moved nowhere says that, rather than nothing.
+  const still = tressSays(withSessions(base(), one), one, 'Sam', now, {
+    sinceBaseline: [change('crown', 0.005, 'unchanged')],
+    baselineSpan: '4 months',
+  })!;
+  assert.match(still, /Against your baseline, 4 months back, nothing both scans read has moved further than that margin either\./);
+});
+
+/**
+ * `insufficient` is the engine refusing to subtract, not the engine
+ * finding a difference of nothing. `measure/compare.ts` writes it when a
+ * region is missing from one of the two scans, when either kept too few
+ * frames, when the confidence is under its own floor, or when a coverage
+ * is not finite — a previous scan that read only the hairline leaves
+ * every other region on that verdict, which makes this the ordinary case
+ * rather than the odd one. Wording it as "no area moved" would assert
+ * five comparisons nobody performed.
+ */
+test('says: a comparison the engine declined to make is never worded as one that found nothing', () => {
+  const now = new Date();
+  const all: ScanMeasureRegion[] = ['hairline', 'leftTemple', 'rightTemple', 'midScalp', 'crown', 'partLine'];
+
+  // Every stored row refused: the sentence says the two scans could not be
+  // set beside each other, and claims nothing about any area.
+  const none = measuredScan('s2', 10, measurement(FIVE), all.map((r) => change(r, 0.004, 'insufficient')));
+  const refused = tressSays(withSessions(base(), none), none, 'Sam', now)!;
+  assert.match(refused, /Neither this scan nor your last scan with a reading read any one area well enough in both for the two to be set beside each other, so no difference is reported\./);
+  assert.ok(!/no area moved|nothing here counts as a change/.test(refused), refused);
+  assert.ok(!/points (higher|lower)/.test(refused), refused);
+  assertHonest(assert, [stripQuotes(refused)], 'says, nothing comparable');
+
+  // The same refusal against the baseline reads as a refusal there too.
+  const base2 = tressSays(withSessions(base(), none), none, 'Sam', now, {
+    sinceLast: [change('crown', 0.01, 'unchanged')],
+    sinceBaseline: all.map((r) => change(r, 0.004, 'insufficient')),
+    baselineSpan: '4 months',
+  })!;
+  assert.match(base2, /Against your baseline, 4 months back, no area was read well enough in both scans for the two to be set beside each other\./);
+  assert.ok(!/nothing has moved/.test(base2), base2);
+
+  // One real comparison among the refusals is still a comparison, and the
+  // sentence is careful to count only the areas both scans read.
+  const partly = measuredScan('s2', 10, measurement(FIVE), [
+    change('crown', 0.01, 'unchanged'),
+    change('hairline', 0.004, 'insufficient'),
+    change('midScalp', 0.004, 'insufficient'),
+  ]);
+  const mixed = tressSays(withSessions(base(), partly), partly, 'Sam', now)!;
+  assert.match(mixed, /no area both scans read moved further than/);
+});
+
+/**
+ * On a second scan the baseline IS the scan before it, so the report
+ * hands the same rows down twice. Two of five sentences stating one fact
+ * is how a paragraph of findings starts reading like padding — and it is
+ * the shape every new user meets first.
+ */
+test('says: when the baseline is the scan before this one, the fact is stated once', () => {
+  const now = new Date();
+  const rows = [change('leftTemple', -0.1, 'moderate'), change('crown', 0.01, 'unchanged')];
+  const s = measuredScan('s2', 10, measurement(FIVE), rows);
+
+  // The same rows on both sides: one sentence, and it names the baseline.
+  const folded = tressSays(withSessions(base(), s), s, 'Sam', now, {
+    sinceLast: rows,
+    sinceBaseline: rows.map((r) => ({ ...r })),
+    baselineSpan: '3 months',
+  })!;
+  assert.match(folded, /Set beside your last scan with a reading, which is also your baseline, your left temple is the one area that moved further than the two scans' own margin of error, reading 10 points lower\./);
+  assert.ok(!folded.includes('Against your baseline'), folded);
+  assert.equal(folded.split(/(?<=[.])\s+/).length, 4);
+
+  // The model can say so outright, and is believed.
+  const flagged = tressSays(withSessions(base(), s), s, 'Sam', now, {
+    sinceLast: rows,
+    sinceBaseline: [change('crown', 0.09, 'large')],
+    baselineIsPrevious: true,
+  })!;
+  assert.ok(!flagged.includes('Against your baseline'), flagged);
+  assert.match(flagged, /which is also your baseline/);
+
+  // And on the real path, where both sets come off the engine rather than
+  // out of a fixture: a second scan's stored comparison and its baseline
+  // comparison are the same call on the same pair, so the rows match and
+  // the duplicate is caught without the model having to say so.
+  const before = measurement([['hairline', 0.62], ['leftTemple', 0.64], ['crown', 0.8]], daysAgo(100).toISOString());
+  const after = measurement([['hairline', 0.62], ['leftTemple', 0.54], ['crown', 0.8]], daysAgo(10).toISOString());
+  const engine = compareScans(after, before);
+  const real = measuredScan('s2', 10, after, [...engine]);
+  const once = tressSays(withSessions(base(), real), real, 'Sam', now, {
+    measurement: after,
+    sinceLast: engine,
+    sinceBaseline: compareScans(after, before),
+    baselineSpan: '3 months',
+  })!;
+  assert.match(once, /Set beside your last scan with a reading, which is also your baseline, your left temple is the one area that moved further than/);
+  assert.ok(!once.includes('Against your baseline'), once);
+  assert.equal(once.split(/(?<=[.])\s+/).length, 4);
+
+  // A baseline that really is a different scan keeps its own sentence.
+  const apart = tressSays(withSessions(base(), s), s, 'Sam', now, {
+    sinceLast: rows,
+    sinceBaseline: [change('crown', 0.09, 'large')],
+    baselineSpan: '6 months',
+  })!;
+  assert.match(apart, /Against your baseline, 6 months back, your crown has moved 9 points higher, further than that margin\./);
+  assert.ok(!apart.includes('which is also your baseline'), apart);
+  assert.equal(apart.split(/(?<=[.])\s+/).length, 5);
+});
+
+/**
+ * "read five of the six areas" is arithmetic, and the sentence has to be
+ * able to account for the other one. A region present in the map but
+ * unreadable used to fall through both halves: not a reading, and not on
+ * the list of places named as unread either.
+ */
+test('says: every one of the six is accounted for, read or not', () => {
+  const now = new Date();
+
+  // Present, and not a finite coverage: unreadable, and named as unread.
+  const broken = measurement(FIVE);
+  broken.regions.partLine = { region: 'partLine', ...reading(0.5) , coverage: Number.NaN };
+  broken.unread = [];
+  const s = measuredScan('s1', 10, broken);
+  const body = tressSays(withSessions(base(), s), s, 'Sam', now)!;
+  assert.match(body, /^Sam, this scan read five of the six areas Tress measures; your part line was not clear enough in these frames to read\./);
+
+  // The engine's own refusal list wins over whatever else is in the map.
+  const declined = measurement(FIVE);
+  declined.unread = ['crown', 'partLine'];
+  const d = measuredScan('s1', 10, declined);
+  const dBody = tressSays(withSessions(base(), d), d, 'Sam', now)!;
+  assert.match(dBody, /^Sam, this scan read four of the six areas Tress measures; your crown and your part line were not clear enough in these frames to read\./);
+  assert.ok(!dBody.includes('81'), 'a region the engine declined to report carries no figure either');
+});
+
+test('says: the goal decides which area leads, and a blank name leaves no hole', () => {
+  const now = new Date();
+  const s = measuredScan('s1', 10, measurement(FIVE));
+
+  // A hairline goal puts the hairline beside the lowest reading; a crown goal, the crown.
+  const hairline = tressSays(withSessions({ ...base(), journey: { ...base().journey!, goals: ['hairline'] } }, s), s, 'Sam', now)!;
+  assert.match(hairline, /so your hairline and your left temple, the lowest reading here, are what Tress watches next/);
+  const crown = tressSays(withSessions({ ...base(), journey: { ...base().journey!, goals: ['crown'] } }, s), s, 'Sam', now)!;
+  assert.match(crown, /so your crown and your left temple, the lowest reading here, are what Tress watches next/);
+
+  // A goal that is one area, and that area is already the lowest: said once, not twice.
+  const low = measuredScan('s1', 10, measurement([['hairline', 0.4], ['crown', 0.8]]));
+  const same = tressSays(withSessions({ ...base(), journey: { ...base().journey!, goals: ['hairline'] } }, low), low, 'Sam', now)!;
+  assert.match(same, /and your hairline is also the lowest reading here, which is what Tress watches next/);
+
+  // No goal picked at all: the lowest reading still leads, with nothing quoted.
+  const noGoal = tressSays(withSessions({ ...base(), journey: null }, s), s, 'Sam', now)!;
+  assert.match(noGoal, /Your left temple is the lowest reading here, and that is what Tress watches next\.$/);
+  assert.ok(!noGoal.includes('“'), noGoal);
+
+  // A blank name is dropped rather than printed.
+  const blank = tressSays(withSessions(base(), s), s, '  ', now)!;
+  assert.match(blank, /^This scan read five of the six areas/);
+
+  // One area read is not two: the sentence does not claim a highest and a lowest.
+  const single = measuredScan('s1', 10, measurement([['crown', 0.66, 0.45]]));
+  const alone = tressSays(withSessions(base(), single), single, 'Sam', now)!;
+  assert.match(alone, /^Sam, this scan read one of the six areas Tress measures;/);
+  assert.match(alone, /Your crown came out at 66 out of 100 for visual coverage, with moderate confidence\./);
+  assert.ok(!/highest|lowest of them/.test(alone), alone);
+});
+
+/* --------------------- the care and tracking notes ----------------------- */
+
+test('notes: the section leads with what makes a run of scans readable, then the care habits', () => {
+  // The five tracking notes are the same for everybody, and they are about
+  // the scans rather than about hair: conditions, styling, interval, a
+  // written note, and when to ask somebody qualified.
+  assert.equal(TRACKING_TIPS.length, 5);
+  assert.deepEqual(
+    TRACKING_TIPS.map((t) => t.id),
+    ['track_conditions', 'track_styling', 'track_interval', 'track_notes', 'track_ask'],
+  );
+  for (const tip of TRACKING_TIPS) {
+    assert.ok(tip.kicker.length > 0 && tip.emoji.length > 0 && tip.body.length > 20, tip.id);
+    assert.ok(/^[A-Z]/.test(tip.body) && /[.]$/.test(tip.body), tip.id);
+  }
+  assert.match(TRACKING_TIPS[0].body, /same light|Same room/i);
+  assert.match(TRACKING_TIPS[4].body, /GP or dermatologist/);
+
+  // Every profile gets them, ahead of the care notes, and the care notes
+  // are still chosen by the goal and the answers exactly as before.
+  const set = tipsForProfile({ goal: 'hairline', heatStyling: 'daily' });
+  assert.deepEqual(set.tracking.map((t) => t.id), TRACKING_TIPS.map((t) => t.id));
+  assert.equal(set.items[0].id, 'heat_often');
+  assert.deepEqual(tipsForProfile({}).tracking.map((t) => t.id), TRACKING_TIPS.map((t) => t.id));
+
+  // A tracking note is a habit, not a prescription, and the sweep reaches it.
+  const swept = tipSentences();
+  for (const tip of TRACKING_TIPS) assert.ok(swept.includes(tip.body), `${tip.id} is swept`);
+  assertHonest(assert, swept, 'care and tracking notes');
+  const text = swept.join(' ').toLowerCase();
+  for (const word of ['density', 'to prevent', 'to stop', 'minoxidil', 'finasteride', 'treatment', 'blood test', 'cure']) {
+    assert.ok(!text.includes(word), `the notes must not say "${word}"`);
+  }
+  // None of them is about what this scan found: that is the report's job, not a note's.
+  for (const tip of TRACKING_TIPS) {
+    assert.ok(!/your (crown|hairline|temple|part line|mid-scalp)\b/i.test(tip.body), tip.id);
+    assert.ok(!/out of 100|coverage score/i.test(tip.body), tip.id);
+  }
+});
+
+test('says: two readings are set side by side only when both are sure enough of themselves', () => {
+  // A crown read across four steady frames and a part line barely caught:
+  // "highest and lowest" would be a claim about both, and the weaker half
+  // cannot support it. So the paragraph names the surest reading and says
+  // why the other is not beside it, rather than printing a faint figure.
+  const faint = measuredScan('s1', 10, measurement([['crown', 0.81, 0.9], ['partLine', 0.3, 0.2]]));
+  const body = tressSays(withSessions(base(), faint), faint, 'Sam', new Date())!;
+  assert.match(body, /Your crown is the reading this scan is surest of, at 81 out of 100 for visual coverage, with high confidence; the rest were read too faintly to set beside it\./);
+  assert.ok(!/highest|lowest/.test(body), body);
+  assert.ok(!body.includes('30'), 'a reading too faint to compare is not printed as a figure either');
+  assert.match(body, /and your crown is the reading this scan is surest of, which is what Tress watches next/);
+  assertHonest(assert, [stripQuotes(body)], 'says, one faint reading');
 });

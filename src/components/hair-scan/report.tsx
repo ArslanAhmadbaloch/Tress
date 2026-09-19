@@ -5,37 +5,58 @@
  * One long sheet over the main still. The still fills the top of the
  * screen with the mesh held on it and the date on a chip; a white sheet
  * with rounded corners rises over its foot and carries, in order, the
- * tab row that filters the analysis rows, the rows themselves — a crop
- * of the actual frame, the place, the headline, the working in a bubble
- * — then what is working, the profile tiles, whether the turn reached
- * the person's own focus, the care notes, the routine shelf and the
- * coach's paragraph. A pill at the bottom right walks the sections and
- * becomes the way out on the last. The structure, density and pacing
- * are the reference report's; the words, the palette and the claims are
- * not.
+ * tab row that filters the analysis, then what the scan found and what
+ * it is set against: the assessment — one Visual Coverage figure and the
+ * map of the head it came from — the region cards, scalp visibility,
+ * symmetry, what changed and the baseline comparison, the areas to
+ * watch, and whether the turn reached the person's own goal. Under all
+ * of that, how the scan itself came out, folded away behind one row, and
+ * then the things to do about none of it in particular: the coach's
+ * paragraph, the care notes, the routine shelf and the cuts. A pill at
+ * the bottom right walks the sections and becomes the way out on the
+ * last.
+ *
+ * The order is the model's `sections`, not this file's: the screen walks
+ * that list and draws whatever is in it, so a scan with no symmetry to
+ * report has no symmetry section rather than an empty one.
  *
  * ── What it can say, and what it cannot ───────────────────────────────
- * Nothing. The screen computes no sentence: every string, crop, count
+ * Nothing. The screen computes no sentence: every string, figure, crop
  * and lock is built by `buildHairScanReport` in
  * features/hair-scan/report-model.ts, which the honesty sweep reads by
- * building it. What this file owns is arrangement and motion — which
- * tab is open, which sections have entered the screen, where the pill
- * goes next — and the few chrome labels in report-sections/ui-copy.ts.
- * A row is an observation about the frames; a tile is the label of a
- * choice; the focus block is coverage of a region, never a reading of
- * it. The screen draws them and adds nothing.
+ * building it. What this file owns is arrangement and motion — which tab
+ * is open, which sections have entered the screen, where the pill goes
+ * next — and the two words on the scan-quality disclosure in
+ * report-sections/index.ts.
+ *
+ * A score is Visual Coverage: a reading of the hair and scalp a camera
+ * could see in an image, never a density, a follicle count or a shaft
+ * width. The model names it and notes what it is; the screen draws the
+ * number it was handed and adds nothing — and never draws one without
+ * the confidence it was read with beside it, which is why the
+ * assessment's scale and its word for a confidence are handed down to
+ * every section that puts a figure on the sheet.
+ *
+ * ── When the analysis did not run ─────────────────────────────────────
+ * `model.availability` is `unavailable` when the measurement engine read
+ * nothing at all. The assessment section then carries one honest line
+ * and a way to scan again — no figure, no map, no cards, no comparison,
+ * nothing estimated to stand in for a reading nobody took. The model
+ * leaves those sections out of its list, so this file draws them the
+ * only way it draws anything: by not being given them.
  *
  * ── The pacing ────────────────────────────────────────────────────────
  * The still first, on its own for a beat; the mesh lands on it; then
  * the sections arrive as they are reached, each one rising into place a
  * little after the last in its batch, so a report read top to bottom is
  * delivered rather than dumped and one skimmed by scrolling fast is
- * simply there. Switching tabs re-filters the rows without a
- * performance. The still's slide under the sheet and the fade of the
- * chrome over it follow the scroll on the UI thread, frame for frame;
- * the JS side hears about the scroll only every few dozen points and at
- * the lines it switches on. Under Reduce Motion everything is static:
- * the still does not move, the chrome steps, the sections are there.
+ * simply there. Switching tabs re-filters the cards and the quality rows
+ * without a performance. The still's slide under the sheet and the fade
+ * of the chrome over it follow the scroll on the UI thread, frame for
+ * frame; the JS side hears about the scroll only every few dozen points
+ * and at the lines it switches on. Under Reduce Motion everything is
+ * static: the still does not move, the chrome steps, the sections are
+ * there.
  *
  * ── The strip under the status bar ────────────────────────────────────
  * The sheet's scroll view starts under the status bar and the still
@@ -47,12 +68,14 @@
  * the moment it sticks, so strip and row read as one header.
  *
  * ── What Premium adds ─────────────────────────────────────────────────
- * Depth. The hero, every row's headline, the strengths, the profile and
- * the coach's paragraph are free; each row's working, the focus block,
- * the care notes past the first and the routine builder are held behind
- * translucent blocks — shapes, never fake text — with one button to the
- * paywall under the rows and the same one in the routine block. The
- * model decides every lock; the screen draws the block.
+ * Depth. The figures are free — the hero, the assessment, the map, every
+ * card's score, every measured share — and the working is held: each
+ * card's observation, the notes under scalp visibility and symmetry, the
+ * comparison's rows, the goal block, the care notes past the first and
+ * the routine builder are translucent blocks — shapes, never fake text —
+ * with one button to the paywall under the cards, one under the quality
+ * rows and the same one in the routine block. The model decides every
+ * lock; the screen draws the block.
  *
  * ── The funnel ────────────────────────────────────────────────────────
  * Reached from onboarding, this is the report before the paywall, and
@@ -82,7 +105,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
-import { buildHairScanReport, type ReportTab } from '@/features/hair-scan/report-model';
+import { buildHairScanReport, type ReportTab, type ScanRegion } from '@/features/hair-scan/report-model';
 import { reminderOfferInterval } from '@/features/hair-scan/result';
 import type { StillMesh } from '@/features/hair-scan/types';
 import { usePremium } from '@/features/subscription/provider';
@@ -99,6 +122,8 @@ import { useTheme } from '@/theme';
 import type { PhotoSession } from '@/types/domain';
 
 import { AnalysisRows } from './report-sections/analysis-rows';
+import { AssessmentScore, CoverageMapSection, type FigureLabels } from './report-sections/assessment';
+import { ChangeRows } from './report-sections/changed';
 import { FocusBlockView } from './report-sections/focus';
 import { HairstylesBlockView } from './report-sections/hairstyles';
 import { HeroChrome, ReportHero } from './report-sections/hero';
@@ -115,16 +140,30 @@ import {
   stripOpacity,
 } from './report-sections/layout';
 import { NEXT_PILL_CLEARANCE, NextPill } from './report-sections/next-pill';
-import { ProfileTiles } from './report-sections/profile';
+import { QualityDisclosure } from './report-sections/quality';
+import { RegionCards } from './report-sections/region-card';
 import { RoutineBlockView } from './report-sections/routine';
 import { SaysBlockView } from './report-sections/says';
+import { ScalpVisibility } from './report-sections/scalp-visibility';
 import { SHEET_INSET, SectionReveal, SheetBlock } from './report-sections/section';
-import { StrengthCards } from './report-sections/strengths';
+import { SymmetryRows } from './report-sections/symmetry';
 import { ReportTabs, TAB_ROW_HEIGHT } from './report-sections/tabs';
 import { TipList } from './report-sections/tips';
+import { UnavailableBlock } from './report-sections/unavailable';
+import { WatchList } from './report-sections/watch';
 import { HAIR_SCAN_REPORT_UI_COPY as UI } from './report-sections/ui-copy';
 
 export type { ReportTab };
+
+/**
+ * How long the coverage map waits before its tints arrive.
+ *
+ * The dial and the map are in the same section and start together
+ * otherwise, which reads as two things competing rather than one figure
+ * and then where it came from. Under Reduce Motion both are simply
+ * there, and this is not consulted.
+ */
+const MAP_FILL_DELAY = 220;
 
 export type HairScanReportProps = {
   /** The session the scan saved. */
@@ -182,6 +221,21 @@ export function HairScanReport({
     [data, session, isPremium],
   );
 
+  /*
+    The scale under a figure and the word beside a confidence are the
+    assessment's, said once and handed to every section that draws a
+    number: the cards, the scalp rows and the two temples. No section
+    composes "out of 100" or names a confidence of its own.
+  */
+  const figures = useMemo<FigureLabels>(
+    () => ({
+      scoreScale: model.assessment.scoreScale,
+      pointsLabel: model.assessment.pointsLabel,
+      confidenceLabel: model.assessment.confidenceLabel,
+    }),
+    [model.assessment.scoreScale, model.assessment.pointsLabel, model.assessment.confidenceLabel],
+  );
+
   /** The photograph a crop was cut from, by its file, for the mask. */
   const photoByUri = useMemo(() => new Map(session.photos.map((p) => [p.uri, p])), [session.photos]);
   const photoFor = useCallback((uri: string) => photoByUri.get(uri) ?? null, [photoByUri]);
@@ -190,7 +244,9 @@ export function HairScanReport({
   /* ------------------------------- state ------------------------------ */
 
   const [tab, setTab] = useState<ReportTab>(initialTab);
-  const rows = useMemo(() => rowsForTab(model.analysis.rows, tab), [model.analysis.rows, tab]);
+  /* The open tab filters both the cards and the scan-quality rows; the model orders them. */
+  const cards = useMemo(() => rowsForTab(model.cards.cards, tab), [model.cards.cards, tab]);
+  const rows = useMemo(() => rowsForTab(model.quality.rows, tab), [model.quality.rows, tab]);
 
   /*
     The still's height on this screen, and where the sheet begins: the
@@ -307,6 +363,18 @@ export function HairScanReport({
     [settle],
   );
 
+  /*
+    A tab that filters every card out of the detailed analysis takes the
+    section off the sheet, and the top it was last measured at would
+    otherwise stay in the book the Next pill walks — sending the reader
+    to a place nothing is drawn at. Forget it, and re-read the sheet.
+  */
+  useEffect(() => {
+    if (cards.length > 0) return;
+    delete offsetsRef.current.cards;
+    settle();
+  }, [cards.length, settle]);
+
   /* The still slides under the sheet; not under Reduce Motion. */
   const parallax = useAnimatedStyle(() => ({
     transform: [{ translateY: heroShift(scrollY.get(), reduceMotion) }],
@@ -384,6 +452,29 @@ export function HairScanReport({
     };
   }, [ask, journeyInterval]);
 
+  /*
+    A region tapped on the coverage map.
+
+    The map is a picture of six figures; the card is where the figure is
+    read back. So a tap opens that region's tab and puts the sheet at the
+    detailed analysis — the same place the Next pill would walk to,
+    reached by pointing at the head instead. A region the scan could not
+    read has no card and no tab, and the tap does nothing rather than
+    scrolling somebody to a place with nothing about the thing they
+    touched.
+  */
+  const showRegion = useCallback(
+    (region: ScanRegion) => {
+      const card = model.cards.cards.find((c) => c.region === region);
+      if (!card) return;
+      setTab(card.tab);
+      const y = offsetsRef.current.cards;
+      if (y === undefined) return;
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - TAB_ROW_HEIGHT), animated: !reduceMotion });
+    },
+    [model.cards.cards, reduceMotion],
+  );
+
   const seeFullReport = useCallback(() => router.push('/paywall'), [router]);
   const buildRoutine = useCallback(() => router.push('/routine'), [router]);
   /* The catalogue's screen holds the full list behind the entitlement itself. */
@@ -400,44 +491,179 @@ export function HairScanReport({
     );
   };
 
+  const unavailable = model.assessment.unavailable;
+
   const blocks = model.sections.map((s) => {
     switch (s.id) {
-      case 'analysis':
+      /*
+        The assessment is the top of the sheet and continues from the tab
+        row without a seam. When the engine read nothing at all it is the
+        only thing in this section: the model's honest line and a way to
+        scan again, in place of a figure it never took.
+      */
+      case 'assessment':
         return section(
           s.id,
-          <SheetBlock continues heading={model.analysis.heading} subheading={model.analysis.subheading}>
-            <AnalysisRows rows={rows} marks={model.analysis.marks} photoFor={photoFor} onSeeFull={seeFullReport} />
-          </SheetBlock>,
+          unavailable ? (
+            <SheetBlock continues heading={model.assessment.heading}>
+              <UnavailableBlock unavailable={unavailable} onRescan={onRescan} />
+            </SheetBlock>
+          ) : (
+            <>
+              <SheetBlock continues heading={model.assessment.heading} subheading={model.assessment.subheading}>
+                <AssessmentScore assessment={model.assessment} />
+              </SheetBlock>
+              <SheetBlock heading={model.assessment.mapHeading} subheading={model.assessment.mapSubheading}>
+                {/* The tints follow the dial rather than racing it; Reduce Motion skips both. */}
+                <CoverageMapSection
+                  assessment={model.assessment}
+                  onSelectRegion={showRegion}
+                  delay={MAP_FILL_DELAY}
+                />
+              </SheetBlock>
+            </>
+          ),
         );
-      case 'strengths':
-        return section(
-          s.id,
-          <SheetBlock heading={model.strengths.heading}>
-            <StrengthCards cards={model.strengths.cards} />
-          </SheetBlock>,
-        );
-      case 'profile':
-        return section(
-          s.id,
-          <SheetBlock plain heading={model.profile.heading} headingTone="textSecondary">
-            <ProfileTiles tiles={model.profile.tiles} />
-          </SheetBlock>,
-        );
-      case 'focus':
-        return model.focus
+      /*
+        A tab that leaves no card leaves no section: the tab row is the
+        union of what the cards hold and what the quality rows hold, so
+        "Light" empties this one, and a heading over nothing reads as a
+        section that failed rather than a filter that worked.
+      */
+      case 'cards':
+        return cards.length === 0
+          ? null
+          : section(
+              s.id,
+              <SheetBlock heading={model.cards.heading} subheading={model.cards.subheading}>
+                <RegionCards
+                  block={model.cards}
+                  figures={figures}
+                  cards={cards}
+                  photoFor={photoFor}
+                  onSeeFull={seeFullReport}
+                />
+              </SheetBlock>,
+            );
+      case 'scalp':
+        return model.scalpVisibility
           ? section(
               s.id,
-              <SheetBlock heading={model.focus.heading}>
-                <FocusBlockView focus={model.focus} photoFor={photoFor} />
+              <SheetBlock heading={model.scalpVisibility.heading} subheading={model.scalpVisibility.subheading}>
+                <ScalpVisibility block={model.scalpVisibility} figures={figures} />
               </SheetBlock>,
             )
           : null;
+      case 'symmetry':
+        return model.symmetry
+          ? section(
+              s.id,
+              <SheetBlock heading={model.symmetry.heading} subheading={model.symmetry.subheading}>
+                <SymmetryRows block={model.symmetry} figures={figures} />
+              </SheetBlock>,
+            )
+          : null;
+      /*
+        Two blocks, one section: this scan against the last one, and this
+        scan against the baseline. Each is drawn only where it has
+        something to say — an absent comparison is absent, not a heading
+        over an empty list.
+
+        Each block has its own line for a comparison with nothing to
+        report — `body` for the scan before this one, `baselineBody` for
+        the baseline — so a quiet comparison says so under its own
+        heading instead of falling silent because the other side had a
+        row. A block with neither a row nor a line is a comparison that
+        does not exist, and is not drawn at all.
+
+        Where the scan before this one IS the baseline, the model folds
+        the two into the first block and leaves the second empty: one
+        pair of scans, one comparison, said once.
+      */
+      case 'changed': {
+        const sinceLast =
+          model.changed.sinceLast.length > 0 || model.changed.body ? (
+            <SheetBlock heading={model.changed.heading} subheading={model.changed.subheading}>
+              <ChangeRows
+                rows={model.changed.sinceLast}
+                span={model.changed.span || undefined}
+                empty={model.changed.body || undefined}
+                locked={model.changed.locked}
+              />
+            </SheetBlock>
+          ) : null;
+        const sinceBaseline =
+          model.changed.sinceBaseline.length > 0 || model.changed.baselineBody ? (
+            <SheetBlock heading={model.changed.baselineHeading}>
+              <ChangeRows
+                rows={model.changed.sinceBaseline}
+                span={model.changed.baselineSpan || undefined}
+                empty={model.changed.baselineBody || undefined}
+                locked={model.changed.locked}
+              />
+            </SheetBlock>
+          ) : null;
+        return sinceLast === null && sinceBaseline === null
+          ? null
+          : section(
+              s.id,
+              <>
+                {sinceLast}
+                {sinceBaseline}
+              </>,
+            );
+      }
+      case 'watch':
+        return section(
+          s.id,
+          <SheetBlock heading={model.watch.heading} subheading={model.watch.subheading}>
+            <WatchList block={model.watch} />
+          </SheetBlock>,
+        );
+      case 'focus':
+        return model.goal
+          ? section(
+              s.id,
+              <SheetBlock heading={model.goal.heading}>
+                <FocusBlockView focus={model.goal} photoFor={photoFor} />
+              </SheetBlock>,
+            )
+          : null;
+      /*
+        How the frames came out, low on the sheet and folded away: the
+        light, focus and framing rows are what the report used to open
+        with, and they are a fact about the camera rather than a finding.
+      */
+      case 'quality':
+        return section(
+          s.id,
+          <SheetBlock heading={model.quality.heading} subheading={model.quality.subheading}>
+            <QualityDisclosure summary={model.quality.summary}>
+              {rows.length > 0 ? (
+                <AnalysisRows rows={rows} marks={model.quality.marks} photoFor={photoFor} onSeeFull={seeFullReport} />
+              ) : null}
+            </QualityDisclosure>
+          </SheetBlock>,
+        );
+      /*
+        Two blocks under one section. The tracking notes come first: they
+        are the only notes in the report that change what the next one
+        can say, since a comparison engine that refuses to report a
+        difference inside two scans' error bars is worth what the
+        conditions it was handed are worth. The care notes follow, and
+        are what they have always been.
+      */
       case 'tips':
         return section(
           s.id,
-          <SheetBlock heading={model.tips.heading} subheading={model.tips.subheading}>
-            <TipList items={model.tips.items} locked={model.tips.locked} />
-          </SheetBlock>,
+          <>
+            <SheetBlock heading={model.tips.trackingHeading} subheading={model.tips.trackingSubheading}>
+              <TipList items={model.tips.tracking} locked={model.tips.locked} />
+            </SheetBlock>
+            <SheetBlock heading={model.tips.heading} subheading={model.tips.subheading}>
+              <TipList items={model.tips.items} locked={model.tips.locked} />
+            </SheetBlock>
+          </>,
         );
       case 'hairstyles':
         return section(

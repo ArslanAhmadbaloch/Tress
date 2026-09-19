@@ -24,10 +24,22 @@ const DISC = 48;
 export function TipList({ items, locked }: { items: Tip[]; locked: boolean }) {
   const { colors, radius, spacing } = useTheme();
 
+  /*
+    A note that says when to see a doctor is never held back.
+
+    The lock exists to keep the depth of a reading behind the
+    subscription, and a line telling somebody that a sore or flaking
+    scalp belongs with a GP is not depth — it is the one thing in here
+    that could matter to their health, and charging for it would be
+    indefensible. `safety` marks those notes at the source, in tips.ts,
+    so the rule travels with the note rather than living in a component
+    that might be copied without it.
+  */
+
   return (
     <View style={{ gap: spacing.xl }}>
       {items.map((tip, i) => {
-        const held = locked && i > 0;
+        const held = locked && i > 0 && tip.safety !== true;
         return (
           <View
             key={tip.id}

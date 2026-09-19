@@ -20,6 +20,23 @@
  * Numbers are only ever printed where they were counted. A card with
  * nothing measured says what was captured and what a second scan gives
  * it to compare — never a figure that was not computed.
+ *
+ * ── No debugging text, anywhere ───────────────────────────────────────
+ * The report used to explain itself in the words of its own
+ * implementation: "the hair-area reading needs the on-device segmenter,
+ * which did not run on these frames". Nobody outside this repository
+ * knows what a segmenter is, and somebody who has just photographed
+ * their own head is not asking about one. Those sentences are gone from
+ * both vocabularies below, and a test keeps them gone — "segmenter",
+ * "the mask marked", "did not run". What is left in their place says
+ * what happened in plain words: no hair-area figure was read, so none is
+ * printed.
+ *
+ * ── The name of the figure ────────────────────────────────────────────
+ * The score is `Visual Coverage` and it has no other name. Nothing here
+ * may word it as hair density, a hair count, a follicle count or a shaft
+ * measurement; features/hair-scan/grade.ts says why, and the honesty
+ * sweeps fail this file the day a sentence does.
  */
 
 import { ANGLE_LABELS, type Angle } from '@/types/domain';
@@ -137,12 +154,12 @@ export const HAIR_SCAN_REPORT_COPY = Object.freeze({
     measured: (upper: number) =>
       `Hair covers ${upper}% of the upper frame in the front image.`,
     measuredDetail: (upper: number) =>
-      `The on-device mask marked ${upper}% of the top third of the front image as hair and ${100 - upper}% as not hair — forehead, background and anything it was less than half sure of. That is area in the picture, not how close the strands sit.`,
+      `${upper}% of the top third of the front image read as hair on this device and ${100 - upper}% as not hair — forehead, background and anything the reading was less than half sure of. That is area in the picture, not how close the strands sit.`,
     edge:
-      'Where the image is shown with its overlay, the pale line is the top edge of the marked area, drawn where the mask held for a short run in each column. It is a line on the picture, not a line on the head.',
+      'Where the image is shown with its overlay, the pale line is the top edge of the area that read as hair, drawn where the reading held for a short run in each column. It is a line on the picture, not a line on the head.',
     kept: (light: string, focus: string) => `A front image was kept: ${light}, ${focus}.`,
     keptDetail:
-      'Light and focus were measured on this device. The hair-area reading needs the on-device segmenter, which did not run on this image, so there is no area figure here and none was invented.',
+      'Light and focus were measured on this device. No hair-area figure was read from this image, so none is printed here and none was invented.',
     keptBare: 'A front image was kept.',
     keptBareDetail:
       'Nothing was measured on it beyond keeping it. The next scan measures light, focus and, in the full app, hair area on its own front image and lays the two side by side.',
@@ -176,7 +193,7 @@ export const HAIR_SCAN_REPORT_COPY = Object.freeze({
       'One side is one picture, and a picture on its own cannot be balanced against anything. The other side comes from the next scan, turned the same amount.',
     keptUnmeasured: 'Both side images were kept.',
     keptDetail:
-      'Light and focus were measured on this device. The hair-area reading needs the on-device segmenter, which did not run on these images, so there is no left–right figure here and none was invented.',
+      'Light and focus were measured on this device. No hair-area figure was read from these images, so there is no left–right figure here and none was invented.',
     none: 'No side images were kept from this scan.',
     noneDetail:
       'The turn did not hold either side long enough to keep a frame. Turning a little further, and pausing at each side, gives the next scan both.',
@@ -191,12 +208,12 @@ export const HAIR_SCAN_REPORT_COPY = Object.freeze({
     measured: (mean: number, n: number) =>
       `Hair covers ${mean}% of the frame across the ${n} measured ${plural(n, 'image', 'images')}.`,
     perImage: (parts: string) =>
-      `${parts}. Each figure is the share of that image the mask marked as hair — area in the picture, which moves with framing, styling and light, and is not thickness.`,
+      `${parts}. Each figure is the share of that image that read as hair — area in the picture, which moves with framing, styling and light, and is not thickness.`,
     figure: (angle: Angle, fraction: number) => `${ANGLE_LABELS[angle] ?? String(angle)} ${fraction}%`,
     unmeasured: (n: number) =>
       `No hair-area reading on ${n === 1 ? 'this image' : `these ${n} images`}.`,
     unmeasuredDetail: (n: number) =>
-      `The hair-area reading needs the on-device segmenter, which did not run on this scan. Light and focus were measured on ${n} ${plural(n, 'image', 'images')}; nothing was invented to fill the gap.`,
+      `No hair-area figure was read from this scan. Light and focus were measured on ${n} ${plural(n, 'image', 'images')}; nothing was invented to fill the gap.`,
     bare: 'Nothing was measured on the kept images.',
     bareDetail:
       'They were saved as photographs and nothing else was read from them. The next scan measures its own, and the two scans sit side by side.',
@@ -212,11 +229,11 @@ export const HAIR_SCAN_REPORT_COPY = Object.freeze({
     measured: (angle: Angle, rest: number) =>
       `In the ${angleWord(angle)} image, ${rest}% of the frame was not counted as hair.`,
     measuredDetail:
-      'That is everything outside the marked area — scalp where a parting shows, and also background, skin and anything the mask was less than half sure about. It is the mask’s remainder, not a scalp measurement, and it moves with how the phone was held.',
+      'That is everything the reading did not count as hair — scalp where a parting shows, and also background, skin and anything it was less than half sure about. It is the remainder of a frame reading, not a scalp measurement, and it moves with how the phone was held.',
     kept: (angle: Angle, light: string, focus: string) =>
       `A ${angleWord(angle)} image was kept: ${light}, ${focus}.`,
     keptDetail:
-      'Light and focus were measured on this device. The hair-area reading needs the on-device segmenter, which did not run on this image, so nothing here says how much of the frame was hair.',
+      'Light and focus were measured on this device. No hair-area figure was read from this image, so nothing here says how much of the frame was hair.',
     keptBare: (angle: Angle) => `A ${angleWord(angle)} image was kept.`,
     keptBareDetail:
       'Nothing was measured on it beyond keeping it. The next scan measures its own and lays the two side by side.',
@@ -307,17 +324,26 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
     hairline: 'Hairline',
     temples: 'Temples',
     crown: 'Crown',
+    midScalp: 'Mid-scalp',
+    partLine: 'Part line',
     light: 'Light',
   },
 
   sections: {
+    assessment: 'Your hair assessment',
+    cards: 'Detailed analysis',
+    scalp: 'Scalp visibility',
+    symmetry: 'Symmetry',
+    changed: 'What changed',
+    watch: 'Areas to watch',
+    focus: 'Your goal',
+    quality: 'Scan quality',
+    says: 'Tress says',
+    tips: 'Care & tracking',
+    routine: 'Routine',
     analysis: 'Analysis',
     strengths: 'What’s working',
     profile: 'Your profile',
-    focus: 'Your focus',
-    tips: 'Care notes',
-    routine: 'Routine',
-    says: 'Tress says',
   },
 
   regions: {
@@ -325,31 +351,203 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
     temples: 'Temples',
     leftTemple: 'Left temple',
     rightTemple: 'Right temple',
+    midScalp: 'Mid-scalp',
     crown: 'Crown',
+    partLine: 'Part line',
     top: 'Top',
     light: 'Light and framing',
   },
 
+  /**
+   * The regions in the possessive, for a sentence that names one: "your
+   * crown shows more visible scalp than your hairline". Lower case, so
+   * the same word works mid-sentence wherever it lands.
+   */
+  regionWords: {
+    hairline: 'hairline',
+    leftTemple: 'left temple',
+    rightTemple: 'right temple',
+    midScalp: 'mid-scalp',
+    crown: 'crown',
+    partLine: 'part line',
+  },
+
   analysis: {
-    heading: 'Hair analysis',
-    subheading: 'What this device read in the frames it kept. A reading of the pictures, never of you.',
+    heading: 'Scan quality',
+    subheading: 'How the frames themselves came out: what was kept, how it was lit and how sharp it was.',
+  },
+
+  /* ------------------------ the hair assessment ------------------------- */
+
+  /**
+   * The head of the report: one figure for the scan, and the map of the
+   * regions it came from.
+   *
+   * `Visual Coverage` is the only name this figure has anywhere in the
+   * product. What it is, and the four things it is not, are written out
+   * in features/hair-scan/grade.ts; the rule that follows from them is
+   * that no sentence here may word the figure as hair density, a hair
+   * count, a follicle count or a shaft measurement, and the honesty
+   * sweeps fail the file the day one does.
+   */
+  assessment: {
+    heading: 'Your hair assessment',
+    subheading:
+      'What this device read in the frames your scan kept, region by region. Every figure is a reading of observable hair and scalp in an image.',
+    scoreLabel: 'Visual Coverage',
+    scoreScale: 'out of 100',
+    /** The unit on a difference between two figures out of a hundred. */
+    pointsLabel: 'points',
+    scoreNote:
+      'Visual coverage is the share of a region that read as hair rather than as anything else. It is a reading of an image — not a count of hairs, and not a measurement of the hair itself.',
+    confidenceLabel: 'Confidence',
+    confidence: (band: string, percent: number) => `${String(band)} confidence · ${String(percent)}%`,
+    bands: { high: 'High', moderate: 'Moderate', low: 'Low' },
+    overall: (score: number, regions: number) =>
+      `Visual coverage across this scan reads ${String(score)} out of 100, averaged over the ${count(regions, 'region', 'regions')} it could read and weighted by how sure it was of each.`,
+    mapHeading: 'Coverage map',
+    mapSubheading:
+      'Every region the scan looks for, front to back. A region it could not read carries no figure rather than a low one.',
+    unread: 'Not read',
+    unreadNote: (n: number) =>
+      `${count(n, 'region', 'regions')} could not be read well enough to carry a figure, and ${Number(n) === 1 ? 'it is' : 'they are'} left blank rather than filled in.`,
+    unavailableTitle: 'Hair analysis unavailable',
+    unavailableBody:
+      'We could not reliably analyse this scan, so there is no assessment here and nothing was estimated to stand in for one. A second scan in steady light, held still for a beat at each step, is what gives the reading something to work from.',
+    unavailableCta: 'Scan again',
+  },
+
+  /* -------------------------- the region cards -------------------------- */
+
+  /**
+   * One card per region the scan could read. The observation on it is
+   * built out of two figures the model already holds — this region's and
+   * another region's — so every clause in it can be pointed at a number.
+   */
+  cards: {
+    heading: 'Detailed analysis',
+    subheading: 'Each region the scan read, the figure it read there, and how sure it was of it.',
+    coverageLabel: 'Visual coverage',
+    scalpLabel: 'Visible scalp',
+    differenceLabel: 'Side difference',
+    changeLabel: 'Change',
+    reading: (score: number, scalp: number) =>
+      `Visual coverage reads ${String(score)} out of 100 here, and ${String(scalp)} of every 100 samples read as scalp rather than hair.`,
+    readingNoScalp: (score: number) => `Visual coverage reads ${String(score)} out of 100 here.`,
+    contrastAbove: (other: string, points: number) =>
+      `That is ${count(points, 'point', 'points')} of visual coverage above your ${String(other)} in this same scan.`,
+    contrastBelow: (other: string, points: number) =>
+      `That is ${count(points, 'point', 'points')} of visual coverage below your ${String(other)} in this same scan.`,
+    scalpMore: (other: string, points: number) =>
+      `This region shows greater visible scalp than your ${String(other)} in the same scan, by ${count(points, 'point', 'points')}.`,
+    lowConfidence:
+      'The frames of this region disagreed with each other enough that the figure is worth little on its own. A steadier second scan is what settles it.',
+  },
+
+  /* ------------------------- the scalp visibility ----------------------- */
+
+  scalp: {
+    heading: 'Scalp visibility',
+    subheading:
+      'How much of each region read as scalp rather than hair. Counted in its own right, not worked out from the coverage figure.',
+    label: 'Visible scalp',
+    most: (region: string, points: number) =>
+      `Your ${String(region)} shows the most visible scalp in this scan: ${String(points)} of every 100 samples read there.`,
+    even: 'No one region stands out from the others for visible scalp in this scan.',
+    note: 'Visible scalp moves with parting, styling and how the phone was held, so it is read between scans rather than judged from one.',
+  },
+
+  /* ---------------------------- the symmetry ---------------------------- */
+
+  symmetry: {
+    heading: 'Symmetry',
+    subheading: 'Your two temples, set side by side in the same scan.',
+    label: 'Difference',
+    balanced: (points: number) =>
+      `The two temples read within ${count(points, 'point', 'points')} of each other, which is as even as this scan can tell them apart.`,
+    apart: (side: string, points: number) =>
+      `Your ${String(side)} temple reads ${count(points, 'point', 'points')} of visual coverage above the other side in this scan.`,
+    note: 'Two sides photographed at two turns are never quite mirror images; matching the turn next time is what makes the pair comparable.',
+  },
+
+  /* ----------------------------- what changed --------------------------- */
+
+  /**
+   * Nothing in this block decides anything. Every verdict comes from
+   * `compareScans`, which reports a difference only when it is larger
+   * than the two scans' own disagreement with themselves — so the words
+   * here describe a verdict rather than making one.
+   */
+  changed: {
+    heading: 'What changed',
+    baselineHeading: 'Baseline comparison',
+    subheading:
+      'A difference is reported only where it is larger than the two scans’ own margin of error. Anything smaller is the phone, the light or the turn, and is not counted.',
+    firstScan:
+      'This is the first scan on this device with a reading behind it, so there is nothing yet to set it beside. The next one is read against this.',
+    none: 'Nothing in this scan differs from the last one by more than the two scans’ own margin of error.',
+    noneBaseline: 'Nothing differs from your baseline scan by more than the two scans’ own margin of error.',
+    span: (date: string, days: number) =>
+      `Set against your last scan with a reading, taken on ${String(date)}, ${count(days, 'day', 'days')} earlier.`,
+    spanUndated: 'Set against your last scan with a reading.',
+    /*
+      The second scan, where the scan before this one is also the
+      baseline. The comparison is stated once, here, rather than drawn
+      twice under two headings — and under two words for it, since one
+      side would be the verdict the engine stored at the time and the
+      other a comparison made just now off the same two readings.
+    */
+    spanBoth: (date: string, days: number) =>
+      `Set against your last scan with a reading, taken on ${String(date)}, ${count(days, 'day', 'days')} earlier. That scan is also your baseline, so this is the only comparison there is to make.`,
+    spanBaseline: (date: string) => `Set against your baseline scan, taken on ${String(date)}.`,
+    unchanged: 'No difference clear of the two scans’ own margin of error.',
+    insufficient: 'Not read well enough in both scans to be compared, so no difference is reported.',
+    higher: (points: number, verdict: string) =>
+      `${count(points, 'point', 'points')} of visual coverage higher — a ${String(verdict)} difference against the two scans’ margin of error.`,
+    lower: (points: number, verdict: string) =>
+      `${count(points, 'point', 'points')} of visual coverage lower — a ${String(verdict)} difference against the two scans’ margin of error.`,
+    verdicts: { small: 'small', moderate: 'moderate', large: 'large' },
+  },
+
+  /* --------------------------- the areas to watch ----------------------- */
+
+  watch: {
+    heading: 'Areas to watch',
+    subheading:
+      'Drawn from the figures above and from nothing else. Not a finding about your hair — a note on where the next scan is worth aiming.',
+    scalp: (points: number) =>
+      `The most visible scalp in this scan: ${String(points)} of every 100 samples read there.`,
+    asymmetry: (points: number) =>
+      `Reads ${count(points, 'point', 'points')} of visual coverage below the other side in this scan.`,
+    changed: 'The comparison reported a difference here clear of the two scans’ margin of error.',
+    none: 'Nothing in this scan stands out for a second look. The next scan is read against these figures.',
+  },
+
+  /* ---------------------------- the scan quality ------------------------ */
+
+  quality: {
+    heading: 'Scan quality',
+    subheading: 'How the frames themselves came out: what was kept, how it was lit and how sharp it was.',
+    summary: (frames: number, regions: number) =>
+      `${count(frames, 'frame', 'frames')} kept, covering ${count(regions, 'region', 'regions')} of the head.`,
+    summaryNone: 'No frames were kept from this turn.',
   },
 
   hairline: {
     measured: (upper: number) => `Hair covers ${upper}% of the upper third of the front frame.`,
     measuredBody: (upper: number) =>
-      `The on-device mask marked ${upper}% of the top third of the front frame as hair and ${100 - Number(upper)}% as not hair — forehead, background and anything it was less than half sure of. Area in a picture moves with framing and styling; the next scan at the same distance is what makes two figures comparable.`,
+      `${upper}% of the top third of the front frame read as hair and ${100 - Number(upper)}% as not hair — forehead, background and anything the reading was less than half sure of. Area in a picture moves with framing and styling; the next scan at the same distance is what makes two figures comparable.`,
     balanceEven: 'In the front frame the hair area sits about evenly either side of centre.',
     balanceSide: (side: string, points: number) =>
       `In the front frame the hair area sits ${points} points more to the ${side} of centre than the other side.`,
     kept: (light: string, focus: string) => `A front frame was kept: ${light}, ${focus}.`,
     keptBody:
-      'Light and focus were read on this device. The hair-area reading needs the on-device segmenter, which did not run on this frame, so no area figure is printed here. The next scan reads its own front frame and lays the two side by side.',
+      'Light and focus were read on this device. No hair-area figure was read from this frame, so none is printed here. The next scan reads its own front frame and lays the two side by side.',
     keptEmptyBody:
-      'Light and focus were read on this device. The segmenter ran on this frame and marked too little as hair to print a figure from — a frame that was mostly background, or a mask that did not settle — so no area figure is printed here. The next scan reads its own front frame and lays the two side by side.',
+      'Light and focus were read on this device. Too little of this frame read as hair to print a figure from — a frame that was mostly background, or a reading that did not settle — so none is printed here. The next scan reads its own front frame and lays the two side by side.',
     bare: 'A front frame was kept.',
     bareBody:
-      'Nothing was read from it beyond keeping it. The next scan reads light, focus and, where the segmenter runs, hair area on its own front frame, and lays the two side by side.',
+      'Nothing was read from it beyond keeping it. The next scan reads light, focus and, where it can, hair area on its own front frame, and lays the two side by side.',
     none: 'No front frame was kept from this turn.',
     noneBody:
       'The turn did not hold a face-on frame long enough to keep one. Facing the camera for a moment at the start of the next scan gives it one.',
@@ -370,9 +568,9 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
     kept: 'Both side frames were kept.',
     keptBody: (left: string, right: string) => `Left side ${left}; right side ${right}.`,
     keptRest:
-      'The hair-area reading needs the on-device segmenter, which did not run on these frames, so there is no left–right figure here. The next scan puts each side beside the same side from this one.',
+      'No hair-area figure was read from these frames, so there is no left–right figure here. The next scan puts each side beside the same side from this one.',
     keptRestEmpty:
-      'The segmenter ran but marked too little as hair on at least one side to print a figure from, so there is no left–right figure here. The next scan puts each side beside the same side from this one.',
+      'Too little read as hair on at least one side to print a figure from, so there is no left–right figure here. The next scan puts each side beside the same side from this one.',
     bareBody:
       'Nothing was read from them beyond keeping them. The next scan puts each side beside the same side from this one.',
     none: 'No side frames were kept from this turn.',
@@ -383,12 +581,12 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
   crown: {
     measured: (frame: string, rest: number) => `In the ${frame} frame, ${rest}% of the frame was not counted as hair.`,
     measuredBody:
-      'That is everything outside the marked area — scalp where a parting shows, and also background, skin and anything the mask was less than half sure about. It is the mask’s remainder, not a scalp measurement, and it moves with how the phone was held.',
+      'That is everything that did not read as hair — scalp where a parting shows, and also background, skin and anything the reading was less than half sure about. It is the remainder of a frame reading, not a scalp measurement, and it moves with how the phone was held.',
     kept: (frame: string, light: string, focus: string) => `A ${frame} frame was kept: ${light}, ${focus}.`,
     keptBody:
-      'Light and focus were read on this device. The hair-area reading needs the on-device segmenter, which did not run on this frame, so nothing here says how much of the frame was hair. The next scan’s top frame sits beside this one at the same tilt.',
+      'Light and focus were read on this device. No hair-area figure was read from this frame, so nothing here says how much of the frame was hair. The next scan’s top frame sits beside this one at the same tilt.',
     keptEmptyBody:
-      'Light and focus were read on this device. The segmenter ran on this frame and marked too little as hair to print a figure from — a frame that was mostly background, or a mask that did not settle — so nothing here says how much of the frame was hair. The next scan’s top frame sits beside this one at the same tilt.',
+      'Light and focus were read on this device. Too little of this frame read as hair to print a figure from — a frame that was mostly background, or a reading that did not settle — so nothing here says how much of the frame was hair. The next scan’s top frame sits beside this one at the same tilt.',
     bare: (frame: string) => `A ${frame} frame was kept.`,
     bareBody: 'Nothing was read from it beyond keeping it. The next scan reads its own and lays the two side by side.',
     none: 'No top frame was kept from this turn.',
@@ -471,7 +669,21 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
   },
 
   focus: {
-    heading: 'Your focus',
+    heading: 'Your goal',
+    /**
+     * The goal block's own reading line. The block used to say only
+     * whether the turn REACHED the region somebody said they watch; now
+     * that the scan measures that region, the block says what it read
+     * there as well — the same figure the card and the map carry, never
+     * a second opinion about it.
+     */
+    readingHeading: 'What the scan read there',
+    reading: (region: string, score: number) =>
+      `In this scan your ${String(region)} reads ${String(score)} out of 100 for visual coverage.`,
+    readingScalp: (region: string, points: number) =>
+      `In this scan ${String(points)} of every 100 samples read in your ${String(region)} came back as scalp rather than hair.`,
+    readingUnread: (region: string) =>
+      `This scan could not read your ${String(region)} well enough to put a figure on it. Nothing was estimated in its place.`,
     captured: 'Focus area captured',
     partly: 'Focus area partly captured',
     missed: 'Focus area not captured',
@@ -493,8 +705,21 @@ export const HAIR_SCAN_REPORT_MODEL_COPY = Object.freeze({
       'Whether a routine is working is read from the record over months — ticks, notes and scans side by side — not from one scan.',
   },
 
+  /**
+   * The notes under the findings: how to make a run of scans comparable
+   * first, then general care practice.
+   *
+   * The tracking notes lead because they are the only ones that change
+   * what the next report can say — an engine that refuses to report a
+   * difference inside two scans' error bars is worth what the conditions
+   * it was handed are worth. The care notes follow, and say what they
+   * have always said: habits, no treatment, and nothing about this scan.
+   */
   tips: {
-    heading: 'Care notes',
+    heading: 'Care & tracking',
+    trackingHeading: 'Making your scans comparable',
+    trackingSubheading:
+      'What keeps one scan readable against the next. None of it is about what this scan found; all of it is about what the next one can be set beside.',
     subheading: 'General care practice, the kind a good hairdresser mentions. None of it is a treatment, and none of it is about your scan.',
   },
 
