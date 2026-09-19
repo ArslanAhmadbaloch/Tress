@@ -140,7 +140,7 @@ async function runModel(model: TensorflowModel, input: Float32Array): Promise<Fl
 function inputSide(model: TensorflowModel): number {
   // [batch, height, width, channels]
   const shape = model.inputs[0]?.shape ?? [];
-  return shape.length >= 3 ? shape[1] : 512;
+  return shape.length >= 3 ? shape[1] : 224;
 }
 
 /**
@@ -153,17 +153,17 @@ function inputSide(model: TensorflowModel): number {
  */
 function inputChannels(model: TensorflowModel): number {
   const shape = model.inputs[0]?.shape ?? [];
-  return shape.length >= 4 ? shape[3] : 4;
+  return shape.length >= 4 ? shape[3] : 3;
 }
 
 /**
- * Decodes a photo to the model's input tensor: RGBA, 0–1, square.
+ * Decodes a photo to the model's input tensor: RGB, 0–1, square.
  *
- * The fourth channel is not padding and not alpha. MediaPipe's hair
- * segmenter is a video model: its fourth input plane is the mask it
- * produced for the previous frame, which is how it stays steady from one
- * frame to the next. A still photograph has no previous frame, so the
- * plane is zeroed — the documented way to run it on a single image.
+ * The bundled model wants three channels and gets exactly three. The
+ * count comes from the model, not from here, so a swap cannot silently
+ * change what the interpreter is fed — and a fourth plane, where a video
+ * model wants the previous frame's mask, is zeroed, because neither road
+ * in this app keeps one.
  *
  * It has to be there at all because the interpreter checks the byte
  * count and nothing else. An earlier version of this function wrote only
@@ -279,14 +279,15 @@ export type RawFrame = {
  * React updates run on. The mask it produces is a wireframe's shape, not
  * a figure; smoothness there buys nothing anybody can see.
  *
- * ── The fourth channel ────────────────────────────────────────────────
- * Same as the still road, and for the same documented reason: this is a
- * video model whose fourth input plane is the mask it produced for the
- * previous frame, and every plane beyond RGB is left at zero because
- * nothing here keeps a previous one. The length still has to match the
- * tensor exactly — see the long note on `inputTensor` for what happens
- * when it does not, which is not an error but a reading of whatever was
- * left in the interpreter's memory.
+ * ── Channels beyond RGB ───────────────────────────────────────────────
+ * The bundled model takes three, so the loop below fills it exactly. The
+ * count is still read from the model rather than written here, and any
+ * plane past the third is left at zero: a video model's fourth plane is
+ * the mask it made for the previous frame, and nothing on this road keeps
+ * one. The length has to match the tensor exactly whatever the count —
+ * see the long note on `inputTensor` for what happens when it does not,
+ * which is not an error but a reading of whatever was left in the
+ * interpreter's memory.
  */
 function resampleTensor(
   frame: RawFrame,

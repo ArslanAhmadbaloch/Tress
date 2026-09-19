@@ -814,3 +814,47 @@ function noisyMask(size = 512): MaskImage {
   }
   return { width: size, height: size, data };
 }
+
+test('hairChannel: one output plane is a logit plane, and is squashed before it is read', () => {
+  /*
+    The bundled model — thangtran480's `model_hairnet.tflite` — emits
+    [1,224,224,1] of RAW LOGITS: its last operator is a bias add and there
+    is no logistic in the graph. Read the plane as though it were already
+    a probability and every pixel with a positive logit is certain hair,
+    which at a 0.5 threshold is most of a photograph, walls included.
+  */
+  const side = 2;
+  // −2 and 0 are below the threshold once squashed; +2 is above it.
+  const output = Float32Array.from([-2, 0, 2, 10]);
+  const mask = hairChannel(output, side, 1);
+  assert.equal(mask.width, side);
+  assert.equal(mask.height, side);
+  const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+  for (let i = 0; i < output.length; i += 1) {
+    assert.ok(
+      Math.abs(mask.data[i] - sigmoid(output[i])) < 1e-6,
+      `plane ${i} read ${mask.data[i]}, not the logistic of ${output[i]}`,
+    );
+  }
+  // And the thing the squash exists to protect: a negative logit is not hair.
+  assert.ok(mask.data[0] < 0.5, 'a negative logit read as hair');
+  assert.ok(mask.data[2] > 0.5, 'a positive logit did not read as hair');
+});
+
+test('hairChannel: several planes are per-class scores, taken by index and not squashed', () => {
+  // The other shape a segmenter can have: one score per class per pixel,
+  // already normalised, hair at index 1. Squashing these would compress a
+  // clean 0–1 plane into 0.5–0.73 and the threshold would stop meaning
+  // anything — so the two shapes must not share a path.
+  const side = 2;
+  const classes = 3;
+  const px = (bg: number, hair: number, other: number) => [bg, hair, other];
+  const output = Float32Array.from([
+    ...px(0.9, 0.05, 0.05),
+    ...px(0.1, 0.8, 0.1),
+    ...px(0.2, 0.7, 0.1),
+    ...px(0.6, 0.3, 0.1),
+  ]);
+  const mask = hairChannel(output, side, classes);
+  assert.deepEqual(Array.from(mask.data), [0.05, 0.8, 0.7, 0.3].map((v) => Math.fround(v)));
+});

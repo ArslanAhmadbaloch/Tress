@@ -108,8 +108,36 @@ export function coverageOf(mask: MaskImage): Coverage {
   };
 }
 
-/** Index of the hair class in the segmenter's output. 0 is background. */
+/** Index of the hair class when the segmenter emits one score per class. */
 const HAIR_CLASS = 1;
+
+/**
+ * How to read the bundled model's output.
+ *
+ * `assets/models/hair_segmenter.tflite` is thangtran480/hair-segmentation's
+ * `model_hairnet.tflite`: in [1,224,224,3], out [1,224,224,1], MIT, and —
+ * the reason it is there at all — built from stock TFLite ops. The
+ * MediaPipe model it replaced needed `Convolution2DTransposeBias`,
+ * `MaxPoolingWithArgmax2D` and `MaxUnpooling2D`, which the runtime in this
+ * app does not have, so it failed to allocate its tensors on every phone
+ * and every scan came back with no mask at all.
+ *
+ * Its single output plane is RAW LOGITS, not probabilities. The graph's
+ * last operator is a bias add and there is no logistic anywhere in it —
+ * read out of the file's own operator table, not assumed. Skip the
+ * sigmoid and every pixel with a positive logit reads as certain hair,
+ * which at a 0.5 threshold is most of the picture, including the wall.
+ *
+ * A model whose last layer IS a sigmoid must set this to 'probability',
+ * because squashing an 0–1 plane again compresses it into 0.5–0.73 and
+ * the threshold stops meaning anything.
+ */
+const HAIR_OUTPUT: 'logit' | 'probability' = 'logit';
+
+/** The logistic function: a logit to the 0–1 probability the threshold wants. */
+function probabilityOf(logit: number): number {
+  return 1 / (1 + Math.exp(-logit));
+}
 
 /**
  * Pulls the hair channel out of the model's output.
@@ -125,6 +153,14 @@ export function hairChannel(
   classes: number,
 ): MaskImage {
   const data = new Float32Array(side * side);
+  if (classes === 1) {
+    /* One plane: the model scores hair directly rather than scoring every
+       class and letting the caller pick. */
+    for (let p = 0; p < data.length; p += 1) {
+      data[p] = HAIR_OUTPUT === 'logit' ? probabilityOf(output[p]) : output[p];
+    }
+    return { width: side, height: side, data };
+  }
   for (let p = 0; p < data.length; p += 1) {
     data[p] = output[p * classes + HAIR_CLASS];
   }
