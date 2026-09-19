@@ -2358,6 +2358,16 @@ export function snapshotMesh(face: TrackedFace, view: ViewSize, fit?: CapFit): F
       height: face.height / view.height,
     },
     contours,
+    /* Already fractions on the tracked face — see `TrackedFace.eyes` for
+       why they do not travel in points like `cx` does. */
+    ...(face.eyes === undefined
+      ? {}
+      : {
+          eyes: {
+            left: { x: face.eyes.left[0], y: face.eyes.left[1] },
+            right: { x: face.eyes.right[0], y: face.eyes.right[1] },
+          },
+        }),
     viewAspect: view.width / view.height,
     ...(pose === null ? {} : { pose }),
     ...(fit === undefined ? {} : { fit }),
@@ -2405,6 +2415,11 @@ export function meshInBox(mesh: FrameMesh, still: Size, box: Size): MeshFace {
     width: mesh.bounds.width * view.width * stretch,
     height: mesh.bounds.height * view.height * stretch,
     contours,
+    /* Through the same map as every contour point, so an eye lands where
+       the mesh around it lands. */
+    ...(mesh.eyes === undefined
+      ? {}
+      : { eyes: { left: map(mesh.eyes.left.x, mesh.eyes.left.y), right: map(mesh.eyes.right.x, mesh.eyes.right.y) } }),
     // Angles are the head's, not the box's: they pass through untouched.
     ...(mesh.pose === undefined ? {} : { pose: mesh.pose }),
     // And so does the fit: it scales the cap about its own centre, in

@@ -351,7 +351,16 @@ export function faceObservationFor(
   /** Still points into fractions of the still. */
   const frac = (p: { x: number; y: number }) => ({ x: p.x / still.width, y: p.y / still.height });
 
-  const eyes = eyeCorners(face.contours);
+  /*
+    Contour eyes when the detector drew them, and the anchor's own eye
+    joints when it did not. ARKit is the second case: it reports no
+    contours at all, so without this the frame falls back to the box —
+    and ARKit's box stops at the upper forehead while the region boxes
+    are drawn in half widths from the BROW, which puts every region about
+    a forehead from the place it is named. That is a report of zeros over
+    a head full of hair, which is what it was.
+  */
+  const eyes = eyeCorners(face.contours) ?? face.eyes ?? null;
   const brow = browPoint(face.contours);
   const chin = chinPoint(face.contours);
 

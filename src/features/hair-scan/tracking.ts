@@ -110,6 +110,13 @@ export type RawFace = {
   /** Absent on a build whose detector runs without contours. */
   contours?: Contours;
   /**
+   * The eyes as joints, in VIEW FRACTIONS, for a detector that reports
+   * them that way. ARKit does — they are real transforms on the face
+   * anchor — and it reports no contours at all, so without these its
+   * face frame has nothing to anchor on but the box.
+   */
+  eyes?: { left: [number, number]; right: [number, number] };
+  /**
    * Which detector this came from. Absent is read as `mlkit`: the
    * cautious answer, since it is the one the filter smooths hardest.
    */
@@ -122,6 +129,16 @@ export type RawFace = {
 
 /** The face as the scan sees it: smoothed, held, and judged for stillness. */
 export type TrackedFace = {
+  /**
+   * The eyes, in VIEW FRACTIONS, when the detector gave them as joints
+   * rather than as contours. ARKit does; ML Kit reports eye contours
+   * instead, and those travel in `contours` with everything else.
+   *
+   * Fractions, not the points `cx` and `contours` use, because the only
+   * consumer is `FrameMesh`, which is in fractions — converting twice is
+   * how a coordinate ends up in neither space.
+   */
+  eyes?: { left: [number, number]; right: [number, number] };
   cx: number;
   cy: number;
   width: number;
@@ -409,6 +426,7 @@ export function trackFrame(
       emptyFrames: 0,
       samples,
       face: {
+        ...(raw.eyes === undefined ? {} : { eyes: raw.eyes }),
         cx: raw.cx,
         cy: raw.cy,
         width: raw.width,
@@ -467,6 +485,13 @@ export function trackFrame(
     emptyFrames: 0,
     samples,
     face: {
+      /* Taken fresh each frame rather than smoothed. They are joints, not
+         a reading off a picture, and the frame they ride on is already
+         the smoothed one — a lag here would put the eyes behind the box
+         they are measured against. A frame that arrives without them
+         keeps the last pair, so a dropped eye reading does not throw the
+         face frame back onto the box for one frame and out again. */
+      ...(raw.eyes === undefined ? (prev.eyes === undefined ? {} : { eyes: prev.eyes }) : { eyes: raw.eyes }),
       cx,
       cy,
       width,

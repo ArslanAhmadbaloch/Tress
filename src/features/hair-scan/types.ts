@@ -323,6 +323,16 @@ export type FrameMesh = {
   bounds: { x: number; y: number; width: number; height: number };
   contours: Contours;
   /**
+   * The eyes in preview fractions, for a detector that reports them as
+   * joints rather than contours. ARKit does, and reports no contours at
+   * all — so on an iPhone this is the only thing that lets the
+   * measurement engine anchor its face frame on an eye span instead of
+   * falling back to the detector's box, which stops at the upper
+   * forehead and puts every region about a forehead from where it is
+   * named. See `faceObservationFor`.
+   */
+  eyes?: { left: { x: number; y: number }; right: { x: number; y: number } };
+  /**
    * The preview's width over its height. The still is the whole camera
    * frame and the preview showed an aspect-fill crop of it; this is
    * what undoes the crop so the mesh lands on the face in the still.
@@ -370,6 +380,8 @@ export type MeshFace = {
   width: number;
   height: number;
   contours: Contours;
+  /** The eyes, mapped into the same box as everything else here. */
+  eyes?: { left: { x: number; y: number }; right: { x: number; y: number } };
   /** The head's angles at the shutter, carried through from the frame's mesh. Absent: square on. */
   pose?: MeshPose;
   /**

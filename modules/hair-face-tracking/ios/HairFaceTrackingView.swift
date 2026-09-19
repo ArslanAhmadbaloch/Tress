@@ -508,7 +508,36 @@ public final class HairFaceTrackingView: ExpoView, ARSCNViewDelegate {
       maxY = y
     }
 
-    let payload: [String: Any] = [
+    /*
+      The eyes, projected the same way every other point is.
+
+      ARKit gives them exactly — `leftEyeTransform` and `rightEyeTransform`
+      are real joints in the anchor, not landmarks inferred from a
+      picture — and the measurement engine needs them badly. Its face
+      frame is built from an eye span when it has one and falls back to
+      the DETECTOR'S BOX when it does not, and ARKit's box runs from the
+      upper forehead to the chin while the region boxes are drawn in half
+      widths from the BROW. Anchored on the box, every region sits about a
+      forehead away from the place it is named, and the report reads zero
+      for regions that are full of hair.
+
+      Named for the side of the PERSON, as ARKit names them; which side of
+      the picture that is belongs to `handedness.ts`, and `result.ts`
+      takes the two as image extremes rather than trusting these names.
+    */
+    let eyePoint: (simd_float4x4) -> [Double]? = { eyeTransform in
+      let world = simd_mul(anchor.transform, eyeTransform)
+      let c = world.columns.3
+      let projected = camera.projectPoint(
+        SIMD3<Float>(c.x, c.y, c.z), orientation: orientation, viewportSize: size)
+      let x = HairFaceTrackingView.screenX(projected.x, width: size.width)
+      let y = Double(projected.y) / Double(size.height)
+      return x.isFinite && y.isFinite ? [x, y] : nil
+    }
+    let leftEye = eyePoint(anchor.leftEyeTransform)
+    let rightEye = eyePoint(anchor.rightEyeTransform)
+
+    var payload: [String: Any] = [
       "cx": (minX + maxX) / 2,
       "cy": (minY + maxY) / 2,
       "width": maxX - minX,
@@ -521,6 +550,8 @@ public final class HairFaceTrackingView: ExpoView, ARSCNViewDelegate {
       "tracking": true,
       "at": Date().timeIntervalSince1970 * 1000
     ]
+    if let leftEye { payload["leftEye"] = leftEye }
+    if let rightEye { payload["rightEye"] = rightEye }
 
     sawFace = true
     lastTracked = payload

@@ -48,6 +48,8 @@ export type ArkitRawFace = {
   roll: number;
   source: 'arkit';
   mesh?: { points: number[]; facing: number[] };
+  /** The eyes in view fractions, when the frame carried them. */
+  eyes?: { left: [number, number]; right: [number, number] };
   at: number;
 };
 
@@ -68,6 +70,12 @@ export type ArkitRawFace = {
  */
 export function toRawFace(frame: FaceFrame, view: ViewSize): ArkitRawFace | null {
   if (!(view.width > 0) || !(view.height > 0)) return null;
+  /* Both or neither: one eye places nothing, and a span needs two. */
+  const pair = (a: FaceFrame['leftEye'], b: FaceFrame['rightEye']) =>
+    a && b && a.every(Number.isFinite) && b.every(Number.isFinite)
+      ? { left: [a[0], a[1]] as [number, number], right: [b[0], b[1]] as [number, number] }
+      : undefined;
+  const eyes = pair(frame.leftEye, frame.rightEye);
   const mesh = hasFullMesh(frame)
     ? { points: [...frame.points], facing: [...frame.facing] }
     : undefined;
@@ -81,6 +89,10 @@ export function toRawFace(frame: FaceFrame, view: ViewSize): ArkitRawFace | null
     roll: frame.roll,
     source: 'arkit',
     ...(mesh === undefined ? {} : { mesh }),
+    /* Left in view fractions, as the mesh is: `faceObservationFor` maps
+       the two through the same cover fit, so a point that agrees with the
+       mesh here agrees with it in the still. */
+    ...(eyes === undefined ? {} : { eyes }),
     at: frame.at,
   };
 }

@@ -50,6 +50,22 @@ export type FaceFrame = {
    * flag as tracked.
    */
   tracking?: boolean;
+  /**
+   * The eyes, in view fractions, when ARKit reported them.
+   *
+   * Real joints of the face anchor rather than landmarks read off a
+   * picture, and named for the side of the PERSON, as ARKit names them.
+   * The measurement engine builds its face frame from an eye span when it
+   * has one and falls back to the detector's box when it does not — and
+   * this box stops at the upper forehead while the region boxes are drawn
+   * in half widths from the BROW, so the fallback puts every region about
+   * a forehead from the place it is named.
+   *
+   * Optional because a frame can arrive before the anchor has them, and
+   * because every build before this one had none.
+   */
+  leftEye?: [number, number];
+  rightEye?: [number, number];
   /** Milliseconds, on the same clock as `Date.now()`. */
   at: number;
 };

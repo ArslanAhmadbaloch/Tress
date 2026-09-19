@@ -1037,3 +1037,43 @@ test('stored shapes: the guard against a field being ADDED is a type, not a comm
     'verdict',
   ]);
 });
+
+test('observation: ARKit has no contours, so the eye joints are what anchor the frame', () => {
+  /*
+    The bug this pins. `faceFrameOf` builds its face frame from an eye
+    span when it has one and falls back to the DETECTOR'S BOX when it
+    does not. ARKit reports no contours at all — `LEFT_EYE` and the rest
+    are ML Kit's names — so on an iPhone the fallback was always taken,
+    and ARKit's box stops at the UPPER FOREHEAD while the region boxes
+    are drawn in half widths from the BROW. Every region then sits about
+    a forehead from the place it is named, which is a report of zeros
+    over a head full of hair.
+
+    It went unseen for every build before this one because the segmenter
+    could not load, so the measurement path had never once run with a
+    real mask on a real phone.
+  */
+  const still = { width: 1080, height: 1440 };
+  const mesh = {
+    bounds: { x: 0.3, y: 0.3, width: 0.4, height: 0.4 },
+    contours: {},
+    viewAspect: 0.75,
+    eyes: { left: { x: 0.42, y: 0.45 }, right: { x: 0.58, y: 0.45 } },
+  };
+  const pose = { yaw: 0, pitch: 0, roll: 0 };
+  const withEyes = faceObservationFor(mesh, still, pose);
+  assert.ok(withEyes, 'an observation was refused');
+  assert.ok(withEyes.eyes, 'the eye joints did not reach the observation');
+  // The span is the thing the frame scales by, so it has to survive the
+  // map into the still rather than arriving as two equal points.
+  assert.ok(
+    withEyes.eyes.right.x > withEyes.eyes.left.x,
+    'the eyes arrived with no span between them',
+  );
+
+  // And without them the observation still forms — it simply has no eyes,
+  // which is the case that was silently anchoring on the box.
+  const withoutEyes = faceObservationFor({ ...mesh, eyes: undefined }, still, pose);
+  assert.ok(withoutEyes, 'an observation without eyes was refused');
+  assert.equal(withoutEyes.eyes, undefined);
+});
