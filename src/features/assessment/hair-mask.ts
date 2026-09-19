@@ -122,17 +122,25 @@ const HAIR_CLASS = 1;
  * app does not have, so it failed to allocate its tensors on every phone
  * and every scan came back with no mask at all.
  *
- * Its single output plane is RAW LOGITS, not probabilities. The graph's
- * last operator is a bias add and there is no logistic anywhere in it —
- * read out of the file's own operator table, not assumed. Skip the
- * sigmoid and every pixel with a positive logit reads as certain hair,
- * which at a 0.5 threshold is most of the picture, including the wall.
+ * Its one output plane is ALREADY a probability. This was first written
+ * as 'logit', reasoned from the graph's last operator being a bias add
+ * with no logistic after it — which sounds right and is wrong. Running
+ * the model over a real photograph settles it: the plane comes out
+ * between −0.08 and 1.15, which is an 0–1 mask with a little overshoot
+ * at each end, not a logit. Thresholded at 0.5 it marks 13.8% of the top
+ * half of a portrait and 0.0% of the bottom — hair, and nothing else.
  *
- * A model whose last layer IS a sigmoid must set this to 'probability',
- * because squashing an 0–1 plane again compresses it into 0.5–0.73 and
- * the threshold stops meaning anything.
+ * Squashing it through a logistic compresses that into 0.48–0.76, so no
+ * pixel is ever under the threshold and the mask swells to 47% of the top
+ * half and 6% of the bottom: the face, the wall and the shirt all read as
+ * hair. That is what shipped in builds 24 to 26, and it is why the live
+ * trace refused and the report's figures were measured off a mask that
+ * was mostly not hair.
+ *
+ * A model whose output really is a logit sets this to 'logit'. The way to
+ * tell is to run it: the give-away is the range, not the graph.
  */
-const HAIR_OUTPUT: 'logit' | 'probability' = 'logit';
+const HAIR_OUTPUT: 'logit' | 'probability' = 'probability';
 
 /** The logistic function: a logit to the 0–1 probability the threshold wants. */
 function probabilityOf(logit: number): number {

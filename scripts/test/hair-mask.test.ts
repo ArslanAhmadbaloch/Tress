@@ -815,30 +815,34 @@ function noisyMask(size = 512): MaskImage {
   return { width: size, height: size, data };
 }
 
-test('hairChannel: one output plane is a logit plane, and is squashed before it is read', () => {
+test('hairChannel: one output plane is read as the probability it already is', () => {
   /*
     The bundled model — thangtran480's `model_hairnet.tflite` — emits
-    [1,224,224,1] of RAW LOGITS: its last operator is a bias add and there
-    is no logistic in the graph. Read the plane as though it were already
-    a probability and every pixel with a positive logit is certain hair,
-    which at a 0.5 threshold is most of a photograph, walls included.
+    [1,224,224,1] whose values are ALREADY an 0-1 mask. Run over a
+    portrait it comes out between -0.08 and 1.15: an 0-1 plane with a
+    little overshoot at each end, not a logit.
+
+    This shipped as 'logit' in builds 24-26, reasoned from the graph's
+    last operator being a bias add with no logistic after it. Running the
+    model is what settled it. A logistic over that range compresses it
+    into 0.48-0.76, so no pixel is ever below a 0.5 threshold: the mask
+    swells from 7% of a portrait to 27%, taking in the face, the wall and
+    the shirt, and every figure measured off it is about four times too
+    big. The values below are the model's real ones.
   */
   const side = 2;
-  // −2 and 0 are below the threshold once squashed; +2 is above it.
-  const output = Float32Array.from([-2, 0, 2, 10]);
+  const output = Float32Array.from([-0.079, 0.15, 0.94, 1.148]);
   const mask = hairChannel(output, side, 1);
   assert.equal(mask.width, side);
   assert.equal(mask.height, side);
-  const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
-  for (let i = 0; i < output.length; i += 1) {
-    assert.ok(
-      Math.abs(mask.data[i] - sigmoid(output[i])) < 1e-6,
-      `plane ${i} read ${mask.data[i]}, not the logistic of ${output[i]}`,
-    );
-  }
-  // And the thing the squash exists to protect: a negative logit is not hair.
-  assert.ok(mask.data[0] < 0.5, 'a negative logit read as hair');
-  assert.ok(mask.data[2] > 0.5, 'a positive logit did not read as hair');
+  assert.deepEqual(
+    Array.from(mask.data),
+    Array.from(output),
+    'the plane was transformed on the way through instead of passed along',
+  );
+  // The point of not squashing: the threshold still separates the plane.
+  const over = Array.from(mask.data).filter((v) => v >= 0.5).length;
+  assert.equal(over, 2, 'a 0.5 cut no longer splits the mask in two');
 });
 
 test('hairChannel: several planes are per-class scores, taken by index and not squashed', () => {
