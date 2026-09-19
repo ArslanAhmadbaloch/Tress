@@ -356,15 +356,31 @@ enum HairFacePose {
   /// Two of the three are facts about the head in the world, so they are
   /// fixed whatever the preview does:
   ///
-  ///   yaw   +ve = head turned toward its OWN RIGHT  → -yawEye
+  ///   yaw   +ve = head turned toward its OWN RIGHT  → +yawEye
   ///   pitch +ve = chin lifted, face looking up      → +pitchEye
   ///
-  /// `yaw` is negated because eye space's +x is the right of the
-  /// *unmirrored* image, which is the side a person's own LEFT appears
-  /// on. Positive-for-own-right is ML Kit's convention, so `headDirection`
+  /// `yaw` is NOT negated, and the negation it used to carry was the
+  /// scanner's longest-standing bug.
+  ///
+  /// The reasoning behind the negation was that eye space's +x is the
+  /// right of the *unmirrored* image, which is the side a person's own
+  /// LEFT appears on. That is wrong for a front camera: ARKit's view
+  /// matrix already carries the front camera's flip, so eye-space +x is
+  /// the right of the image as SHOWN, which is the person's own right.
+  ///
+  /// It survived four builds because it was cancelled out. The turn
+  /// arrow pointed the wrong way too, so people followed the arrow,
+  /// turned the opposite way to the instruction, and the step fired —
+  /// two errors reading as one working scanner. Fixing the arrow exposed
+  /// this: asked to look right, a head turning right produced nothing,
+  /// and turning back fired the step it had not been asked for while the
+  /// other step was already satisfied by the turn before it.
+  ///
+  /// Positive-for-own-right is ML Kit's convention, so `headDirection`
   /// in the scan engine reads an ARKit face and an ML Kit face the same
-  /// way, and it is the convention `REGION_OF_STEP` and `closestAngle`
-  /// are built on. Nothing here may change it.
+  /// way, and it is the convention `STEP_TARGETS`, `REGION_OF_STEP` and
+  /// `closestAngle` are built on. That convention is not what changed
+  /// here; what changed is this file finally meeting it.
   ///
   /// `roll` is the odd one out: it is consumed by the overlay drawn on
   /// top of the preview, so it is a screen-space quantity and its sign
@@ -396,7 +412,7 @@ enum HairFacePose {
     let rollSign: Float = HairFaceTrackingView.mirrorPreview ? -1 : 1
 
     return (
-      yaw: -yawEye * toDegrees,
+      yaw: yawEye * toDegrees,
       pitch: pitchEye * toDegrees,
       roll: rollSign * rollEye * toDegrees
     )

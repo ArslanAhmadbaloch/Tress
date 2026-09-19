@@ -623,7 +623,16 @@ test('nothing hard-codes the flip: every site that can reverse the image reads t
     /let rollSign: Float = HairFaceTrackingView\.mirrorPreview \? -1 : 1/,
     'roll takes its sign from the flag',
   );
-  assert.match(geometry, /yaw: -yawEye/, 'yaw stays world-fixed: positive is the head\'s own right');
+  assert.match(
+    geometry,
+    /yaw: yawEye/,
+    "yaw is negated again: ARKit's view matrix already carries the front camera's flip",
+  );
+  assert.equal(
+    /yaw: -yawEye/.test(geometry),
+    false,
+    'the negation that made a head turning right satisfy the left step is back',
+  );
   assert.match(geometry, /pitch: pitchEye/, 'pitch is never flipped: a mirror leaves its axis alone');
   assert.equal(
     /roll: -rollEye/.test(geometry),
@@ -771,7 +780,12 @@ test('the preview decides roll and only roll; yaw and pitch describe the head', 
   // Yaw is a fact about where the head is pointing, and the engine's step
   // targets, `REGION_OF_STEP` and `closestAngle` are all built on positive
   // meaning the head's own right. A flip of the picture must not touch it.
-  assert.match(returned, /yaw:\s*-yawEye/, "yaw stays positive for the head's own right");
+  assert.match(returned, /yaw:\s*yawEye/, "yaw is positive for the head's own right");
+  assert.equal(
+    /yaw:\s*-yawEye/.test(returned),
+    false,
+    "negated, a head turned to its own right reports the sign the LEFT step waits for",
+  );
   assert.match(returned, /pitch:\s*pitchEye/, 'pitch turns about the one axis a flip leaves alone');
   // Roll is drawn on top of the preview, so its sign belongs to the preview.
   assert.match(returned, /roll:\s*rollSign \* rollEye/, 'roll takes its sign from the flag');
