@@ -627,7 +627,11 @@ test('the scan screen really calls the chain that puts the mesh on the hair', ()
   for (const link of [
     'sampleArFrame(',
     'segmentFrame',
-    'hairSilhouette(',
+    // `traceHair`, not `hairSilhouette`: the screen needs the refusal
+    // reason as well as the outline, so it calls the form that returns
+    // both. `hairSilhouette` is the thin wrapper for callers that only
+    // want the shape.
+    'traceHair(',
     'setHair(',
     'dueForFit(',
   ]) {

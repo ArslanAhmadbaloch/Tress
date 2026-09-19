@@ -46,6 +46,15 @@ const FILES = walk(SRC).map((f) => ({
 const appFiles = FILES.filter((f) => f.rel.includes('src/app/'));
 const screenFiles = appFiles.filter((f) => !f.rel.endsWith('_layout.tsx'));
 
+/** A file's text, or null when it is not where it was expected. */
+function readSafe(path) {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 function run(cmd, args) {
   try {
     execFileSync(cmd, args, { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' });
@@ -67,6 +76,36 @@ function record(dimension, weight, name, passed, detail) {
 }
 
 /* 1. Correctness — does it compile and lint clean? */
+
+/*
+ * The handedness bit is carried twice — once in TypeScript, once in Swift,
+ * because the two cannot share a constant. A build where they disagree is
+ * a build where the iPhone crops one temple and files it under the other
+ * temple's name, and nothing raises an error: a symmetric head looks
+ * perfectly fine while it happens. So it is checked here instead.
+ */
+{
+  const tsSource = readSafe(join(SRC, 'features/hair-scan/handedness.ts'));
+  const swiftSource = readSafe(
+    join(ROOT, 'modules/hair-face-tracking/ios/HairFaceTrackingView.swift'),
+  );
+  const ts = /export const FRAME_MIRRORED\s*=\s*(true|false)/.exec(tsSource ?? '');
+  const swift = /static let mirrorPreview\s*=\s*(true|false)/.exec(swiftSource ?? '');
+  const agreed = Boolean(ts && swift && ts[1] === swift[1]);
+  record(
+    'Correctness',
+    2,
+    'Frame handedness agrees across TypeScript and Swift',
+    agreed,
+    agreed
+      ? ''
+      : !ts || !swift
+        ? 'could not read FRAME_MIRRORED and/or mirrorPreview — one of them moved'
+        : `FRAME_MIRRORED is ${ts[1]} but mirrorPreview is ${swift[1]}; ` +
+          'see src/features/hair-scan/handedness.ts',
+  );
+}
+
 
 const tsc = run('npx', ['tsc', '--noEmit']);
 record(

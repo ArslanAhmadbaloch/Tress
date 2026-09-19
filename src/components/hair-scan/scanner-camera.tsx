@@ -96,6 +96,7 @@ import {
 } from '@/features/hair-scan/tracking';
 import { nitroAvailable } from '@/lib/native';
 import { deletePhotoFiles, shrinkCapture } from '@/lib/photo-storage';
+import { FRAME_MIRRORED } from '@/features/hair-scan/handedness';
 
 /** A captured frame, already brought down to storage size. */
 export type ScannerPhoto = {
@@ -447,12 +448,16 @@ function buildVisionScanner(vc: VisionCameraModule, fd: FaceDetectorModule): Vis
         isActive={active}
         outputs={outputs}
         /*
-          Mirrored on the outputs as well as the preview, so the file
-          matches what was composed on screen — and the detector is told
-          the same, so its points land on the face rather than on its
-          reflection.
+          Whatever `FRAME_MIRRORED` says, applied to the outputs as well
+          as the preview, so the file matches what was composed on screen
+          — and the detector is told the same, so its points land on the
+          face rather than on its reflection. `"auto"` is VisionCamera's
+          mirrored front camera; `"off"` leaves it as another person
+          would see them. See `handedness.ts` before changing it: the
+          iPhone path carries the same bit in Swift and the two are
+          checked against each other.
         */
-        mirrorMode="auto"
+        mirrorMode={FRAME_MIRRORED ? 'auto' : 'off'}
         resizeMode="cover"
         cameraFacing="front"
         /*
@@ -848,9 +853,9 @@ function ExpoScannerCamera({ ref, active }: { ref?: Ref<ScannerCameraHandle>; ac
       facing="front"
       mode="picture"
       active={active}
-      // The file is mirrored to match the preview, as every stored
-      // photograph in the app is. See tracked-camera.tsx.
-      mirror={true}
+      // The file matches the preview, as every stored photograph in the
+      // app does. See `handedness.ts` for the bit and tracked-camera.tsx.
+      mirror={FRAME_MIRRORED}
       // No white flash over the preview: the one shot this camera takes
       // unprompted is the light meter's, and a flash for a photograph
       // nobody asked for reads as a bug. See takePictureAsync above.

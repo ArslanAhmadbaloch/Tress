@@ -353,24 +353,30 @@ enum HairFacePose {
   /// the face's own forward axis (its +z, out of the face) has a positive
   /// z component whenever it is looking anywhere near the lens.
   ///
-  /// The preview is mirrored, which reverses left and right and reverses
-  /// the sense of every rotation in the image plane. That is the whole of
-  /// the conversion:
+  /// Two of the three are facts about the head in the world, so they are
+  /// fixed whatever the preview does:
   ///
-  ///   yaw   +ve = nose toward the viewer's RIGHT on screen  → -yawEye
-  ///   pitch +ve = chin lifted, face looking up              → +pitchEye
-  ///   roll  +ve = head tilted counter-clockwise on screen   → -rollEye
+  ///   yaw   +ve = head turned toward its OWN RIGHT  → -yawEye
+  ///   pitch +ve = chin lifted, face looking up      → +pitchEye
   ///
-  /// Roll is negated for the same reason yaw is, and it was not: a mirror
-  /// reverses the handedness of the image plane, so a head the camera
-  /// sees tilting one way is drawn on screen tilting the other. Shipped
-  /// unnegated, the cap sat on a head that leaned the opposite way to the
-  /// face under it — the mesh followed the real head while the preview
-  /// showed its reflection. Pitch is the exception because it turns about
-  /// an axis the mirror leaves alone.
+  /// `yaw` is negated because eye space's +x is the right of the
+  /// *unmirrored* image, which is the side a person's own LEFT appears
+  /// on. Positive-for-own-right is ML Kit's convention, so `headDirection`
+  /// in the scan engine reads an ARKit face and an ML Kit face the same
+  /// way, and it is the convention `REGION_OF_STEP` and `closestAngle`
+  /// are built on. Nothing here may change it.
   ///
-  /// which is ML Kit's convention, so `headDirection` in the scan engine
-  /// reads an ARKit face and an ML Kit face the same way.
+  /// `roll` is the odd one out: it is consumed by the overlay drawn on
+  /// top of the preview, so it is a screen-space quantity and its sign
+  /// belongs to the preview, not to the head. A flip reverses the
+  /// handedness of the image plane, so a head the camera sees tilting one
+  /// way is drawn tilting the other. Shipped on the wrong side of that,
+  /// the cap sat on a head leaning the opposite way to the face under it.
+  /// It therefore reads `mirrorPreview` rather than hard-coding a sign —
+  /// see the flag's own note for the other two sites that move with it.
+  /// Pitch is exempt because it turns about the one axis a left-for-right
+  /// flip leaves alone.
+  ///
   static func degrees(faceInEye: simd_float4x4) -> (yaw: Float, pitch: Float, roll: Float) {
     let forwardColumn = faceInEye.columns.2
     let upColumn = faceInEye.columns.1
@@ -387,10 +393,12 @@ enum HairFacePose {
     let pitchEye = atan2(f.y, (f.x * f.x + f.z * f.z).squareRoot())
     let rollEye = atan2(u.x, u.y)
 
+    let rollSign: Float = HairFaceTrackingView.mirrorPreview ? -1 : 1
+
     return (
       yaw: -yawEye * toDegrees,
       pitch: pitchEye * toDegrees,
-      roll: -rollEye * toDegrees
+      roll: rollSign * rollEye * toDegrees
     )
   }
 }

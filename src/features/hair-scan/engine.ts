@@ -203,9 +203,11 @@ export const SCAN_STEPS: readonly ScanStep[] = ['front', 'right', 'left', 'down'
      this line were flipped: `ANGLE_GUIDANCE.leftTemple` in
      `src/types/domain.ts` reads "Turn your head to the right to show
      your left side", and `region-crops.ts` cuts the `leftTemple`
-     rectangle from the LEFT of the still — which is where that temple
-     lands, because the preview and the still are both written mirrored,
-     and a mirrored front camera puts your own left on the viewer's left.
+     rectangle from whichever side of the still that temple lands on.
+     Which side that is belongs to `FRAME_MIRRORED` in `handedness.ts`,
+     and it moves the crop, the mesh, the preview and the still together
+     — never one of them alone. The statement above is about the HEAD,
+     so it holds whichever way round the picture is.
 
   ONE PLACE DISAGREES, and it is in this folder: `closestAngle` in
   `result.ts` defaults `leftSign` to −1, so a NEGATIVE yaw reads as the
@@ -2302,7 +2304,8 @@ export function elapsedMs(state: ScanState, now: number): number {
   preview's cover crop) → box point (applying the box's cover crop). Both
   crops are the same rule, `coverFit`, applied in opposite directions.
   Mirroring never enters it: the preview, the detector's points and the
-  still are all mirrored the same way (see scanner-camera.tsx).
+  still all share one handedness, whatever `FRAME_MIRRORED` sets it to
+  (see `handedness.ts`, and scanner-camera.tsx for the Android end).
 */
 
 /**

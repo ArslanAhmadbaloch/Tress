@@ -32,10 +32,33 @@ public final class HairFaceTrackingView: ExpoView, ARSCNViewDelegate {
 
   private let sceneView = ARSCNView(frame: .zero)
 
-  /// A selfie preview reads as a mirror, so the feed is flipped. Every
-  /// coordinate this view reports is flipped to match, because the scan
-  /// measures its crop rectangles against what the user saw.
-  private static let mirrorTransform = CGAffineTransform(scaleX: -1, y: 1)
+  /// Whether the preview is flipped left-for-right.
+  ///
+  /// Mirroring is a SCREEN-SPACE fact, and exactly three things depend on
+  /// it, all of them below: the feed's transform, the `x` this view
+  /// reports for every projected point, and the sign of `roll`. They are
+  /// all read off this one flag so they cannot drift apart — the last
+  /// time they did, the head cap leaned the opposite way to the face.
+  ///
+  /// What does NOT depend on it: `yaw` and `pitch`, which describe where
+  /// the head is pointing in the world, and the still the report crops
+  /// (see `captureOrientation`). So flipping this flag changes what the
+  /// user sees and nothing about which temple is filed under which name.
+  ///
+  /// A selfie preview normally reads as a mirror; this app's owner asked
+  /// for the un-mirrored view, so it is off.
+  static let mirrorPreview = false
+
+  private static var previewTransform: CGAffineTransform {
+    mirrorPreview ? CGAffineTransform(scaleX: -1, y: 1) : .identity
+  }
+
+  /// A projected point's x as a fraction of the width the user is looking
+  /// at, which is the other side of the frame when the preview is flipped.
+  private static func screenX(_ x: CGFloat, width: CGFloat) -> Double {
+    let fraction = Double(x) / Double(width)
+    return mirrorPreview ? 1 - fraction : fraction
+  }
 
   /// Just over 1/60 s, so a 60 fps session passes through untouched and
   /// anything faster is thinned rather than flooding the bridge.
@@ -154,7 +177,7 @@ public final class HairFaceTrackingView: ExpoView, ARSCNViewDelegate {
     // the frame goes on, and the transform goes back.
     sceneView.transform = .identity
     sceneView.frame = bounds
-    sceneView.transform = HairFaceTrackingView.mirrorTransform
+    sceneView.transform = HairFaceTrackingView.previewTransform
   }
 
   public override func didMoveToWindow() {
@@ -279,22 +302,23 @@ public final class HairFaceTrackingView: ExpoView, ARSCNViewDelegate {
   ///
   /// ARKit always hands `capturedImage` over in the sensor's own
   /// landscape-right order, whichever way the device is held, so rotating
-  /// it to the interface is a fixed table. Every entry is a `Mirrored`
-  /// variant because the preview above is mirrored and the still has to
-  /// agree with it — the region rectangles in the record were measured
-  /// against the mirrored view.
+  /// it to the interface is a fixed table. Which COLUMN of that table is
+  /// used is `mirrorPreview`'s to say, not this function's: the still has
+  /// to agree with the preview, because the region rectangles kept in the
+  /// record are measured against what the user was looking at.
   ///
-  ///   unmirrored          mirrored (what we use)
-  ///   portrait  .right    .leftMirrored
-  ///   upsideDown .left    .rightMirrored
-  ///   landLeft  .down     .downMirrored
-  ///   landRight .up       .upMirrored
+  ///   interface     unmirrored   mirrored
+  ///   portrait      .right       .leftMirrored
+  ///   upsideDown    .left        .rightMirrored
+  ///   landLeft      .down        .downMirrored
+  ///   landRight     .up          .upMirrored
   var captureOrientation: CGImagePropertyOrientation {
+    let mirrored = HairFaceTrackingView.mirrorPreview
     switch window?.windowScene?.interfaceOrientation ?? .portrait {
-    case .portraitUpsideDown: return .rightMirrored
-    case .landscapeLeft: return .downMirrored
-    case .landscapeRight: return .upMirrored
-    default: return .leftMirrored
+    case .portraitUpsideDown: return mirrored ? .rightMirrored : .left
+    case .landscapeLeft: return mirrored ? .downMirrored : .down
+    case .landscapeRight: return mirrored ? .upMirrored : .up
+    default: return mirrored ? .leftMirrored : .right
     }
   }
 
@@ -431,8 +455,7 @@ public final class HairFaceTrackingView: ExpoView, ARSCNViewDelegate {
         let world = SIMD3<Float>(world4.x, world4.y, world4.z)
 
         let projected = camera.projectPoint(world, orientation: orientation, viewportSize: size)
-        // The view is mirrored, so the x the user sees is the other side.
-        let x = 1 - Double(projected.x) / Double(size.width)
+        let x = HairFaceTrackingView.screenX(projected.x, width: size.width)
         let y = Double(projected.y) / Double(size.height)
         guard x.isFinite, y.isFinite else {
           complete = false
@@ -476,7 +499,7 @@ public final class HairFaceTrackingView: ExpoView, ARSCNViewDelegate {
       let originColumn = anchor.transform.columns.3
       let origin = SIMD3<Float>(originColumn.x, originColumn.y, originColumn.z)
       let projected = camera.projectPoint(origin, orientation: orientation, viewportSize: size)
-      let x = 1 - Double(projected.x) / Double(size.width)
+      let x = HairFaceTrackingView.screenX(projected.x, width: size.width)
       let y = Double(projected.y) / Double(size.height)
       guard x.isFinite, y.isFinite else { return }
       minX = x

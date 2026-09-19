@@ -148,42 +148,32 @@ final class HairFaceTrackingRegistry {
       // interface orientation.
       //
       // ── Handedness: read this before flipping anything ───────────────
-      // `view.captureOrientation` is a `Mirrored` variant, so the still
-      // written below is MIRRORED — the same handedness as the preview,
-      // where the person's own left is on the image's left. That is not
-      // an oversight and it is not a free choice: this module is ONE END
-      // of a convention the whole scan is built on, and the app reads the
-      // still's pixels by IMAGE SIDE.
+      // `view.captureOrientation` decides whether the still written below
+      // is flipped left-for-right, and it does not decide it alone: it
+      // reads `HairFaceTrackingView.mirrorPreview`, and so do the three
+      // other things that must agree with it. This module applies the
+      // convention and settles nothing.
       //
-      // FOUR separate lines make that handedness, not one, and they are
-      // in the other two files — this one applies the fourth and decides
-      // nothing:
+      //   the preview     `previewTransform`, set on the ARSCNView in
+      //                   `layoutSubviews`
+      //   the mesh        `screenX(_:width:)` — every cx, rim and inner
+      //                   point the frame reports
+      //   roll            `rollSign` in Geometry.swift. Yaw and pitch are
+      //                   NOT here: they describe the head in the world.
+      //   this still      the table in `captureOrientation`
       //
-      //   the preview     mirrored by `mirrorTransform`, View.swift:38,
-      //                   set on the ARSCNView at :157. NOT by ARKit: a
-      //                   front feed arrives un-mirrored.
-      //   the mesh        mirrored by `1 - projected.x / width`,
-      //                   View.swift:435 and :479 — every cx, rim and
-      //                   inner point the frame reports
-      //   yaw / roll      mirrored by `yaw: -yawEye`, Geometry.swift:383
-      //   sampleFrame     mirrored by `captureOrientation` — `hair-fit.ts`
-      //   and capture     fits the cap in the preview's own frame and
-      //                   says so, and the rectangles measured on the
-      //                   preview land on the same flesh in the still
+      // On the TypeScript side the same bit is `FRAME_MIRRORED` in
+      // `src/features/hair-scan/handedness.ts`, which `region-crops.ts`,
+      // `measure/regions.ts` and the Android camera read. The two
+      // languages cannot share a constant, so `scripts/quality-gate.mjs`
+      // checks they hold the same value.
       //
-      // Un-mirroring this line alone does not make the record more true;
-      // it silently swaps the sides of it. `region-crops.ts` cuts
-      // `leftTemple` from the image-LEFT of the still, and
-      // `measure/regions.ts` gives `leftTemple` a negative u, which is
-      // image-left too — both because of this line. Flip it on its own
-      // and every temple is filed under the other temple's name, with no
-      // error anywhere to say so, and a symmetric head looks fine while
-      // it happens. That is the HALF-FLIP: the preview and the mesh stay
-      // mirrored by their own two lines above while the still and the
-      // sample move, and nothing in three languages notices.
-      // README.md ▸ "Handedness" lists all four flips by file and line,
-      // and what would have to move in the SAME commit for an un-mirrored
-      // still to be honest.
+      // Why all of it moves together: the app reads the still's pixels by
+      // IMAGE SIDE and reports them by PERSON SIDE. Flip one end and
+      // every temple is filed under the other temple's name, with no
+      // error anywhere to say so — and a symmetric head looks perfectly
+      // fine while it happens. That is the HALF-FLIP. README.md ▸
+      // "Handedness" has the whole of it.
       //
       // Be clear about what this does NOT do. `CIImage(cvPixelBuffer:)`
       // retains the buffer and reads it lazily, so ONE slot of the

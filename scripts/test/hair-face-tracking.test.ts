@@ -547,14 +547,26 @@ function horizontalFlips(swift: string): string[] {
   ];
 }
 
-test('every orientation the still can take is a mirrored one', () => {
+test("every orientation the still can take is the preview's, both ways round", () => {
+  // Not "every orientation is a mirrored one" any more. The still has to
+  // agree with the PREVIEW, and the preview is `mirrorPreview`'s to say,
+  // so what is checked is that each of the four ways of holding the phone
+  // offers both answers and picks between them with that one flag. A
+  // branch that returns the same orientation either way, or that reads
+  // something else, is a still that can disagree with the screen.
   const code = withoutComments(viewSwift());
   const body = /var captureOrientation: CGImagePropertyOrientation \{([\s\S]*?)\n  \}/.exec(code);
   assert.ok(body, 'the view names the orientation the capture is taken at');
-  const orientations = [...body[1].matchAll(/return \.(\w+)/g)].map((m) => m[1]);
-  assert.equal(orientations.length, 4, 'one orientation per way of holding the phone');
-  for (const orientation of orientations) {
-    assert.match(orientation, /Mirrored$/, `.${orientation} is not a mirrored orientation`);
+  assert.match(
+    body[1],
+    /let mirrored = HairFaceTrackingView\.mirrorPreview/,
+    'the table reads the one flag rather than deciding for itself',
+  );
+  const branches = [...body[1].matchAll(/return mirrored \? \.(\w+) : \.(\w+)/g)];
+  assert.equal(branches.length, 4, 'one branch per way of holding the phone');
+  for (const [, mirrored, plain] of branches) {
+    assert.match(mirrored, /Mirrored$/, `.${mirrored} is not a mirrored orientation`);
+    assert.equal(/Mirrored$/.test(plain), false, `.${plain} is mirrored on the un-mirrored side`);
   }
 });
 
@@ -568,44 +580,75 @@ test('the still and the live sample take their handedness from the same one plac
   );
 });
 
-test('the module applies exactly four horizontal flips, in the three known places', () => {
-  // The preview's flip and the points' flip live in the view; the angles'
-  // lives in the geometry; the still's and the sample's is the view's
-  // `captureOrientation`, checked by the test above rather than counted
-  // here. A fifth flip, or a fourth deleted, is a record whose sides no
-  // longer agree with its pictures — invisible on a symmetric head and
-  // invisible in a screenshot, so it is counted instead.
-  assert.deepEqual(
-    horizontalFlips(viewSwift()),
-    [
-      'CGAffineTransform(scaleX: -1, y: 1)',
-      '1 - Double(projected.x) / Double(size.width)',
-      '1 - Double(projected.x) / Double(size.width)',
-    ],
-    'the view mirrors the preview once and the reported x twice, and does nothing else',
+test('nothing hard-codes the flip: every site that can reverse the image reads the one flag', () => {
+  // This used to count flips. Counting was the right idea against the
+  // wrong shape: the flips were literals scattered across three files, so
+  // the only defence was to know how many there should be. They are now
+  // derived from `mirrorPreview`, so what is checked is that no literal
+  // has crept back in beside them — a single hard-coded reflection is a
+  // half-flip, invisible on a symmetric head and invisible in a
+  // screenshot, which is why it is checked rather than reviewed.
+  const view = withoutComments(viewSwift());
+
+  assert.match(
+    view,
+    /static let mirrorPreview = (true|false)/,
+    'the view still carries the one flag the rest of the app is checked against',
   );
-  assert.deepEqual(
-    horizontalFlips(geometrySwift()),
-    ['yaw: -yawEye'],
-    'the geometry flips yaw onto the screen and nothing else',
+
+  // The preview's transform and the reported x are the two places the
+  // view can reverse the image, and both are behind the flag.
+  assert.match(
+    view,
+    /mirrorPreview \? CGAffineTransform\(scaleX: -1, y: 1\) : \.identity/,
+    'the preview transform is chosen by the flag',
   );
+  assert.match(
+    view,
+    /return mirrorPreview \? 1 - fraction : fraction/,
+    'the reported x is chosen by the flag',
+  );
+  assert.equal(
+    horizontalFlips(view).length,
+    1,
+    'a reflection in the view outside the two the flag chooses between',
+  );
+
+  // The geometry may reverse exactly one rotation, and only through the
+  // flag. Yaw is not a screen quantity and must stay put; see the note on
+  // `degrees(faceInEye:)`.
+  const geometry = withoutComments(geometrySwift());
+  assert.match(
+    geometry,
+    /let rollSign: Float = HairFaceTrackingView\.mirrorPreview \? -1 : 1/,
+    'roll takes its sign from the flag',
+  );
+  assert.match(geometry, /yaw: -yawEye/, 'yaw stays world-fixed: positive is the head\'s own right');
+  assert.match(geometry, /pitch: pitchEye/, 'pitch is never flipped: a mirror leaves its axis alone');
+  assert.equal(
+    /roll: -rollEye/.test(geometry),
+    false,
+    'roll is hard-coded again instead of following the preview',
+  );
+
+  // The module turns the still with the view's orientation and nothing else.
   assert.deepEqual(
     horizontalFlips(moduleSwift()),
     [],
     'the module file itself flips nothing: the still is turned only by captureOrientation',
   );
-
-  // The other road to a flip is a mirrored orientation named somewhere new.
-  // In the view there are four, and they are `captureOrientation`'s cases.
-  assert.equal(
-    [...withoutComments(viewSwift()).matchAll(/Mirrored/g)].length,
-    4,
-    'a mirrored orientation outside the four captureOrientation cases',
-  );
   assert.equal(
     /Mirrored/.test(withoutComments(moduleSwift())),
     false,
     'the module names no orientation of its own; it asks the view',
+  );
+
+  // In the view the only mirrored orientations are captureOrientation's
+  // four cases, one per way of holding the phone.
+  assert.equal(
+    [...view.matchAll(/Mirrored/g)].length,
+    4,
+    'a mirrored orientation outside the four captureOrientation cases',
   );
 });
 
@@ -638,16 +681,21 @@ test('the module writes the convention down, because a wrong guess costs a phase
     // The module's own flips, by file and line. A section that leaves these
     // out sends the next reader to `captureOrientation` alone, which is
     // precisely the half-flip.
-    'HairFaceTrackingView.swift:38',
-    'HairFaceTrackingView.swift:435',
-    'HairFaceGeometry.swift:383',
-    'mirrorTransform',
+    'mirrorPreview',
+    'FRAME_MIRRORED',
+    'previewTransform',
+    'screenX',
+    'rollSign',
     'captureOrientation',
     // And the app files that read the still by image side.
+    'handedness.ts',
     'region-crops.ts',
     'measure/regions.ts',
     'result.ts',
     'engine.ts',
+    'scanner-camera.tsx',
+    // The failure the whole section exists to prevent.
+    'half-flip',
   ]) {
     assert.ok(section.includes(named), `the Handedness section names ${named}`);
   }
@@ -713,15 +761,25 @@ test('the angles pass through untouched — they are already in ML Kit’s conve
   beneath it. Both live in one return in HairFaceGeometry.swift; this
   reads it rather than trusting the comment above it.
 */
-test('the mirrored preview negates both rotations in the image plane, and not pitch', () => {
+test('the preview decides roll and only roll; yaw and pitch describe the head', () => {
   const swift = readFileSync(
     new URL('../../modules/hair-face-tracking/ios/HairFaceGeometry.swift', import.meta.url),
     'utf8',
   );
-  const returned = swift.slice(swift.indexOf('return (', swift.indexOf('static func degrees')));
-  assert.match(returned, /yaw:\s*-yawEye/, 'yaw turns the other way in a mirror');
-  assert.match(returned, /roll:\s*-rollEye/, 'so does roll — it is a rotation in the same plane');
-  assert.match(returned, /pitch:\s*pitchEye/, 'pitch turns about the one axis a mirror leaves alone');
+  const fn = swift.slice(swift.indexOf('static func degrees'));
+  const returned = fn.slice(fn.indexOf('return ('));
+  // Yaw is a fact about where the head is pointing, and the engine's step
+  // targets, `REGION_OF_STEP` and `closestAngle` are all built on positive
+  // meaning the head's own right. A flip of the picture must not touch it.
+  assert.match(returned, /yaw:\s*-yawEye/, "yaw stays positive for the head's own right");
+  assert.match(returned, /pitch:\s*pitchEye/, 'pitch turns about the one axis a flip leaves alone');
+  // Roll is drawn on top of the preview, so its sign belongs to the preview.
+  assert.match(returned, /roll:\s*rollSign \* rollEye/, 'roll takes its sign from the flag');
+  assert.match(
+    fn,
+    /let rollSign: Float = HairFaceTrackingView\.mirrorPreview \? -1 : 1/,
+    'and the flag is the view\'s one flag, not a second opinion',
+  );
 });
 
 test('the mesh crosses over whole, in the order it arrived', () => {

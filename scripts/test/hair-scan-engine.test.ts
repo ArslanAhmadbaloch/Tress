@@ -122,6 +122,7 @@ import { faceRegionRects } from '@/features/hair-scan/region-crops';
 import { ANGLE_OF_TARGET } from '@/features/hair-scan/result';
 import { createTracker, syntheticFace, trackFrame } from '@/features/hair-scan/tracking';
 import { ANGLE_GUIDANCE } from '@/types/domain';
+import { IMAGE_LEFT_TEMPLE, IMAGE_RIGHT_TEMPLE } from '@/features/hair-scan/handedness';
 import type {
   CaptureRequest,
   FaceReading,
@@ -431,9 +432,12 @@ test('handedness: the step names the way the head moves; the region names what t
       4. the journal's own instruction, which has said the same thing
          since long before this scan existed: to show your LEFT side you
          turn towards your right;
-      5. the corner of the mirrored still that `region-crops.ts` cuts for
-         that label — the left temple from the image's left, because a
-         mirrored front camera puts your own left on the viewer's left.
+      5. the corner of the still that `region-crops.ts` cuts for that
+         label. Which corner that is depends on one bit, `FRAME_MIRRORED`
+         in `handedness.ts`: a flipped frame puts your own left on the
+         viewer's left, an un-flipped one puts it on the viewer's right,
+         the way somebody standing in front of you sees it. (1)-(4) are
+         facts about a head and do not move with it; only this one does.
 
     Read any one of them the other way round and the report crops the
     patch of air in front of somebody's face and captions it as a temple.
@@ -467,8 +471,15 @@ test('handedness: the step names the way the head moves; the region names what t
     box,
   );
   assert.ok(rects.leftTemple !== undefined && rects.rightTemple !== undefined);
-  assert.ok(rects.leftTemple.x + rects.leftTemple.w <= 0.5, 'the left temple is cut from the image\'s left');
-  assert.ok(rects.rightTemple.x >= 0.5, 'the right temple from the image\'s right');
+  // (5) holds whichever way round the frame is; what changes is which
+  // side of the picture carries the name, and `handedness.ts` is the one
+  // place that says. Both halves are asserted, so a record with both
+  // temples on one side still fails.
+  const imageLeft = rects[IMAGE_LEFT_TEMPLE];
+  const imageRight = rects[IMAGE_RIGHT_TEMPLE];
+  assert.ok(imageLeft !== undefined && imageRight !== undefined);
+  assert.ok(imageLeft.x + imageLeft.w <= 0.5, `${IMAGE_LEFT_TEMPLE} is not cut from the image's left`);
+  assert.ok(imageRight.x >= 0.5, `${IMAGE_RIGHT_TEMPLE} is not cut from the image's right`);
 
   /*
     And the dormancy the note above leans on: every frame the scan hands

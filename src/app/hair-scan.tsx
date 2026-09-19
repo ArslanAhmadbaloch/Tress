@@ -148,7 +148,8 @@ import {
   FIT_CLOCK_START,
   FIT_TICK_MS,
   dueForFit,
-  hairSilhouette,
+  traceHair,
+  type FitRefusal,
   type FitClock,
 } from '@/features/hair-scan/hair-fit';
 import { createScanHaptics } from '@/features/hair-scan/haptics';
@@ -632,6 +633,11 @@ function Scanner({
   */
   const [diagnose] = useState(scanDiagnosticsOn);
   const [fitState, setFitState] = useState<'waiting' | 'fitted' | 'refused'>('waiting');
+  /* Why the last mask was refused, for the readout. `noMask` is the
+     segmenter returning nothing at all and `threw` is the frame or the
+     model throwing; the rest come from `traceHair` and name the step
+     that gave up. */
+  const [fitRefusal, setFitRefusal] = useState<FitRefusal | 'noMask' | 'threw' | null>(null);
   const onImplementation = useCallback((kind: ScannerImplementation) => {
     setArkit(kind === 'arkit');
   }, []);
@@ -1162,23 +1168,32 @@ function Scanner({
           height: sample.size,
         });
         if (!live) return;
-        const outline =
+        const attempt =
           mask === null
             ? null
-            : hairSilhouette(mask, {
+            : traceHair(mask, {
                 source: { width: sample.sourceWidth, height: sample.sourceHeight },
                 view,
               });
-        mesh.current?.setHair(outline, face);
-        // Only for the diagnostics line, and only when it is switched on:
-        // a fitted cap and the standing dome look alike on a head, and
-        // this is the one place that knows which was drawn.
-        if (diagnose) setFitState(outline === null ? 'refused' : 'fitted');
+        mesh.current?.setHair(attempt?.outline ?? null, face);
+        // Only for the developer readout, and only when it is switched
+        // on: a fitted cap and the standing dome look alike on a head,
+        // and this is the one place that knows which was drawn — and,
+        // when nothing was, which of the seven ways it was refused. That
+        // last part is the difference between shipping a fix and
+        // shipping another guess.
+        if (diagnose) {
+          setFitState(attempt?.outline ? 'fitted' : 'refused');
+          setFitRefusal(mask === null ? 'noMask' : (attempt?.refusal ?? null));
+        }
       } catch {
         // A frame the camera would not give, or a model run that threw.
         // A refusal holds the cap's shape; it never collapses it.
         if (live) mesh.current?.setHair(null, face);
-        if (diagnose) setFitState('refused');
+        if (diagnose) {
+          setFitState('refused');
+          setFitRefusal('threw');
+        }
       } finally {
         // `now`, not the time it is now: the beat is measured from one
         // fit's start to the next's, so a fit that took a moment does
@@ -1817,7 +1832,7 @@ function Scanner({
                 {diagnose ? (
                   <View style={{ alignItems: 'center', paddingTop: spacing.sm }}>
                     <Text variant="caption" style={{ color: darkColors.textOnPhoto }}>
-                      {`${arkit ? 'ARKit' : 'ML Kit'} · cap ${fitState === 'fitted' ? 'fitted to hair' : fitState === 'refused' ? 'dome (mask refused)' : 'dome (waiting)'}`}
+                      {`${arkit ? 'ARKit' : 'ML Kit'} · cap ${fitState === 'fitted' ? 'fitted to hair' : fitState === 'refused' ? `dome (${fitRefusal ?? 'refused'})` : 'dome (waiting)'}`}
                     </Text>
                   </View>
                 ) : null}

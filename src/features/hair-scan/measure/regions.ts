@@ -110,6 +110,7 @@
  */
 
 import { CAP, HEAD_LINES } from '@/features/hair-scan/head-cap';
+import { FRAME_MIRRORED, OWN_LEFT_SIDE, OWN_RIGHT_SIDE } from '@/features/hair-scan/handedness';
 
 /* ------------------------------ the places ------------------------------ */
 
@@ -286,9 +287,10 @@ export type FaceBox = { u0: number; u1: number; v0: number; v1: number };
 
 /**
  * Where each region sits, in face half-widths from the brow centre.
- * Image-left is negative u, and the preview and the still are both
- * mirrored (see the note in `region-crops.ts`), so image-left is the
- * person's own left and `leftTemple` is their left temple.
+ * Image-left is negative u, and which person-side that is depends on
+ * whether the frame is flipped — so the two temples take their sides
+ * from `FRAME_MIRRORED` rather than from a sign written here. See
+ * `handedness.ts`; it is the only place that bit is decided.
  *
  * The three that sit on the face are drawn to tile it without gaps: the
  * hairline band takes the middle of the brow out to ±0.55 and the
@@ -309,12 +311,24 @@ export type FaceBox = { u0: number; u1: number; v0: number; v1: number };
  * miss the head, its facing collapses, and the region is refused rather
  * than read off whatever was behind the person's head.
  */
+/**
+ * A temple box on one side of the face. The outer edge is 0.9 half-widths
+ * out and the inner edge meets the hairline band at 0.55, so the three
+ * front regions tile the brow without gaps whichever way round the frame
+ * is; only which side each NAME lands on moves with `FRAME_MIRRORED`.
+ */
+function templeBox(side: 1 | -1): FaceBox {
+  return side < 0
+    ? { u0: -0.9, u1: -0.55, v0: -0.88, v1: -0.32 }
+    : { u0: 0.55, u1: 0.9, v0: -0.88, v1: -0.32 };
+}
+
 export const REGION_BOXES: Readonly<Record<ScanRegion, FaceBox>> = Object.freeze({
   /* A band across the front hairline, the middle of the brow's width. */
   hairline: { u0: -0.55, u1: 0.55, v0: -1.0, v1: -0.55 },
-  /* The upper outer corner of the forehead, on the image-left side. */
-  leftTemple: { u0: -0.9, u1: -0.55, v0: -0.88, v1: -0.32 },
-  rightTemple: { u0: 0.55, u1: 0.9, v0: -0.88, v1: -0.32 },
+  /* The upper outer corners of the forehead, one per side of the face. */
+  leftTemple: templeBox(OWN_LEFT_SIDE),
+  rightTemple: templeBox(OWN_RIGHT_SIDE),
   /* Above the hairline, short of the top of the skull. */
   midScalp: { u0: -0.48, u1: 0.48, v0: -1.35, v1: -1.05 },
   /* Over the top of the skull and a little behind it: only there with the chin down. */
@@ -367,6 +381,23 @@ export const MAX_MODEL_POSE = Math.round(Math.acos(MIN_COS) / RAD);
 const clampPose = (deg: number): number =>
   !Number.isFinite(deg) ? 0 : Math.max(-MAX_MODEL_POSE, Math.min(MAX_MODEL_POSE, deg));
 
+/**
+ * A pose's yaw as the IMAGE sees it.
+ *
+ * Everything below works in the face frame's `u`, which is an image axis:
+ * negative is image-left. A pose's `yaw`, by contrast, is a fact about the
+ * head — positive is the head's own right, on both detectors — so the two
+ * only line up when the picture is flipped. A mirror reverses the picture
+ * and the sense of rotation together, which is why this was invisible
+ * while `FRAME_MIRRORED` was true and why it is a sign and not a rewrite.
+ *
+ * Applied at the two places a caller's pose enters this file: `headHitAt`,
+ * which every facing number goes through, and the frame builder. Convert
+ * anywhere else and a region ends up facing the camera at the pose that
+ * turns it away.
+ */
+const imageYaw = (yaw: number): number => (FRAME_MIRRORED ? yaw : -yaw);
+
 /** Where the camera is, in the head's own coordinates: a unit vector from the head towards the lens. */
 function viewDirection(yaw: number, pitch: number): HeadPoint {
   const psi = clampPose(yaw) * RAD;
@@ -415,7 +446,8 @@ export type HeadHit = { point: HeadPoint; facing: number };
  */
 export function headHitAt(pose: { yaw: number; pitch: number }, p: FacePoint): HeadHit | null {
   if (!Number.isFinite(p.u) || !Number.isFinite(p.v)) return null;
-  const psi = clampPose(pose.yaw) * RAD;
+  const yaw = imageYaw(pose.yaw);
+  const psi = clampPose(yaw) * RAD;
   const th = clampPose(pose.pitch) * RAD;
   const tanPsi = Math.tan(psi);
   const tanTh = Math.tan(th);
@@ -439,7 +471,7 @@ export function headHitAt(pose: { yaw: number; pitch: number }, p: FacePoint): H
   if (!(qa > 0) || disc < 0) return null;
 
   const root = Math.sqrt(disc);
-  const view = viewDirection(pose.yaw, pose.pitch);
+  const view = viewDirection(yaw, pose.pitch);
   let hit: HeadPoint | null = null;
   let nearest = -Infinity;
   for (const t of [(-qb - root) / (2 * qa), (-qb + root) / (2 * qa)]) {
@@ -641,6 +673,13 @@ export function faceFrameOf(face: FaceObservation): FaceFrame | null {
     rather than a claim about where the head was.
   */
   if (!Number.isFinite(face.yaw) || !Number.isFinite(face.pitch)) return null;
+  /* The tracker's own yaw, unconverted: the frame STORES this, and
+     `coverage.ts` hands `frame.yaw` straight back to `sampleFacing`,
+     which converts it itself. Convert here as well and it is converted
+     twice, which is the same as not at all — and only at a turn, so the
+     front of a scan looks perfectly healthy while the temples read the
+     room. Nothing in the frame's own arithmetic needs the image's sense:
+     yaw reaches it through `cos` alone, which does not care. */
   const yaw = face.yaw;
   const pitch = face.pitch;
   const roll = Number.isFinite(face.roll) ? face.roll : 0;

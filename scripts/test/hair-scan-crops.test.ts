@@ -28,6 +28,7 @@ import {
 import { syntheticContours } from '@/features/hair-scan/tracking';
 import type { FrameMesh, MeshFace } from '@/features/hair-scan/types';
 import type { PhotoRegion } from '@/types/domain';
+import { FRAME_MIRRORED } from '@/features/hair-scan/handedness';
 
 /* ------------------------------ fixtures ------------------------------- */
 
@@ -86,20 +87,26 @@ test('crops: eyebrow contours that sit above the oval are ignored as out of step
   assert.ok(Math.abs((hairline.y + hairline.h) * BOX.height - expected) < 1);
 });
 
-test('crops: the temples sit either side of the oval, image-left for the left temple, and mirror each other', () => {
+test('crops: the temples sit either side of the oval and mirror each other', () => {
   const face = drawnFace();
-  const { leftTemple, rightTemple } = faceRegionRects(face, BOX);
+  const rects = faceRegionRects(face, BOX);
+  const { leftTemple, rightTemple } = rects;
   assert.ok(leftTemple && rightTemple);
   const cx = face.cx / BOX.width;
-  assert.ok(leftTemple.x + leftTemple.w <= cx, 'the left temple is left of centre');
-  assert.ok(rightTemple.x >= cx, 'the right temple is right of centre');
+  // Which NAME is cut from which side of the picture is `FRAME_MIRRORED`'s
+  // to say — see handedness.ts — so the shape of the pair is asserted by
+  // side, and the naming is asserted once, against the constant.
+  const nearer = FRAME_MIRRORED ? leftTemple : rightTemple;
+  const further = FRAME_MIRRORED ? rightTemple : leftTemple;
+  assert.ok(nearer.x + nearer.w <= cx, "the person's own left temple is not on the expected side");
+  assert.ok(further.x >= cx, "the person's own right temple is not on the expected side");
   // Mirror images about the centre line.
-  assert.ok(Math.abs(cx - (leftTemple.x + leftTemple.w) - (rightTemple.x - cx)) < 1e-9);
+  assert.ok(Math.abs(cx - (nearer.x + nearer.w) - (further.x - cx)) < 1e-9);
   assert.equal(leftTemple.y, rightTemple.y);
   assert.ok(Math.abs(leftTemple.w - rightTemple.w) < 1e-9);
   // Overlapping the oval's edge so the temple itself is inside the crop.
   const ovalLeft = (face.cx - face.width / 2) / BOX.width;
-  assert.ok(leftTemple.x + leftTemple.w > ovalLeft, 'the crop reaches into the oval');
+  assert.ok(nearer.x + nearer.w > ovalLeft, 'the crop reaches into the oval');
   // Above the centre of the face: temples are at the top of the sides.
   assert.ok(leftTemple.y + leftTemple.h < face.cy / BOX.height + 0.05);
 });
@@ -122,7 +129,10 @@ test('crops: a face near the edge is clamped, not lost', () => {
     assert.ok(r && inUnit(r), `${region} is not inside the image: ${JSON.stringify(r)}`);
   }
   assert.equal(rects.hairline?.y, 0, 'the band is cut at the top edge');
-  assert.equal(rects.leftTemple?.x, 0, 'the left temple is cut at the left edge');
+  // The face is against the LEFT edge, so it is whichever temple is cut
+  // from the image-left that gets clamped there.
+  const atLeftEdge = FRAME_MIRRORED ? rects.leftTemple : rects.rightTemple;
+  assert.equal(atLeftEdge?.x, 0, 'the image-left temple is cut at the left edge');
 });
 
 test('crops: a face with no size places nothing', () => {

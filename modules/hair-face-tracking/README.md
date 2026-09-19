@@ -79,118 +79,65 @@ and reintroduce the lag the module exists to remove.
 
 ## Handedness
 
-Which way round everything is. This has been re-derived twice from scratch,
-each time at the cost of a phase, so it is written down once here and the
-tests hold the Swift to it.
+Which way round everything is. This was re-derived from scratch twice, each
+time at the cost of a phase, so it is written down here and the tests hold
+both languages to it.
 
-### There are FOUR flips, not one
+### One bit, read everywhere
 
-An earlier draft of this section said the module had a single mirroring in
-it and that the single mirroring was `captureOrientation`. That was wrong,
-and wrong in the way that costs a phase: a reader who believes it changes
-`captureOrientation` expecting all five rows below to move with it, and gets
-a **half-flip** — still and sample one way, preview and mesh the other, no
-error anywhere, and a symmetric head looking perfectly fine while the
-record's sides swap.
+There is exactly one decision — is the picture flipped left-for-right? — and
+two constants carrying it, because Swift and TypeScript cannot share one:
 
-Four independent expressions, in three files, decide the handedness. They
-agree with each other today, and the convention *is* that agreement:
+- `mirrorPreview` in `ios/HairFaceTrackingView.swift`
+- `FRAME_MIRRORED` in `src/features/hair-scan/handedness.ts`
 
-| # | the flip | where | what it turns |
-| --- | --- | --- | --- |
-| 1 | `mirrorTransform`, `CGAffineTransform(scaleX: -1, y: 1)`, set on the `ARSCNView` in `layoutSubviews` | `ios/HairFaceTrackingView.swift:38`, applied at `:157` | the **preview**. `ARSCNView` does not mirror a front feed — this line does. Delete it and the preview un-mirrors on its own. |
-| 2 | `let x = 1 - Double(projected.x) / Double(size.width)` | `ios/HairFaceTrackingView.swift:435` (the two rings) and `:479` (the pose-only fallback box) | every **point** a frame reports — `cx`, the rim ring, the inner ring — into the mirrored preview's fractions |
-| 3 | `yaw: -yawEye`, and the sense carried by `roll: rollEye` | `ios/HairFaceGeometry.swift:383` and `:385` | the **angles**, into ML Kit's on-screen signs |
-| 4 | `captureOrientation`, whose every case is a `…Mirrored` variant | `ios/HairFaceTrackingView.swift:292`–`:299`, used at `ios/HairFaceTrackingModule.swift:184` (`capture()`) and `:336` (`sampleFrame()`) | the **still** and the **live sample** |
+`scripts/quality-gate.mjs` fails the build if the two disagree. Nothing else
+in the module writes a flip of its own; every site below derives from the
+flag, and a test reads all three Swift files and fails if a hard-coded
+reflection reappears beside them.
 
-`atan2(-dx, dy)` in `HairFaceOutline.init`
-(`ios/HairFaceGeometry.swift:115`) is **not** a fifth flip, although its
-comment talks about the mirror. It is the clockwise-from-noon **ring
-ordering** in the face anchor's own space: it decides which 10° slot a vertex
-falls in, and nothing at all about which side of the image that vertex is
-drawn on. Change it and the ring runs the other way round; the picture keeps
-its hand.
+It is currently **false**: the preview is un-mirrored, the way somebody
+standing in front of you sees you. It was true through build 20.
 
-So the table that matters:
+### What moves with it
 
-| what | handedness | decided by |
+| what | where | why it moves |
 | --- | --- | --- |
-| the preview (`HairFaceTrackingView`) | **mirrored** — raise your right hand, it appears on the right | flip 1, `mirrorTransform` |
-| the frame's points (`cx`, `cy`, rim, inner) | **mirrored** — view fractions of that preview | flip 2, the `1 - x` |
-| `yaw` / `roll` | **mirrored** — signs taken on screen | flip 3, in `HairFacePose.degrees` |
-| `sampleFrame()` bytes | **mirrored** — matches the preview exactly | flip 4, `captureOrientation` |
-| `capture()` still | **mirrored** — matches the preview exactly | flip 4, `captureOrientation` |
+| the preview | `previewTransform`, set on the `ARSCNView` in `layoutSubviews` | `ARSCNView` does not flip a front feed on its own; this does |
+| every point a frame reports (`cx`, the rim ring, the inner ring) | `screenX(_:width:)` | the mesh is drawn on the preview, so it shares its axes |
+| `roll` | `rollSign` in `ios/HairFaceGeometry.swift` | it is consumed by the overlay, so its sense is the screen's |
+| the still and the live sample | `captureOrientation`, used by `capture()` and `sampleFrame()` in `ios/HairFaceTrackingModule.swift` | the report's crops are measured against what the user saw |
+| which side each temple is cut from | `region-crops.ts` | it reads the still **by image side** |
+| the temples' `u` ranges, and yaw's sense against them | `measure/regions.ts` | its face frame is an image axis, built from the eye extremes |
+| the temple names the hero's face box is recovered from | `report-sections/layout.ts` | that arithmetic runs in picture order |
+| the Android preview and its stored still | `scanner-camera.tsx` | the two platforms share one record |
 
-A test reads all three Swift files and fails if a horizontal flip is added,
-moved or removed anywhere in the module, so the count above cannot drift
-without somebody being told.
+### What does NOT move with it
 
-### Mirrored is not "wrong", and un-mirrored is not "anatomically true"
+- **`yaw` and `pitch`.** They describe where the head is pointing in the
+  world. Positive yaw is the head turned towards its OWN right on both
+  detectors, and `REGION_OF_STEP`, `STEP_TARGETS` and `closestAngle` in
+  `result.ts` and `engine.ts` are all built on that. A flip of the picture
+  must not touch them. Pitch turns about the one axis a flip leaves alone.
+- **`atan2(-dx, dy)` in `HairFaceOutline.init`.** It is the
+  clockwise-from-noon ring ordering in the face anchor's own space: it
+  decides which 10° slot a vertex falls in, not which side of the image it
+  is drawn on. Change it and the ring runs the other way; the picture keeps
+  its hand.
+- **Which flesh a label names.** A crop filed as `leftTemple` is the
+  person's own left temple either way. What the flag changes is which half
+  of the picture that is, and every site above moves together so the label
+  stays true.
 
-A mirrored photograph shows the same flesh as an un-mirrored one; what
-differs is which side of the frame it is on. Because every scan is mirrored
-the same way, two scans months apart lay side by side correctly, and the
-rectangles the report crops — measured on the mirrored preview — land on the
-flesh they name.
+### The half-flip
 
-Say that last part exactly, because it is the whole of the argument: a crop
-filed as `leftTemple` is cut from the image-left of a mirrored still, and the
-image-left of a mirrored still **is the person's own left temple**. The
-*label* is already anatomically true. What is reversed is only the framing a
-viewer expects of a portrait — subject's left on the viewer's right — and
-lettering in the background, which reads backwards. Neither is a measurement
-error, and un-mirroring the still without moving everything in the list below
-does not make the label truer; it makes it false. Weigh that against the
-section below before changing anything.
-
-### If the still is ever un-mirrored, these move in the SAME commit
-
-The app reads the still **by image side**, so a flip here is a flip of the
-record's left and right. Flipping `captureOrientation` alone swaps every
-temple with the other temple, silently, and on a symmetric head it looks
-perfectly fine while it does it.
-
-Inside the module first — these are the lines the decision is actually
-enacted at, or consciously left alone at, and they are flips 1, 2 and 4 of
-the four above:
-
-- `ios/HairFaceTrackingView.swift:292`–`:299` — `captureOrientation`. The
-  still and the sample. Dropping `Mirrored` from the four cases is the whole
-  of the camera-end change, and by itself it is the half-flip.
-- `ios/HairFaceTrackingView.swift:38` and `:157` — `mirrorTransform`. If the
-  **preview** is meant to stay mirrored (it is: it is what every front camera
-  does, and the person is using it as a mirror), this line does **not** move,
-  and that is the deliberate asymmetry the rest of the list then has to
-  absorb.
-- `ios/HairFaceTrackingView.swift:435` and `:479` — the `1 - x`. The mesh is
-  drawn on the preview, so it stays mirrored with the preview; but
-  `region-crops.ts` lays that same mesh straight onto the still, so an
-  un-mirrored still means the mesh must be un-mirrored **on the way to the
-  crop** and nowhere else. Deciding where that happens is the real work of
-  the change, and it is not in this module.
-
-And then in the app:
-
-- `src/features/hair-scan/region-crops.ts` — the "Mirroring" note, and the
-  `leftTemple` / `rightTemple` rectangles, which are `cx - …` and `cx + …`
-  in mesh coordinates laid straight onto the still by
-  `meshInBox(mesh, still, still)`. Mesh x is preview x; an un-mirrored still
-  needs `1 − x − w`.
-- `src/features/hair-scan/measure/regions.ts` — `REGION_BOXES`, whose
-  negative u *is* image-left, and the comment above it that says image-left
-  is the person's own left. This is the measurement, not the picture.
-- `src/features/hair-scan/result.ts` — `closestAngle`'s `leftSign` default,
-  and `faceObservationFor`'s `eyes.left` / `eyes.right`, which are
-  image-left and image-right on purpose.
-- `src/features/hair-scan/engine.ts` — `REGION_OF_STEP`, whose comment
-  derives the step → region mapping from the mirrored still.
-- Old records. Every photograph already on the phone is mirrored, and
-  nothing in `Photo` records which convention it was written under, so a
-  flip without a stored flag makes a second scan uncomparable with a first.
-
-The last point is the expensive one: the honest version of this change is a
-recorded handedness on each photograph, not a one-line orientation swap.
-
+The failure this is all defending against. The app reads pixels by IMAGE
+side and reports them by PERSON side, so moving one end alone swaps every
+temple with the other temple — silently, with no error anywhere, and on a
+symmetric head it looks perfectly fine while it does it. That is why the bit
+is a constant read from one place rather than a sign written out at each
+site, why the two languages are checked against each other, and why the
+tests assert *agreement with the flag* rather than a fixed side.
 ## What a frame carries
 
 `onFace` fires at most 60 times a second with either `{ lost: true }` or a

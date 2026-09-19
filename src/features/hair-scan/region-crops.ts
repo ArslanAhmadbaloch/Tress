@@ -20,10 +20,13 @@
  * component reads them back.
  *
  * ── Mirroring ─────────────────────────────────────────────────────────
- * The still is written mirrored, as the preview is, so the person's left
- * temple is on the viewer's left in the image, in a front frame and in a
- * turned one alike. `leftTemple` is therefore always the image-left
- * corner beside the face box, and `rightTemple` the image-right one.
+ * Which side of the image a person's own left temple lands on is decided
+ * in one place, `handedness.ts`, and read here as `OWN_LEFT_SIDE`. It
+ * holds in a front frame and in a turned one alike. Do not write the
+ * sign out again below: the whole point of the constant is that the
+ * preview, the mesh, the still and these crops move together or not at
+ * all, and a temple cut from the wrong side is a mistake a symmetric
+ * head hides completely.
  *
  * ── Two detectors, two boxes ──────────────────────────────────────────
  * This is the one place where the platforms are NOT the same, and an
@@ -66,6 +69,7 @@ import type { Photo, PhotoRegion, PhotoRegionRect } from '@/types/domain';
 
 import { REQUIRED_REGIONS, meshInBox } from './engine';
 import type { FrameMesh, MeshFace, ScanTarget, Size } from './types';
+import { OWN_LEFT_SIDE, OWN_RIGHT_SIDE } from '@/features/hair-scan/handedness';
 
 /** A rectangle in fractions of the image; `PhotoRegionRect` under its report name. */
 export type RegionRect = PhotoRegionRect;
@@ -202,8 +206,17 @@ export function faceRegionRects(face: MeshFace, box: Size): Partial<Record<Repor
   const templeY = top - g.temple.above * height;
   const templeW = g.temple.width * width;
   const templeH = g.temple.height * height;
-  const leftTemple = px({ x: cx - g.temple.inset * width - templeW, y: templeY, w: templeW, h: templeH });
-  const rightTemple = px({ x: cx + g.temple.inset * width, y: templeY, w: templeW, h: templeH });
+  /* The corner beside the face box on one side: image-left when `side`
+     is -1, image-right when it is +1. */
+  const templeAt = (side: 1 | -1) =>
+    px({
+      x: side < 0 ? cx - g.temple.inset * width - templeW : cx + g.temple.inset * width,
+      y: templeY,
+      w: templeW,
+      h: templeH,
+    });
+  const leftTemple = templeAt(OWN_LEFT_SIDE);
+  const rightTemple = templeAt(OWN_RIGHT_SIDE);
 
   const topBand = px({
     x: cx - (g.top.widthScale / 2) * width,

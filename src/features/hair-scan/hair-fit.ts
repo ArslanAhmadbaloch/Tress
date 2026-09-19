@@ -419,23 +419,54 @@ function thin(points: number[], most: number): number[] {
  * into `HairMesh.setHair` alongside the face the frame was sampled at is
  * the whole contract.
  */
+/**
+ * Why a mask was refused, for the developer readout and nothing else.
+ *
+ * The cap has now shipped twice looking like a dome, and both times the
+ * only thing anybody could tell from the screen was that it looked like
+ * a dome. `hairSilhouette` refuses for seven different reasons and they
+ * want completely different fixes — a mask that found almost nothing is
+ * a lighting or a model problem, a mask that found almost everything is
+ * a dark room being read as hair, a scattered one is the model failing
+ * on this face. Naming the reason is the difference between a fix and
+ * another guess.
+ */
+export type FitRefusal =
+  | 'geometry'
+  | 'threshold'
+  | 'empty'
+  | 'tooLittle'
+  | 'tooMuch'
+  | 'scattered'
+  | 'shortOutline';
+
+export type FitAttempt =
+  | { outline: HairSilhouette; refusal?: undefined; share: number }
+  | { outline: null; refusal: FitRefusal; share: number };
+
 export function hairSilhouette(mask: FitMask, geometry: FitGeometry): HairSilhouette | null {
+  return traceHair(mask, geometry).outline;
+}
+
+/** The same trace, with the reason it refused when it did. */
+export function traceHair(mask: FitMask, geometry: FitGeometry): FitAttempt {
   const projection = aspectFill(geometry.source, geometry.view);
-  if (projection === null) return null;
+  if (projection === null) return { outline: null, refusal: 'geometry', share: 0 };
 
   const hair = threshold(mask);
-  if (hair === null) return null;
+  if (hair === null) return { outline: null, refusal: 'threshold', share: 0 };
 
   const w = mask.width;
   const h = mask.height;
   const pixels = w * h;
 
   const { labels, areas, total } = regions(hair, w, h);
-  if (areas.length === 0) return null;
+  const share = total / pixels;
+  if (areas.length === 0) return { outline: null, refusal: 'empty', share };
 
   // Mostly nothing, or mostly everything: neither is a head of hair.
-  const share = total / pixels;
-  if (share < HAIR_FIT.minShare || share > HAIR_FIT.maxShare) return null;
+  if (share < HAIR_FIT.minShare) return { outline: null, refusal: 'tooLittle', share };
+  if (share > HAIR_FIT.maxShare) return { outline: null, refusal: 'tooMuch', share };
 
   // The main piece, plus any of comparable size — hair either side of a
   // face is two pieces and both belong to the same head.
@@ -449,7 +480,9 @@ export function hairSilhouette(mask: FitMask, geometry: FitGeometry): HairSilhou
   const keptArea = kept.reduce((sum, region) => sum + region.area, 0);
   // What is being traced has to be most of what was found, or the mask
   // has scattered and there is no subject in it.
-  if (keptArea / total < HAIR_FIT.minRegionShare) return null;
+  if (keptArea / total < HAIR_FIT.minRegionShare) {
+    return { outline: null, refusal: 'scattered', share };
+  }
 
   // Appended one at a time rather than spread: a boundary can run to
   // thousands of numbers, and spreading that many arguments into `push`
@@ -460,7 +493,9 @@ export function hairSilhouette(mask: FitMask, geometry: FitGeometry): HairSilhou
     for (let i = 0; i < loop.length; i += 1) walk.push(loop[i]);
   }
   const walked = thin(walk, HAIR_FIT.maxPoints);
-  if (walked.length < HAIR_FIT.minPoints * 2) return null;
+  if (walked.length < HAIR_FIT.minPoints * 2) {
+    return { outline: null, refusal: 'shortOutline', share };
+  }
 
   // Grid -> the camera's picture -> the preview. Both steps are scales:
   // the first because the sampler squashed each axis independently, the
@@ -473,7 +508,7 @@ export function hairSilhouette(mask: FitMask, geometry: FitGeometry): HairSilhou
   for (let i = 0; i + 1 < walked.length; i += 2) {
     points.push(walked[i] * kx + dx, walked[i + 1] * ky + dy);
   }
-  return { points };
+  return { outline: { points }, share };
 }
 
 /* -------------------------------- the beat ------------------------------ */

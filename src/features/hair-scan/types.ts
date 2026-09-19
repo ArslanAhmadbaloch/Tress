@@ -311,9 +311,9 @@ export type Size = { width: number; height: number };
 /**
  * The tracked mesh as it sat on the live preview at the moment of a
  * shutter: the smoothed face box and contours, as fractions of the
- * preview view (0–1 across and down), mirrored exactly as the preview
- * and the live mesh are — which is also how the still is written, so no
- * flip stands between the two.
+ * preview view (0–1 across and down), in exactly the handedness the
+ * preview and the live mesh have — which is also how the still is
+ * written, so no flip stands between the two. See `handedness.ts`.
  *
  * Transient. It rides on the kept frame so the processing screen can
  * hold the wireframe on the still, and it is never written to the

@@ -36,6 +36,7 @@ import { syntheticContours } from '@/features/hair-scan/tracking';
 import type { MeshFace, Size } from '@/features/hair-scan/types';
 import type { AnalysisRow, ReportTab } from '@/features/hair-scan/report-model';
 import type { PhotoRegion, PhotoRegionRect } from '@/types/domain';
+import { IMAGE_LEFT_TEMPLE, IMAGE_RIGHT_TEMPLE } from '@/features/hair-scan/handedness';
 
 /* --------------------------------- crops --------------------------------- */
 
@@ -186,8 +187,12 @@ const REGION_TOLERANCE = 0.012;
 export function faceFromRegions(
   regions: Partial<Record<PhotoRegion, PhotoRegionRect>> | undefined,
 ): { cx: number; cy: number; width: number; height: number } | null {
-  const left = regions?.leftTemple;
-  const right = regions?.rightTemple;
+  /* IMAGE sides, not person sides: everything below is arithmetic on the
+     picture, and which temple is on the left of it is `handedness.ts`'s
+     to say. Ask by name here and the gap comes out negative the moment
+     the frame stops being flipped, and the hero quietly stops placing. */
+  const left = regions?.[IMAGE_LEFT_TEMPLE];
+  const right = regions?.[IMAGE_RIGHT_TEMPLE];
   if (!left || !right) return null;
   if (!rectFinite(left) || !rectFinite(right)) return null;
 

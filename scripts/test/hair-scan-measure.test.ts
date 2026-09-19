@@ -38,6 +38,7 @@ import { test } from 'node:test';
 
 import type { MaskImage } from '@/features/assessment/hair-mask';
 import { CAP, HEAD_LINES } from '@/features/hair-scan/head-cap';
+import { FRAME_MIRRORED } from '@/features/hair-scan/handedness';
 import { MIN_CONFIDENCE, MIN_FRAMES, compareScans } from '@/features/hair-scan/measure/compare';
 import {
   EDGE_FACING,
@@ -419,7 +420,14 @@ const lens = (over: Partial<Lens> = {}): Lens => ({ ...LENS, ...over });
 function shoot(p: HeadPoint, at: Lens): Point {
   const r = rotate(p, at.yaw, at.pitch);
   const depth = at.distance - r.w;
-  return { x: at.cx + (at.focal * r.u) / depth, y: at.cy + (at.focal * r.v) / depth };
+  // The head's own +u is the person's own RIGHT, and which side of the
+  // picture that lands on is the whole of `FRAME_MIRRORED`: a flipped
+  // frame keeps it on the right, an un-flipped one puts it on the left,
+  // where another person standing there would see it. This is the only
+  // line in the model that knows, which is what makes the model an
+  // independent check on the code rather than a copy of it.
+  const across = FRAME_MIRRORED ? r.u : -r.u;
+  return { x: at.cx + (at.focal * across) / depth, y: at.cy + (at.focal * r.v) / depth };
 }
 
 /** The front of the head at a face coordinate: where a real scalp sample sits in three dimensions. */
@@ -438,8 +446,11 @@ function onHead(u: number, v: number): HeadPoint {
 function predicted(p: HeadPoint, at: Lens): FacePoint {
   const psi = at.yaw * RAD;
   const th = at.pitch * RAD;
+  // `u` is an image axis, so it turns over with the picture; `v` does not,
+  // and works out identical either way once the yaw's sign goes with it.
+  const u = p.u + p.w * Math.tan(psi);
   return {
-    u: p.u + p.w * Math.tan(psi),
+    u: FRAME_MIRRORED ? u : -u,
     v: p.v + p.u * Math.sin(psi) * Math.tan(th) - p.w * Math.cos(psi) * Math.tan(th),
   };
 }
@@ -465,10 +476,18 @@ function shotObservation(at: Lens): FaceObservation {
     yaw: at.yaw,
     pitch: at.pitch,
     roll: 0,
-    eyes: {
-      left: shoot(onHead(-OUTER_CANTHAL_SHARE, BROW_ABOVE_EYES), at),
-      right: shoot(onHead(OUTER_CANTHAL_SHARE, BROW_ABOVE_EYES), at),
-    },
+    // `eyes.left`/`eyes.right` are IMAGE-left and IMAGE-right, not the
+    // person's — `result.ts` takes them as the extremes of the two eye
+    // contours precisely so the detectors' differing names cannot matter.
+    // So they are ordered by x here too, which keeps the model honest
+    // whichever way round `FRAME_MIRRORED` puts the picture.
+    eyes: (() => {
+      const canthi = [
+        shoot(onHead(-OUTER_CANTHAL_SHARE, BROW_ABOVE_EYES), at),
+        shoot(onHead(OUTER_CANTHAL_SHARE, BROW_ABOVE_EYES), at),
+      ].sort((a, b) => a.x - b.x);
+      return { left: canthi[0], right: canthi[1] };
+    })(),
     brow: shoot(onHead(-0.3, 0), at),
     chin: shoot(onHead(0, HEAD.chin), at),
   };
@@ -608,11 +627,15 @@ test('frame: a tracker reporting the yaw the other way round is caught, not abso
   const rightWay = headHitAt({ yaw: at.yaw, pitch: at.pitch }, back);
   const wrongWay = headHitAt({ yaw: -at.yaw, pitch: at.pitch }, back);
   assert.ok(rightWay, 'the sign the tracker reported finds the head');
-  const right = Math.hypot(rightWay.point.u - point.u, rightWay.point.w - point.w);
+  // `headHitAt` works in the picture's axes, and `point` is in the head's
+  // own, so the two only line up when the picture is flipped. Compare in
+  // the picture's, which is where the answer is used.
+  const expected = { u: FRAME_MIRRORED ? point.u : -point.u, w: point.w };
+  const right = Math.hypot(rightWay.point.u - expected.u, rightWay.point.w - expected.w);
   assert.ok(right < 0.25, `the right sign puts the sample ${right.toFixed(3)} from where it is`);
   // A flipped sign either misses the head altogether or lands somewhere else on it.
   const wrong = wrongWay
-    ? Math.hypot(wrongWay.point.u - point.u, wrongWay.point.w - point.w)
+    ? Math.hypot(wrongWay.point.u - expected.u, wrongWay.point.w - expected.w)
     : Infinity;
   assert.ok(wrong > right * 3, `a flipped yaw drifted only ${wrong.toFixed(3)}`);
 });
@@ -730,9 +753,15 @@ test('regions: the anchored three sit within a face of the brow; the weak ones s
 });
 
 test('regions: the hairline band and the temples meet without a gap or an overlap', () => {
-  assert.equal(regionBox('hairline').u1, regionBox('rightTemple').u0);
-  assert.equal(regionBox('hairline').u0, regionBox('leftTemple').u1);
-  assert.equal(regionBox('leftTemple').u0, -regionBox('rightTemple').u1);
+  // Which NAME sits on which side of the picture is `FRAME_MIRRORED`'s
+  // to say, so the tiling is asserted by side rather than by name: the
+  // band meets a temple at each of its edges, and the two temples are
+  // each other's reflection.
+  const temples = [regionBox('leftTemple'), regionBox('rightTemple')].sort((a, b) => a.u0 - b.u0);
+  const [outerLeft, outerRight] = temples;
+  assert.equal(regionBox('hairline').u0, outerLeft.u1, 'a gap on the image-left edge');
+  assert.equal(regionBox('hairline').u1, outerRight.u0, 'a gap on the image-right edge');
+  assert.equal(outerLeft.u0, -outerRight.u1, 'the two temples are not mirror images');
 });
 
 test('regions: a temple turns away when the head turns the other way', () => {
@@ -916,7 +945,14 @@ test('coverage: a region mostly outside the picture yields nothing, not a small 
   const at = pose({ cx: 0.98 });
   const frame = frameAt(at);
   const mask = paint(frame, MASK_SIDE, () => 1);
-  assert.equal(readRegion(mask, frame, 'rightTemple', 1), null);
+  // The head is pushed against the right edge, so it is the temple on the
+  // IMAGE's right that falls out of shot — and which name that is belongs
+  // to `FRAME_MIRRORED`. Both are asserted, so the test cannot pass by
+  // refusing everything.
+  const outOfShot = FRAME_MIRRORED ? 'rightTemple' : 'leftTemple';
+  const inShot = FRAME_MIRRORED ? 'leftTemple' : 'rightTemple';
+  assert.equal(readRegion(mask, frame, outOfShot, 1), null, `${outOfShot} read half a temple`);
+  assert.ok(readRegion(mask, frame, inShot, 1), `${inShot} was in shot and read nothing`);
 });
 
 test('coverage: a region facing away from the camera yields nothing', () => {

@@ -54,6 +54,7 @@ import type { MeshFace } from '@/features/hair-scan/types';
 
 import { HAIR_CLAIMS } from './claims';
 import { assertHonest } from './honesty-words';
+import { IMAGE_LEFT_TEMPLE } from '@/features/hair-scan/handedness';
 
 const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) <= eps;
 
@@ -205,7 +206,9 @@ test('hero: clamped temples, or a band that disagrees without a reason, place no
   assert.equal(faceFromRegions(shifted), null);
   // A temple the clamp has narrowed at the side of the picture disagrees with the gap between them.
   const wide = faceRegionRects(drawnFace(500, 450, 900, 520), BOX);
-  assert.equal(wide.leftTemple?.x, 0, 'the left temple was clamped at the side');
+  // Whichever temple the picture's left edge cuts — the NAME on that side
+  // is `handedness.ts`'s to say, and the recovery must refuse either way.
+  assert.equal(wide[IMAGE_LEFT_TEMPLE]?.x, 0, 'the image-left temple was clamped at the side');
   assert.equal(faceFromRegions(wide), null);
 });
 

@@ -318,20 +318,17 @@ export function scanPhotos(frames: HairScanFrame[], leftSign: 1 | -1 = 1): ScanP
  * `eyes.left` and `eyes.right` are IMAGE-left and IMAGE-right, which is
  * what the engine's frame is built from, so they are taken as the
  * extreme points of the two eye contours rather than from the contours'
- * names. The stills are mirrored and the two detectors name their eyes
- * differently; the extremes do not care.
+ * names. The two detectors name their eyes differently and the
+ * picture's handedness can change; the extremes do not care.
  *
- * That the stills are mirrored is a fact about the camera end, not a
- * choice made here. On iOS it is `captureOrientation` in
- * `modules/hair-face-tracking/ios/HairFaceTrackingView.swift` that turns
- * the still, and it is one of FOUR flips in that module that have to
- * agree — `mirrorTransform` holds the preview, a `1 - x` holds the mesh,
- * a `-yawEye` holds the angles. The whole convention, by file and line,
- * and the list of what would have to move together if a still ever
- * stopped being mirrored, is the "Handedness" section of that module's
- * README. Every place in this feature that says "image-left is the
- * person's own left" is downstream of it, which is why none of them can
- * be flipped one at a time.
+ * Which way round the stills are is a fact about the camera end, not a
+ * choice made here. It is one bit — `FRAME_MIRRORED` in
+ * `src/features/hair-scan/handedness.ts`, and `mirrorPreview` in
+ * `modules/hair-face-tracking/ios/HairFaceTrackingView.swift`, checked
+ * against each other by the quality gate — and everything that depends
+ * on it reads it from there. The whole convention is the "Handedness"
+ * section of that module's README. No site is flipped on its own: doing
+ * so swaps every temple with the other temple, silently.
  *
  * Null when there is nothing to place: no mesh size, no still, or a
  * pose the tracker never read. Null, not a square-on default — see the
