@@ -1217,8 +1217,17 @@ function Scanner({
           /* A null mask is five different failures wearing one word, so
              the segmenter is asked which — see `lastSegmentFailure`. */
           const failed = mask === null ? whyNoMask?.() : null;
+          /* The reason names the stage; the detail is the native error
+             behind it, which for a model that will not load or a run
+             that threw is the only thing that says why. Trimmed hard —
+             this is one line on a camera, not a log. */
+          const detail = failed?.detail ? ` ${failed.detail.slice(0, 60)}` : '';
           setFitRefusal(
-            mask === null ? (failed ? `mask:${failed.reason}` : 'noMask') : (attempt?.refusal ?? null),
+            mask === null
+              ? failed
+                ? `mask:${failed.reason}${detail}`
+                : 'noMask'
+              : (attempt?.refusal ?? null),
           );
         }
       } catch {
