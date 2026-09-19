@@ -28,18 +28,31 @@
  *   transform, the `x` of every mesh point, `captureOrientation` for the
  *   still, and the sign of `roll`.
  *
- * THE TWO MUST HOLD THE SAME VALUE. `scripts/quality-gate.mjs` checks
- * that they do, because a build where they disagree is a build where the
- * iPhone files temples under the wrong names and says nothing.
+ * THE TWO ARE OPPOSITE, and `scripts/quality-gate.mjs` checks that they
+ * stay opposite — see the note below. A build where that relationship
+ * breaks is a build where the iPhone files temples under the wrong names
+ * and says nothing about it.
  *
- * ── Why false ─────────────────────────────────────────────────────────
- * It was true through build 20 and the app's owner, testing on an iPhone,
- * asked four times for the un-mirrored view: a head tilted one way was
- * drawn tilting the other. Flipping this bit moves the preview, the mesh,
- * the still and the crops together, so what changes is the handedness of
- * the whole picture and not which temple is which.
+ * ── Why true, with the Swift flag false ───────────────────────────────
+ * These two are NOT the same question, which cost a build to learn.
+ *
+ * `mirrorPreview` in Swift asks "do we apply a flip to ARKit's feed?".
+ * This constant asks "is the picture the app ends up with flipped?".
+ * They would be the same if ARKit handed over an un-flipped feed. It does
+ * not: with the Swift transform OFF, the preview on a real iPhone shows
+ * the person's own left on the image's LEFT.
+ *
+ * That was measured, not reasoned. Build 23 ships the transform off; the
+ * scanner says "look left", the owner turns to his own left, and his nose
+ * travels to the LEFT of the picture — and the capture fires, because the
+ * engine reads yaw from the head and never from the picture. So the
+ * picture is mirrored while the flip is off.
+ *
+ * Hence `FRAME_MIRRORED === !mirrorPreview`, which the quality gate
+ * checks. Build 23 set them equal and the on-screen arrow pointed at the
+ * wrong side of the head for a whole build.
  */
-export const FRAME_MIRRORED = false;
+export const FRAME_MIRRORED = true;
 
 /**
  * The person's own left, as an image side. `-1` is image-left.

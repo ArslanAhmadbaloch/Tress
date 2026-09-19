@@ -91,18 +91,27 @@ function record(dimension, weight, name, passed, detail) {
   );
   const ts = /export const FRAME_MIRRORED\s*=\s*(true|false)/.exec(tsSource ?? '');
   const swift = /static let mirrorPreview\s*=\s*(true|false)/.exec(swiftSource ?? '');
-  const agreed = Boolean(ts && swift && ts[1] === swift[1]);
+  /*
+   * They must be OPPOSITE, not equal. `mirrorPreview` asks whether a flip
+   * is applied to ARKit's feed; `FRAME_MIRRORED` asks whether the picture
+   * that comes out is flipped. ARKit's front feed arrives flipped, as a
+   * real iPhone showed with the transform off, so applying no flip leaves
+   * a mirrored picture. An earlier version of this check demanded they
+   * match, and the on-screen arrow pointed at the wrong side of the head
+   * for a whole build because of it.
+   */
+  const agreed = Boolean(ts && swift && ts[1] !== swift[1]);
   record(
     'Correctness',
     2,
-    'Frame handedness agrees across TypeScript and Swift',
+    'Frame handedness is opposite the Swift flip flag, as ARKit requires',
     agreed,
     agreed
       ? ''
       : !ts || !swift
         ? 'could not read FRAME_MIRRORED and/or mirrorPreview — one of them moved'
-        : `FRAME_MIRRORED is ${ts[1]} but mirrorPreview is ${swift[1]}; ` +
-          'see src/features/hair-scan/handedness.ts',
+        : `FRAME_MIRRORED is ${ts[1]} and mirrorPreview is ${swift[1]}; they must differ. ` +
+          'See src/features/hair-scan/handedness.ts',
   );
 }
 
