@@ -176,10 +176,59 @@ function inputChannels(model: TensorflowModel): number {
  * the coverage figure that came back looked entirely reasonable. Keep
  * the length in step with the model or the readings are fiction.
  */
+/** A rectangle on a photograph, every side a fraction of the image. */
+export type CropRect = { x: number; y: number; w: number; h: number };
+
+/**
+ * The square to show the model, around a face the detector found.
+ *
+ * ── Why a crop at all ─────────────────────────────────────────────────
+ * The segmenter is a 224-square, and a whole camera frame squashed into
+ * one puts a head about eighty pixels tall in it. At that size the model
+ * does not fail loudly; it returns almost nothing. Measured against the
+ * shipped model on a real head:
+ *
+ *   head fills the frame          peak 1.15   hair 6.90%
+ *   head 55% of the frame         peak 0.75   hair 0.26%
+ *   head 40% of the frame         peak 0.44   hair 0.00%
+ *   head 28% of the frame         peak 0.29   hair 0.00%
+ *
+ * A phone at arm's length lands in the dead rows, which is why every
+ * region read zero coverage and a hundred visible scalp over a head full
+ * of hair. Cropped to the head first, the same frames read peak 1.11 and
+ * 6.62% hair — the same as a photograph the head fills.
+ *
+ * ── The numbers ───────────────────────────────────────────────────────
+ * 1.8 times the longer side of the face box, measured rather than
+ * guessed: 1.8 gave 6.7%, 2.4 gave 3.2% and 3.0 gave 0.03%, against 6.9%
+ * for a frame the head fills. Tighter than 1.8 starts cutting hair off
+ * at the sides; looser puts the room back in.
+ *
+ * Lifted by a third of the box's height because a face box is a FACE and
+ * the hair is above it — centring on the box alone crops the top of the
+ * head off.
+ *
+ * Square, because the model's input is, and a non-square crop would be
+ * squashed on one axis and put the regions out by the difference.
+ */
+export function headCrop(box: CropRect): CropRect {
+  const side = Math.max(box.w, box.h) * 1.8;
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2 - box.h * 0.35;
+  /* Clamped to the picture, and the side with it: a crop that hangs off
+     an edge would otherwise be read as though the missing part were
+     black, and the mask would carry a straight edge that is not hair. */
+  const half = Math.min(side / 2, 0.5);
+  const x = Math.min(Math.max(cx - half, 0), 1 - half * 2);
+  const y = Math.min(Math.max(cy - half, 0), 1 - half * 2);
+  return { x, y, w: half * 2, h: half * 2 };
+}
+
 async function inputTensor(
   uri: string,
   side: number,
   channels: number,
+  crop: CropRect | null,
 ): Promise<Float32Array | null> {
   try {
     /*
@@ -199,7 +248,25 @@ async function inputTensor(
       measurement is taken from the shrunk capture rather than the raw
       camera frame for exactly the same reason.
     */
-    const context = ImageManipulator.manipulate(uri).resize({ width: side, height: side });
+    /* Cropped to the head first when a face was found — see `headCrop`
+       for the measurements that made that necessary. The crop is in
+       image fractions and the manipulator wants pixels, so it needs the
+       photograph's own size; `renderAsync` gives it before the resize. */
+    let context = ImageManipulator.manipulate(uri);
+    if (crop) {
+      const sized = await ImageManipulator.manipulate(uri).renderAsync();
+      const iw = sized.width;
+      const ih = sized.height;
+      if (iw > 0 && ih > 0) {
+        context = context.crop({
+          originX: Math.round(crop.x * iw),
+          originY: Math.round(crop.y * ih),
+          width: Math.max(1, Math.round(crop.w * iw)),
+          height: Math.max(1, Math.round(crop.h * ih)),
+        });
+      }
+    }
+    context = context.resize({ width: side, height: side });
     const rendered = await context.renderAsync();
     const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.92 });
 
@@ -530,13 +597,23 @@ export async function measureCoverage(uri: string): Promise<PhotoMeasurement | n
  * with the mask let go of, so the two can never disagree about what a
  * photograph measured.
  */
-export async function measureMask(uri: string): Promise<MaskMeasurement | null> {
+export async function measureMask(
+  uri: string,
+  /**
+   * The face box the tracker found, in image fractions, when there was
+   * one. With it the model is shown a square around the head; without it
+   * the whole frame, which is what every build before this did and is
+   * why the report read zero over a head full of hair. See `headCrop`.
+   */
+  faceBox?: CropRect,
+): Promise<MaskMeasurement | null> {
   try {
     const model = await segmenter();
     const side = inputSide(model);
     const channels = inputChannels(model);
 
-    const input = await inputTensor(uri, side, channels);
+    const crop = faceBox && faceBox.w > 0 && faceBox.h > 0 ? headCrop(faceBox) : null;
+    const input = await inputTensor(uri, side, channels, crop);
     if (!input) return null;
 
     /*
@@ -577,6 +654,11 @@ export async function measureMask(uri: string): Promise<MaskMeasurement | null> 
       the shutter on an older phone, measure here first.
     */
     const mask = hairChannel(output, side, classes);
+    /* The mask covers the crop, not the whole picture. `sampleMask`
+       reads a region by image fraction and has to be told, or every
+       region lands somewhere it is not — silently, with figures that
+       still look reasonable. */
+    if (crop) mask.source = crop;
     const coverage = coverageOf(mask);
     /*
       A mask too fragmented to trace still keeps its squares. The

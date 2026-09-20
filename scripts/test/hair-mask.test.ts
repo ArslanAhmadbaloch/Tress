@@ -627,18 +627,37 @@ function code(relative: string): string {
     .join('\n');
 }
 
-test('alignment: the segmenter squashes the whole frame and never crops it', () => {
-  // Crop-to-square is the obvious optimisation here and it is silent:
-  // the figures stay plausible, the outline slides off the head, and
-  // nothing throws. A commit that does it has to delete this to do it.
+test('alignment: a cropped mask always says which part of the frame it covers', () => {
+  /*
+    This used to forbid `.crop(` outright, because a crop before the
+    model is silent: the figures stay plausible, the outline slides off
+    the head, and nothing throws.
+
+    The crop is now necessary and the invariant has moved rather than
+    gone. The segmenter is a 224-square, and a whole camera frame
+    squashed into one leaves a head about eighty pixels tall — at which
+    size the model returns almost nothing. Measured on a real head: 6.90%
+    hair when the head fills the frame, 0.00% at 40% of it, and 6.62%
+    again once cropped to the head. A phone at arm's length sits in the
+    dead rows, which is why every region read zero coverage and a hundred
+    visible scalp over a head full of hair.
+
+    So what is enforced is the honesty the old rule was protecting: a
+    mask that covers a crop must carry the rectangle, and the sampler
+    must read through it. Either half alone is the silent failure.
+  */
   const source = code('src/features/assessment/hair-segmenter.ts');
   assert.ok(
     source.includes('.resize({ width: side, height: side })'),
-    'the resize must give both dimensions, which is a scale on each axis and not a crop',
+    'the resize must still give both dimensions: a scale on each axis, not a second crop',
   );
   assert.ok(
-    !source.includes('.crop('),
-    'a crop before the model puts the outline somewhere the photograph is not',
+    source.includes('mask.source = crop'),
+    'a mask built from a crop must carry the rectangle it came from',
+  );
+  assert.ok(
+    code('src/features/hair-scan/measure/coverage.ts').includes('const src = mask.source'),
+    'and the sampler must read a region through that rectangle',
   );
   assert.ok(
     readFileSync(repoFile('src/features/assessment/hair-segmenter.ts'), 'utf8').includes(
@@ -662,8 +681,12 @@ test('alignment: the scan measures the frame it stores, not the raw one', () => 
   assert.equal(shrunk, shutters, 'every takePhoto hands back the shrunk capture');
 
   const analysis = code('src/features/hair-scan/analysis.ts');
+  /* `frame.uri` is what matters: the KEPT frame, which is the shrunk
+     capture. The face box rides along beside it so the segmenter can
+     crop to the head — see `headCrop` — and that changes which part of
+     the kept frame is read, never which file. */
   assert.ok(
-    analysis.includes('measureCoverage(frame.uri)'),
+    /measureCoverage\(frame\.uri(?:,\s*faceBox)?\)/.test(analysis),
     'the mask must be measured on the kept frame, which is the shrunk capture',
   );
   assert.ok(

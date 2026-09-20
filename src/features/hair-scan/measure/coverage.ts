@@ -134,6 +134,24 @@ export type RegionReading = {
 /** The mask value at an image-fraction point, or null when the point is outside the image. */
 function sampleMask(mask: MaskImage, p: { x: number; y: number }): number | null {
   if (!(p.x >= 0) || !(p.y >= 0) || p.x >= 1 || p.y >= 1) return null;
+  /*
+    A mask may cover a square around the head rather than the whole
+    picture — see `MaskImage.source` for why it has to. The point arrives
+    as a fraction of the PHOTOGRAPH, so it is moved into the mask's own
+    fractions first, and a point outside the crop is no reading at all
+    rather than the nearest edge pixel.
+  */
+  const src = mask.source;
+  if (src) {
+    if (!(src.w > 0) || !(src.h > 0)) return null;
+    const mx = (p.x - src.x) / src.w;
+    const my = (p.y - src.y) / src.h;
+    if (!(mx >= 0) || !(my >= 0) || mx >= 1 || my >= 1) return null;
+    const c = Math.min(mask.width - 1, Math.floor(mx * mask.width));
+    const r = Math.min(mask.height - 1, Math.floor(my * mask.height));
+    const v = mask.data[r * mask.width + c];
+    return Number.isFinite(v) ? v : null;
+  }
   const col = Math.min(mask.width - 1, Math.floor(p.x * mask.width));
   const row = Math.min(mask.height - 1, Math.floor(p.y * mask.height));
   const value = mask.data[row * mask.width + col];

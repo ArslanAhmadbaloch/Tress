@@ -31,6 +31,35 @@ export type MaskImage = {
   width: number;
   height: number;
   data: Float32Array;
+  /**
+   * The part of the photograph this mask covers, in image fractions.
+   *
+   * Absent means the whole picture, which is what every mask was until
+   * the model had to be shown a head rather than a room.
+   *
+   * ── Why a mask is no longer the whole frame ──────────────────────────
+   * The segmenter is a 224-square. Fed a whole camera frame it gets a
+   * head about eighty pixels tall, and at that size it does not fail
+   * loudly — it returns almost nothing. Measured against the shipped
+   * model on a real head:
+   *
+   *   head fills the frame          peak 1.15   hair 6.90%
+   *   head 40% of the frame         peak 0.44   hair 0.00%
+   *   head 28% of the frame         peak 0.29   hair 0.00%
+   *   head 28%, cropped to it 1.8x  peak 1.11   hair 6.62%
+   *
+   * A phone held at arm's length puts the head at about a third of the
+   * frame, which is the dead row. So the model is shown a square around
+   * the face instead, and this rectangle is how a point in the mask is
+   * mapped back onto the photograph.
+   *
+   * It is not optional bookkeeping. `sampleMask` reads a region by image
+   * fraction, and a cropped mask read as though it were the whole frame
+   * puts every region somewhere it is not — silently, with figures that
+   * still look reasonable. That is the failure the note in `inputTensor`
+   * has always warned about; this field is what keeps it honest.
+   */
+  source?: { x: number; y: number; w: number; h: number };
 };
 
 /**

@@ -302,7 +302,12 @@ export type AnalysisDeps = {
    * the figures is still a valid answer — the frame is measured for area
    * and takes no part in the regional measurement.
    */
-  measureCoverage: ((uri: string) => Promise<(PhotoMeasurement & { mask?: MaskImage }) | null>) | null;
+  measureCoverage:
+    | ((
+        uri: string,
+        faceBox?: { x: number; y: number; w: number; h: number },
+      ) => Promise<(PhotoMeasurement & { mask?: MaskImage }) | null>)
+    | null;
 };
 
 export type AnalysisPacing = {
@@ -629,8 +634,21 @@ export async function runAnalysis(
     } else if (unit.kind === 'area' && unit.frameId !== null && deps.measureCoverage) {
       const frame = measurements.get(unit.frameId)!;
       const measureCoverage = deps.measureCoverage;
+      /*
+        The face box goes with the file. The segmenter is a 224-square,
+        and a whole camera frame squashed into one leaves a head about
+        eighty pixels tall — at which size the model returns almost
+        nothing, which is what made every region read zero coverage and a
+        hundred visible scalp over a head full of hair. With a box it
+        crops to the head first. Without one it cannot, and measures the
+        frame as it always did.
+      */
+      const bounds = sources.get(unit.frameId)?.face?.bounds;
+      const faceBox = bounds
+        ? { x: bounds.x, y: bounds.y, w: bounds.width, h: bounds.height }
+        : undefined;
       const reading = await withinTime(
-        measure(() => measureCoverage(frame.uri)).catch(() => null),
+        measure(() => measureCoverage(frame.uri, faceBox)).catch(() => null),
         pacing.areaCeilingMs,
       );
       if (reading !== OUTRAN && reading !== null) {

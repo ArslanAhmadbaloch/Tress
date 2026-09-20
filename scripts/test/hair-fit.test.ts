@@ -717,7 +717,19 @@ test('the segmenter keeps its still road and gains a raw one', () => {
     'the photograph road still squashes rather than crops',
   );
   assert.ok(source.includes('export async function segmentFrame('), 'and there is a raw road');
-  assert.ok(!source.includes('.crop('), 'neither road may crop');
+  /*
+    A crop IS allowed now, and has to be: a whole frame squashed into the
+    model's 224 square leaves a head about eighty pixels tall, and the
+    model returns almost nothing at that size — 0.00% hair against 6.90%
+    for a frame the head fills. What the old rule was really protecting
+    is that a cropped mask must say so, which
+    `alignment: a cropped mask always says which part of the frame it
+    covers` in hair-mask.test.ts now holds it to.
+  */
+  assert.ok(
+    source.includes('export function headCrop('),
+    'the crop must be one stated geometry, not an inline rectangle per road',
+  );
 });
 
 test('nothing on the live road reaches the network', () => {
