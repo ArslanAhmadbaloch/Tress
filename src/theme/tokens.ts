@@ -46,6 +46,12 @@ const palette = {
 
   amber400: '#C99A5B',
   clay400: '#C77B6B',
+  /* The one cool hue in the set, and it earns its place: the scan's cap
+     is drawn in three colours at once and needs a third that cannot be
+     mistaken for the sage or the clay beside it. Slate rather than a
+     medical blue, so it sits with the warm neutrals instead of against
+     them. Used by the cap and by nothing else. */
+  slate400: '#7C93A8',
 } as const;
 
 export type ColorTokens = {
@@ -75,6 +81,13 @@ export type ColorTokens = {
   success: string;
   warning: string;
   danger: string;
+
+  /* The scan cap's three regions, drawn over live video. Named for what
+     they mark rather than for their hue, so a palette change moves them
+     together. */
+  meshCentre: string;
+  meshTemple: string;
+  meshCrown: string;
 
   separator: string;
   /** Hairline border for glass and cards. */
@@ -160,6 +173,9 @@ export const lightColors: ColorTokens = {
   accentBorder: palette.sage100,
 
   success: palette.sage500,
+  meshCentre: palette.sage500,
+  meshTemple: palette.clay400,
+  meshCrown: palette.slate400,
   warning: palette.amber400,
   danger: palette.clay400,
 
@@ -232,6 +248,9 @@ export const darkColors: ColorTokens = {
   accentBorder: 'rgba(143, 177, 131, 0.26)',
 
   success: palette.sage400,
+  meshCentre: palette.sage400,
+  meshTemple: palette.clay400,
+  meshCrown: palette.slate400,
   warning: palette.amber400,
   danger: '#D8907F',
 
