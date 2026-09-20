@@ -799,3 +799,41 @@ test('the outline lands where the crop was, not stretched across the picture', (
   // And the whole-frame one is wider than the crop could ever be.
   assert.ok(Math.max(...wx) > midX, 'the whole-frame outline should span more than a quarter');
 });
+
+test('the face box survives the trip from the preview into the sample', () => {
+  /*
+    The scan screen has to put the tracked face into the SAMPLE's
+    fractions before the segmenter can crop to it: the sample is the
+    whole camera frame squashed into a square, the face is in preview
+    points, and the preview is a cover crop of that frame. It does it by
+    reading `aspectFill` — the same projection the trace uses on the way
+    back out — backwards.
+
+    An error here is silent in the worst way: the crop lands beside the
+    head, the model finds no hair in it, and the readout says the mask is
+    empty, which is exactly what a model fed a whole frame says too. So
+    the round trip is pinned rather than trusted.
+  */
+  const source = { width: 1440, height: 1920 };
+  const view = { width: 390, height: 844 };
+  const fill = aspectFill(source, view);
+  assert.ok(fill);
+
+  const want = { x: 0.32, y: 0.24, w: 0.34, h: 0.28 };
+  const face = {
+    cx: (want.x + want.w / 2) * source.width * fill.scale + fill.dx,
+    cy: (want.y + want.h / 2) * source.height * fill.scale + fill.dy,
+    width: want.w * source.width * fill.scale,
+    height: want.h * source.height * fill.scale,
+  };
+  // Exactly the expression in `src/app/hair-scan.tsx`.
+  const got = {
+    x: (face.cx - face.width / 2 - fill.dx) / fill.scale / source.width,
+    y: (face.cy - face.height / 2 - fill.dy) / fill.scale / source.height,
+    w: face.width / fill.scale / source.width,
+    h: face.height / fill.scale / source.height,
+  };
+  for (const k of ['x', 'y', 'w', 'h'] as const) {
+    assert.ok(Math.abs(got[k] - want[k]) < 1e-9, `${k}: wanted ${want[k]}, got ${got[k]}`);
+  }
+});
