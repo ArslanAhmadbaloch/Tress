@@ -383,6 +383,7 @@ export async function segmentFrame(frame: RawFrame): Promise<MaskImage | null> {
       return null;
     }
 
+    noteTensor(input, side, channels);
     const output = await runModel(model, input);
     const classes = Math.max(1, Math.round(output.length / (side * side)));
     const mask = hairChannel(output, side, classes);
@@ -408,6 +409,44 @@ export async function segmentFrame(frame: RawFrame): Promise<MaskImage | null> {
  * failures wore one word, and two builds were spent guessing which.
  */
 export type SegmentFailure = 'model' | 'frame' | 'shape' | 'run' | 'output';
+
+/**
+ * What the last tensor handed to the model actually held.
+ *
+ * Diagnostics only. The model produces a good mask on a desktop and a
+ * near-empty one on a phone from the same file, so the question is what
+ * the phone is feeding it, and there is no way to ask from here. A
+ * correctly built tensor runs 0 to 1 with a mean around a half; 0 to 255
+ * means the divide went missing, all zeros means the buffer arrived
+ * empty, and a mean near zero with a tiny max means it arrived scaled
+ * twice.
+ */
+let lastTensor: { mean: number; min: number; max: number; side: number; channels: number } | null =
+  null;
+
+export function lastTensorStats(): typeof lastTensor {
+  return lastTensor;
+}
+
+function noteTensor(input: Float32Array, side: number, channels: number): void {
+  let sum = 0;
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < input.length; i += 1) {
+    const v = input[i];
+    if (!Number.isFinite(v)) continue;
+    sum += v;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  lastTensor = {
+    mean: input.length > 0 ? sum / input.length : 0,
+    min: Number.isFinite(min) ? min : 0,
+    max: Number.isFinite(max) ? max : 0,
+    side,
+    channels,
+  };
+}
 
 let lastFailure: SegmentFailure | null = null;
 /** Kept for the readout: the throw behind a `model` or `run` failure. */
@@ -510,6 +549,7 @@ export async function measureMask(uri: string): Promise<MaskMeasurement | null> 
     const expected = side * side * channels;
     if (input.length !== expected) return null;
 
+    noteTensor(input, side, channels);
     const output = await runModel(model, input);
 
     // Classes per pixel, from the output tensor rather than assumed.

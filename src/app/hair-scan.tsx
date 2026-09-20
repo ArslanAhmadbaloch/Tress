@@ -206,6 +206,8 @@ import { isScanSession, type Angle, type PhotoSession } from '@/types/domain';
 type SegmentFrame = typeof import('@/features/assessment/hair-segmenter').segmentFrame;
 /** Companion to the above: why the last frame produced no mask. */
 type LastSegmentFailure = typeof import('@/features/assessment/hair-segmenter').lastSegmentFailure;
+/** And what the tensor handed to the model actually held. */
+type LastTensorStats = typeof import('@/features/assessment/hair-segmenter').lastTensorStats;
 
 /**
  * The strongest hair confidence anywhere in a mask, for the readout.
@@ -1171,6 +1173,7 @@ function Scanner({
     let timer: ReturnType<typeof setInterval> | null = null;
     let segment: SegmentFrame | null = null;
     let whyNoMask: LastSegmentFailure | null = null;
+    let tensorStats: LastTensorStats | null = null;
 
     const stop = (): void => {
       live = false;
@@ -1249,6 +1252,15 @@ function Scanner({
              one pass over a buffer that is only walked when the readout
              is switched on. */
           const peak = mask === null ? 0 : maskPeak(mask.data);
+          /* What went IN, not just what came out. The model gives a good
+             mask on a desktop and a near-empty one here from the same
+             file, so the tensor's own range is the question: 0-1 with a
+             mean near a half is right, 0-255 is a missing divide, all
+             zeros is an empty buffer. */
+          const t = tensorStats?.();
+          const tin = t
+            ? ` in[${t.min.toFixed(2)}-${t.max.toFixed(2)} u${t.mean.toFixed(2)} ${t.side}x${t.channels}]`
+            : '';
           const numbers =
             mask === null || attempt === null
               ? ''
@@ -1259,7 +1271,7 @@ function Scanner({
                 ? `mask:${failed.reason}${detail}`
                 : 'noMask'
               : attempt?.refusal
-                ? `${attempt.refusal}${numbers}`
+                ? `${attempt.refusal}${numbers}${tin}`
                 : null,
           );
         }
@@ -1289,6 +1301,7 @@ function Scanner({
         if (!live) return;
         segment = model.segmentFrame;
         whyNoMask = model.lastSegmentFailure;
+        tensorStats = model.lastTensorStats;
       } catch {
         // A binary built without the model. The dome is what this phone
         // draws, which is what every phone drew before this existed.
