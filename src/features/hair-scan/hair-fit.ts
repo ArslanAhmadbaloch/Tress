@@ -76,6 +76,20 @@ export type FitSize = { width: number; height: number };
 export type FitGeometry = {
   source: FitSize;
   view: FitSize;
+  /**
+   * The part of the source the MASK covers, in source fractions.
+   *
+   * Absent means the whole frame. Present when the segmenter was shown a
+   * square around the head instead — which it has to be, because a whole
+   * frame squashed into its 224 square leaves a head about eighty pixels
+   * tall and the model returns almost nothing at that size. See
+   * `headCrop` in `hair-segmenter.ts` for the measurements.
+   *
+   * Without it the outline is drawn as though the crop were the whole
+   * picture: a hair silhouette stretched across the screen, in the right
+   * shape and the wrong place, with nothing thrown.
+   */
+  crop?: { x: number; y: number; w: number; h: number };
 };
 
 /** How the picture is laid into the preview: one scale and two offsets. */
@@ -501,12 +515,19 @@ export function traceHair(mask: FitMask, geometry: FitGeometry): FitAttempt {
   // the first because the sampler squashed each axis independently, the
   // second because the preview fills its bounds with the picture.
   const { scale, dx, dy } = projection;
-  const kx = (geometry.source.width / w) * scale;
-  const ky = (geometry.source.height / h) * scale;
+  /* Grid -> crop -> the camera's picture -> the preview. The crop is one
+     more scale and one more offset, and absent it is the identity. */
+  const crop = geometry.crop;
+  const cw = crop ? crop.w : 1;
+  const ch = crop ? crop.h : 1;
+  const kx = ((geometry.source.width * cw) / w) * scale;
+  const ky = ((geometry.source.height * ch) / h) * scale;
+  const ox = dx + (crop ? crop.x * geometry.source.width * scale : 0);
+  const oy = dy + (crop ? crop.y * geometry.source.height * scale : 0);
 
   const points: number[] = [];
   for (let i = 0; i + 1 < walked.length; i += 2) {
-    points.push(walked[i] * kx + dx, walked[i + 1] * ky + dy);
+    points.push(walked[i] * kx + ox, walked[i + 1] * ky + oy);
   }
   return { outline: { points }, share };
 }

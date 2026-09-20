@@ -39,6 +39,7 @@ import {
   aspectFill,
   dueForFit,
   hairSilhouette,
+  traceHair,
   type FitClock,
   type FitMask,
 } from '@/features/hair-scan/hair-fit';
@@ -751,4 +752,50 @@ test('the fit file claims nothing about anybody’s hair', () => {
   for (const claim of ['density', 'thinning', 'diagnos', 'regrow', 'hair loss', 'norwood']) {
     assert.ok(!text.includes(claim), `hair-fit.ts says "${claim}"`);
   }
+});
+
+test('the outline lands where the crop was, not stretched across the picture', () => {
+  /*
+    The silent one. A mask may cover a square around the head rather than
+    the whole frame — it has to, because a whole frame squashed into the
+    model's 224 square leaves a head about eighty pixels tall and the
+    model returns almost nothing there. Traced as though that crop WERE
+    the whole picture, the outline comes out the right shape in the wrong
+    place, stretched across the screen, with nothing thrown.
+
+    So: the same mask, traced once as a whole frame and once as a crop of
+    a quarter of one, must not produce the same points — and the cropped
+    one must sit inside the part of the view its crop occupies.
+  */
+  const side = 64;
+  const data = new Float32Array(side * side);
+  // A blob in the middle of the mask.
+  for (let y = 16; y < 48; y += 1) {
+    for (let x = 16; x < 48; x += 1) data[y * side + x] = 1;
+  }
+  const mask = { width: side, height: side, data };
+  const source = { width: 1000, height: 1000 };
+  const view = { width: 400, height: 400 };
+
+  const whole = traceHair(mask, { source, view });
+  assert.ok(whole.outline, `whole-frame trace refused: ${whole.refusal}`);
+
+  // A crop occupying the top-left quarter of the frame.
+  const crop = { x: 0, y: 0, w: 0.5, h: 0.5 };
+  const cropped = traceHair(mask, { source, view, crop });
+  assert.ok(cropped.outline, `cropped trace refused: ${cropped.refusal}`);
+
+  const xs = (o: { points: number[] }) => o.points.filter((_, i) => i % 2 === 0);
+  const ys = (o: { points: number[] }) => o.points.filter((_, i) => i % 2 === 1);
+  const wx = xs(whole.outline);
+  const cx = xs(cropped.outline);
+  assert.notDeepEqual(cx, wx, 'a crop that changes nothing is a crop that is being ignored');
+
+  // Everything drawn for a top-left quarter crop must sit in that quarter.
+  const midX = view.width / 2;
+  const midY = view.height / 2;
+  assert.ok(Math.max(...cx) <= midX + 1e-6, 'the cropped outline ran past the crop in x');
+  assert.ok(Math.max(...ys(cropped.outline)) <= midY + 1e-6, 'and past it in y');
+  // And the whole-frame one is wider than the crop could ever be.
+  assert.ok(Math.max(...wx) > midX, 'the whole-frame outline should span more than a quarter');
 });

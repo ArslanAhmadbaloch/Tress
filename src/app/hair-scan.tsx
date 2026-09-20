@@ -148,6 +148,7 @@ import {
   FIT_CLOCK_START,
   FIT_TICK_MS,
   dueForFit,
+  aspectFill,
   traceHair,
   type FitRefusal,
   type FitClock,
@@ -1212,18 +1213,51 @@ function Scanner({
       fitClock.current = { busy: true, at: now };
       try {
         const sample = await sampleArFrame(SAMPLE_SIZE);
-        const mask = await segment({
-          data: sample.data,
-          width: sample.size,
-          height: sample.size,
-        });
+        /*
+          The face box, carried from the PREVIEW into the sample's own
+          fractions.
+
+          The sample is the whole camera frame squashed into a square and
+          the tracked face is in preview points, so the preview's cover
+          crop has to be undone between them — the same `aspectFill` the
+          trace uses on the way back out, read backwards.
+
+          It matters because the segmenter is a 224-square: a whole frame
+          squashed into one leaves a head about eighty pixels tall, and
+          the model returns almost nothing at that size. Cropping this
+          same sample to the head measured 4.90% hair against 0.00% for
+          the whole frame. Without a face there is no crop, and the model
+          sees the room as it always did.
+        */
+        const source = { width: sample.sourceWidth, height: sample.sourceHeight };
+        const fill = aspectFill(source, view);
+        const faceBox =
+          fill && fill.scale > 0 && source.width > 0 && source.height > 0
+            ? {
+                x: (face.cx - face.width / 2 - fill.dx) / fill.scale / source.width,
+                y: (face.cy - face.height / 2 - fill.dy) / fill.scale / source.height,
+                w: face.width / fill.scale / source.width,
+                h: face.height / fill.scale / source.height,
+              }
+            : undefined;
+        const mask = await segment(
+          {
+            data: sample.data,
+            width: sample.size,
+            height: sample.size,
+          },
+          faceBox,
+        );
         if (!live) return;
         const attempt =
           mask === null
             ? null
             : traceHair(mask, {
-                source: { width: sample.sourceWidth, height: sample.sourceHeight },
+                source,
                 view,
+                /* The mask covers the crop, so the outline has to be put
+                   back where the crop was. */
+                ...(mask.source ? { crop: mask.source } : {}),
               });
         mesh.current?.setHair(attempt?.outline ?? null, face);
         // Only for the developer readout, and only when it is switched
