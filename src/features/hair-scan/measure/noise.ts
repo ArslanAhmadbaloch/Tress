@@ -86,8 +86,32 @@ export type RegionMeasurement = {
 };
 
 /** Everything one scan measured, and everything it could not. */
+/**
+ * What the masks themselves held, across the frames a scan measured.
+ *
+ * Diagnostics only — never shown to anybody, never compared, and no part
+ * of a reading. It exists because a region that reads zero coverage and a
+ * hundred visible scalp has two possible causes that look identical on
+ * the screen: a mask with no hair in it, or samples landing somewhere
+ * other than the head. `peak` tells them apart. A mask that never rises
+ * above the threshold anywhere had no hair in it; one that peaks near 1
+ * while the regions read nothing was looked at in the wrong place.
+ */
+export type MaskStats = {
+  /** Frames whose mask was measured. */
+  frames: number;
+  /** Mean value over every pixel of every mask. */
+  mean: number;
+  /** The strongest single pixel any mask reached. */
+  peak: number;
+  /** Share of all pixels at or above the hair threshold. */
+  hairShare: number;
+};
+
 export type ScanMeasurement = {
   regions: Partial<Record<ScanRegion, RegionMeasurement>>;
+  /** See `MaskStats`. Absent on scans measured before it existed. */
+  maskStats?: MaskStats;
   /** Regions the scan could not read well enough to report at all. */
   unread: ScanRegion[];
   capturedAt: string;

@@ -1452,6 +1452,17 @@ function coverageMap(read: readonly ReadRegion[]): CoverageMapRegion[] {
 function devReadoutOf(measurement: ScanMeasurement | null): string {
   if (!measurement) return 'no measurement';
   const lines: string[] = [];
+  /* First, because it decides how to read everything under it: a region
+     at zero coverage and a hundred visible scalp is a mask with no hair
+     in it when `peak` is low, and samples landing off the head when it
+     is high. */
+  const m = measurement.maskStats;
+  lines.push(
+    m
+      ? `mask: frames ${m.frames} peak ${m.peak.toFixed(2)} mean ${m.mean.toFixed(3)}` +
+          ` hair ${(m.hairShare * 100).toFixed(1)}%`
+      : 'mask: no stats',
+  );
   for (const region of SCAN_REGIONS) {
     const m = measurement.regions[region];
     if (!m) {

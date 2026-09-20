@@ -248,7 +248,25 @@ export function measureScan(
   const gathered = new Map<ScanRegion, FrameReading[]>();
   for (const region of SCAN_REGIONS) gathered.set(region, []);
 
+  /* See `MaskStats`: what the masks held, whatever the regions made of
+     it. Walked here because this is the one place that has them all. */
+  let statFrames = 0;
+  let statSum = 0;
+  let statPixels = 0;
+  let statPeak = 0;
+  let statHair = 0;
+
   for (const input of frames) {
+    const data = input.mask.data;
+    statFrames += 1;
+    statPixels += data.length;
+    for (let i = 0; i < data.length; i += 1) {
+      const v = data[i];
+      if (!Number.isFinite(v)) continue;
+      statSum += v;
+      if (v > statPeak) statPeak = v;
+      if (v >= HAIR) statHair += 1;
+    }
     const frame = faceFrameOf(input.face);
     if (frame === null) continue;
     const anchoring = anchorGradeOf(frame.anchoredBy);
@@ -266,5 +284,15 @@ export function measureScan(
     else unread.push(region);
   }
 
-  return { regions, unread, capturedAt };
+  return {
+    regions,
+    unread,
+    capturedAt,
+    maskStats: {
+      frames: statFrames,
+      mean: statPixels > 0 ? statSum / statPixels : 0,
+      peak: statPeak,
+      hairShare: statPixels > 0 ? statHair / statPixels : 0,
+    },
+  };
 }

@@ -1138,6 +1138,28 @@ export type PhotoSessionMeasurement = {
   /** Regions this scan could not read well enough to report at all. */
   unread: ScanMeasureRegion[];
   capturedAt: string;
+  /**
+   * What the masks themselves held: frames measured, their mean and peak
+   * value, and the share of pixels the model called hair.
+   *
+   * Four numbers, diagnostics only, never shown to anybody and never
+   * compared. Stored rather than kept in memory because the report is
+   * built from the stored measurement, and the one question it answers
+   * can only be asked after a scan: a region reading zero coverage and a
+   * hundred visible scalp is either a mask with no hair in it or samples
+   * landing off the head, and `peak` is what tells those apart.
+   *
+   * OPTIONAL, and that is the whole of its schema story. A scan measured
+   * before this existed simply has none, which is why `SCHEMA_VERSION`
+   * does not move: bumping it would discard every stored scan to add a
+   * diagnostic.
+   */
+  maskStats?: {
+    frames: number;
+    mean: number;
+    peak: number;
+    hairShare: number;
+  };
 };
 
 /** The six places on a head the measurement engine reads. */
