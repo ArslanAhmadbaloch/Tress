@@ -648,8 +648,12 @@ test('alignment: a cropped mask always says which part of the frame it covers', 
   */
   const source = code('src/features/assessment/hair-segmenter.ts');
   assert.ok(
-    source.includes('.resize({ width: side, height: side })'),
-    'the resize must still give both dimensions: a scale on each axis, not a second crop',
+    source.includes('.resize({ width: work, height: work })'),
+    'the decode must still give both dimensions: a scale on each axis, not a native crop',
+  );
+  assert.ok(
+    !source.includes('.crop('),
+    'the crop belongs in `resampleTensor`, on the one path every live frame exercises',
   );
   assert.ok(
     source.includes('mask.source = crop'),

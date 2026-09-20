@@ -224,6 +224,15 @@ export function headCrop(box: CropRect): CropRect {
   return { x, y, w: half * 2, h: half * 2 };
 }
 
+/**
+ * The square a still is decoded at before the crop is taken from it.
+ *
+ * Bigger than the model's input on purpose: the crop is a fraction of
+ * this, and a crop taken from a 224 square would hand the model a head
+ * of eighty pixels upscaled, which is the problem it is there to solve.
+ */
+const WORKING_SIDE = 512;
+
 async function inputTensor(
   uri: string,
   side: number,
@@ -248,25 +257,25 @@ async function inputTensor(
       measurement is taken from the shrunk capture rather than the raw
       camera frame for exactly the same reason.
     */
-    /* Cropped to the head first when a face was found — see `headCrop`
-       for the measurements that made that necessary. The crop is in
-       image fractions and the manipulator wants pixels, so it needs the
-       photograph's own size; `renderAsync` gives it before the resize. */
-    let context = ImageManipulator.manipulate(uri);
-    if (crop) {
-      const sized = await ImageManipulator.manipulate(uri).renderAsync();
-      const iw = sized.width;
-      const ih = sized.height;
-      if (iw > 0 && ih > 0) {
-        context = context.crop({
-          originX: Math.round(crop.x * iw),
-          originY: Math.round(crop.y * ih),
-          width: Math.max(1, Math.round(crop.w * iw)),
-          height: Math.max(1, Math.round(crop.h * ih)),
-        });
-      }
-    }
-    context = context.resize({ width: side, height: side });
+    /*
+      Squashed to a WORKING square, and cropped afterwards in JavaScript
+      rather than here.
+
+      The crop has to happen — a whole frame in the model's 224 square
+      leaves a head about eighty pixels tall and the model returns almost
+      nothing — but it does not have to happen natively. `resampleTensor`
+      already reads a sub-rectangle for the live road, where it measured
+      4.90% hair against 0.00% for a whole frame, and cropping the live
+      road's own 224 sample matched cropping from full resolution to
+      within a twentieth of a point. One crop, in one place, on the path
+      that is exercised every frame.
+
+      The working square is larger than the model's so the crop still has
+      pixels to give it: at 512 a head a third of the frame high is about
+      180 across before it is resampled up to 224.
+    */
+    const work = crop ? WORKING_SIDE : side;
+    const context = ImageManipulator.manipulate(uri).resize({ width: work, height: work });
     const rendered = await context.renderAsync();
     const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.92 });
 
@@ -316,6 +325,7 @@ async function inputTensor(
       { data: raw.data, width: raw.width, height: raw.height },
       side,
       channels,
+      crop,
     );
   } catch {
     return null;

@@ -714,8 +714,8 @@ test('one interpreter, one run at a time, whichever road asked', () => {
 test('the segmenter keeps its still road and gains a raw one', () => {
   const source = code('src/features/assessment/hair-segmenter.ts');
   assert.ok(
-    source.includes('.resize({ width: side, height: side })'),
-    'the photograph road still squashes rather than crops',
+    source.includes('.resize({ width: work, height: work })'),
+    'the photograph road still squashes both axes; the crop is taken afterwards, in JS',
   );
   assert.ok(source.includes('export async function segmentFrame('), 'and there is a raw road');
   /*
@@ -785,8 +785,8 @@ test('the outline lands where the crop was, not stretched across the picture', (
   const cropped = traceHair(mask, { source, view, crop });
   assert.ok(cropped.outline, `cropped trace refused: ${cropped.refusal}`);
 
-  const xs = (o: { points: number[] }) => o.points.filter((_, i) => i % 2 === 0);
-  const ys = (o: { points: number[] }) => o.points.filter((_, i) => i % 2 === 1);
+  const xs = (o: { points: readonly number[] }) => o.points.filter((_, i) => i % 2 === 0);
+  const ys = (o: { points: readonly number[] }) => o.points.filter((_, i) => i % 2 === 1);
   const wx = xs(whole.outline);
   const cx = xs(cropped.outline);
   assert.notDeepEqual(cx, wx, 'a crop that changes nothing is a crop that is being ignored');
