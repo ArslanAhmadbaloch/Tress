@@ -138,7 +138,6 @@ import {
   CAP_LENGTH,
   CAP_MERIDIANS,
   CAP_REGION_OF,
-  CAP_REGIONS,
   CAP_RINGS,
   CAP_SECTOR_OF,
   CAP_SITES,
@@ -399,35 +398,7 @@ const PATH_GRID = 1;
 const PATH_NEAR = 2;
 const PATH_BAND = 3;
 const PATH_TINT = 4;
-/*
- * The cap's three region paths: centre, temple, crown. They take the
- * whole grid whenever the cap knows its regions, so the mesh reads as
- * the three places the report measures rather than as one wireframe —
- * which is the difference between a dome over somebody's head and a map
- * of it. `PATH_FAR` still wins for the half turned away, because a
- * colour on a surface pointing behind the head is not information.
- */
-const PATH_REGION = PATH_TINT + TINT.steps.length;
-const REGION_CENTRE = 0;
-const REGION_TEMPLE = 1;
-const REGION_CROWN = 2;
-/*
- * Two paths per region, not one: the hue says WHERE a line is and the
- * second path says whether that place has been captured yet. Folding the
- * capture state into opacity rather than into another colour keeps the
- * three regions readable while the scan is still running — losing it
- * altogether would have taken the only feedback the mesh itself gives.
- */
-const PATH_COUNT = PATH_REGION + 6;
-
-/** `CAP_REGION_OF`'s four regions onto the three the cap is drawn in. */
-const REGION_PATH_OF: readonly number[] = CAP_REGIONS.map((region: string) =>
-  region === 'crown'
-    ? REGION_CROWN
-    : region === 'leftTemple' || region === 'rightTemple'
-      ? REGION_TEMPLE
-      : REGION_CENTRE,
-);
+const PATH_COUNT = PATH_TINT + TINT.steps.length;
 
 /* --------------------------- path building (UI) -------------------------- */
 
@@ -462,20 +433,11 @@ function pathOf(
   mean: number,
   a: number,
   b: number,
-  colourByRegion: boolean,
 ): number {
   'worklet';
   const facing = (pts[a * CAP_STRIDE + 2] + pts[b * CAP_STRIDE + 2]) / 2;
   if (facing < FAR_FACING) return PATH_FAR;
   const tint = (tintOf(cover, byRegion, mean, a) + tintOf(cover, byRegion, mean, b)) / 2;
-  if (colourByRegion) {
-    /* The near end of the segment names its region, so a line crossing a
-       boundary belongs to the region it starts in rather than being
-       split — nineteen colour changes round one ring would read as
-       noise, not as a map. */
-    const region = REGION_PATH_OF[CAP_REGION_OF[a]];
-    return PATH_REGION + region * 2 + (tint >= TINT.steps[0] ? 1 : 0);
-  }
   for (let step = TINT.steps.length - 1; step >= 0; step -= 1) {
     if (tint >= TINT.steps[step]) return PATH_TINT + step;
   }
@@ -495,14 +457,13 @@ function walk(
   cover: number[] | null,
   byRegion: boolean,
   mean: number,
-  colourByRegion: boolean,
 ): void {
   'worklet';
   let prev = -1;
   for (let i = 1; i < indices.length; i += 1) {
     const a = indices[i - 1];
     const b = indices[i];
-    const path = pathOf(pts, cover, byRegion, mean, a, b, colourByRegion);
+    const path = pathOf(pts, cover, byRegion, mean, a, b);
     const ka = a * CAP_STRIDE;
     const kb = b * CAP_STRIDE;
     if (path !== prev) out[path] += 'M' + num(pts[ka]) + ' ' + num(pts[ka + 1]);
@@ -512,12 +473,7 @@ function walk(
 }
 
 /** Every path of the cap, from the drawn vertices and the fill. */
-function capPaths(
-  pts: number[],
-  cover: number[] | null,
-  byRegion: boolean,
-  colourByRegion: boolean,
-): string[] {
+function capPaths(pts: number[], cover: number[] | null, byRegion: boolean): string[] {
   'worklet';
   const out: string[] = [];
   for (let i = 0; i < PATH_COUNT; i += 1) out.push('');
@@ -527,11 +483,9 @@ function capPaths(
     for (let i = 0; i < cover.length; i += 1) sum += cover[i];
     mean = sum / cover.length;
   }
-  for (let r = 0; r < CAP_RINGS.length; r += 1) {
-    walk(out, pts, CAP_RINGS[r], cover, byRegion, mean, colourByRegion);
-  }
+  for (let r = 0; r < CAP_RINGS.length; r += 1) walk(out, pts, CAP_RINGS[r], cover, byRegion, mean);
   for (let c = 0; c < CAP_MERIDIANS.length; c += 1) {
-    walk(out, pts, CAP_MERIDIANS[c], cover, byRegion, mean, colourByRegion);
+    walk(out, pts, CAP_MERIDIANS[c], cover, byRegion, mean);
   }
   return out;
 }
@@ -761,22 +715,13 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage, regions }:
   const paths = useDerivedValue(() => {
     const cover =
       regions !== undefined ? regions.get() : coverage === undefined ? null : coverage.get();
-    return capPaths(current.get(), cover, regions !== undefined, true);
+    return capPaths(current.get(), cover, regions !== undefined);
   });
 
   const far = useAnimatedProps(() => ({ d: paths.get()[PATH_FAR], stroke: stroke.get() }));
-  const centre = useAnimatedProps(() => ({ d: paths.get()[PATH_REGION + REGION_CENTRE * 2] }));
-  const centreLit = useAnimatedProps(() => ({
-    d: paths.get()[PATH_REGION + REGION_CENTRE * 2 + 1],
-  }));
-  const temple = useAnimatedProps(() => ({ d: paths.get()[PATH_REGION + REGION_TEMPLE * 2] }));
-  const templeLit = useAnimatedProps(() => ({
-    d: paths.get()[PATH_REGION + REGION_TEMPLE * 2 + 1],
-  }));
-  const crown = useAnimatedProps(() => ({ d: paths.get()[PATH_REGION + REGION_CROWN * 2] }));
-  const crownLit = useAnimatedProps(() => ({
-    d: paths.get()[PATH_REGION + REGION_CROWN * 2 + 1],
-  }));
+  const grid = useAnimatedProps(() => ({ d: paths.get()[PATH_GRID], stroke: stroke.get() }));
+  const near = useAnimatedProps(() => ({ d: paths.get()[PATH_NEAR], stroke: stroke.get() }));
+  const band = useAnimatedProps(() => ({ d: paths.get()[PATH_BAND], stroke: stroke.get() }));
   const tint0 = useAnimatedProps(() => ({ d: paths.get()[PATH_TINT] }));
   const tint1 = useAnimatedProps(() => ({ d: paths.get()[PATH_TINT + 1] }));
   const tint2 = useAnimatedProps(() => ({ d: paths.get()[PATH_TINT + 2] }));
@@ -811,62 +756,25 @@ export function HairMesh({ ref, scanning, tone = 'neutral', coverage, regions }:
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-        {/*
-          The three regions, each its own colour: the centre over the
-          hairline and mid scalp, the temples either side, the crown on
-          top. `grid`, `near` and `band` come back empty while the cap
-          colours by region and are kept so the two roads through
-          `capPaths` stay one shape.
-        */}
         <AnimatedPath
-          animatedProps={centre}
+          animatedProps={grid}
           fill="none"
-          stroke={colors.meshCentre}
           strokeWidth={GRID.width}
           strokeOpacity={GRID.opacity}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         <AnimatedPath
-          animatedProps={centreLit}
+          animatedProps={near}
           fill="none"
-          stroke={colors.meshCentre}
-          strokeWidth={BAND.width}
-          strokeOpacity={BAND.opacity}
+          strokeWidth={NEAR.width}
+          strokeOpacity={NEAR.opacity}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         <AnimatedPath
-          animatedProps={temple}
+          animatedProps={band}
           fill="none"
-          stroke={colors.meshTemple}
-          strokeWidth={GRID.width}
-          strokeOpacity={GRID.opacity}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <AnimatedPath
-          animatedProps={templeLit}
-          fill="none"
-          stroke={colors.meshTemple}
-          strokeWidth={BAND.width}
-          strokeOpacity={BAND.opacity}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <AnimatedPath
-          animatedProps={crown}
-          fill="none"
-          stroke={colors.meshCrown}
-          strokeWidth={GRID.width}
-          strokeOpacity={GRID.opacity}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <AnimatedPath
-          animatedProps={crownLit}
-          fill="none"
-          stroke={colors.meshCrown}
           strokeWidth={BAND.width}
           strokeOpacity={BAND.opacity}
           strokeLinecap="round"
@@ -1145,15 +1053,9 @@ export function StaticHairMesh({
         : { ...face, yaw: face.pose.yaw, pitch: face.pose.pitch, roll: face.pose.roll },
       fit,
     );
-    const built = capPaths(pts, null, false, true);
+    const built = capPaths(pts, null, false);
     return {
       far: built[PATH_FAR],
-      /* The region paths carry the whole grid now; `grid`, `near` and
-         `band` stay in the shape for the still's own strokes, which read
-         them, and come back empty. */
-      centre: built[PATH_REGION + REGION_CENTRE * 2] + built[PATH_REGION + REGION_CENTRE * 2 + 1],
-      temple: built[PATH_REGION + REGION_TEMPLE * 2] + built[PATH_REGION + REGION_TEMPLE * 2 + 1],
-      crown: built[PATH_REGION + REGION_CROWN * 2] + built[PATH_REGION + REGION_CROWN * 2 + 1],
       grid: built[PATH_GRID],
       near: built[PATH_NEAR],
       band: built[PATH_BAND],
@@ -1196,36 +1098,30 @@ export function StaticHairMesh({
           strokeLinejoin="round"
         />
       )}
-      {/*
-        The three regions, each in its own colour: the centre over the
-        hairline and mid scalp, the temples either side, the crown on
-        top. Drawn at the near weight because a coloured line has to
-        carry a hue as well as a shape.
-      */}
       <Path
-        d={paths.centre}
+        d={paths.grid}
         fill="none"
-        stroke={darkColors.meshCentre}
+        stroke={stroke}
+        strokeWidth={GRID.width}
+        strokeOpacity={GRID.opacity * strength}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d={paths.near}
+        fill="none"
+        stroke={stroke}
         strokeWidth={NEAR.width}
         strokeOpacity={NEAR.opacity * strength}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <Path
-        d={paths.temple}
+        d={paths.band}
         fill="none"
-        stroke={darkColors.meshTemple}
-        strokeWidth={NEAR.width}
-        strokeOpacity={NEAR.opacity * strength}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d={paths.crown}
-        fill="none"
-        stroke={darkColors.meshCrown}
-        strokeWidth={NEAR.width}
-        strokeOpacity={NEAR.opacity * strength}
+        stroke={stroke}
+        strokeWidth={BAND.width}
+        strokeOpacity={BAND.opacity * strength}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

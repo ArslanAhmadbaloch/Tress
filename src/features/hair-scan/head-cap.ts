@@ -355,16 +355,8 @@ const REGION_CROWN = CAP_REGIONS.indexOf('crown');
 
 /** Where one region gives way to the next on the dome. */
 export const CAP_REGION = {
-  /**
-   * Above this latitude — 0 at the base, 1 at the pole — the cap is the
-   * crown.
-   *
-   * Two thirds of the way up rather than half. At 0.5 the crown took the
-   * whole top half of the dome and the mid scalp was a narrow band under
-   * it; the crown is the vertex and the whorl around it, which is a cap
-   * on top of the head, not half of it.
-   */
-  crownT: 0.66,
+  /** Above this latitude — 0 at the base, 1 at the pole — the cap is the crown. */
+  crownT: 0.5,
   /** Further round the head than this, in radians from the front, a meridian is a temple. */
   templeTheta: Math.PI / 3,
 } as const;
