@@ -2261,22 +2261,28 @@ test('frames: the repeats are what give the measurement an error bar of its own'
     );
   }
   /*
-    And at least one region's frames genuinely disagreed — a spread ABOVE
-    the floor, measured rather than clamped.
+    And every region's spread is MEASURED rather than stood in for.
 
-    Only one, and said plainly: on this synthetic mask five of the six
-    land exactly on `SPREAD_FLOOR` and `leftTemple` (about 0.059) is the
-    one that clears it. That is the mask's fault, not the engine's — it
-    is a hard 0/1 blob with a straight hairline, so most regions read the
-    same number from every frame by construction. A floor-valued spread
-    is an honest "these agreed to within the mask's own wobble", not a
-    missing error bar; what would be dishonest is `SINGLE_FRAME_SPREAD`,
-    asserted against above, and that is the one this phase removed.
+    This used to require one region to clear `SPREAD_FLOOR`, and named
+    `leftTemple` at about 0.059 as the one that did. It no longer clears
+    it, and that is the fix rather than a regression: the frames that
+    disagreed were the chin-down ones, which had no chin landmark and so
+    took a vertical unit from proportion while every other frame took one
+    from a chin. They now take it from the box's bottom and agree, so the
+    disagreement that made that spread is gone.
+
+    What the error bar has to be is honest, not large. A floor-valued
+    spread says "these frames agreed to within the mask's own wobble",
+    which on a hard 0/1 blob with a straight hairline is true by
+    construction. What would be dishonest is `SINGLE_FRAME_SPREAD` — the
+    stand-in for a region seen once — and no region may wear it here,
+    because every one of them was seen in several frames.
   */
-  const measured = Object.entries(measurement.regions).filter(
-    ([, read]) => (read?.spread ?? 0) > SPREAD_FLOOR,
-  );
-  assert.ok(measured.length >= 1, 'no region measured a spread above the floor');
+  for (const [region, read] of Object.entries(measurement.regions)) {
+    assert.ok(read, region);
+    assert.ok(read.spread >= SPREAD_FLOOR, `${region} spread ${read.spread} is under the floor`);
+    assert.notEqual(read.spread, SINGLE_FRAME_SPREAD, `${region} wears the one-frame stand-in`);
+  }
 
   /*
     And the counterfactual, which is the bug the owner could not see —

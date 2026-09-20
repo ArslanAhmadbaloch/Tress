@@ -149,9 +149,21 @@ function observation(at: Pose, over: Partial<FaceObservation> = {}): FaceObserva
     left: project({ u: -OUTER_CANTHAL_SHARE, v: BROW_ABOVE_EYES }, at),
     right: project({ u: OUTER_CANTHAL_SHARE, v: BROW_ABOVE_EYES }, at),
   };
-  // A box from the brow to the chin and a face wide, as a detector's is.
+  /*
+    A box from the brow to the chin and a face wide, as a detector's is.
+
+    Its bottom is the chin, and the SAME chin the landmark below reports
+    — depth term and all. A detector's box is the extent of the face it
+    found, so its lowest point is the lowest point of that face; modelling
+    the two as different heights made the box a chin that had not swung
+    toward the camera with the tilt. That was harmless while nothing read
+    the box's bottom, and stopped being harmless when `faceFrameOf` began
+    taking its vertical unit from there for a detector that reports no
+    chin of its own.
+  */
+  const chinV = CHIN - CHIN_DEPTH * Math.cos(at.yaw * RAD) * Math.tan(at.pitch * RAD);
   const topLeft = project({ u: -1, v: 0 }, at);
-  const bottomRight = project({ u: 1, v: CHIN }, at);
+  const bottomRight = project({ u: 1, v: chinV }, at);
   return {
     bounds: {
       x: Math.min(topLeft.x, bottomRight.x),
@@ -172,10 +184,7 @@ function observation(at: Pose, over: Partial<FaceObservation> = {}): FaceObserva
       remove, and the two anchoring paths would agree for the wrong
       reason.
     */
-    chin: project(
-      { u: 0, v: CHIN - CHIN_DEPTH * Math.cos(at.yaw * RAD) * Math.tan(at.pitch * RAD) },
-      at,
-    ),
+    chin: project({ u: 0, v: chinV }, at),
     ...over,
   };
 }
@@ -307,12 +316,21 @@ test('frame: it says which landmarks it was built from, and grades them', () => 
   assert.deepEqual(full?.anchoredBy, { scale: 'eyes', origin: 'brow', vertical: 'chin' });
   assert.equal(full && anchorGradeOf(full.anchoredBy), 'landmarks');
 
+  /*
+    `vertical: 'box'` where this once said `'proportion'`. A frame with no
+    chin landmark now takes its vertical unit from the bottom of the box,
+    which is a measured edge of a real face, and only falls through to
+    proportion when even that is unusable. The GRADES are untouched: a box
+    bottom is an extent rather than a landmark, so it still reads as
+    `partial` beside eyes and `box` alone, and `compareScans` keeps
+    widening its floor for both.
+  */
   const boxOnly = faceFrameOf(observation(pose(), { eyes: null, brow: null, chin: null }));
-  assert.deepEqual(boxOnly?.anchoredBy, { scale: 'box', origin: 'box', vertical: 'proportion' });
+  assert.deepEqual(boxOnly?.anchoredBy, { scale: 'box', origin: 'box', vertical: 'box' });
   assert.equal(boxOnly && anchorGradeOf(boxOnly.anchoredBy), 'box');
 
   const eyesOnly = faceFrameOf(observation(pose(), { brow: null, chin: null }));
-  assert.deepEqual(eyesOnly?.anchoredBy, { scale: 'eyes', origin: 'eyes', vertical: 'proportion' });
+  assert.deepEqual(eyesOnly?.anchoredBy, { scale: 'eyes', origin: 'eyes', vertical: 'box' });
   assert.equal(eyesOnly && anchorGradeOf(eyesOnly.anchoredBy), 'partial');
 });
 

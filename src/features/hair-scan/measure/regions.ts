@@ -565,7 +565,18 @@ export type FrameAnchoring = {
   /** `brow` when a brow point set the origin, `eyes` or `box` when it was derived. */
   origin: 'brow' | 'eyes' | 'box';
   /** `chin` when the vertical unit was measured, `proportion` when it came from head proportions. */
-  vertical: 'chin' | 'proportion';
+  /**
+   * Where the face's vertical unit came from.
+   *
+   * `chin` is a reported chin landmark, `box` the bottom of the
+   * detector's own box, `proportion` neither — the horizontal unit
+   * turned on its side. Only `chin` grades as landmarks: the box's
+   * bottom is a real measured edge and places a region correctly, but it
+   * is the extent of a face rather than a point on one, so a scan
+   * anchored on it is not as repeatable as one that caught a chin and
+   * `compareScans` must keep widening its floor for it.
+   */
+  vertical: 'chin' | 'box' | 'proportion';
 };
 
 /**
@@ -795,8 +806,35 @@ export function faceFrameOf(face: FaceObservation): FaceFrame | null {
     unitY = chinDrop / chinSpan;
     verticalFrom = 'chin';
   } else {
-    unitY = (unitX / cosOf(yaw)) * cosOf(pitch);
-    verticalFrom = 'proportion';
+    /*
+      The bottom of the box, before proportion.
+
+      The proportional path turns the horizontal unit on its side, and
+      that is not a face: measured on a real head against a real mask the
+      two came out 0.191 from a chin and 0.117 from proportion, so every
+      region box stood at three fifths of its height and the hairline
+      band sat on the FOREHEAD. The mask then said, correctly, that a
+      forehead is not hair — coverage zero and visible scalp a hundred on
+      every region, at high confidence, over a head full of it.
+
+      The box's bottom is the chin: the box is the extent of the face the
+      detector found, and on the ARKit path that face is a mesh the depth
+      camera measured. It is read through the same span as a real chin so
+      the two paths cannot drift, and it grades apart from one — see
+      `FrameAnchoring.vertical` — because an extent is not a landmark.
+    */
+    const boxBottom = plate({
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height,
+    });
+    const boxDrop = dot(sub(boxBottom, origin), ey);
+    if (boxDrop > MIN_SPAN && chinSpan > MIN_SPAN) {
+      unitY = boxDrop / chinSpan;
+      verticalFrom = 'box';
+    } else {
+      unitY = (unitX / cosOf(yaw)) * cosOf(pitch);
+      verticalFrom = 'proportion';
+    }
   }
   if (!(unitY > MIN_SPAN)) return null;
 
