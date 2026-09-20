@@ -893,3 +893,40 @@ test('measurement: nothing about it reaches the record as a sentence', async (t)
   assertHonest(assert, labels, 'the processing pass');
   assert.ok(!labels.join(' ').match(/\d/), 'no unit label carries a figure');
 });
+
+/*
+  The live road's own mask and face, as a kept frame carries them from the
+  shutter. The mask is all hair; a still road that disagrees is the bug
+  every build from 24 to 45 shipped, and it must lose.
+*/
+const LIVE = { mask: maskOf(1), face: FACE };
+const LIVE_SEEN: AnalysisFrame[] = SEEN.map((f) => ({ ...f, live: LIVE }));
+
+test('measurement: a frame with a live result is read from it, whatever the still road says', async (t) => {
+  // The still road returns an EMPTY mask — the failure that read zero over
+  // a head full of hair on every build it shipped in.
+  const emptyStill = { ...AREA, mask: maskOf(0) };
+  const result = await drive(t, () =>
+    runAnalysis(LIVE_SEEN, { deps: deps({ measureCoverage: async () => emptyStill }), capturedAt: AT }),
+  );
+  assert.ok(result.measurement, 'live frames must produce a measurement');
+  const hairline = result.measurement.regions.hairline;
+  assert.ok(hairline, 'a level head shows its hairline');
+  assert.ok(
+    hairline.coverage > 0.9,
+    `the live mask is all hair; the report read ${hairline.coverage} — the still road won`,
+  );
+  // The area pass still reads the file, as it always did; only the regions moved.
+  assert.ok(result.frames.every((f) => f.area === 'measured'));
+});
+
+test('measurement: the live result stands alone when the still road fails outright', async (t) => {
+  // Nothing comes back from the file at all. Before this the regional
+  // measurement was gated on the still road succeeding; a live result
+  // has nothing to do with the file and must not wait on it.
+  const result = await drive(t, () =>
+    runAnalysis(LIVE_SEEN, { deps: deps({ measureCoverage: async () => null }), capturedAt: AT }),
+  );
+  assert.ok(result.measurement, 'a failed still road must not take the live measurement with it');
+  assert.ok(result.measurement.regions.hairline!.coverage > 0.9);
+});

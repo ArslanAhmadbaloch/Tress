@@ -177,6 +177,13 @@ export type AnalysisFrame = {
    */
   face?: FaceObservation;
   /**
+   * The live road's mask and face at this frame's shutter, when the scan
+   * had one fresh enough. Preferred over measuring the saved file: the
+   * live road is the one path proven on a phone, and the regional
+   * measurement reads off it directly. See `lastLive` in the scan screen.
+   */
+  live?: { mask: MaskImage; face: FaceObservation };
+  /**
    * 0–1, the scanner's own score for this capture at the moment of the
    * shutter — steadiness, light and how large the head sat in the frame.
    * Carried into the measurement, which weighs a region read off good
@@ -651,20 +658,36 @@ export async function runAnalysis(
         measure(() => measureCoverage(frame.uri, faceBox)).catch(() => null),
         pacing.areaCeilingMs,
       );
+      /*
+        The regional measurement, from the LIVE road first.
+
+        The live road's mask and the face it was made over are proven on a
+        phone — the cap sits on the hair. Every part of the still road
+        that stands between a saved file and a region reading (the
+        manipulator, the JPEG, jpeg-js, a face box mapped back into the
+        still) is a part that cannot be run here and that read zero over
+        a head full of hair on every build it shipped in. So a frame that
+        carries a live result is read from it, whatever the still road
+        says about the same file — including when the still road fails.
+      */
+      const source = sources.get(unit.frameId);
+      if (source?.live) {
+        readable.push({
+          mask: source.live.mask,
+          face: source.live.face,
+          quality: source.captureQuality ?? 0,
+        });
+      }
       if (reading !== OUTRAN && reading !== null) {
         frame.coverage = reading.coverage;
         frame.maskTrace = reading.maskTrace;
         frame.area = 'measured';
         /*
-          The regional measurement wants two things this frame may or may
-          not have: the mask itself, and the face the tracker held at the
-          shutter. Both or neither — a mask with no face has no
-          coordinate frame to place a region in, and a face with no mask
-          has nothing to count. A frame missing either is measured for
-          area exactly as before and simply does not take part.
+          The still road, for a frame with no live result: a mask with
+          no face has no coordinate frame to place a region in, and a
+          face with no mask has nothing to count, so it takes both.
         */
-        const source = sources.get(unit.frameId);
-        if (reading.mask && source?.face) {
+        if (!source?.live && reading.mask && source?.face) {
           readable.push({
             mask: reading.mask,
             face: source.face,

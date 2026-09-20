@@ -186,6 +186,8 @@ import type {
   ScannerState,
 } from '@/features/hair-scan/types';
 import { FRAME_MIRRORED } from '@/features/hair-scan/handedness';
+import type { MaskImage } from '@/features/assessment/hair-mask';
+import type { FaceObservation } from '@/features/hair-scan/measure/regions';
 import { scanDiagnosticsOn } from '@/lib/device-preferences';
 import { nitroAvailable } from '@/lib/native';
 import { deletePhotoFiles, persistCapture } from '@/lib/photo-storage';
@@ -226,6 +228,9 @@ function maskPeak(data: Float32Array): number {
   }
   return peak;
 }
+
+/** How stale a live result may be and still stand for a shutter: two fit beats. */
+const LIVE_FRESH_MS = 900;
 
 /** How often the tracker is asked whether its last face has gone stale. */
 const EXPIRE_TICK_MS = 250;
@@ -750,6 +755,21 @@ function Scanner({
   const rollAt = useRef(new Map<string, number>());
   /** The preview's measured size, as the camera reports it with every frame: what the mesh's fractions are of. */
   const previewSize = useRef<ViewSize>({ width: 0, height: 0 });
+  /*
+    The live road's most recent mask and face, and the one each kept
+    frame was given at its shutter.
+
+    This is what the report measures from. The live road is the one path
+    proven on a phone — its mask is good and its cap grips — and every
+    part of the alternative (a saved JPEG, the manipulator, jpeg-js, and a
+    face box mapped back into the still) is a part that cannot be run
+    here and that read zero over a head full of hair on every build. So
+    the measurement no longer depends on any of it: the mask and the face
+    the cap was sitting on at the moment of the shutter go with the frame,
+    and the report reads regions off those.
+  */
+  const lastLive = useRef<{ mask: MaskImage; face: FaceObservation; at: number } | null>(null);
+  const liveByFrame = useRef(new Map<string, { mask: MaskImage; face: FaceObservation }>());
   /** The scan's record of itself — light and tracking over the ticks — for the journal. */
   const tally = useRef({ ticks: 0, faced: 0, lightSum: 0, lightN: 0 });
   /**
@@ -889,6 +909,11 @@ function Scanner({
           case 'state':
             if (event.to === 'processing') {
               setCapturedAt(new Date(current.completedAt ?? Date.now()).toISOString());
+              /* Taken once, then let go: eight masks are a couple of
+                 megabytes, and the next scan starts empty. */
+              const liveTaken = new Map(liveByFrame.current);
+              liveByFrame.current.clear();
+              lastLive.current = null;
               setProcessingFrames(
                 orderedFrames(current).map((f) => {
                   const still = { width: f.width, height: f.height };
@@ -916,6 +941,7 @@ function Scanner({
                     label: HAIR_SCAN_COPY.target[f.target],
                     captureQuality: f.quality,
                     ...(face ? { face } : {}),
+                    ...(liveTaken.has(f.id) ? { live: liveTaken.get(f.id) } : {}),
                     ...(f.mesh
                       ? { mesh: { still, face: f.mesh } }
                       : {}),
@@ -924,9 +950,16 @@ function Scanner({
               );
             }
             return;
-          case 'frame':
+          case 'frame': {
             if (!milestoneToo) haptics.play('sectorCaptured');
+            /* The live result this shutter was taken over, if it is
+               fresh enough to stand for it. */
+            const recent = lastLive.current;
+            if (recent && Date.now() - recent.at <= LIVE_FRESH_MS) {
+              liveByFrame.current.set(event.frame.id, { mask: recent.mask, face: recent.face });
+            }
             return;
+          }
           case 'milestone':
             haptics.play(event.milestone === 'faceLocked' ? 'trackingLock' : 'milestone');
             return;
@@ -1249,6 +1282,38 @@ function Scanner({
           faceBox,
         );
         if (!live) return;
+        /*
+          Keep this beat's mask and face for whichever shutter comes next.
+          The face is the tracked one, put into the camera frame's own
+          fractions by the same inversion that placed the crop — so the
+          region boxes are laid on exactly the picture the mask was made
+          from. Eyes go in image order, which is what the frame is built
+          from; ARKit names them for the person.
+        */
+        if (mask !== null && faceBox && fill && fill.scale > 0) {
+          const toImage = (vx: number, vy: number) => ({
+            x: (vx - fill.dx) / fill.scale / source.width,
+            y: (vy - fill.dy) / fill.scale / source.height,
+          });
+          const eyes = face.eyes
+            ? [
+                toImage(face.eyes.left[0] * view.width, face.eyes.left[1] * view.height),
+                toImage(face.eyes.right[0] * view.width, face.eyes.right[1] * view.height),
+              ].sort((a, b) => a.x - b.x)
+            : null;
+          lastLive.current = {
+            mask,
+            face: {
+              bounds: { x: faceBox.x, y: faceBox.y, width: faceBox.w, height: faceBox.h },
+              image: { width: source.width, height: source.height },
+              yaw: face.yaw,
+              pitch: face.pitch,
+              roll: Number.isFinite(face.roll) ? face.roll : 0,
+              ...(eyes ? { eyes: { left: eyes[0], right: eyes[1] } } : {}),
+            },
+            at: now,
+          };
+        }
         const attempt =
           mask === null
             ? null
