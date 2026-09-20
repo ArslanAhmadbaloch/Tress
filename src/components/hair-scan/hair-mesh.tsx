@@ -316,8 +316,8 @@ const BLOOM = { core: { min: 1.2, max: 4.2 }, halo: { min: 3, max: 12, opacity: 
  * its vertex faces the camera — so they gather on the side of the head
  * the phone can see and nothing sparkles round the back.
  */
-const TWINKLE_COUNT = 10;
-const TWINKLE_MS = 1150;
+const TWINKLE_COUNT = 16;
+const TWINKLE_MS = 950;
 /** A flick's arms: the long pair across, the short pair on the diagonal. */
 const TWINKLE = { arm: 4.2, cross: 0.42, width: 1 };
 

@@ -89,14 +89,36 @@ import {
 /* -------------------------------- tuning -------------------------------- */
 
 export const CAP = {
-  /** Latitude rings from the base up, the pole excluded. */
-  rows: 10,
-  /** Meridians, side to side. Odd, so one runs down the middle. */
-  cols: 19,
+  /*
+   * Latitude rings from the base up (the pole excluded) and meridians
+   * side to side, odd so one runs down the middle.
+   *
+   * Raised from 10 and 19. A wireframe's fineness is most of why it
+   * reads as lying ON a head rather than caged around one, and at 190
+   * vertices the cells were wide enough to see through.
+   *
+   * A measured step, not a leap. Every vertex here is rebuilt and
+   * re-strung into an SVG path on the UI thread on EVERY frame, and that
+   * is the one thread a scan cannot afford to stall: 14 by 25 is about
+   * 1.8 times the segments of 10 by 19, where a 28 by 37 net — which is
+   * roughly what the reference renders show — would have been five times.
+   * If this holds its frame rate on the oldest phone the scan runs on,
+   * it can go finer; `topology: a bounded, fixed layout with one pole`
+   * is the guard that has to move with it, on purpose, each time.
+   */
+  rows: 14,
+  cols: 25,
   /** How far the pole sits above the face oval's top, in face heights. */
   rise: 0.45,
   /** Where the sides reach down to, in face heights below the oval's top: the ears. */
-  earLevel: 0.5,
+  /*
+   * Lower than it was. The reference the owner drew has the cap's front
+   * edge flat across the hairline with the temples hanging well below
+   * it, which is the shape of hair rather than the shape of a bowl; at
+   * 0.5 the sides stopped level with the middle of the ear and the cap
+   * read as a dome cut off straight.
+   */
+  earLevel: 0.62,
   /** The head's half-width over the oval's: temples and ears stand proud of the face. */
   widen: 1.15,
   /** Depth of the head over its half-width; only the turn sees it. */
@@ -110,10 +132,10 @@ export const CAP = {
   /** Where the brow line is assumed when no eyebrow contour arrives, in face heights from the top. */
   browGuess: 0.3,
   /** The hairline band: this many rings from the base, drawn denser and brighter. */
-  bandRows: 5,
+  bandRows: 7,
   /** The temple zones: this many columns in from each side, this many rows up. */
-  templeCols: 3,
-  templeRows: 7,
+  templeCols: 4,
+  templeRows: 10,
   /**
    * How much of the tracked yaw and pitch the cap turns by. The detector
    * reads a turned face's oval narrower and shifted, which already moves

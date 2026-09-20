@@ -185,7 +185,15 @@ function inPolygon(polygon: Point[], p: Point): boolean {
 
 test('topology: a bounded, fixed layout with one pole', () => {
   assert.equal(CAP_POINTS, CAP.rows * CAP.cols + 1);
-  assert.ok(CAP_POINTS >= 150 && CAP_POINTS <= 220, `${CAP_POINTS} points`);
+  /*
+     A ceiling, not a preference. Every vertex is rebuilt and re-strung
+     into an SVG path on the UI thread on every frame, so this bounds the
+     per-frame cost of the one thread the scan cannot afford to stall.
+     Raised from 150-220 when the cap went from 10x19 to 14x25 for a
+     finer net; it is meant to be raised deliberately, with the frame
+     rate checked on a real phone, rather than to be deleted.
+  */
+  assert.ok(CAP_POINTS >= 150 && CAP_POINTS <= 400, `${CAP_POINTS} points`);
   assert.equal(CAP_LENGTH, CAP_POINTS * CAP_STRIDE);
   assert.equal(CAP_POLE, CAP_POINTS - 1);
   assert.equal(CAP.cols % 2, 1);
@@ -399,7 +407,9 @@ test('sectors: the sides are the ring\'s three and nine, the crown its six, the 
   assert.ok(CHIN_SECTORS.includes(CAP_SECTOR_OF[CAP_POLE]));
   assert.ok(CHIN_SECTORS.includes(CAP_SECTOR_OF[capIndex(CAP.rows - 1, mid)]));
   // The front centre belongs to no one sector.
-  assert.equal(CAP_SECTOR_OF[capIndex(5, mid)], CAP_FRONT);
+  /* Half way up the cap, whatever the row count: a hard-wired 5 meant the
+     middle of a ten-row dome and the lower front of a fourteen-row one. */
+  assert.equal(CAP_SECTOR_OF[capIndex(Math.round(CAP.rows / 2), mid)], CAP_FRONT);
   assert.equal(CAP_SECTOR_OF[capIndex(0, mid)], 0);
   // Mirror-symmetric about the middle column, sector for sector.
   for (let row = 0; row < CAP.rows; row += 1) {
