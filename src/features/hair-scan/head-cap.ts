@@ -1448,15 +1448,30 @@ export const CAP_PROFILE = {
    * trace has already reduced to at most `maxPoints`.
    */
   rays: 36,
-  /** How far one ray may depart from the dome, out and in. */
-  out: 1.4,
+  /**
+   * How far one ray may depart from the dome, out and in.
+   *
+   * Wide, and deliberately so. These bounds and `slope` guard different
+   * things, and conflating them is what kept the cap a dome: a SPIKE is
+   * a local deviation, one ray shooting out past its neighbours, and
+   * `slope` is what forbids it. A fringe, a receding corner, a high
+   * quiff are BROAD deviations — twenty rays leaning the same way — and
+   * only these bounds decide whether the cap may follow them.
+   *
+   * At 1.4 and 0.75 it could not. A head of hair stands a good half again
+   * the height of the skull under it at the crown of a quiff, and the
+   * cap simply clipped it and stayed a dome. With 36 rays at a 0.09 step,
+   * reaching 1.9 takes ten rays leaning together — a hundred degrees of
+   * dial, which is a hairstyle and cannot be a speck of mask.
+   */
+  out: 1.9,
   /**
    * The floor is the asymmetric one, and it has moved least. A cap
    * sitting INSIDE somebody's hair is the complaint this file exists to
    * answer, and a mask cut off by the edge of the frame reads as hair
    * stopping there — so a ray may reach well out and only a little in.
    */
-  in: 0.75,
+  in: 0.55,
   /**
    * The most two neighbouring rays may differ.
    *

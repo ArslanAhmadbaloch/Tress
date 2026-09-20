@@ -228,17 +228,28 @@ async function inputTensor(
       }
     }
 
-    const pixels = side * side;
-    const tensor = new Float32Array(pixels * channels);
-    for (let p = 0, i = 0, o = 0; p < pixels; p += 1, i += 4, o += channels) {
-      tensor[o] = raw.data[i] / 255;
-      tensor[o + 1] = raw.data[i + 1] / 255;
-      tensor[o + 2] = raw.data[i + 2] / 255;
-      // Any plane beyond RGB is left at zero. The bundled model takes
-      // three and gets exactly three; a video model's fourth plane is the
-      // previous frame's mask, which neither road here keeps.
-    }
-    return tensor;
+    /*
+      ── Resampled from what the decoder ACTUALLY returned ────────────
+      Not read straight off the front of the buffer as though it were
+      already `side` by `side`. It asks the manipulator for a square and
+      it is entitled to one, but a resize that preserves aspect — which
+      is what a resizer does when it will not distort — hands back an
+      image the right width and the wrong height, and reading the first
+      `side * side * 4` bytes of that is not a squash. It is a CROP of
+      the top of the frame, silently: for a scan held at arm's length
+      that is ceiling and wall, the model finds no hair in it, and every
+      region reports zero coverage and a hundred visible scalp over a
+      head full of hair. Which is exactly what it reported.
+
+      `resampleTensor` reads the buffer's own width and height, so it is
+      right whatever comes back, and the two roads now share one
+      resampler rather than one of them carrying an assumption.
+    */
+    return resampleTensor(
+      { data: raw.data, width: raw.width, height: raw.height },
+      side,
+      channels,
+    );
   } catch {
     return null;
   }
